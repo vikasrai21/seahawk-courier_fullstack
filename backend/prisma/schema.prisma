@@ -1,0 +1,399 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("STAFF")
+  branch    String?
+  phone     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  shipmentsCreated        Shipment[]      @relation("CreatedBy")
+  shipmentsUpdated        Shipment[]      @relation("UpdatedBy")
+  auditLogs               AuditLog[]
+  quotesCreated           Quote[]         @relation("QuoteCreatedBy")
+  courierInvoicesUploaded CourierInvoice[] @relation("InvoiceUploadedBy")
+  rateVersionsUploaded    RateVersion[]   @relation("RateVersionUploadedBy")
+  pickupAssignments       PickupRequest[] @relation("AssignedAgent")
+  @@index([email])
+  @@map("users")
+}
+
+model Client {
+  id            Int        @id @default(autoincrement())
+  code          String     @unique @db.VarChar(20)
+  company       String
+  contact       String?
+  phone         String?
+  whatsapp      String?
+  email         String?
+  gst           String?
+  address       String?
+  notes         String?
+  active        Boolean    @default(true)
+  walletBalance Float      @default(0) @map("wallet_balance")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  shipments    Shipment[]
+  contracts    Contract[]
+  invoices     Invoice[]
+  quotes       Quote[]
+  pickups      PickupRequest[]
+  transactions WalletTransaction[]
+  @@index([code])
+  @@map("clients")
+}
+
+model Contract {
+  id            Int      @id @default(autoincrement())
+  clientCode    String   @map("client_code") @db.VarChar(20)
+  name          String
+  courier       String?
+  service       String?
+  pricingType   String   @default("PER_KG") @map("pricing_type")
+  baseRate      Float    @default(0) @map("base_rate")
+  minCharge     Float    @default(0) @map("min_charge")
+  fuelSurcharge Float    @default(0) @map("fuel_surcharge")
+  gstPercent    Float    @default(18) @map("gst_percent")
+  validFrom     String?  @map("valid_from")
+  validTo       String?  @map("valid_to")
+  active        Boolean  @default(true)
+  notes         String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  client Client @relation(fields: [clientCode], references: [code])
+  @@index([clientCode])
+  @@index([active])
+  @@map("contracts")
+}
+
+model Shipment {
+  id          Int      @id @default(autoincrement())
+  date        String   @db.VarChar(10)
+  clientCode  String   @map("client_code") @db.VarChar(20)
+  awb         String   @unique @db.VarChar(50)
+  consignee   String?
+  destination String?
+  phone       String?
+  pincode     String?
+  weight      Float    @default(0)
+  amount      Float    @default(0)
+  courier     String?
+  department  String?
+  service     String   @default("Standard")
+  status      String   @default("Booked")
+  ndrStatus   String?  @map("ndr_status")
+  remarks     String?
+  labelUrl    String?  @map("label_url")
+  createdById Int?     @map("created_by_id")
+  updatedById Int?     @map("updated_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  client         Client         @relation(fields: [clientCode], references: [code])
+  createdBy      User?          @relation("CreatedBy", fields: [createdById], references: [id])
+  updatedBy      User?          @relation("UpdatedBy", fields: [updatedById], references: [id])
+  invoiceItems   InvoiceItem[]
+  trackingEvents TrackingEvent[]
+  ndrEvents      NDREvent[]
+  @@index([date])
+  @@index([clientCode])
+  @@index([status])
+  @@index([courier])
+  @@index([ndrStatus])
+  @@index([date, clientCode])
+  @@map("shipments")
+}
+
+model TrackingEvent {
+  id          Int      @id @default(autoincrement())
+  shipmentId  Int      @map("shipment_id")
+  awb         String   @db.VarChar(50)
+  status      String
+  location    String?  @default("")
+  description String?  @default("")
+  timestamp   DateTime @default(now())
+  source      String   @default("MANUAL")
+  rawData     Json?    @map("raw_data")
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  @@index([shipmentId])
+  @@index([awb])
+  @@index([timestamp])
+  @@map("tracking_events")
+}
+
+model NDREvent {
+  id          Int      @id @default(autoincrement())
+  shipmentId  Int      @map("shipment_id")
+  awb         String   @db.VarChar(50)
+  reason      String
+  description String?  @default("")
+  attemptNo   Int      @default(1) @map("attempt_no")
+  action      String   @default("PENDING")
+  newAddress  String?  @map("new_address")
+  resolvedAt  DateTime? @map("resolved_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  @@index([shipmentId])
+  @@index([awb])
+  @@index([action])
+  @@map("ndr_events")
+}
+
+model PickupRequest {
+  id               Int      @id @default(autoincrement())
+  requestNo        String   @unique @db.VarChar(30) @map("request_no")
+  clientCode       String?  @map("client_code") @db.VarChar(20)
+  contactName      String   @map("contact_name")
+  contactPhone     String   @map("contact_phone")
+  contactEmail     String?  @map("contact_email")
+  pickupAddress    String   @map("pickup_address")
+  pickupCity       String   @map("pickup_city")
+  pickupPin        String   @map("pickup_pin")
+  deliveryAddress  String?  @map("delivery_address")
+  deliveryCity     String?  @map("delivery_city")
+  deliveryState    String?  @map("delivery_state")
+  deliveryCountry  String   @default("India") @map("delivery_country")
+  packageType      String   @default("Parcel") @map("package_type")
+  weightGrams      Float    @default(0) @map("weight_grams")
+  pieces           Int      @default(1)
+  service          String   @default("Standard")
+  declaredValue    Float?   @map("declared_value")
+  notes            String?
+  source           String   @default("PORTAL")
+  preferredCarrier String?  @map("preferred_carrier")
+  scheduledDate    String   @map("scheduled_date")
+  timeSlot         String   @map("time_slot")
+  assignedAgentId  Int?     @map("assigned_agent_id")
+  assignedAt       DateTime? @map("assigned_at")
+  completedAt      DateTime? @map("completed_at")
+  status           String   @default("PENDING")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  client        Client? @relation(fields: [clientCode], references: [code])
+  assignedAgent User?   @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+  @@index([status])
+  @@index([scheduledDate])
+  @@index([clientCode])
+  @@map("pickup_requests")
+}
+
+model WalletTransaction {
+  id          Int      @id @default(autoincrement())
+  clientCode  String   @map("client_code") @db.VarChar(20)
+  userId      Int?     @map("user_id")
+  type        String
+  amount      Float
+  balance     Float
+  description String
+  reference   String?
+  paymentMode String?  @map("payment_mode")
+  paymentId   String?  @map("payment_id")
+  status      String   @default("SUCCESS")
+  createdAt   DateTime @default(now()) @map("created_at")
+  client Client @relation(fields: [clientCode], references: [code])
+  @@index([clientCode])
+  @@index([createdAt])
+  @@map("wallet_transactions")
+}
+
+model Invoice {
+  id          Int      @id @default(autoincrement())
+  invoiceNo   String   @unique @map("invoice_no")
+  clientCode  String   @map("client_code") @db.VarChar(20)
+  fromDate    String   @map("from_date")
+  toDate      String   @map("to_date")
+  subtotal    Float    @default(0)
+  gstPercent  Float    @default(18) @map("gst_percent")
+  gstAmount   Float    @default(0) @map("gst_amount")
+  total       Float    @default(0)
+  status      String   @default("DRAFT")
+  notes       String?
+  pdfUrl      String?  @map("pdf_url")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  client Client      @relation(fields: [clientCode], references: [code])
+  items  InvoiceItem[]
+  @@index([clientCode])
+  @@index([status])
+  @@index([fromDate, toDate])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id            Int     @id @default(autoincrement())
+  invoiceId     Int     @map("invoice_id")
+  shipmentId    Int     @map("shipment_id")
+  awb           String
+  date          String
+  consignee     String?
+  destination   String?
+  courier       String?
+  weight        Float   @default(0)
+  baseAmount    Float   @default(0) @map("base_amount")
+  fuelSurcharge Float   @default(0) @map("fuel_surcharge")
+  amount        Float   @default(0)
+  invoice  Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  shipment Shipment @relation(fields: [shipmentId], references: [id])
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?     @map("user_id")
+  userEmail String?  @map("user_email")
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  oldValue  Json?    @map("old_value")
+  newValue  Json?    @map("new_value")
+  ip        String?
+  createdAt DateTime @default(now()) @map("created_at")
+  user User? @relation(fields: [userId], references: [id])
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model Quote {
+  id          Int      @id @default(autoincrement())
+  quoteNo     String   @unique @map("quote_no")
+  clientCode  String?  @map("client_code") @db.VarChar(20)
+  destination String
+  pincode     String?
+  state       String?
+  district    String?
+  shipType    String   @map("ship_type")
+  weight      Float
+  courier     String
+  courierMode String   @map("courier_mode")
+  costTotal   Float    @map("cost_total")
+  sellTotal   Float    @map("sell_total")
+  profit      Float
+  margin      Float
+  notes       String?
+  status      String   @default("QUOTED")
+  validUntil  String?  @map("valid_until")
+  createdById Int?     @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  client    Client? @relation(fields: [clientCode], references: [code])
+  createdBy User?   @relation("QuoteCreatedBy", fields: [createdById], references: [id])
+  @@index([clientCode])
+  @@index([status])
+  @@index([createdAt])
+  @@map("quotes")
+}
+
+model CourierInvoice {
+  id           Int      @id @default(autoincrement())
+  courier      String
+  invoiceNo    String   @map("invoice_no")
+  invoiceDate  String   @map("invoice_date")
+  fromDate     String   @map("from_date")
+  toDate       String   @map("to_date")
+  totalAmount  Float    @default(0) @map("total_amount")
+  status       String   @default("PENDING")
+  notes        String?
+  uploadedById Int?     @map("uploaded_by_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  uploadedBy User?               @relation("InvoiceUploadedBy", fields: [uploadedById], references: [id])
+  items      CourierInvoiceItem[]
+  @@index([courier])
+  @@index([status])
+  @@map("courier_invoices")
+}
+
+model CourierInvoiceItem {
+  id               Int     @id @default(autoincrement())
+  courierInvoiceId Int     @map("courier_invoice_id")
+  awb              String
+  date             String
+  destination      String?
+  weight           Float   @default(0)
+  billedAmount     Float   @default(0) @map("billed_amount")
+  calculatedAmount Float?  @default(0) @map("calculated_amount")
+  discrepancy      Float?  @default(0)
+  status           String  @default("OK")
+  notes            String?
+  courierInvoice CourierInvoice @relation(fields: [courierInvoiceId], references: [id], onDelete: Cascade)
+  @@index([courierInvoiceId])
+  @@index([awb])
+  @@map("courier_invoice_items")
+}
+
+model MarginRule {
+  id           Int      @id @default(autoincrement())
+  name         String
+  courier      String?
+  zone         String?
+  shipType     String?  @map("ship_type")
+  minMarginPct Float    @map("min_margin_pct")
+  minProfitAbs Float?   @map("min_profit_abs")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  @@map("margin_rules")
+}
+
+model RateVersion {
+  id            Int      @id @default(autoincrement())
+  courier       String
+  effectiveDate String   @map("effective_date")
+  uploadedById  Int?     @map("uploaded_by_id")
+  notes         String?
+  dataJson      Json     @map("data_json")
+  createdAt     DateTime @default(now()) @map("created_at")
+  uploadedBy User? @relation("RateVersionUploadedBy", fields: [uploadedById], references: [id])
+  @@index([courier])
+  @@map("rate_versions")
+}
+
+model Notification {
+  id          Int      @id @default(autoincrement())
+  clientCode  String?  @map("client_code") @db.VarChar(20)
+  awb         String?  @db.VarChar(50)
+  channel     String
+  to          String
+  template    String
+  message     String   @db.Text
+  status      String   @default("QUEUED")
+  provider    String?
+  providerRef String?  @map("provider_ref")
+  error       String?
+  sentAt      DateTime? @map("sent_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  @@index([awb])
+  @@index([clientCode])
+  @@index([status])
+  @@map("notifications")
+}
+
+model JobQueue {
+  id          Int      @id @default(autoincrement())
+  type        String
+  payload     Json
+  status      String   @default("PENDING")
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(3) @map("max_attempts")
+  error       String?
+  runAfter    DateTime @default(now()) @map("run_after")
+  startedAt   DateTime? @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  @@index([status, runAfter])
+  @@index([type])
+  @@map("job_queue")
+}

@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("STAFF")
+  branch    String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  shipmentsCreated Shipment[] @relation("CreatedBy")
+  shipmentsUpdated Shipment[] @relation("UpdatedBy")
+  auditLogs        AuditLog[]
+  @@index([email])
+  @@map("users")
+}
+
+model Client {
+  id        Int        @id @default(autoincrement())
+  code      String     @unique @db.VarChar(20)
+  company   String
+  contact   String?
+  phone     String?
+  whatsapp  String?
+  email     String?
+  gst       String?
+  address   String?
+  notes     String?
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  shipments  Shipment[]
+  contracts  Contract[]
+  invoices   Invoice[]
+  @@index([code])
+  @@map("clients")
+}
+
+model Contract {
+  id           Int      @id @default(autoincrement())
+  clientCode   String   @map("client_code") @db.VarChar(20)
+  name         String                          // e.g. "BlueDart Express Rate"
+  courier      String?                         // null = applies to all couriers
+  service      String?                         // null = applies to all services
+  pricingType  String   @default("PER_KG")    // PER_KG | FLAT | PER_SHIPMENT
+  baseRate     Float    @default(0)            // per kg or flat amount
+  minCharge    Float    @default(0)            // minimum charge per shipment
+  fuelSurcharge Float   @default(0)            // percentage e.g. 5 = 5%
+  gstPercent   Float    @default(18)           // GST percentage
+  validFrom    String?                          // YYYY-MM-DD
+  validTo      String?                          // YYYY-MM-DD
+  active       Boolean  @default(true)
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  client       Client   @relation(fields: [clientCode], references: [code])
+  @@index([clientCode])
+  @@index([active])
+  @@map("contracts")
+}
+
+model Shipment {
+  id          Int      @id @default(autoincrement())
+  date        String   @db.VarChar(10)
+  clientCode  String   @map("client_code") @db.VarChar(20)
+  awb         String   @unique @db.VarChar(50)
+  consignee   String?
+  destination String?
+  weight      Float    @default(0)
+  amount      Float    @default(0)
+  courier     String?
+  department  String?
+  service     String   @default("Standard")
+  status      String   @default("Booked")
+  remarks     String?
+  createdById Int?     @map("created_by_id")
+  updatedById Int?     @map("updated_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  client    Client  @relation(fields: [clientCode], references: [code])
+  createdBy User?   @relation("CreatedBy", fields: [createdById], references: [id])
+  updatedBy User?   @relation("UpdatedBy", fields: [updatedById], references: [id])
+  invoiceItems InvoiceItem[]
+  @@index([date])
+  @@index([clientCode])
+  @@index([status])
+  @@index([courier])
+  @@index([date, clientCode])
+  @@index([date, courier])
+  @@index([date, status])
+  @@map("shipments")
+}
+
+model Invoice {
+  id          Int      @id @default(autoincrement())
+  invoiceNo   String   @unique                // e.g. INV-2024-001
+  clientCode  String   @map("client_code") @db.VarChar(20)
+  fromDate    String   @map("from_date")
+  toDate      String   @map("to_date")
+  subtotal    Float    @default(0)
+  gstPercent  Float    @default(18) @map("gst_percent")
+  gstAmount   Float    @default(0) @map("gst_amount")
+  total       Float    @default(0)
+  status      String   @default("DRAFT")     // DRAFT | SENT | PAID | CANCELLED
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  client      Client   @relation(fields: [clientCode], references: [code])
+  items       InvoiceItem[]
+  @@index([clientCode])
+  @@index([status])
+  @@index([fromDate, toDate])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id         Int      @id @default(autoincrement())
+  invoiceId  Int      @map("invoice_id")
+  shipmentId Int      @map("shipment_id")
+  awb        String
+  date       String
+  consignee  String?
+  destination String?
+  courier    String?
+  weight     Float    @default(0)
+  baseAmount Float    @default(0) @map("base_amount")
+  fuelSurcharge Float @default(0) @map("fuel_surcharge")
+  amount     Float    @default(0)
+  invoice    Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  shipment   Shipment @relation(fields: [shipmentId], references: [id])
+  @@index([invoiceId])
+  @@map("invoice_items")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?     @map("user_id")
+  userEmail String?  @map("user_email")
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  oldValue  Json?    @map("old_value")
+  newValue  Json?    @map("new_value")
+  ip        String?
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User?    @relation(fields: [userId], references: [id])
+  @@index([entity, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

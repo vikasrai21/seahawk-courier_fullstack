@@ -1,0 +1,9 @@
+-- Migration: 001_initial_schema
+-- This is managed by Prisma. Run: npx prisma migrate deploy
+-- Or for first setup: npx prisma db push
+-- 
+-- The Prisma schema at prisma/schema.prisma is the source of truth.
+-- Never edit the database directly — always use migrations.
+-- 
+-- To create a new migration after editing schema.prisma:
+--   npx prisma migrate dev --name describe_what_changed

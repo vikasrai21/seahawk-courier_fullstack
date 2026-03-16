@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en-IN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="description" content="Book a pickup with Sea Hawk Courier. Free doorstep pickup from Delhi NCR and all major cities."/>
+<title>Book Pickup | Sea Hawk Courier & Cargo</title>
+<link rel="icon" href="images/favicon.ico"/>
+<link rel="stylesheet" href="css/style.css"/>
+<style>
+.book-hero {
+  background:linear-gradient(150deg,var(--navy) 0%,var(--navy-2) 60%,var(--navy-3) 100%);
+  padding:44px 0 40px; text-align:center; position:relative; overflow:hidden;
+}
+.book-hero::before { content:''; position:absolute; inset:0;
+  background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px);
+  background-size:48px 48px; pointer-events:none;
+}
+.book-hero-inner { position:relative; z-index:1; }
+.book-hero h1 { font-family:var(--font-head); font-size:clamp(1.8rem,3.5vw,2.8rem); font-weight:900; color:#fff; letter-spacing:-.02em; margin-bottom:8px; }
+.book-hero p  { font-size:.95rem; color:rgba(255,255,255,.65); }
+
+.book-wrap { max-width:860px; margin:0 auto; padding:40px 20px 60px; }
+.book-card  { background:#fff; border-radius:var(--r-xl); box-shadow:var(--sh-xl); border:1.5px solid var(--border-l); overflow:hidden; }
+.book-steps { display:flex; border-bottom:2px solid var(--border-l); background:var(--bg-2); }
+.book-step  { flex:1; padding:14px 8px; text-align:center; font-size:.73rem; font-weight:700; color:var(--ink-4); position:relative; transition:.2s; cursor:default; }
+.book-step.active { color:var(--orange); background:#fff; }
+.book-step.done   { color:var(--green); background:#fff; }
+.book-step .step-n { display:block; width:24px; height:24px; border-radius:50%; background:var(--border-l); color:var(--ink-4); font-size:.72rem; font-weight:800; margin:0 auto 5px; display:flex; align-items:center; justify-content:center; }
+.book-step.active .step-n { background:var(--orange); color:#fff; }
+.book-step.done .step-n   { background:var(--green);  color:#fff; }
+.book-step::after { content:''; position:absolute; right:0; top:50%; transform:translateY(-50%); width:1px; height:30px; background:var(--border-l); }
+.book-step:last-child::after { display:none; }
+
+.step-panel { display:none; padding:28px; }
+.step-panel.active { display:block; }
+.step-title { font-family:var(--font-head); font-size:1.2rem; font-weight:800; color:var(--ink); margin-bottom:4px; }
+.step-sub   { font-size:.82rem; color:var(--ink-3); margin-bottom:22px; }
+
+.fg2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.fg2.triple { grid-template-columns:1fr 1fr 1fr; }
+.fg2.full   { grid-template-columns:1fr; }
+@media(max-width:600px) { .fg2,.fg2.triple { grid-template-columns:1fr; } }
+
+.field { display:flex; flex-direction:column; gap:5px; }
+.field label { font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:1.8px; color:var(--ink-3); }
+.field input,.field select,.field textarea { width:100%; padding:12px 14px; border:1.5px solid var(--border); border-radius:var(--r); font-size:.88rem; color:var(--ink); font-family:var(--font-body); transition:.18s; appearance:none; background:#fff; }
+.field input:focus,.field select:focus,.field textarea:focus { outline:none; border-color:var(--navy-3); box-shadow:0 0 0 3px rgba(26,61,110,.1); }
+.field textarea { resize:vertical; min-height:72px; }
+.field .hint { font-size:.7rem; color:var(--ink-4); }
+
+.pkg-type-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:4px; }
+@media(max-width:500px){ .pkg-type-grid { grid-template-columns:repeat(2,1fr); } }
+.pkg-opt { border:2px solid var(--border); border-radius:var(--r-md); padding:12px 8px; text-align:center; cursor:pointer; transition:.2s; }
+.pkg-opt:hover  { border-color:var(--orange); background:var(--orange-bg); }
+.pkg-opt.sel    { border-color:var(--orange); background:var(--orange-bg); }
+.pkg-opt .pico  { font-size:1.6rem; margin-bottom:4px; }
+.pkg-opt .plbl  { font-size:.72rem; font-weight:700; color:var(--ink-2); }
+.pkg-opt.sel .plbl { color:var(--orange); }
+
+.time-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+@media(max-width:500px){ .time-grid { grid-template-columns:repeat(2,1fr); } }
+.time-opt { border:1.5px solid var(--border); border-radius:var(--r); padding:10px 6px; text-align:center; cursor:pointer; font-size:.78rem; font-weight:700; color:var(--ink-3); transition:.2s; }
+.time-opt:hover  { border-color:var(--orange); color:var(--orange); }
+.time-opt.sel    { border-color:var(--orange); background:var(--orange-bg); color:var(--orange); }
+.time-opt .ttime { display:block; font-size:.68rem; color:inherit; opacity:.8; margin-top:2px; }
+
+.step-nav { display:flex; justify-content:space-between; align-items:center; margin-top:24px; padding-top:20px; border-top:1px solid var(--border-l); }
+.step-nav .progress-bar { flex:1; height:4px; background:var(--border-l); border-radius:4px; margin:0 16px; overflow:hidden; }
+.step-nav .progress-fill { height:100%; background:linear-gradient(90deg,var(--orange),var(--orange-l)); border-radius:4px; transition:width .4s ease; }
+
+.summary-card { background:var(--navy-faint); border:1.5px solid var(--navy-pale); border-radius:var(--r-lg); padding:18px 20px; margin-bottom:16px; }
+.sum-row { display:flex; justify-content:space-between; align-items:flex-start; padding:7px 0; border-bottom:1px solid var(--border-l); font-size:.855rem; }
+.sum-row:last-child { border:none; }
+.sum-lbl { color:var(--ink-3); font-weight:600; }
+.sum-val { color:var(--ink); font-weight:700; text-align:right; max-width:60%; }
+
+.success-state { text-align:center; padding:40px 28px; display:none; }
+.success-state.show { display:block; animation:fadeUp .4s ease; }
+.tick-circle { width:72px; height:72px; border-radius:50%; background:var(--green-bg); border:3px solid var(--green); display:flex; align-items:center; justify-content:center; margin:0 auto 20px; font-size:2rem; }
+.booking-ref { font-family:monospace; font-size:1.1rem; font-weight:800; color:var(--navy); background:var(--navy-faint); padding:8px 20px; border-radius:var(--r); border:1.5px solid var(--navy-pale); display:inline-block; margin:12px 0; letter-spacing:2px; }
+
+/* Trust bar */
+.trust-bar { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:24px; }
+.trust-pill { display:flex; align-items:center; gap:6px; padding:6px 14px; background:rgba(255,255,255,.1); border:1px solid rgba(255,255,255,.15); border-radius:40px; font-size:.72rem; font-weight:600; color:rgba(255,255,255,.8); }
+</style>
+</head>
+<body>
+
+<a href="https://wa.me/919911565523" class="wa-float" target="_blank">💬</a>
+
+<div class="mob-menu" id="mobMenu">
+  <div class="mob-head"><img src="images/logo.png" alt="Sea Hawk"/><button class="mob-close" onclick="mobClose()">✕</button></div>
+  <ul class="mob-links">
+    <li><a href="index.html" onclick="mobClose()">Home</a></li>
+    <li><a href="track.html" onclick="mobClose()">Track Shipment</a></li>
+    <li><a href="book.html" onclick="mobClose()" class="active">Book Pickup</a></li>
+    <li><a href="services.html" onclick="mobClose()">Services</a></li>
+    <li><a href="contact.html" onclick="mobClose()">Contact</a></li>
+  </ul>
+  <div class="mob-ctas">
+    <a href="portal/index.html" class="btn btn-navy" onclick="mobClose()">🔐 Client Portal</a>
+    <a href="tel:+919911565523" class="btn btn-outline" onclick="mobClose()">📞 Call Us</a>
+  </div>
+</div>
+
+<header>
+  <div id="topbar">
+    <div class="tb-row"><span>📍 Gurugram, India</span><div class="tb-sep"></div><span>Mon–Sat: 9 AM – 7 PM</span></div>
+    <div class="tb-row">
+      <a href="tel:+919911565523">📞 +91 99115 65523</a>
+      <div class="tb-sep"></div><a href="https://wa.me/919911565523" target="_blank">💬 WhatsApp</a>
+    </div>
+  </div>
+  <nav class="main-nav">
+    <a href="index.html" class="nav-logo"><img src="images/logo.png" alt="Sea Hawk"/></a>
+    <ul class="nav-ul">
+      <li><a href="track.html">🔍 Track</a></li>
+      <li><a href="book.html" class="active" style="color:var(--orange);">📦 Book Pickup</a></li>
+      <li class="has-drop"><a href="services.html">Services ▾</a>
+        <div class="nav-drop">
+          <a href="services.html#express"><span class="di">🚀</span>Express Delivery</a>
+          <a href="services.html#international"><span class="di">✈️</span>International Courier</a>
+          <a href="services.html#cargo"><span class="di">📦</span>Surface &amp; LTL Cargo</a>
+          <a href="services.html#b2b"><span class="di">🏢</span>B2B Logistics</a>
+        </div>
+      </li>
+      <li><a href="index.html#calculator">Rates</a></li>
+      <li><a href="index.html#map-section">Coverage</a></li>
+      <li><a href="contact.html">Contact</a></li>
+    </ul>
+    <div class="nav-right">
+      <a href="portal/index.html" class="nav-portal">🔐 Portal</a>
+      <a href="track.html" class="nav-quote" style="background:var(--navy);">🔍 Track</a>
+    </div>
+    <button class="hamburger" onclick="mobOpen()"><span></span><span></span><span></span></button>
+  </nav>
+</header>
+
+<section class="book-hero">
+  <div class="book-hero-inner wrap">
+    <div class="pill pill-orange" style="display:inline-flex;margin-bottom:14px;">📦 Free Doorstep Pickup</div>
+    <h1>Book a Pickup</h1>
+    <p>Schedule in 2 minutes · Free pickup from your location · Same-day dispatch before 4 PM</p>
+    <div class="trust-bar">
+      <div class="trust-pill">✓ Free pickup — no minimum</div>
+      <div class="trust-pill">✓ Pickup within 24 hours</div>
+      <div class="trust-pill">✓ Real-time tracking</div>
+      <div class="trust-pill">✓ 20+ years experience</div>
+    </div>
+  </div>
+</section>
+
+<div class="book-wrap">
+  <div class="book-card">
+    <div class="book-steps" id="stepsBar">
+      <div class="book-step active" id="stepBar1"><span class="step-n">1</span>Pickup Details</div>
+      <div class="book-step"       id="stepBar2"><span class="step-n">2</span>Delivery Details</div>
+      <div class="book-step"       id="stepBar3"><span class="step-n">3</span>Package Info</div>
+      <div class="book-step"       id="stepBar4"><span class="step-n">4</span>Schedule</div>
+      <div class="book-step"       id="stepBar5"><span class="step-n">5</span>Confirm</div>
+    </div>
+
+    <!-- STEP 1: Pickup -->
+    <div class="step-panel active" id="step1">
+      <div class="step-title">📍 Pickup Address</div>
+      <div class="step-sub">Where should we collect the shipment from?</div>
+      <div class="fg2">
+        <div class="field">
+          <label>Company / Name *</label>
+          <input type="text" id="p_name" placeholder="e.g. Acme Exports Pvt. Ltd."/>
+        </div>
+        <div class="field">
+          <label>Contact Person *</label>
+          <input type="text" id="p_contact" placeholder="Full name"/>
+        </div>
+        <div class="field">
+          <label>Mobile Number *</label>
+          <input type="tel" id="p_phone" placeholder="+91 XXXXX XXXXX"/>
+        </div>
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="p_email" placeholder="you@company.com"/>
+        </div>
+        <div class="field" style="grid-column:1/-1">
+          <label>Pickup Address *</label>
+          <textarea id="p_addr" placeholder="Full address — house/floor number, street, area, landmark"></textarea>
+        </div>
+        <div class="field">
+          <label>City *</label>
+          <input type="text" id="p_city" placeholder="City name"/>
+        </div>
+        <div class="field">
+          <label>PIN Code *</label>
+          <input type="text" id="p_pin" placeholder="6-digit PIN" maxlength="6" pattern="[0-9]{6}"/>
+        </div>
+      </div>
+      <div class="step-nav">
+        <div></div>
+        <div class="progress-bar"><div class="progress-fill" style="width:20%"></div></div>
+        <button class="btn btn-orange" onclick="nextStep(1)">Next: Delivery →</button>
+      </div>
+    </div>
+
+    <!-- STEP 2: Delivery -->
+    <div class="step-panel" id="step2">
+      <div class="step-title">📬 Delivery Address</div>
+      <div class="step-sub">Where should we deliver to?</div>
+      <div class="fg2">
+        <div class="field">
+          <label>Consignee Name *</label>
+          <input type="text" id="d_name" placeholder="Recipient name"/>
+        </div>
+        <div class="field">
+          <label>Contact Number</label>
+          <input type="tel" id="d_phone" placeholder="+91 XXXXX XXXXX"/>
+        </div>
+        <div class="field" style="grid-column:1/-1">
+          <label>Delivery Address *</label>
+          <textarea id="d_addr" placeholder="Full address including landmark"></textarea>
+        </div>
+        <div class="field">
+          <label>City *</label>
+          <input type="text" id="d_city" placeholder="City / District"/>
+        </div>
+        <div class="field">
+          <label>State *</label>
+          <select id="d_state">
+            <option value="">— Select State —</option>
+            <option>Delhi</option><option>Haryana</option><option>Punjab</option>
+            <option>Uttar Pradesh</option><option>Rajasthan</option><option>Maharashtra</option>
+            <option>Gujarat</option><option>Karnataka</option><option>Tamil Nadu</option>
+            <option>Telangana</option><option>Andhra Pradesh</option><option>Kerala</option>
+            <option>West Bengal</option><option>Bihar</option><option>Jharkhand</option>
+            <option>Madhya Pradesh</option><option>Chhattisgarh</option><option>Odisha</option>
+            <option>Assam</option><option>Himachal Pradesh</option><option>Uttarakhand</option>
+            <option>Jammu &amp; Kashmir</option><option>Goa</option>
+            <option>International</option><option>Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>PIN Code / Postal Code</label>
+          <input type="text" id="d_pin" placeholder="6-digit PIN or postal code"/>
+        </div>
+        <div class="field">
+          <label>Country</label>
+          <input type="text" id="d_country" value="India" placeholder="India / UAE / UK…"/>
+        </div>
+      </div>
+      <div class="step-nav">
+        <button class="btn btn-secondary" onclick="prevStep(2)">← Back</button>
+        <div class="progress-bar"><div class="progress-fill" style="width:40%"></div></div>
+        <button class="btn btn-orange" onclick="nextStep(2)">Next: Package →</button>
+      </div>
+    </div>
+
+    <!-- STEP 3: Package -->
+    <div class="step-panel" id="step3">
+      <div class="step-title">📦 Package Details</div>
+      <div class="step-sub">What are you sending?</div>
+
+      <div class="field" style="margin-bottom:16px;">
+        <label>Package Type</label>
+        <div class="pkg-type-grid" id="pkgTypeGrid">
+          <div class="pkg-opt sel" onclick="selectPkg(this,'Document')"><div class="pico">📄</div><div class="plbl">Document</div></div>
+          <div class="pkg-opt"     onclick="selectPkg(this,'Parcel')"><div class="pico">📦</div><div class="plbl">Parcel</div></div>
+          <div class="pkg-opt"     onclick="selectPkg(this,'Fragile')"><div class="pico">🪟</div><div class="plbl">Fragile</div></div>
+          <div class="pkg-opt"     onclick="selectPkg(this,'Bulk / Cargo')"><div class="pico">🏭</div><div class="plbl">Bulk / Cargo</div></div>
+        </div>
+      </div>
+
+      <div class="fg2 triple">
+        <div class="field">
+          <label>Weight *</label>
+          <input type="number" id="pkg_wt" placeholder="e.g. 500" min="1"/>
+          <span class="hint">In grams (500g = 0.5kg)</span>
+        </div>
+        <div class="field">
+          <label>No. of Pieces</label>
+          <input type="number" id="pkg_pcs" value="1" min="1"/>
+        </div>
+        <div class="field">
+          <label>Service Type</label>
+          <select id="pkg_svc">
+            <option value="standard">Standard</option>
+            <option value="express">Express (24h)</option>
+            <option value="priority">Priority (Same Day)</option>
+            <option value="economy">Economy</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Declared Value (₹)</label>
+          <input type="number" id="pkg_val" placeholder="0 if not insured" min="0"/>
+          <span class="hint">Required for insurance</span>
+        </div>
+        <div class="field">
+          <label>Length (cm)</label>
+          <input type="number" id="pkg_l" placeholder="Optional" min="0"/>
+        </div>
+        <div class="field">
+          <label>Width × Height (cm)</label>
+          <div style="display:flex;gap:8px;">
+            <input type="number" id="pkg_w" placeholder="W" style="flex:1" min="0"/>
+            <input type="number" id="pkg_h" placeholder="H" style="flex:1" min="0"/>
+          </div>
+        </div>
+      </div>
+      <div class="field" style="margin-top:10px;">
+        <label>Package Contents (brief description)</label>
+        <input type="text" id="pkg_desc" placeholder="e.g. Legal documents, Electronics, Clothing samples"/>
+      </div>
+      <div class="field" style="margin-top:10px;">
+        <label>Special Instructions</label>
+        <textarea id="pkg_notes" placeholder="Handle with care, do not bend, temperature sensitive…" style="min-height:56px;"></textarea>
+      </div>
+      <div class="step-nav">
+        <button class="btn btn-secondary" onclick="prevStep(3)">← Back</button>
+        <div class="progress-bar"><div class="progress-fill" style="width:60%"></div></div>
+        <button class="btn btn-orange" onclick="nextStep(3)">Next: Schedule →</button>
+      </div>
+    </div>
+
+    <!-- STEP 4: Schedule -->
+    <div class="step-panel" id="step4">
+      <div class="step-title">🗓️ Schedule Pickup</div>
+      <div class="step-sub">When should we collect from you?</div>
+      <div class="fg2">
+        <div class="field">
+          <label>Pickup Date *</label>
+          <input type="date" id="sch_date"/>
+        </div>
+        <div class="field">
+          <label>Preferred Time Slot</label>
+          <div class="time-grid" id="timeGrid">
+            <div class="time-opt sel" onclick="selectTime(this,'Morning')">🌅 Morning<span class="ttime">9 AM – 12 PM</span></div>
+            <div class="time-opt"     onclick="selectTime(this,'Afternoon')">☀️ Afternoon<span class="ttime">12 PM – 3 PM</span></div>
+            <div class="time-opt"     onclick="selectTime(this,'Evening')">🌆 Evening<span class="ttime">3 PM – 6 PM</span></div>
+          </div>
+          <span class="hint" style="margin-top:6px;display:block;">Cutoff: 4 PM for same-day dispatch</span>
+        </div>
+      </div>
+      <div class="field" style="margin-top:14px;">
+        <label>Preferred Carrier (optional)</label>
+        <select id="sch_carrier">
+          <option value="">Best rate — Sea Hawk decides</option>
+          <option>Delhivery</option>
+          <option>DTDC</option>
+          <option>Trackon / PrimeTrack</option>
+          <option>BlueDart</option>
+          <option>FedEx (international)</option>
+          <option>DHL (international)</option>
+        </select>
+      </div>
+      <div class="step-nav">
+        <button class="btn btn-secondary" onclick="prevStep(4)">← Back</button>
+        <div class="progress-bar"><div class="progress-fill" style="width:80%"></div></div>
+        <button class="btn btn-orange" onclick="nextStep(4)">Review & Confirm →</button>
+      </div>
+    </div>
+
+    <!-- STEP 5: Confirm -->
+    <div class="step-panel" id="step5">
+      <div class="step-title">✅ Review & Confirm</div>
+      <div class="step-sub">Please check your details before submitting.</div>
+      <div class="summary-card" id="summaryCard"></div>
+      <div class="field" style="margin-bottom:16px;">
+        <label>How did you hear about us?</label>
+        <select id="ref_source">
+          <option value="">— Select —</option>
+          <option>Google Search</option><option>Existing Client Referral</option>
+          <option>WhatsApp</option><option>Instagram / Social Media</option><option>Other</option>
+        </select>
+      </div>
+      <div style="background:var(--navy-faint);border:1.5px solid var(--navy-pale);border-radius:var(--r-lg);padding:14px 16px;font-size:.78rem;color:var(--ink-2);line-height:1.75;margin-bottom:16px;">
+        By submitting, you agree that Sea Hawk will contact you to confirm the pickup. Rates are subject to actual weight verification. Free pickup applies to all bookings.
+      </div>
+      <div class="step-nav">
+        <button class="btn btn-secondary" onclick="prevStep(5)">← Back</button>
+        <div class="progress-bar"><div class="progress-fill" style="width:100%"></div></div>
+        <button class="btn btn-orange btn-lg" id="submitBtn" onclick="submitBooking()">📦 Confirm Pickup Booking →</button>
+      </div>
+    </div>
+
+    <!-- SUCCESS -->
+    <div class="success-state" id="successState">
+      <div class="tick-circle">✅</div>
+      <h2 style="font-family:var(--font-head);font-size:1.5rem;font-weight:900;color:var(--ink);">Pickup Booked!</h2>
+      <p style="font-size:.9rem;color:var(--ink-3);margin:8px 0 4px;">Your booking reference number:</p>
+      <div class="booking-ref" id="bookingRef">SHK-2025-XXXX</div>
+      <p style="font-size:.88rem;color:var(--ink-2);margin-top:12px;line-height:1.75;">
+        Our team will call you to confirm the pickup within <strong>30 minutes</strong> during business hours.<br/>
+        We'll also send a WhatsApp confirmation to your registered number.
+      </p>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:20px;">
+        <a href="https://wa.me/919911565523" target="_blank" class="btn btn-orange">💬 Message Us on WhatsApp</a>
+        <a href="track.html" class="btn btn-navy">🔍 Track Your Shipment</a>
+        <a href="index.html" class="btn btn-secondary">← Back to Home</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <div class="footer-logo"><img src="images/logo.png" alt="Sea Hawk"/></div>
+        <p class="footer-brand">Your trusted delivery partner since 2004.</p>
+        <div class="footer-contacts">
+          <div class="fci">📞 <a href="tel:+919911565523">+91 99115 65523</a></div>
+          <div class="fci">💬 <a href="https://wa.me/919911565523" target="_blank">WhatsApp</a></div>
+          <div class="fci" style="font-size:.73rem;color:rgba(255,255,255,.35);">GSTIN: 06AJDPR0914N2Z1</div>
+        </div>
+      </div>
+      <div><div class="footer-h">Quick Links</div>
+        <ul class="footer-ul">
+          <li><a href="track.html">Track Shipment</a></li>
+          <li><a href="index.html#calculator">Rate Calculator</a></li>
+          <li><a href="portal/index.html">Client Portal</a></li>
+          <li><a href="contact.html">Contact Us</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div>© 2025 Sea Hawk Courier & Cargo. All rights reserved.</div>
+    </div>
+  </div>
+</footer>
+
+<script src="js/main.js"></script>
+<script>
+// ── Booking state ─────────────────────────────────────────
+let currentStep = 1;
+let pkgType  = 'Document';
+let timeSlot = 'Morning';
+
+// Set min date to tomorrow
+const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1);
+const d = document.getElementById('sch_date');
+if (d) { d.min = tomorrow.toISOString().split('T')[0]; d.value = tomorrow.toISOString().split('T')[0]; }
+
+function selectPkg(el, type) {
+  pkgType = type;
+  document.querySelectorAll('.pkg-opt').forEach(e => e.classList.remove('sel'));
+  el.classList.add('sel');
+}
+function selectTime(el, slot) {
+  timeSlot = slot;
+  document.querySelectorAll('.time-opt').forEach(e => e.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function validate(step) {
+  const required = { 
+    1:['p_name','p_contact','p_phone','p_addr','p_city','p_pin'],
+    2:['d_name','d_addr','d_city','d_state'],
+    3:['pkg_wt'],
+    4:['sch_date'],
+  };
+  const fields = required[step] || [];
+  for (const id of fields) {
+    const el = document.getElementById(id);
+    if (!el || !el.value.trim()) {
+      el?.focus(); el?.style && (el.style.borderColor='var(--red)');
+      setTimeout(() => el?.style && (el.style.borderColor=''), 2000);
+      return false;
+    }
+  }
+  return true;
+}
+
+function nextStep(from) {
+  if (!validate(from)) return;
+  if (from === 4) buildSummary();
+  goToStep(from + 1);
+}
+function prevStep(from) { goToStep(from - 1); }
+
+function goToStep(n) {
+  currentStep = n;
+  for (let i=1; i<=5; i++) {
+    document.getElementById('step'+i)?.classList.toggle('active', i===n);
+    const sb = document.getElementById('stepBar'+i);
+    if (sb) {
+      sb.classList.remove('active','done');
+      if (i === n) sb.classList.add('active');
+      else if (i < n) sb.classList.add('done');
+    }
+  }
+  document.querySelector('.book-card')?.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function buildSummary() {
+  const rows = [
+    ['Pickup From', `${v('p_name')} · ${v('p_city')} ${v('p_pin')}`],
+    ['Pickup Address', v('p_addr').slice(0,60) + (v('p_addr').length > 60 ? '…' : '')],
+    ['Deliver To', `${v('d_name')} · ${v('d_city')}, ${v('d_state')}`],
+    ['Delivery Address', v('d_addr').slice(0,60) + (v('d_addr').length > 60 ? '…' : '')],
+    ['Package Type', pkgType + ' · ' + v('pkg_pcs') + ' piece(s)'],
+    ['Weight', v('pkg_wt') + ' grams'],
+    ['Service', document.getElementById('pkg_svc')?.selectedOptions[0]?.text || ''],
+    ['Declared Value', v('pkg_val') ? '₹' + Number(v('pkg_val')).toLocaleString('en-IN') : 'Not declared'],
+    ['Pickup Date', new Date(v('sch_date')).toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long',year:'numeric'})],
+    ['Time Slot', timeSlot + (timeSlot==='Morning'?' (9 AM–12 PM)':timeSlot==='Afternoon'?' (12–3 PM)':' (3–6 PM)')],
+    ['Carrier', v('sch_carrier') || 'Best rate (Sea Hawk decides)'],
+    ['Contact', v('p_phone') + (v('p_email') ? ' · ' + v('p_email') : '')],
+  ];
+  document.getElementById('summaryCard').innerHTML = rows.map(([l,val]) =>
+    `<div class="sum-row"><span class="sum-lbl">${l}</span><span class="sum-val">${esc(val)}</span></div>`
+  ).join('');
+}
+
+function v(id) { return document.getElementById(id)?.value?.trim() || ''; }
+function esc(s) { return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+
+function submitBooking() {
+  const btn = document.getElementById('submitBtn');
+  if (btn) { btn.disabled=true; btn.textContent='Submitting…'; }
+
+  // Generate booking ref
+  const ref = 'SHK-' + new Date().getFullYear() + '-' + String(Math.floor(1000+Math.random()*9000));
+  document.getElementById('bookingRef').textContent = ref;
+
+  // Build WhatsApp message
+  const msg = [
+    '🦅 *New Pickup Booking — ' + ref + '*',
+    '',
+    '📍 *Pickup*',
+    v('p_name') + ' · ' + v('p_phone'),
+    v('p_addr') + ', ' + v('p_city') + ' ' + v('p_pin'),
+    '',
+    '📬 *Delivery*',
+    v('d_name') + ' · ' + v('d_phone'),
+    v('d_addr') + ', ' + v('d_city') + ', ' + v('d_state'),
+    v('d_country') !== 'India' ? '🌍 Country: ' + v('d_country') : '',
+    '',
+    '📦 *Package*',
+    pkgType + ' · ' + v('pkg_wt') + 'g · ' + v('pkg_pcs') + ' pc(s)',
+    'Service: ' + (document.getElementById('pkg_svc')?.selectedOptions[0]?.text||''),
+    v('pkg_val') ? 'Value: ₹' + v('pkg_val') : '',
+    v('pkg_desc') ? 'Contents: ' + v('pkg_desc') : '',
+    v('pkg_notes') ? 'Notes: ' + v('pkg_notes') : '',
+    '',
+    '🗓️ *Schedule*',
+    'Date: ' + new Date(v('sch_date')).toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'}),
+    'Slot: ' + timeSlot,
+    v('sch_carrier') ? 'Carrier: ' + v('sch_carrier') : '',
+    '',
+    'Ref: ' + ref,
+  ].filter(Boolean).join('\n');
+
+  setTimeout(() => {
+    // Hide form, show success
+    for (let i=1;i<=5;i++) document.getElementById('step'+i).classList.remove('active');
+    document.getElementById('stepsBar').style.display='none';
+    document.getElementById('successState').classList.add('show');
+
+    // Open WhatsApp
+    window.open('https://wa.me/919911565523?text=' + encodeURIComponent(msg), '_blank');
+  }, 600);
+}
+</script>
+<div class="sticky-book-bar" style="display:none !important;"></div>
+</body>
+</html>

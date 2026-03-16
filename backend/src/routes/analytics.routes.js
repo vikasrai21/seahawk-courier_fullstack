@@ -1,0 +1,11 @@
+'use strict';
+const router = require('express').Router();
+const ctrl   = require('../controllers/analytics.controller');
+const { authenticate, requireRole } = require('../middleware/auth.middleware');
+const MGMT = ['ADMIN','OPS_MANAGER'];
+router.get('/overview',    authenticate, requireRole(MGMT), ctrl.overview);
+router.get('/couriers',    authenticate, requireRole(MGMT), ctrl.courierPerformance);
+router.get('/clients',     authenticate, requireRole(MGMT), ctrl.clientAnalytics);
+router.get('/monthly',     authenticate, requireRole(MGMT), ctrl.monthlyTrend);
+router.get('/ndr',         authenticate, requireRole(MGMT), ctrl.ndrAnalytics);
+module.exports = router;

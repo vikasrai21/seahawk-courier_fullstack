@@ -1,0 +1,10 @@
+'use strict';
+const router = require('express').Router();
+const ctrl   = require('../controllers/ndr.controller');
+const { authenticate, requireRole } = require('../middleware/auth.middleware');
+const STAFF = ['ADMIN','OPS_MANAGER','STAFF'];
+router.get ('/',        authenticate, requireRole(STAFF), ctrl.list);
+router.get ('/stats',   authenticate, requireRole(STAFF), ctrl.stats);
+router.post('/',        authenticate, requireRole(STAFF), ctrl.create);
+router.patch('/:id',    authenticate, requireRole(STAFF), ctrl.update);
+module.exports = router;

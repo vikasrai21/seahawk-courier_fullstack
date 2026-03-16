@@ -1,0 +1,3 @@
+# Cloudflare Pages — Sea Hawk Website
+# Any unknown path → serve index.html (handles direct URL visits)
+/*    /index.html    200
