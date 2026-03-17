@@ -4,7 +4,13 @@ import { useToast } from './hooks/useToast';
 import { Toast } from './components/ui/Toast';
 import { AppLayout } from './components/layout/AppLayout';
 import { Spinner } from './components/ui/Loading';
+
+// Public pages
+import LandingPage         from './pages/public/LandingPage';
+import PublicTrackPage     from './pages/public/PublicTrackPage';
 import LoginPage           from './pages/LoginPage';
+
+// App pages
 import DashboardPage       from './pages/DashboardPage';
 import NewEntryPage        from './pages/NewEntryPage';
 import ImportPage          from './pages/ImportPage';
@@ -29,10 +35,10 @@ import ReconciliationPage  from './pages/ReconciliationPage';
 import RateManagementPage  from './pages/RateManagementPage';
 import WhatsAppPage        from './pages/WhatsAppPage';
 import ShipmentDashboardPage from './pages/ShipmentDashboardPage';
-import NDRPage               from './pages/NDRPage';
-import PickupSchedulerPage   from './pages/PickupSchedulerPage';
-import WalletPage            from './pages/WalletPage';
-import AnalyticsPage         from './pages/AnalyticsPage';
+import NDRPage             from './pages/NDRPage';
+import PickupSchedulerPage from './pages/PickupSchedulerPage';
+import WalletPage          from './pages/WalletPage';
+import AnalyticsPage       from './pages/AnalyticsPage';
 
 function PrivateRoute({ children, adminOnly = false, roles = null }) {
   const { user, loading, isAdmin, hasRole } = useAuth();
@@ -44,9 +50,9 @@ function PrivateRoute({ children, adminOnly = false, roles = null }) {
       </div>
     </div>
   );
-  if (!user)                          return <Navigate to="/login" replace />;
-  if (adminOnly && !isAdmin)          return <Navigate to="/"     replace />;
-  if (roles && !hasRole(...roles))    return <Navigate to="/"     replace />;
+  if (!user)                       return <Navigate to="/login" replace />;
+  if (adminOnly && !isAdmin)       return <Navigate to="/app" replace />;
+  if (roles && !hasRole(...roles)) return <Navigate to="/app" replace />;
   return children;
 }
 
@@ -57,43 +63,52 @@ function AppRoutes() {
     <>
       <Toast toasts={toasts} removeToast={removeToast} />
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/*" element={
+        {/* ── Public routes (no auth) ─────────────────────────── */}
+        <Route path="/"               element={<LandingPage />} />
+        <Route path="/track"          element={<PublicTrackPage />} />
+        <Route path="/track/:awb"     element={<PublicTrackPage />} />
+        <Route path="/login"          element={<LoginPage />} />
+
+        {/* ── Protected app routes ────────────────────────────── */}
+        <Route path="/app/*" element={
           <PrivateRoute>
             <AppLayout>
               <Routes>
-                <Route path="/"          element={<DashboardPage       {...p} />} />
-                <Route path="/ops"       element={<OperationsDashboard  {...p} />} />
-                <Route path="/entry"     element={<NewEntryPage        {...p} />} />
-                <Route path="/import"    element={<ImportPage          {...p} />} />
-                <Route path="/all"       element={<AllShipmentsPage    {...p} />} />
-                <Route path="/pending"   element={<PendingPage         {...p} />} />
-                <Route path="/track"     element={<TrackPage           {...p} />} />
-                <Route path="/daily"     element={<DailySheetPage      {...p} />} />
-                <Route path="/monthly"   element={<MonthlyReportPage   {...p} />} />
-                <Route path="/clients"        element={<ClientsPage    {...p} />} />
-                <Route path="/contracts"      element={<ContractsPage  {...p} />} />
-                <Route path="/invoices"       element={<InvoicesPage   {...p} />} />
+                <Route path="/"          element={<DashboardPage         {...p} />} />
+                <Route path="/ops"       element={<OperationsDashboard   {...p} />} />
+                <Route path="/entry"     element={<NewEntryPage          {...p} />} />
+                <Route path="/import"    element={<ImportPage            {...p} />} />
+                <Route path="/all"       element={<AllShipmentsPage      {...p} />} />
+                <Route path="/pending"   element={<PendingPage           {...p} />} />
+                <Route path="/track"     element={<TrackPage             {...p} />} />
+                <Route path="/daily"     element={<DailySheetPage        {...p} />} />
+                <Route path="/monthly"   element={<MonthlyReportPage     {...p} />} />
+                <Route path="/clients"        element={<ClientsPage      {...p} />} />
+                <Route path="/contracts"      element={<ContractsPage    {...p} />} />
+                <Route path="/invoices"       element={<InvoicesPage     {...p} />} />
                 <Route path="/reconciliation" element={<ReconciliationPage {...p} />} />
-                <Route path="/rates"      element={<RateCalculatorPage />} />
-                <Route path="/bulk"       element={<BulkComparePage    {...p} />} />
-                <Route path="/rate-card"  element={<RateCardPage       {...p} />} />
-                <Route path="/quotes"     element={<QuoteHistoryPage   {...p} />} />
-                <Route path="/whatsapp"   element={<WhatsAppPage       {...p} />} />
-                <Route path="/sync"       element={<SyncPage           {...p} />} />
-                <Route path="/profile"    element={<ProfilePage        {...p} />} />
-                <Route path="/rate-mgmt" element={<PrivateRoute adminOnly><RateManagementPage {...p} /></PrivateRoute>} />
-                <Route path="/users"     element={<PrivateRoute adminOnly><UsersPage          {...p} /></PrivateRoute>} />
-                <Route path="/audit"     element={<PrivateRoute adminOnly><AuditPage              /></PrivateRoute>} />
+                <Route path="/rates"     element={<RateCalculatorPage />} />
+                <Route path="/bulk"      element={<BulkComparePage       {...p} />} />
+                <Route path="/rate-card" element={<RateCardPage          {...p} />} />
+                <Route path="/quotes"    element={<QuoteHistoryPage      {...p} />} />
+                <Route path="/whatsapp"  element={<WhatsAppPage          {...p} />} />
+                <Route path="/sync"      element={<SyncPage              {...p} />} />
+                <Route path="/profile"   element={<ProfilePage           {...p} />} />
                 <Route path="/shipments" element={<ShipmentDashboardPage {...p} />} />
-                <Route path="/ndr"       element={<PrivateRoute roles={['ADMIN','OPS_MANAGER','STAFF']}><NDRPage {...p} /></PrivateRoute>} />
-                <Route path="/pickups"   element={<PrivateRoute roles={['ADMIN','OPS_MANAGER','STAFF']}><PickupSchedulerPage {...p} /></PrivateRoute>} />
                 <Route path="/wallet"    element={<PrivateRoute roles={['ADMIN','OPS_MANAGER']}><WalletPage {...p} /></PrivateRoute>} />
                 <Route path="/analytics" element={<PrivateRoute roles={['ADMIN','OPS_MANAGER']}><AnalyticsPage {...p} /></PrivateRoute>} />
+                <Route path="/ndr"       element={<PrivateRoute roles={['ADMIN','OPS_MANAGER','STAFF']}><NDRPage {...p} /></PrivateRoute>} />
+                <Route path="/pickups"   element={<PrivateRoute roles={['ADMIN','OPS_MANAGER','STAFF']}><PickupSchedulerPage {...p} /></PrivateRoute>} />
+                <Route path="/users"     element={<PrivateRoute adminOnly><UsersPage {...p} /></PrivateRoute>} />
+                <Route path="/audit"     element={<PrivateRoute adminOnly><AuditPage /></PrivateRoute>} />
+                <Route path="/rate-mgmt" element={<PrivateRoute adminOnly><RateManagementPage {...p} /></PrivateRoute>} />
               </Routes>
             </AppLayout>
           </PrivateRoute>
         } />
+
+        {/* Legacy /login redirect */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
   );

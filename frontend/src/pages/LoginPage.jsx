@@ -15,7 +15,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(form.email, form.password);
-      navigate('/');
+      navigate('/app/');
     } catch (err) {
       setError(err.message || 'Invalid credentials');
     } finally {
@@ -82,8 +82,8 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-6 text-center text-xs text-gray-400">
-            Default: admin@seahawk.com / admin123
+          <p className="mt-6 text-center text-sm text-gray-500">
+            <a href="/" className="text-blue-600 hover:underline">← Back to website</a>
           </p>
         </div>
       </div>

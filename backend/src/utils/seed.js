@@ -1,29 +1,45 @@
-// src/utils/seed.js — Create initial admin user
+// src/utils/seed.js — Secure seed with random password
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
-const prisma = require('../config/prisma');
-const bcrypt = require('bcryptjs');
+const prisma  = require('../config/prisma');
+const bcrypt  = require('bcryptjs');
+const crypto  = require('crypto');
 
 async function seed() {
   console.log('🌱 Seeding database...');
 
-  // Create default admin
-  const password = await bcrypt.hash('admin123', 12);
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@seahawk.com' },
-    create: { name: 'Admin', email: 'admin@seahawk.com', password, role: 'ADMIN' },
-    update: { role: 'ADMIN', password }, // Always fix role + password on re-seed
+  // Check if admin already exists — never overwrite existing password
+  const existing = await prisma.user.findUnique({ where: { email: 'admin@seahawk.com' } });
+
+  if (existing) {
+    console.log('✅ Admin user already exists — skipping seed to preserve password.');
+    await prisma.$disconnect();
+    return;
+  }
+
+  // Generate a secure random password on first run
+  const rawPassword = crypto.randomBytes(12).toString('base64').slice(0, 16);
+  const hashed      = await bcrypt.hash(rawPassword, 12);
+
+  await prisma.user.create({
+    data: { name: 'Admin', email: 'admin@seahawk.com', password: hashed, role: 'ADMIN' },
   });
-  console.log(`✅ Admin user: admin@seahawk.com / admin123`);
 
   // Create a sample client
   await prisma.client.upsert({
-    where: { code: 'SAMPLE' },
+    where:  { code: 'SAMPLE' },
     create: { code: 'SAMPLE', company: 'Sample Company Ltd', contact: 'John Doe', phone: '9999999999' },
     update: {},
   });
-  console.log('✅ Sample client created: code = SAMPLE');
 
-  console.log('\n⚠️  IMPORTANT: Change the admin password after first login!\n');
+  console.log('\n╔══════════════════════════════════════════╗');
+  console.log('║        SEAHAWK — FIRST TIME SETUP        ║');
+  console.log('╠══════════════════════════════════════════╣');
+  console.log(`║  Email:    admin@seahawk.com              ║`);
+  console.log(`║  Password: ${rawPassword.padEnd(30)} ║`);
+  console.log('╠══════════════════════════════════════════╣');
+  console.log('║  ⚠️  SAVE THIS PASSWORD — shown once only ║');
+  console.log('╚══════════════════════════════════════════╝\n');
+
   await prisma.$disconnect();
 }
 

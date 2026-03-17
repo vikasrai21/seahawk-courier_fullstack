@@ -13,65 +13,65 @@ const navGroups = [
   {
     label: null,
     items: [
-      { to: '/',          label: 'Dashboard',      icon: LayoutDashboard },
-      { to: '/ops',       label: 'Operations',     icon: Activity, badge: 'CEO' },
-      { to: '/analytics', label: 'Analytics',      icon: BarChart2, roles: ['ADMIN','OPS_MANAGER'] },
-      { to: '/entry',     label: 'New Entry',      icon: PlusCircle, accent: true },
-      { to: '/import',    label: 'Import',         icon: FileUp },
+      { to: '/app/',      label: 'Dashboard',      icon: LayoutDashboard },
+      { to: '/app/ops',   label: 'Operations',     icon: Activity, badge: 'CEO' },
+      { to: '/app/analytics', label: 'Analytics',      icon: BarChart2, roles: ['ADMIN','OPS_MANAGER'] },
+      { to: '/app/entry', label: 'New Entry',      icon: PlusCircle, accent: true },
+      { to: '/app/import', label: 'Import',         icon: FileUp },
     ],
   },
   {
     label: 'Shipments',
     items: [
-      { to: '/shipments', label: 'Shipment Dashboard', icon: Layers, badge: 'NEW' },
-      { to: '/all',       label: 'All Shipments',      icon: Package },
-      { to: '/pending',   label: 'Pending',             icon: Clock },
-      { to: '/track',     label: 'Track',               icon: Search },
-      { to: '/ndr',       label: 'NDR Management',      icon: ShieldAlert },
-      { to: '/pickups',   label: 'Pickup Scheduler',    icon: Calendar },
-      { to: '/daily',     label: 'Daily Sheet',         icon: Calendar },
-      { to: '/monthly',   label: 'Monthly Report',      icon: BarChart2 },
+      { to: '/app/shipments', label: 'Shipment Dashboard', icon: Layers, badge: 'NEW' },
+      { to: '/app/all',  label: 'All Shipments',      icon: Package },
+      { to: '/app/pending', label: 'Pending',             icon: Clock },
+      { to: '/app/track', label: 'Track',               icon: Search },
+      { to: '/app/ndr',  label: 'NDR Management',      icon: ShieldAlert },
+      { to: '/app/pickups', label: 'Pickup Scheduler',    icon: Calendar },
+      { to: '/app/daily', label: 'Daily Sheet',         icon: Calendar },
+      { to: '/app/monthly', label: 'Monthly Report',      icon: BarChart2 },
     ],
   },
   {
     label: 'Clients & Billing',
     items: [
-      { to: '/clients',        label: 'Clients',         icon: Users },
-      { to: '/contracts',      label: 'Contracts',       icon: ScrollText },
-      { to: '/invoices',       label: 'Invoices',        icon: Receipt },
-      { to: '/wallet',         label: 'Wallet',          icon: CreditCard, roles: ['ADMIN','OPS_MANAGER'] },
-      { to: '/reconciliation', label: 'Reconciliation',  icon: Shield },
+      { to: '/app/clients', label: 'Clients',         icon: Users },
+      { to: '/app/contracts', label: 'Contracts',       icon: ScrollText },
+      { to: '/app/invoices', label: 'Invoices',        icon: Receipt },
+      { to: '/app/wallet', label: 'Wallet',          icon: CreditCard, roles: ['ADMIN','OPS_MANAGER'] },
+      { to: '/app/reconciliation', label: 'Reconciliation',  icon: Shield },
     ],
   },
   {
     label: 'Rates & Quotes',
     items: [
-      { to: '/rates',      label: 'Rate Calculator', icon: Calculator },
-      { to: '/bulk',       label: 'Bulk Compare',    icon: GitCompare },
-      { to: '/rate-card',  label: 'Rate Card PDF',   icon: CreditCard },
-      { to: '/quotes',     label: 'Quote History',   icon: FileText },
-      { to: '/whatsapp',   label: 'WhatsApp Rates',  icon: MessageCircle, badge: 'NEW' },
+      { to: '/app/rates', label: 'Rate Calculator', icon: Calculator },
+      { to: '/app/bulk',  label: 'Bulk Compare',    icon: GitCompare },
+      { to: '/app/rate-card', label: 'Rate Card PDF',   icon: CreditCard },
+      { to: '/app/quotes', label: 'Quote History',   icon: FileText },
+      { to: '/app/whatsapp', label: 'WhatsApp Rates',  icon: MessageCircle, badge: 'NEW' },
     ],
   },
   {
     label: 'Data',
     items: [
-      { to: '/sync', label: 'Export & Backup', icon: RefreshCw },
+      { to: '/app/sync', label: 'Export & Backup', icon: RefreshCw },
     ],
   },
 ];
 
 const adminItems = [
-  { to: '/users',     label: 'Users',          icon: UserCircle },
-  { to: '/audit',     label: 'Audit Logs',     icon: ShieldAlert },
-  { to: '/rate-mgmt', label: 'Rate Management',icon: Settings2 },
+  { to: '/app/users', label: 'Users',          icon: UserCircle },
+  { to: '/app/audit', label: 'Audit Logs',     icon: ShieldAlert },
+  { to: '/app/rate-mgmt', label: 'Rate Management',icon: Settings2 },
 ];
 
 function NavItem({ to, label, icon: Icon, accent, badge, roles: itemRoles }) {
   const { hasRole, isAdmin } = useAuth();
   if (itemRoles && !isAdmin && !hasRole(...itemRoles)) return null;
   return (
-    <NavLink to={to} end={to === '/'}
+    <NavLink to={to} end={to === '/app/'}
       className={({ isActive }) =>
         `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all
          ${isActive
@@ -98,7 +98,7 @@ export function AppLayout({ children }) {
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login');
+    navigate('/');
   };
 
   const SidebarContent = () => (
@@ -141,7 +141,7 @@ export function AppLayout({ children }) {
 
       {/* User footer */}
       <div className="border-t border-white/10 p-3 shrink-0">
-        <NavLink to="/profile"
+        <NavLink to="/app/profile"
           className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-white/10 transition-all group mb-1">
           <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center text-xs font-bold text-white shrink-0">
             {user?.name?.[0]?.toUpperCase()}

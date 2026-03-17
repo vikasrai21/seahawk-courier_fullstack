@@ -45,7 +45,7 @@ export function AuthProvider({ children }) {
       tokenManager.clear();
       setUser(null);
       // Use replace so back button doesn't loop
-      window.location.replace('/login');
+      window.location.replace('/');
     };
     window.addEventListener('auth:logout', handler);
     return () => window.removeEventListener('auth:logout', handler);

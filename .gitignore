@@ -1,31 +1,46 @@
 # Dependencies
+node_modules/
 **/node_modules/
-
-# Environment files — NEVER commit these
-.env
-.env.production
-backend/.env
-backend/.env.production
 
 # Build output
 frontend/dist/
+**/dist/
+
+# Environment files — NEVER commit these
+.env
+.env.local
+.env.production
+.env.*.local
+backend/.env
+backend/.env.production
+frontend/.env
+frontend/.env.local
 
 # Logs
 logs/
 *.log
-pm2-*.log
+backend/logs/
 
-# Backups
-backups/
+# Database
+*.db
+*.sqlite
 
-# OS
+# OS files
 .DS_Store
 Thumbs.db
 
-# Editor
+# IDE
 .vscode/
 .idea/
 *.swp
 
 # Prisma
-backend/prisma/migrations/*.sql
+backend/prisma/migrations/dev.db
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Temp
+*.tmp
+*.temp
