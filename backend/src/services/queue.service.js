@@ -237,7 +237,7 @@ async function _checkAndSendTrackingNotifications(shipmentId) {
 }
 
 /* ── Log job to DB ── */
-async function _logJob(type: jobName, payload) {
+async function _logJob(type, payload)  {
   try {
     await prisma.jobQueue.create({
       data: { type: jobName, status: 'PENDING', payload },

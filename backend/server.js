@@ -1,10 +1,7 @@
 // server.js — Application entry point
-require('dotenv').config({
-  path: require('path').join(
-    __dirname,
-    process.env.NODE_ENV === 'production' ? '.env.production' : '.env'
-  ),
-});
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 
 const os     = require('os');
 const app    = require('./src/app');
