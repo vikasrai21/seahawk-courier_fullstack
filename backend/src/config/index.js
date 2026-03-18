@@ -1,10 +1,8 @@
 // src/config/index.js — Central validated config with env separation
-require('dotenv').config({
-  path: require('path').join(
-    __dirname, '../../',
-    process.env.NODE_ENV === 'production' ? '.env.production' : '.env'
-  ),
-});
+// Railway injects env vars directly — no dotenv needed in production
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 
 const required = (key) => {
   const val = process.env[key];
@@ -33,12 +31,11 @@ module.exports = {
     refreshSecret:       process.env.JWT_REFRESH_SECRET  || required('JWT_SECRET') + '_refresh',
   },
 
-  cors: {
-    // In production, lock this down to your actual domain
-    origin: process.env.CORS_ORIGIN
-      ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
-      : (env === 'production' ? [] : true),
-  },
+ cors: {
+  origin: process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
+    : true,
+},
 
   rateLimits: {
     login:  { windowMs: 15 * 60 * 1000, max: parseInt(process.env.LOGIN_RATE_MAX) || 10 },
