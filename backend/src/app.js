@@ -92,7 +92,7 @@ app.use('/api/couriers',       require('./routes/courier.routes'));
 app.use('/api/carrier',        require('./routes/carrier.routes'));
 
 // ── Serve React frontend (production) ─────────────────────────────────────
-const frontendBuild = path.join(__dirname, '../../frontend/dist');
+const frontendBuild = path.join(__dirname, '../public');
 if (fs.existsSync(frontendBuild)) {
   app.use(express.static(frontendBuild, { maxAge: config.isProd ? '1d' : 0 }));
   // SPA fallback — all non-API routes serve index.html
