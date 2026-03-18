@@ -1,42 +1,29 @@
-// src/services/shipment.service.js
-const prisma = require('../config/prisma');
+'use strict';
+// src/services/shipment.service.js — Phase 2: State machine + wallet + notifications
+
+const prisma       = require('../config/prisma');
 const { AppError } = require('../middleware/errorHandler');
+const stateMachine = require('./stateMachine');
+const walletSvc    = require('./wallet.service');
+const notify       = require('./notification.service');
+const logger       = require('../utils/logger');
 
 function buildFilters({ client, courier, status, dateFrom, dateTo, q }) {
   const where = {};
   if (client)  where.clientCode = client;
   if (courier) where.courier = { contains: courier, mode: 'insensitive' };
   if (status)  where.status = status;
-  if (dateFrom || dateTo) {
-    where.date = {};
-    if (dateFrom) where.date.gte = dateFrom;
-    if (dateTo)   where.date.lte = dateTo;
-  }
-  if (q) {
-    where.OR = [
-      { awb:         { contains: q, mode: 'insensitive' } },
-      { clientCode:  { contains: q, mode: 'insensitive' } },
-      { consignee:   { contains: q, mode: 'insensitive' } },
-      { destination: { contains: q, mode: 'insensitive' } },
-      { courier:     { contains: q, mode: 'insensitive' } },
-    ];
-  }
+  if (dateFrom || dateTo) { where.date = {}; if (dateFrom) where.date.gte = dateFrom; if (dateTo) where.date.lte = dateTo; }
+  if (q) { where.OR = [ { awb: { contains: q, mode: 'insensitive' } }, { clientCode: { contains: q, mode: 'insensitive' } }, { consignee: { contains: q, mode: 'insensitive' } }, { destination: { contains: q, mode: 'insensitive' } }, { courier: { contains: q, mode: 'insensitive' } } ]; }
   return where;
 }
 
 async function getAll(filters = {}, page = 1, limit = 500) {
   const where = buildFilters(filters);
-  const skip = (parseInt(page) - 1) * parseInt(limit);
-
+  const skip  = (parseInt(page) - 1) * parseInt(limit);
   const [total, shipments] = await prisma.$transaction([
     prisma.shipment.count({ where }),
-    prisma.shipment.findMany({
-      where,
-      include: { client: { select: { company: true } }, createdBy: { select: { name: true } } },
-      orderBy: [{ date: 'desc' }, { id: 'desc' }],
-      skip,
-      take: parseInt(limit),
-    }),
+    prisma.shipment.findMany({ where, include: { client: { select: { company: true } }, createdBy: { select: { name: true } } }, orderBy: [{ date: 'desc' }, { id: 'desc' }], skip, take: parseInt(limit) }),
   ]);
   return { shipments, total };
 }
@@ -44,7 +31,7 @@ async function getAll(filters = {}, page = 1, limit = 500) {
 async function getById(id) {
   const s = await prisma.shipment.findUnique({
     where: { id: parseInt(id) },
-    include: { client: true, createdBy: { select: { name: true } }, updatedBy: { select: { name: true } } },
+    include: { client: true, createdBy: { select: { name: true } }, updatedBy: { select: { name: true } }, trackingEvents: { orderBy: { timestamp: 'desc' }, take: 20 } },
   });
   if (!s) throw new AppError('Shipment not found.', 404);
   return s;
@@ -52,151 +39,107 @@ async function getById(id) {
 
 async function create(data, userId) {
   const today = new Date().toISOString().split('T')[0];
-  return prisma.shipment.create({
-    data: {
-      ...data,
-      date: data.date || today,
-      consignee:   (data.consignee   || '').toUpperCase(),
-      destination: (data.destination || '').toUpperCase(),
-      createdById: userId || null,
-      updatedById: userId || null,
-    },
-    include: { client: { select: { company: true } } },
+  const shipment = await prisma.shipment.create({
+    data: { ...data, date: data.date || today, consignee: (data.consignee || '').toUpperCase(), destination: (data.destination || '').toUpperCase(), status: 'Booked', createdById: userId || null, updatedById: userId || null },
+    include: { client: { select: { company: true, phone: true } } },
   });
+
+  // Auto-debit wallet
+  if (shipment.amount > 0) {
+    try { await walletSvc.debit({ clientCode: shipment.clientCode, amount: shipment.amount, description: `Shipment — AWB ${shipment.awb}`, refNo: shipment.awb }); }
+    catch (e) { logger.warn(`[Wallet] Debit failed for ${shipment.awb}: ${e.message}`); }
+  }
+
+  // Booking notification
+  try { await notify.shipmentBooked(shipment, shipment.client?.company); }
+  catch (e) { logger.warn(`[Notify] Booking failed: ${e.message}`); }
+
+  return shipment;
 }
 
 async function update(id, data, userId) {
-  const update = { ...data, updatedById: userId };
-  if (data.consignee)   update.consignee   = data.consignee.toUpperCase();
-  if (data.destination) update.destination = data.destination.toUpperCase();
+  const u = { ...data, updatedById: userId };
+  if (data.consignee)   u.consignee   = data.consignee.toUpperCase();
+  if (data.destination) u.destination = data.destination.toUpperCase();
+  return prisma.shipment.update({ where: { id: parseInt(id) }, data: u, include: { client: { select: { company: true } } } });
+}
 
-  const s = await prisma.shipment.update({
+async function updateStatus(id, newStatus, userId) {
+  const shipment = await getById(id);
+
+  // Enforce state machine
+  stateMachine.assertValidTransition(shipment.status, newStatus);
+
+  const updated = await prisma.shipment.update({
     where: { id: parseInt(id) },
-    data: update,
-    include: { client: { select: { company: true } } },
+    data:  { status: newStatus, updatedById: userId },
+    include: { client: { select: { company: true, phone: true } } },
   });
-  return s;
+
+  // Log tracking event
+  try {
+    await prisma.trackingEvent.create({ data: { shipmentId: parseInt(id), status: newStatus, description: `Status updated to ${newStatus}`, timestamp: new Date(), source: 'MANUAL' } });
+  } catch (e) { logger.warn(`[Tracking] Event log failed: ${e.message}`); }
+
+  // Auto-refund on cancel/RTO
+  if (stateMachine.shouldRefund(newStatus) && shipment.amount > 0) {
+    try {
+      await walletSvc.credit({ clientCode: shipment.clientCode, amount: shipment.amount, description: `Refund — AWB ${shipment.awb} (${newStatus})`, refNo: shipment.awb });
+      logger.info(`[Wallet] Refunded ₹${shipment.amount} for ${shipment.awb}`);
+    } catch (e) { logger.warn(`[Wallet] Refund failed: ${e.message}`); }
+  }
+
+  // Status notification
+  if (stateMachine.shouldNotify(newStatus)) {
+    try { await notify.statusChanged(updated, newStatus); }
+    catch (e) { logger.warn(`[Notify] Status notification failed: ${e.message}`); }
+  }
+
+  return updated;
 }
 
-async function updateStatus(id, status, userId) {
-  return prisma.shipment.update({
-    where: { id: parseInt(id) },
-    data: { status, updatedById: userId },
-  });
-}
-
-async function remove(id) {
-  return prisma.shipment.delete({ where: { id: parseInt(id) } });
-}
+async function remove(id) { return prisma.shipment.delete({ where: { id: parseInt(id) } }); }
 
 async function bulkImport(shipments, userId) {
   const today = new Date().toISOString().split('T')[0];
   let imported = 0, duplicates = 0;
   const errors = [];
-
-  // Collect all unique client codes and auto-create any that don't exist
   const clientCodes = [...new Set(shipments.map(s => (s.clientCode || 'MISC').toUpperCase()))];
-  for (const code of clientCodes) {
-    await prisma.client.upsert({
-      where:  { code },
-      create: { code, company: code }, // Minimal record — update company name later in Clients page
-      update: {},
-    });
-  }
-
+  for (const code of clientCodes) { await prisma.client.upsert({ where: { code }, create: { code, company: code }, update: {} }); }
   for (const s of shipments) {
-    // Skip rows with no AWB
-    if (!s.awb || String(s.awb).trim() === '') {
-      errors.push({ awb: '(empty)', error: 'Skipped — no AWB number' });
-      continue;
-    }
-
-    const awb        = String(s.awb).trim();
-    const clientCode = (s.clientCode || 'MISC').toUpperCase();
-    const date       = s.date || today;
-
+    if (!s.awb || String(s.awb).trim() === '') { errors.push({ awb: '(empty)', error: 'No AWB' }); continue; }
+    const awb = String(s.awb).trim();
     try {
       const existing = await prisma.shipment.findUnique({ where: { awb } });
       if (existing) { duplicates++; continue; }
-
-      await prisma.shipment.create({
-        data: {
-          awb,
-          clientCode,
-          date,
-          consignee:   String(s.consignee   || '').toUpperCase(),
-          destination: String(s.destination || '').toUpperCase(),
-          weight:      parseFloat(s.weight)  || 0,
-          amount:      parseFloat(s.amount)  || 0,
-          courier:     String(s.courier     || ''),
-          department:  String(s.department  || ''),
-          service:     String(s.service     || 'Standard'),
-          status:      String(s.status      || 'Delivered'),
-          remarks:     String(s.remarks     || ''),
-          createdById: userId || null,
-          updatedById: userId || null,
-        },
-      });
+      await prisma.shipment.create({ data: { awb, clientCode: (s.clientCode || 'MISC').toUpperCase(), date: s.date || today, consignee: String(s.consignee || '').toUpperCase(), destination: String(s.destination || '').toUpperCase(), weight: parseFloat(s.weight) || 0, amount: parseFloat(s.amount) || 0, courier: String(s.courier || ''), department: String(s.department || ''), service: String(s.service || 'Standard'), status: String(s.status || 'Delivered'), remarks: String(s.remarks || ''), createdById: userId || null, updatedById: userId || null } });
       imported++;
-    } catch (err) {
-      if (err.code === 'P2002') {
-        duplicates++;
-      } else {
-        errors.push({ awb, error: err.message });
-      }
-    }
+    } catch (err) { if (err.code === 'P2002') duplicates++; else errors.push({ awb, error: err.message }); }
   }
-
   return { imported, duplicates, errors: errors.slice(0, 20) };
 }
 
 async function getTodayStats() {
   const today = new Date().toISOString().split('T')[0];
-
   const [summary, byCourier, recentActivity] = await prisma.$transaction([
-    prisma.shipment.groupBy({
-      by: ['status'],
-      where: { date: today },
-      _count: { id: true },
-      _sum: { amount: true, weight: true },
-    }),
-    prisma.shipment.groupBy({
-      by: ['courier'],
-      where: { date: today, courier: { not: '' } },
-      _count: { id: true },
-      orderBy: { _count: { id: 'desc' } },
-    }),
-    prisma.shipment.findMany({
-      where: { date: today },
-      orderBy: { createdAt: 'desc' },
-      take: 10,
-      select: { id: true, awb: true, clientCode: true, courier: true, status: true, amount: true, createdAt: true },
-    }),
+    prisma.shipment.groupBy({ by: ['status'], where: { date: today }, _count: { id: true }, _sum: { amount: true, weight: true } }),
+    prisma.shipment.groupBy({ by: ['courier'], where: { date: today, courier: { not: '' } }, _count: { id: true }, orderBy: { _count: { id: 'desc' } } }),
+    prisma.shipment.findMany({ where: { date: today }, orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, awb: true, clientCode: true, courier: true, status: true, amount: true, createdAt: true } }),
   ]);
-
   const totals = summary.reduce((acc, row) => {
-    acc.total     += row._count.id;
-    acc.amount    += row._sum.amount || 0;
-    acc.weight    += row._sum.weight || 0;
-    if (row.status === 'Delivered')                             acc.delivered++;
-    if (['InTransit','Booked','OutForDelivery'].includes(row.status)) acc.inTransit++;
-    if (['Delayed','RTO'].includes(row.status))                 acc.delayed++;
+    acc.total += row._count.id; acc.amount += row._sum.amount || 0; acc.weight += row._sum.weight || 0;
+    if (row.status === 'Delivered') acc.delivered++;
+    if (['In Transit','Booked','Out for Delivery','Picked Up'].includes(row.status)) acc.inTransit++;
+    if (['Failed','RTO'].includes(row.status)) acc.delayed++;
     return acc;
   }, { total: 0, delivered: 0, inTransit: 0, delayed: 0, amount: 0, weight: 0 });
-
   return { date: today, ...totals, byCourier, recentActivity };
 }
 
 async function getMonthlyStats(year, month) {
-  const from = `${year}-${String(month).padStart(2, '0')}-01`;
-  const end  = new Date(year, month, 0).getDate();
-  const to   = `${year}-${String(month).padStart(2, '0')}-${end}`;
-
-  const rows = await prisma.shipment.findMany({
-    where: { date: { gte: from, lte: to } },
-    select: { date: true, clientCode: true, courier: true, status: true, amount: true, weight: true },
-  });
-  return rows;
+  const from = `${year}-${String(month).padStart(2,'0')}-01`;
+  const to   = `${year}-${String(month).padStart(2,'0')}-${new Date(year,month,0).getDate()}`;
+  return prisma.shipment.findMany({ where: { date: { gte: from, lte: to } }, select: { date: true, clientCode: true, courier: true, status: true, amount: true, weight: true } });
 }
 
 module.exports = { getAll, getById, create, update, updateStatus, remove, bulkImport, getTodayStats, getMonthlyStats };

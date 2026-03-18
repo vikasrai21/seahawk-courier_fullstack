@@ -15,6 +15,7 @@ router.post('/',              validate(shipmentSchema),       ctrl.create);
 router.post('/import',        validate(importSchema),         ctrl.bulkImport);
 router.put('/:id',            validate(updateShipmentSchema), ctrl.update);
 router.patch('/:id/status',   validate(statusUpdateSchema),   ctrl.patchStatus);
+router.get('/:id/transitions',                                 ctrl.getValidStatuses);
 router.delete('/:id',         adminOnly, ctrl.remove);  // ADMIN only
 
 module.exports = router;

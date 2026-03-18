@@ -1,522 +1,720 @@
-// src/pages/public/LandingPage.jsx
-// Uses the original Sea Hawk website HTML/CSS/JS exactly as-is
-// CSS and JS are loaded dynamically so they don't affect the dashboard
-import { useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+// LandingPage.jsx — Full React conversion of the Sea Hawk website homepage
+// - CSS loaded/unloaded via PublicLayout
+// - Calculator: pure React state (no DOM manipulation)
+// - Counter animations: useEffect with IntersectionObserver
+// - Hero illustration + Map: hero.js / map.js loaded via useEffect (complex canvas)
+// - All navigation: React Router <Link>
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import PublicLayout from './PublicLayout';
 
-export default function LandingPage() {
-  const navigate = useNavigate();
-  const scriptsRef = useRef([]);
+/* ════════════════════════════════════════
+   RATE CALCULATOR DATA (from calculator.js)
+════════════════════════════════════════ */
+const DOC_RATES = {
+  localNCR:   { w250: 22,  w500: 25,  addl: 12 },
+  northIndia: { w250: 28,  w500: 40,  addl: 14 },
+  metro:      { w250: 35,  w500: 55,  addl: 35 },
+  restIndia:  { w250: 40,  w500: 65,  addl: 38 },
+  northEast:  { w250: 65,  w500: 80,  addl: 45 },
+  diplomatic: { w250: 75,  w500: 95,  addl: 50 },
+};
+const PRIORITY_RATES = {
+  localNCR:   { w500: 70,  w1kg: 100, addl: 50  },
+  northIndia: { w500: 100, w1kg: 140, addl: 75  },
+  restIndia:  { w500: 140, w1kg: 190, addl: 100 },
+  northEast:  { w500: 175, w1kg: 225, addl: 125 },
+};
+const HEAVY_SFC = {
+  localNCR:   { r3: 22,  r10: 20,  r25: 18,  r50: 16,  r100: 15 },
+  northIndia: { r3: 30,  r10: 28,  r25: 25,  r50: 22,  r100: 20 },
+  metro:      { r3: 35,  r10: 32,  r25: 30,  r50: 29,  r100: 27 },
+  restIndia:  { r3: 45,  r10: 43,  r25: 40,  r50: 38,  r100: 35 },
+  northEast:  { r3: 55,  r10: 52,  r25: 50,  r50: 47,  r100: 45 },
+  kashmir:    { r3: 60,  r10: 55,  r25: 52,  r50: 48,  r100: 46 },
+  portBlair:  { r3: 120, r10: 110, r25: 90,  r50: 85,  r100: 80 },
+};
+const HEAVY_AIR = {
+  srinagar:  { lt5: 72,  r5: 70,  r10: 65,  r25: 62,  r50: 60 },
+  biharJh:   { lt5: 80,  r5: 78,  r10: 75,  r25: 72,  r50: 70 },
+  metro:     { lt5: 85,  r5: 80,  r10: 78,  r25: 75,  r50: 74 },
+  restIndia: { lt5: 88,  r5: 85,  r10: 82,  r25: 80,  r50: 78 },
+  northEast: { lt5: 95,  r5: 90,  r10: 85,  r25: 82,  r50: 80 },
+  portBlair: { lt5: 125, r5: 110, r10: 100, r25: 95,  r50: 90 },
+};
+const INTL = {
+  zoneA: { dox: 1200, nondox: 1425, addlDox: 350, addlNon: 510 },
+  zoneB: { dox: 1450, nondox: 1675, addlDox: 460, addlNon: 520 },
+  zoneC: { dox: 1600, nondox: 1800, addlDox: 510, addlNon: 595 },
+  zoneD: { dox: 1700, nondox: 1900, addlDox: 565, addlNon: 620 },
+  zoneE: { dox: 1875, nondox: 1975, addlDox: 595, addlNon: 675 },
+  zoneF: { dox: 1975, nondox: 2125, addlDox: 625, addlNon: 725 },
+  zoneG: { dox: 2250, nondox: 2450, addlDox: 630, addlNon: 745 },
+};
+const COUNTRY_ZONE = {
+  'bangladesh':'zoneA','bhutan':'zoneA','maldives':'zoneA','nepal':'zoneA','sri lanka':'zoneA','united arab emirates':'zoneA',
+  'bahrain':'zoneB','hong kong':'zoneB','iran':'zoneB','jordan':'zoneB','kuwait':'zoneB','oman':'zoneB',
+  'pakistan':'zoneB','qatar':'zoneB','saudi arabia':'zoneB','singapore':'zoneB','syria':'zoneB','yemen':'zoneB',
+  'australia':'zoneC','china':'zoneC','indonesia':'zoneC','korea':'zoneC','malaysia':'zoneC','new zealand':'zoneC',
+  'philippines':'zoneC','thailand':'zoneC','vietnam':'zoneC',
+  'belgium':'zoneD','denmark':'zoneD','france':'zoneD','germany':'zoneD','italy':'zoneD',
+  'netherlands':'zoneD','united kingdom':'zoneD','switzerland':'zoneD',
+  'canada':'zoneE','mexico':'zoneE','united states':'zoneE',
+  'japan':'zoneF',
+  'austria':'zoneG','finland':'zoneG','greece':'zoneG','israel':'zoneG','norway':'zoneG',
+  'poland':'zoneG','portugal':'zoneG','south africa':'zoneG','spain':'zoneG','sweden':'zoneG','turkey':'zoneG',
+};
+const ZONE_NAMES = {
+  zoneA:'Bangladesh · Bhutan · Maldives · Nepal · Sri Lanka · UAE',
+  zoneB:'Bahrain · HK · Kuwait · Oman · Qatar · Saudi Arabia · Singapore · Yemen',
+  zoneC:'Australia · China · Indonesia · Korea · Malaysia · NZ · Philippines · Thailand · Vietnam',
+  zoneD:'Belgium · Denmark · France · Germany · Italy · Netherlands · Switzerland · UK',
+  zoneE:'Canada · Mexico · USA',
+  zoneF:'Japan',
+  zoneG:'Austria · Finland · Greece · Israel · Norway · Poland · Portugal · South Africa · Spain · Sweden · Turkey',
+  zoneH:'Rest of World (Zone G + ₹300)',
+};
 
+const FSC = 0.25, GST = 0.18, INS_RATE = 0.002;
+const rnd = (n) => Math.round(n * 100) / 100;
+const fmt = (n) => '₹' + Math.round(n).toLocaleString('en-IN');
+
+function sfcRate(zone, kg) {
+  const r = HEAVY_SFC[zone] || HEAVY_SFC.restIndia;
+  if (kg < 10) return r.r3;
+  if (kg < 25) return r.r10;
+  if (kg < 50) return r.r25;
+  if (kg < 100) return r.r50;
+  return r.r100;
+}
+function airRate(zone, kg) {
+  const r = HEAVY_AIR[zone] || HEAVY_AIR.restIndia;
+  if (kg < 5) return r.lt5;
+  if (kg < 10) return r.r5;
+  if (kg < 25) return r.r10;
+  if (kg < 50) return r.r25;
+  return r.r50;
+}
+
+/* ════════════════════════════════════════
+   QUICK QUOTE DATA
+════════════════════════════════════════ */
+const QR = {
+  dom:  { local: 30, metro: 60, roi: 70, ne: 90 },
+  intl: { local: 1200, metro: 1800, roi: 2200, ne: 2400 },
+  b2b:  { local: 15, metro: 25, roi: 35, ne: 50 },
+};
+
+/* ════════════════════════════════════════
+   COUNTER ANIMATION HOOK
+════════════════════════════════════════ */
+function useCounterAnimation() {
+  const ref = useRef(null);
   useEffect(() => {
-    // Add original CSS (scoped to this page only — removed on unmount)
-    const link = document.createElement('link');
-    link.rel  = 'stylesheet';
-    link.href = '/website/css/style.css';
-    link.id   = 'seahawk-website-css';
-    document.head.appendChild(link);
-
-    // Override goToTrack to use React router instead of track.html
-    window.goToTrack = () => {
-      const awb = document.getElementById('awb-input')?.value?.trim();
-      if (!awb) { document.getElementById('awb-input')?.focus(); return; }
-      navigate(`/track/${encodeURIComponent(awb.toUpperCase())}`);
-    };
-
-    // Load JS files in correct order (they depend on each other)
-    const jsFiles = [
-      '/website/js/main.js',
-      '/website/js/calculator.js',
-      '/website/js/hero.js',
-      '/website/js/map.js',
-    ];
-
-    let loaded = 0;
-    jsFiles.forEach((src, i) => {
-      const s = document.createElement('script');
-      s.src   = src;
-      s.defer = false;
-      s.async = false;
-      s.id    = `seahawk-js-${i}`;
-      document.body.appendChild(s);
-      scriptsRef.current.push(s);
-    });
-
-    // Cleanup when navigating away (so dashboard CSS isn't affected)
-    return () => {
-      document.getElementById('seahawk-website-css')?.remove();
-      scriptsRef.current.forEach(s => s.remove());
-      scriptsRef.current = [];
-    };
+    if (!ref.current) return;
+    function animateCounter(el, target, duration = 2200) {
+      let start = null;
+      const isLarge = target >= 1000;
+      const step = (ts) => {
+        if (!start) start = ts;
+        const progress = Math.min((ts - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const current = Math.round(eased * target);
+        if (isLarge && target >= 100000) el.textContent = (current / 1000).toFixed(current < 10000 ? 1 : 0) + 'K';
+        else if (isLarge) el.textContent = current.toLocaleString('en-IN');
+        else el.textContent = current;
+        if (progress < 1) requestAnimationFrame(step);
+        else {
+          if (isLarge && target >= 100000) el.textContent = (target / 1000).toFixed(0) + 'K';
+          else if (isLarge) el.textContent = target.toLocaleString('en-IN');
+          else el.textContent = target;
+        }
+      };
+      requestAnimationFrame(step);
+    }
+    const counterObs = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (!e.isIntersecting) return;
+        const el = e.target;
+        animateCounter(el, parseInt(el.dataset.t), parseInt(el.dataset.dur || '2200'));
+        counterObs.unobserve(el);
+      });
+    }, { threshold: 0.3 });
+    const revealObs = new IntersectionObserver((entries) => {
+      entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('in'); });
+    }, { threshold: 0.07 });
+    ref.current.querySelectorAll('.count').forEach(el => counterObs.observe(el));
+    ref.current.querySelectorAll('.rev').forEach(el => revealObs.observe(el));
+    return () => { counterObs.disconnect(); revealObs.disconnect(); };
   }, []);
+  return ref;
+}
 
-  const html = `
-<!-- WA FLOAT -->
-<a href="https://wa.me/919911565523" class="wa-float" target="_blank" title="WhatsApp">💬</a>
+/* ════════════════════════════════════════
+   RATE CALCULATOR COMPONENT
+════════════════════════════════════════ */
+function RateCalculator() {
+  const [svc, setSvc]               = useState('doc');
+  const [zone, setZone]             = useState('localNCR');
+  const [priorityZone, setPZ]       = useState('localNCR');
+  const [sfcZone, setSfcZone]       = useState('localNCR');
+  const [airZone, setAirZone]       = useState('metro');
+  const [country, setCountry]       = useState('');
+  const [destination, setDest]      = useState('zoneA');
+  const [shipType, setShipType]     = useState('dox');
+  const [weight, setWeight]         = useState('');
+  const [insured, setInsured]       = useState(false);
+  const [viaDhl, setViaDhl]         = useState(false);
+  const [result, setResult]         = useState(null);
+  const [zoneInfo, setZoneInfo]     = useState('');
 
-<!-- Sticky mobile CTA bar -->
-<div class="sticky-book-bar">
-  <a href="tel:+919911565523" class="btn btn-white" style="color:var(--orange);font-weight:800;">📦 Book Pickup</a>
-  <a href="/track" class="btn btn-ghost-w" style="font-weight:700;">🔍 Track</a>
-</div>
+  function handleCountryChange(c) {
+    setCountry(c);
+    const z = COUNTRY_ZONE[c.toLowerCase()] || 'zoneH';
+    setDest(z);
+    setZoneInfo(z ? `🌍 ${z.toUpperCase()}: ${ZONE_NAMES[z] || ''}` : '');
+  }
 
-<!-- MOBILE MENU -->
-<div class="mob-menu" id="mobMenu">
-  <div class="mob-head">
-    <img src="/images/logo.png" alt="Sea Hawk Courier"/>
-    <button class="mob-close" onclick="mobClose()">✕</button>
-  </div>
-  <ul class="mob-links">
-    <li><a href="/" onclick="mobClose()">Home</a></li>
-    <li><a href="#services" onclick="mobClose()">Services</a></li>
-    <li><a href="/track" onclick="mobClose()">🔍 Track Shipment</a></li>
-    <li><a href="tel:+919911565523" onclick="mobClose()">📦 Book Pickup</a></li>
-    <li><a href="#calculator" onclick="mobClose()">Rates</a></li>
-    <li><a href="#map-section" onclick="mobClose()">Coverage</a></li>
-    <li><a href="#contact-section" onclick="mobClose()">Contact Us</a></li>
-  </ul>
-  <div class="mob-ctas">
-    <a href="tel:+919911565523" class="btn btn-orange" onclick="mobClose()">📦 Book Pickup</a>
-    <a href="/login" class="btn btn-navy" onclick="mobClose()">🔐 Portal</a>
-    <a href="tel:+919911565523" class="btn btn-outline" onclick="mobClose()">📞 +91 99115 65523</a>
-  </div>
-</div>
-
-<!-- HEADER -->
-<header>
-  <div id="topbar">
-    <div class="tb-row">
-      <span>📍 New Delhi, India</span>
-      <div class="tb-sep"></div>
-      <span>Mon–Sat: 9 AM – 7 PM &nbsp;|&nbsp; Emergency: 24×7</span>
-    </div>
-    <div class="tb-row">
-      <a href="tel:+919911565523">📞 +91 99115 65523</a>
-      <div class="tb-sep"></div>
-      <a href="tel:+918368201122">+91 83682 01122</a>
-      <div class="tb-sep"></div>
-      <a href="https://wa.me/919911565523" target="_blank">💬 WhatsApp</a>
-    </div>
-  </div>
-  <nav class="main-nav">
-    <a href="/" class="nav-logo">
-      <img src="/images/logo.png" alt="Sea Hawk Courier and Cargo"/>
-    </a>
-    <ul class="nav-ul">
-      <li class="has-drop">
-        <a href="#services">Services ▾</a>
-        <div class="nav-drop">
-          <a href="#services"><span class="di">🚀</span>Express Delivery</a>
-          <a href="#services"><span class="di">✈️</span>International Courier</a>
-          <a href="#services"><span class="di">📦</span>Surface &amp; LTL Cargo</a>
-          <a href="#services"><span class="di">🏢</span>B2B Logistics</a>
-          <a href="#services"><span class="di">🛡️</span>Insured Shipping</a>
-        </div>
-      </li>
-      <li><a href="/track" style="font-weight:700;">🔍 Track</a></li>
-      <li><a href="tel:+919911565523" style="color:var(--orange);font-weight:700;">📦 Book Pickup</a></li>
-      <li><a href="#calculator">Rates</a></li>
-      <li><a href="#map-section">Coverage</a></li>
-      <li><a href="#contact-section">Contact</a></li>
-    </ul>
-    <div class="nav-right">
-      <a href="/login" class="nav-portal">🔐 Portal</a>
-      <a href="tel:+919911565523" class="nav-quote">📦 Book Pickup</a>
-    </div>
-    <button class="hamburger" onclick="mobOpen()"><span></span><span></span><span></span></button>
-  </nav>
-</header>
-
-<!-- HERO -->
-<section id="hero">
-  <div class="hero-grid-bg"></div>
-  <div class="hero-glow-1"></div>
-  <div class="hero-glow-2"></div>
-  <div class="wrap">
-    <div class="hero-inner">
-      <div class="rev">
-        <div class="hero-kicker"><span class="dot"></span>Trusted Since 2004 — 20+ Years Delivering Excellence</div>
-        <h1 class="hero-h1">
-          India's Most Trusted<br/>
-          <em>Courier &amp; Cargo</em><br/>
-          <span class="sub-line">Partner</span>
-        </h1>
-        <p class="hero-p">From same-day Delhi NCR deliveries to international shipments across 220+ countries — we power your logistics with unmatched speed, security and competitive rates.</p>
-        <div class="hero-trust">
-          <div class="t-chip"><span class="chk">✓</span>35,000+ PIN Codes</div>
-          <div class="t-chip"><span class="chk">✓</span>220+ Countries</div>
-          <div class="t-chip"><span class="chk">✓</span>24×7 Support</div>
-          <div class="t-chip"><span class="chk">✓</span>Real-Time Tracking</div>
-        </div>
-        <div class="hero-cta">
-          <a href="tel:+919911565523" class="btn btn-orange btn-lg">📦 Book Free Pickup</a>
-          <a href="/track" class="btn btn-ghost-w btn-lg">🔍 Track Shipment</a>
-        </div>
-        <div class="hero-mini-stats rev d1">
-          <div class="hms"><div class="hms-n"><span class="count" data-t="120000" data-dur="2500">0</span><sup>+</sup></div><div class="hms-l">Shipments Delivered</div></div>
-          <div class="hms-sep"></div>
-          <div class="hms"><div class="hms-n"><span class="count" data-t="350" data-dur="1800">0</span><sup>+</sup></div><div class="hms-l">Cities Covered</div></div>
-          <div class="hms-sep"></div>
-          <div class="hms"><div class="hms-n"><span class="count" data-t="220" data-dur="1600">0</span><sup>+</sup></div><div class="hms-l">Countries</div></div>
-          <div class="hms-sep"></div>
-          <div class="hms"><div class="hms-n"><span class="count" data-t="20" data-dur="1400">0</span><sup>+ Yrs</sup></div><div class="hms-l">Experience</div></div>
-        </div>
-        <!-- TRACK WIDGET -->
-        <div class="track-widget rev d2">
-          <div class="tw-tabs">
-            <button class="tw-tab on" onclick="switchTab('tw-track',this)">🔍 Track Shipment</button>
-            <button class="tw-tab" onclick="switchTab('tw-quote',this)">💰 Quick Quote</button>
-            <button class="tw-tab" onclick="switchTab('tw-call',this)">📞 Callback</button>
-          </div>
-          <div class="tw-panel on" id="tw-track">
-            <div class="tw-row">
-              <div class="tw-field">
-                <label>AWB / Tracking Number</label>
-                <input class="tw-input" id="awb-input" placeholder="Enter AWB, Docket or Reference No." onkeydown="if(event.key==='Enter') goToTrack()"/>
-              </div>
-              <button class="btn-track" onclick="goToTrack()">Track Now</button>
-            </div>
-          </div>
-          <div class="tw-panel" id="tw-quote">
-            <div class="tw-row tw-row-3">
-              <div class="tw-field"><label>Type</label><select class="tw-select" id="qq-svc"><option value="dom">Domestic</option><option value="intl">International</option><option value="b2b">B2B Bulk</option></select></div>
-              <div class="tw-field"><label>Zone</label><select class="tw-select" id="qq-dest"><option value="local">Local/NCR</option><option value="metro">Metro City</option><option value="roi">Rest of India</option><option value="ne">North East</option></select></div>
-              <div class="tw-field"><label>Weight (g)</label><input class="tw-input" id="qq-wt" type="number" placeholder="500" min="1"/></div>
-              <button class="btn-track" onclick="quickQuote()">Get Rate</button>
-            </div>
-            <div id="qq-res" style="display:none;margin-top:10px;padding:10px 14px;background:var(--navy-faint);border:1px solid var(--navy-pale);border-radius:var(--r);font-size:.875rem;">
-              <strong>Estimated: </strong><span id="qq-val" style="color:var(--orange);font-weight:800;font-size:1.1rem;"></span>
-            </div>
-          </div>
-          <div class="tw-panel" id="tw-call">
-            <div class="tw-row">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;flex:1;">
-                <div class="tw-field"><label>Your Name</label><input class="tw-input" id="cb-name" placeholder="Full Name"/></div>
-                <div class="tw-field"><label>Phone Number</label><input class="tw-input" id="cb-phone" placeholder="+91 XXXXX XXXXX"/></div>
-              </div>
-              <button class="btn-track" onclick="doCallback()">Request Call</button>
-            </div>
-            <div id="cb-ok" style="display:none;margin-top:10px;padding:9px 13px;background:var(--green-bg);border-radius:var(--r);font-size:.8rem;color:var(--green);font-weight:600;">✅ We'll call you back within 30 minutes!</div>
-          </div>
-        </div>
-      </div>
-      <div class="hero-visual rev d1">
-        <div class="hero-illustration" id="heroIllustration"></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- TICKER -->
-<div class="ticker">
-  <div class="ticker-track">
-    <span class="tick-item">🚀 Same Day Express Delivery</span><span class="tick-sep"></span>
-    <span class="tick-item">✈️ International Air Courier</span><span class="tick-sep"></span>
-    <span class="tick-item">🌍 220+ Countries &amp; Territories</span><span class="tick-sep"></span>
-    <span class="tick-item">📦 Bulk &amp; LTL Surface Freight</span><span class="tick-sep"></span>
-    <span class="tick-item">🔍 Real-Time Shipment Tracking</span><span class="tick-sep"></span>
-    <span class="tick-item">🛡️ Fully Insured Deliveries</span><span class="tick-sep"></span>
-    <span class="tick-item">💼 B2B Corporate Logistics</span><span class="tick-sep"></span>
-    <span class="tick-item">📋 35,000+ PIN Codes Covered</span><span class="tick-sep"></span>
-    <span class="tick-item">🕐 24×7 Customer Support</span><span class="tick-sep"></span>
-    <span class="tick-item">🚀 Same Day Express Delivery</span><span class="tick-sep"></span>
-    <span class="tick-item">✈️ International Air Courier</span><span class="tick-sep"></span>
-    <span class="tick-item">🌍 220+ Countries &amp; Territories</span><span class="tick-sep"></span>
-    <span class="tick-item">📦 Bulk &amp; LTL Surface Freight</span><span class="tick-sep"></span>
-    <span class="tick-item">🔍 Real-Time Shipment Tracking</span><span class="tick-sep"></span>
-    <span class="tick-item">🛡️ Fully Insured Deliveries</span><span class="tick-sep"></span>
-  </div>
-</div>
-
-<!-- STATS BAND -->
-<section id="stats-band">
-  <div class="wrap">
-    <div class="stats-grid">
-      <div class="stat-block rev"><div class="stat-icon-wrap">📦</div><div class="stat-number"><span class="count" data-t="120000" data-dur="2800">0</span><sup>+</sup></div><div class="stat-label">Shipments Delivered</div></div>
-      <div class="stat-block rev d1"><div class="stat-icon-wrap">📍</div><div class="stat-number"><span class="count" data-t="35000" data-dur="2500">0</span><sup>+</sup></div><div class="stat-label">PIN Codes Covered</div></div>
-      <div class="stat-block rev d2"><div class="stat-icon-wrap">🏙️</div><div class="stat-number"><span class="count" data-t="800" data-dur="2000">0</span><sup>+</sup></div><div class="stat-label">Cities in India</div></div>
-      <div class="stat-block rev d3"><div class="stat-icon-wrap">🌍</div><div class="stat-number"><span class="count" data-t="220" data-dur="1800">0</span><sup>+</sup></div><div class="stat-label">Countries Served</div></div>
-      <div class="stat-block rev d4"><div class="stat-icon-wrap">🏆</div><div class="stat-number"><span class="count" data-t="20" data-dur="1500">0</span><sup>+ Yrs</sup></div><div class="stat-label">Years of Excellence</div></div>
-    </div>
-  </div>
-</section>
-
-<!-- SERVICES -->
-<section id="services" class="sec">
-  <div class="wrap">
-    <div class="sec-head">
-      <div class="pill pill-orange rev">What We Offer</div>
-      <h2 class="h-display rev d1">Services <span>Built for Your Business</span></h2>
-      <p class="t-lead rev d2" style="margin:0 auto;">From local same-day pickups to air freight across six continents — every shipment backed by 20 years of expertise and India's strongest carrier network.</p>
-    </div>
-    <div class="svc-grid">
-      <div class="svc-card rev"><div class="svc-icon">🚀</div><h3 class="svc-title">Express Delivery</h3><p class="svc-desc">Same-day and next-day delivery to Delhi NCR and all major cities. Fastest transit times with guaranteed POD on every consignment.</p><div class="svc-note">📍 Delhi NCR · Metro Cities · North India</div><a href="#contact-section" class="svc-link">Get quote →</a></div>
-      <div class="svc-card rev d1"><div class="svc-icon">✈️</div><h3 class="svc-title">International Courier</h3><p class="svc-desc">Documents and parcels to 220+ countries via DHL, FedEx, Aramex and our own global partner network across 8 international zones.</p><div class="svc-note">🌍 USA · UK · UAE · Australia · 220+ Countries</div><a href="#calculator" class="svc-link">Calculate rate →</a></div>
-      <div class="svc-card rev d2"><div class="svc-icon">📦</div><h3 class="svc-title">Surface &amp; LTL Cargo</h3><p class="svc-desc">Cost-effective road freight for heavy consignments. LTL road express connecting 800+ cities pan-India at competitive rates.</p><div class="svc-note">📦 Pan-India · Up to 500 kg per consignment</div><a href="#contact-section" class="svc-link">Contact us →</a></div>
-      <div class="svc-card rev"><div class="svc-icon">🏢</div><h3 class="svc-title">B2B Logistics</h3><p class="svc-desc">Custom rate contracts, dedicated account manager, monthly invoicing and full client portal access for enterprise shippers.</p><div class="svc-note">💼 Custom rates · Volume discounts available</div><a href="/login" class="svc-link">Open an account →</a></div>
-      <div class="svc-card rev d1"><div class="svc-icon">🛡️</div><h3 class="svc-title">Insured Shipments</h3><p class="svc-desc">Full declared-value insurance for electronics, jewellery, fragile goods and high-value items at just 5% premium.</p><div class="svc-note">🔒 5% premium · Hassle-free claims process</div><a href="#calculator" class="svc-link">Calculate cost →</a></div>
-      <div class="svc-card rev d2"><div class="svc-icon">📋</div><h3 class="svc-title">Document Courier</h3><p class="svc-desc">Secure delivery of legal documents, passports, bank documents and diplomatic mail — handled with absolute care and confidentiality.</p><div class="svc-note">🗂️ Domestic · International · Diplomatic Mail</div><a href="#contact-section" class="svc-link">Enquire now →</a></div>
-    </div>
-    <div style="text-align:center;margin-top:44px;" class="rev">
-      <a href="#contact-section" class="btn btn-navy btn-lg">Get in Touch →</a>
-    </div>
-  </div>
-</section>
-
-<!-- RATE CALCULATOR -->
-<section id="calculator" class="sec" style="background:var(--bg-2);border-top:1px solid var(--border-l);">
-  <div class="wrap">
-    <div class="calc-layout">
-      <div>
-        <div class="pill pill-navy rev">Instant Pricing</div>
-        <h2 class="h-display rev d1">Transparent<br/><span>Rate Calculator</span></h2>
-        <p class="t-lead rev d2" style="max-width:100%;">Exact costs before you book — fuel surcharge, GST and insurance all shown clearly. No surprises on your invoice.</p>
-        <div class="calc-usps">
-          <div class="calc-usp rev d1"><div class="calc-usp-icon">⚡</div><div><div class="calc-usp-t">Live Rates from 6 Carriers</div><div class="calc-usp-s">Trackon, DTDC, Delhivery, BlueDart, DHL &amp; FedEx — verified tariffs.</div></div></div>
-          <div class="calc-usp rev d2"><div class="calc-usp-icon">🌍</div><div><div class="calc-usp-t">Domestic + 220 Countries</div><div class="calc-usp-s">All Indian zones including NE, J&amp;K, Andaman plus 8-zone international pricing.</div></div></div>
-          <div class="calc-usp rev d3"><div class="calc-usp-icon">🔢</div><div><div class="calc-usp-t">All-Inclusive Breakdown</div><div class="calc-usp-s">Fuel surcharge (25%), GST (18%) and optional insurance (5%) all shown transparently.</div></div></div>
-        </div>
-      </div>
-      <div class="calc-card rev d1">
-        <div class="calc-head"><h3>Shipping Rate Calculator</h3><small>Rates from Sea Hawk Rate Card v10 · FSC 25% · GST 18%</small></div>
-        <div class="calc-body">
-          <div class="fg-grid" style="gap:13px;">
-            <div class="fg"><label>From Zone</label>
-              <select id="c-svc">
-                <option value="doc">Document / Packet</option>
-                <option value="priority">Priority Express</option>
-                <option value="heavy-sfc">Heavy — Surface Cargo</option>
-                <option value="heavy-air">Heavy — Air Cargo</option>
-                <option value="international">International</option>
-              </select>
-            </div>
-            <div class="fg" id="c-zone-wrap"><label>To Zone</label>
-              <select id="c-zone">
-                <option value="localNCR">Delhi &amp; NCR</option>
-                <option value="northIndia">North India</option>
-                <option value="metro">Metro Cities</option>
-                <option value="restIndia">Rest of India</option>
-                <option value="northEast">North East / Srinagar</option>
-                <option value="diplomatic">Diplomatic / Port Blair</option>
-              </select>
-            </div>
-            <div class="fg" id="c-priority-wrap" style="display:none;"><label>To Zone</label>
-              <select id="c-priority-zone">
-                <option value="localNCR">Local &amp; NCR</option>
-                <option value="northIndia">North India</option>
-                <option value="restIndia">Rest of India</option>
-                <option value="northEast">North East</option>
-              </select>
-            </div>
-            <div class="fg" id="c-heavy-sfc-wrap" style="display:none;"><label>To Zone</label>
-              <select id="c-heavy-sfc-zone">
-                <option value="localNCR">Delhi &amp; NCR</option>
-                <option value="northIndia">North India</option>
-                <option value="metro">Metro Cities</option>
-                <option value="restIndia">Rest of India</option>
-                <option value="northEast">North East</option>
-                <option value="kashmir">Kashmir / J&amp;K</option>
-                <option value="portBlair">Port Blair / Andaman</option>
-              </select>
-            </div>
-            <div class="fg" id="c-heavy-air-wrap" style="display:none;"><label>To Zone</label>
-              <select id="c-heavy-air-zone">
-                <option value="srinagar">Srinagar Sector</option>
-                <option value="biharJh">Bihar &amp; Jharkhand</option>
-                <option value="metro">Metro Cities</option>
-                <option value="restIndia">Rest of India</option>
-                <option value="northEast">North East</option>
-                <option value="portBlair">Port Blair</option>
-              </select>
-            </div>
-            <div class="fg full" id="c-country-wrap" style="display:none;"><label>Destination Country</label>
-              <select id="c-country">
-                <option value="">-- Select Country --</option>
-                <optgroup label="Zone A"><option value="bangladesh">Bangladesh</option><option value="bhutan">Bhutan</option><option value="maldives">Maldives</option><option value="nepal">Nepal</option><option value="sri lanka">Sri Lanka</option><option value="united arab emirates">United Arab Emirates</option></optgroup>
-                <optgroup label="Zone B"><option value="bahrain">Bahrain</option><option value="hong kong">Hong Kong</option><option value="kuwait">Kuwait</option><option value="oman">Oman</option><option value="qatar">Qatar</option><option value="saudi arabia">Saudi Arabia</option><option value="singapore">Singapore</option></optgroup>
-                <optgroup label="Zone C"><option value="australia">Australia</option><option value="china">China</option><option value="indonesia">Indonesia</option><option value="malaysia">Malaysia</option><option value="new zealand">New Zealand</option><option value="thailand">Thailand</option></optgroup>
-                <optgroup label="Zone D"><option value="france">France</option><option value="germany">Germany</option><option value="netherlands">Netherlands</option><option value="united kingdom">United Kingdom</option></optgroup>
-                <optgroup label="Zone E"><option value="canada">Canada</option><option value="united states">United States</option></optgroup>
-                <optgroup label="Zone F"><option value="japan">Japan</option></optgroup>
-                <optgroup label="Zone G"><option value="south africa">South Africa</option><option value="spain">Spain</option><option value="turkey">Turkey</option></optgroup>
-                <optgroup label="Zone H"><option value="other">Other Countries (+₹300)</option></optgroup>
-              </select>
-            </div>
-            <div class="fg"><label id="c-weight-lbl">Weight (grams)</label><input type="number" id="c-weight" placeholder="e.g. 500" min="0.001" step="any"/></div>
-          </div>
-          <div id="zone-info" class="zone-info"></div>
-          <div class="fg-checks">
-            <label class="fg-check"><input type="checkbox" id="c-ins"/> Insurance (0.2% min ₹50)</label>
-          </div>
-          <div class="calc-result" id="calcResult">
-            <div class="cr-head">Estimated Cost Breakdown</div>
-            <div class="cr-body">
-              <div class="cr-row"><span>Base Freight</span><span class="cr-val" id="r-base">₹0</span></div>
-              <div class="cr-row"><span>Fuel Surcharge (25%)</span><span class="cr-val" id="r-fuel">₹0</span></div>
-              <div class="cr-row" id="r-ins-row" style="display:none;"><span>Insurance</span><span class="cr-val" id="r-ins">₹0</span></div>
-              <div class="cr-row"><span>GST (18%)</span><span class="cr-val" id="r-gst">₹0</span></div>
-              <div class="cr-total"><span class="cr-total-lbl">Total Estimate</span><span class="cr-total-val" id="r-total">₹0</span></div>
-              <div class="cr-note">* Indicative. Final based on actual dimensions.</div>
-            </div>
-          </div>
-          <button class="btn-calc" onclick="computeRate()">⚡ Get Rate</button>
-          <a href="tel:+919911565523" style="display:block;text-align:center;margin-top:10px;padding:11px;background:var(--navy);color:#fff;border-radius:var(--r);font-size:.875rem;font-weight:700;text-decoration:none;">📦 Book This Pickup →</a>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- MAP SECTION -->
-<section id="map-section" class="sec" style="background:#fff;border-top:1px solid var(--border-l);">
-  <div class="wrap">
-    <div class="sec-head" style="margin-bottom:36px;">
-      <div class="pill pill-orange rev">Our Reach</div>
-      <h2 class="h-display rev d1">Coverage Across <span>India &amp; The World</span></h2>
-      <p class="t-lead rev d2" style="margin:0 auto;">Every PIN code in India. 180+ countries worldwide. Real shipments, real routes, every day.</p>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px;" class="rev d1">
-      <div style="text-align:center;padding:16px;background:var(--navy-faint);border-radius:var(--r-lg);border:1.5px solid var(--navy-pale);"><div style="font-family:var(--font-head);font-size:1.7rem;font-weight:900;color:var(--navy)"><span class="count" data-t="35000">0</span>+</div><div style="font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--ink-3);">PIN Codes</div></div>
-      <div style="text-align:center;padding:16px;background:var(--orange-bg);border-radius:var(--r-lg);border:1.5px solid var(--orange-brd);"><div style="font-family:var(--font-head);font-size:1.7rem;font-weight:900;color:var(--orange)"><span class="count" data-t="800">0</span>+</div><div style="font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--orange);">Indian Cities</div></div>
-      <div style="text-align:center;padding:16px;background:var(--navy-faint);border-radius:var(--r-lg);border:1.5px solid var(--navy-pale);"><div style="font-family:var(--font-head);font-size:1.7rem;font-weight:900;color:var(--navy)"><span class="count" data-t="180">0</span>+</div><div style="font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--ink-3);">Countries</div></div>
-      <div style="text-align:center;padding:16px;background:var(--green-bg);border-radius:var(--r-lg);border:1.5px solid #a7f3d0;"><div style="font-family:var(--font-head);font-size:1.7rem;font-weight:900;color:var(--green)"><span class="count" data-t="6">0</span></div><div style="font-size:.68rem;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:var(--green);">Continents</div></div>
-    </div>
-    <div class="map-canvas-wrap rev d2" style="border-radius:var(--r-xl);overflow:hidden;box-shadow:var(--sh-xl);border:1.5px solid var(--border-l);background:var(--navy);">
-      <div class="map-top-bar" style="display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.08);">
-        <span class="map-title" style="font-size:.75rem;font-weight:800;color:rgba(255,255,255,.75);letter-spacing:1.5px;text-transform:uppercase;">Sea Hawk Global Coverage Map</span>
-        <span class="map-live" style="display:flex;align-items:center;gap:5px;font-size:.7rem;color:rgba(255,255,255,.5);"><span style="width:7px;height:7px;border-radius:50%;background:#4ade80;animation:blinkDot 1.2s ease-in-out infinite;"></span>Live</span>
-      </div>
-      <div id="indiaMapCanvas" style="line-height:0;"></div>
-    </div>
-  </div>
-</section>
-
-<!-- TESTIMONIALS -->
-<section id="testimonials" class="sec">
-  <div class="wrap">
-    <div class="sec-head">
-      <div class="pill pill-navy rev">Client Stories</div>
-      <h2 class="h-display rev d1">Trusted by <span>Businesses Across India</span></h2>
-    </div>
-    <div class="testi-grid">
-      <div class="testi rev"><div class="testi-stars">★★★★★</div><p class="testi-text">"We've shipped internationally with Sea Hawk for 7 years. Their rates are consistently competitive and service impeccable. Documents reach Dubai in 2 days, every single time."</p><div class="testi-author"><div class="testi-av">RK</div><div><div class="testi-name">Rajan Kapoor</div><div class="testi-role">MD, Kapoor Exports · Delhi</div></div></div></div>
-      <div class="testi rev d1"><div class="testi-stars">★★★★★</div><p class="testi-text">"The client portal is outstanding. Real-time tracking, instant invoice downloads and our account manager is always reachable. This is what proper B2B logistics looks like."</p><div class="testi-author"><div class="testi-av" style="background:var(--orange);">AS</div><div><div class="testi-name">Anita Sharma</div><div class="testi-role">Procurement Head, TechGrow India</div></div></div></div>
-      <div class="testi rev d2"><div class="testi-stars">★★★★★</div><p class="testi-text">"Switched from a large courier company to Sea Hawk 2 years ago — best decision. Better pricing, personalised service, and they actually pick up the phone when you call."</p><div class="testi-author"><div class="testi-av" style="background:var(--green);">PG</div><div><div class="testi-name">Priya Gupta</div><div class="testi-role">Founder, Crafted Collections · Noida</div></div></div></div>
-    </div>
-  </div>
-</section>
-
-<!-- CTA BAND -->
-<section id="cta-band">
-  <div class="wrap">
-    <div class="cta-inner">
-      <h2>Ready to <span>Ship with Sea Hawk?</span></h2>
-      <p>Free doorstep pickup. Competitive rates. Real-time tracking. 20+ years of experience.</p>
-      <div class="cta-btns">
-        <a href="tel:+919911565523" class="btn btn-white btn-lg">📦 Book Free Pickup</a>
-        <a href="/track" class="btn btn-ghost-w btn-lg">🔍 Track Shipment</a>
-        <a href="/login" class="btn btn-ghost-w btn-lg">🔐 Client Portal</a>
-      </div>
-      <div class="cta-phones">
-        <div class="cta-phone">📞 <a href="tel:+919911565523">+91 99115 65523</a></div>
-        <div class="cta-div"></div>
-        <div class="cta-phone">📞 <a href="tel:+918368201122">+91 83682 01122</a></div>
-        <div class="cta-div"></div>
-        <div class="cta-phone">💬 <a href="https://wa.me/919911565523" target="_blank">WhatsApp Us</a></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- CONTACT -->
-<section id="contact-section" class="sec" style="background:var(--bg-2);border-top:1px solid var(--border-l);">
-  <div class="wrap">
-    <div class="sec-head">
-      <div class="pill pill-orange rev">Get In Touch</div>
-      <h2 class="h-display rev d1">We're Here to <span>Help You Ship</span></h2>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-top:40px;" class="rev d1">
-      <a href="tel:+919911565523" style="background:#fff;border:1.5px solid var(--border-l);border-radius:var(--r-xl);padding:28px 24px;text-align:center;text-decoration:none;color:var(--ink);transition:box-shadow .2s;">
-        <div style="font-size:2rem;margin-bottom:12px;">📞</div>
-        <div style="font-weight:800;font-size:1rem;margin-bottom:4px;">Call Us</div>
-        <div style="color:var(--ink-3);font-size:.85rem;">+91 99115 65523</div>
-      </a>
-      <a href="https://wa.me/919911565523" target="_blank" style="background:#fff;border:1.5px solid var(--border-l);border-radius:var(--r-xl);padding:28px 24px;text-align:center;text-decoration:none;color:var(--ink);transition:box-shadow .2s;">
-        <div style="font-size:2rem;margin-bottom:12px;">💬</div>
-        <div style="font-weight:800;font-size:1rem;margin-bottom:4px;">WhatsApp</div>
-        <div style="color:var(--ink-3);font-size:.85rem;">+91 99115 65523</div>
-      </a>
-      <a href="mailto:info@seahawkcourier.com" style="background:#fff;border:1.5px solid var(--border-l);border-radius:var(--r-xl);padding:28px 24px;text-align:center;text-decoration:none;color:var(--ink);transition:box-shadow .2s;">
-        <div style="font-size:2rem;margin-bottom:12px;">📧</div>
-        <div style="font-weight:800;font-size:1rem;margin-bottom:4px;">Email Us</div>
-        <div style="color:var(--ink-3);font-size:.85rem;">info@seahawkcourier.com</div>
-      </a>
-      <div style="background:#fff;border:1.5px solid var(--border-l);border-radius:var(--r-xl);padding:28px 24px;text-align:center;">
-        <div style="font-size:2rem;margin-bottom:12px;">📍</div>
-        <div style="font-weight:800;font-size:1rem;margin-bottom:4px;">Visit Us</div>
-        <div style="color:var(--ink-3);font-size:.8rem;">Shop 6 &amp; 7, Rao Lal Singh Market,<br/>Sector-18, Gurugram – 122015</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- FOOTER -->
-<footer>
-  <div class="wrap">
-    <div class="footer-grid">
-      <div>
-        <div class="footer-logo"><img src="/images/logo.png" alt="Sea Hawk Courier and Cargo"/></div>
-        <p class="footer-brand">Your trusted delivery partner since 2004. Connecting businesses across India and the world with speed, reliability and complete transparency.</p>
-        <div class="footer-contacts">
-          <div class="fci">📞 <a href="tel:+919911565523">+91 99115 65523</a> · <a href="tel:+919911555534">+91 99115 55534</a></div>
-          <div class="fci">📞 <a href="tel:+918368201122">+91 83682 01122</a></div>
-          <div class="fci">💬 <a href="https://wa.me/919911565523" target="_blank">WhatsApp Us</a></div>
-          <div class="fci">📍 Shop 6 &amp; 7, Rao Lal Singh Market, Sector-18, Gurugram – 122015</div>
-          <div class="fci" style="font-size:.73rem;color:rgba(255,255,255,.35);">GSTIN: 06AJDPR0914N2Z1</div>
-        </div>
-      </div>
-      <div>
-        <div class="footer-h">Services</div>
-        <ul class="footer-ul">
-          <li><a href="#services">Express Delivery</a></li>
-          <li><a href="#services">International Courier</a></li>
-          <li><a href="#services">Surface Cargo</a></li>
-          <li><a href="#services">B2B Logistics</a></li>
-          <li><a href="#services">Insured Shipping</a></li>
-          <li><a href="#services">Document Courier</a></li>
-        </ul>
-      </div>
-      <div>
-        <div class="footer-h">Quick Links</div>
-        <ul class="footer-ul">
-          <li><a href="#calculator">Rate Calculator</a></li>
-          <li><a href="#map-section">Coverage Map</a></li>
-          <li><a href="/login">🔐 Client Portal</a></li>
-          <li><a href="#contact-section">Contact Us</a></li>
-        </ul>
-      </div>
-      <div>
-        <div class="footer-h">Company</div>
-        <ul class="footer-ul">
-          <li><a href="#">Privacy Policy</a></li>
-          <li><a href="#">Terms of Service</a></li>
-          <li><a href="#">Shipping Guidelines</a></li>
-          <li><a href="#">Claims Policy</a></li>
-        </ul>
-      </div>
-    </div>
-    <div class="footer-bottom">
-      <div>© 2025 Sea Hawk Courier &amp; Cargo. All rights reserved.</div>
-      <div class="footer-br"><a href="#">Privacy</a><a href="#">Terms</a><a href="#contact-section">Support</a></div>
-    </div>
-  </div>
-</footer>
-`;
+  function compute() {
+    const w = parseFloat(weight) || 0;
+    if (w <= 0) { setResult(null); return; }
+    let base = 0;
+    if (svc === 'doc') {
+      const r = DOC_RATES[zone] || DOC_RATES.localNCR;
+      if (w <= 250) base = r.w250;
+      else if (w <= 500) base = r.w500;
+      else base = r.w500 + Math.ceil((w - 500) / 500) * r.addl;
+    } else if (svc === 'priority') {
+      const r = PRIORITY_RATES[priorityZone] || PRIORITY_RATES.localNCR;
+      if (w <= 500) base = r.w500;
+      else if (w <= 1000) base = r.w1kg;
+      else base = r.w1kg + Math.ceil((w - 1000) / 500) * r.addl;
+    } else if (svc === 'heavy-sfc') {
+      if (w < 3) { alert('Minimum chargeable weight: 3 kg'); return; }
+      base = w * sfcRate(sfcZone, w);
+    } else if (svc === 'heavy-air') {
+      if (w < 3) { alert('Minimum chargeable weight: 3 kg'); return; }
+      base = w * airRate(airZone, w);
+    } else if (svc === 'international') {
+      let r;
+      if (destination === 'zoneH') r = { ...INTL.zoneG, dox: INTL.zoneG.dox + 300, nondox: INTL.zoneG.nondox + 300 };
+      else r = INTL[destination] || INTL.zoneA;
+      const baseRate = shipType === 'dox' ? r.dox : r.nondox;
+      const addlRate = shipType === 'dox' ? r.addlDox : r.addlNon;
+      base = w <= 500 ? baseRate : baseRate + Math.ceil((w - 500) / 500) * addlRate;
+      if (viaDhl) base += 350;
+      setZoneInfo(`🌍 ${destination.toUpperCase()}: ${ZONE_NAMES[destination] || ''}`);
+    }
+    const fscAmt = rnd(base * FSC);
+    const insAmt = insured ? Math.max(rnd(base * INS_RATE), 50) : 0;
+    const gstAmt = rnd((base + fscAmt + insAmt) * GST);
+    const total  = rnd(base + fscAmt + insAmt + gstAmt);
+    setResult({ base, fsc: fscAmt, ins: insAmt, gst: gstAmt, total });
+  }
 
   return (
-    <div
-      dangerouslySetInnerHTML={{ __html: html }}
-      suppressHydrationWarning
-    />
+    <section id="calculator" className="sec" style={{ background: 'var(--bg-2)', borderTop: '1px solid var(--border-l)' }}>
+      <div className="wrap">
+        <div className="calc-layout">
+          <div>
+            <div className="pill pill-navy rev">Instant Pricing</div>
+            <h2 className="h-display rev d1">Transparent<br /><span>Rate Calculator</span></h2>
+            <p className="t-lead rev d2" style={{ maxWidth: '100%' }}>Exact costs before you book — fuel surcharge, GST and insurance all shown clearly. No surprises on your invoice.</p>
+            <div className="calc-usps">
+              <div className="calc-usp rev d1"><div className="calc-usp-icon">⚡</div><div><div className="calc-usp-t">Live Rates from 6 Carriers</div><div className="calc-usp-s">Trackon, DTDC, Delhivery, BlueDart, DHL &amp; FedEx — verified tariffs.</div></div></div>
+              <div className="calc-usp rev d2"><div className="calc-usp-icon">🌍</div><div><div className="calc-usp-t">Domestic + 220 Countries</div><div className="calc-usp-s">All Indian zones including NE, J&amp;K, Andaman plus 8-zone international pricing.</div></div></div>
+              <div className="calc-usp rev d3"><div className="calc-usp-icon">🔢</div><div><div className="calc-usp-t">All-Inclusive Breakdown</div><div className="calc-usp-s">Fuel surcharge (25%), GST (18%) and optional insurance all shown transparently.</div></div></div>
+            </div>
+          </div>
+          <div className="calc-card rev d1">
+            <div className="calc-head"><h3>Shipping Rate Calculator</h3><small>SeaHawk Rate Card v10 · FSC 25% · GST 18%</small></div>
+            <div className="calc-body">
+              <div className="fg-grid" style={{ gap: 13 }}>
+                <div className="fg">
+                  <label>Service Type</label>
+                  <select value={svc} onChange={e => { setSvc(e.target.value); setResult(null); }}>
+                    <option value="doc">Document / Packet</option>
+                    <option value="priority">Priority Express</option>
+                    <option value="heavy-sfc">Heavy — Surface Cargo</option>
+                    <option value="heavy-air">Heavy — Air Cargo</option>
+                    <option value="international">International</option>
+                  </select>
+                </div>
+                {svc === 'doc' && (
+                  <div className="fg">
+                    <label>To Zone</label>
+                    <select value={zone} onChange={e => { setZone(e.target.value); setResult(null); }}>
+                      <option value="localNCR">Delhi &amp; NCR</option>
+                      <option value="northIndia">North India</option>
+                      <option value="metro">Metro Cities</option>
+                      <option value="restIndia">Rest of India</option>
+                      <option value="northEast">North East / Srinagar</option>
+                      <option value="diplomatic">Diplomatic / Port Blair</option>
+                    </select>
+                  </div>
+                )}
+                {svc === 'priority' && (
+                  <div className="fg">
+                    <label>To Zone</label>
+                    <select value={priorityZone} onChange={e => { setPZ(e.target.value); setResult(null); }}>
+                      <option value="localNCR">Local &amp; NCR</option>
+                      <option value="northIndia">North India</option>
+                      <option value="restIndia">Rest of India</option>
+                      <option value="northEast">North East</option>
+                    </select>
+                  </div>
+                )}
+                {svc === 'heavy-sfc' && (
+                  <div className="fg">
+                    <label>To Zone</label>
+                    <select value={sfcZone} onChange={e => { setSfcZone(e.target.value); setResult(null); }}>
+                      <option value="localNCR">Delhi &amp; NCR</option>
+                      <option value="northIndia">North India</option>
+                      <option value="metro">Metro Cities</option>
+                      <option value="restIndia">Rest of India</option>
+                      <option value="northEast">North East</option>
+                      <option value="kashmir">Kashmir / J&amp;K</option>
+                      <option value="portBlair">Port Blair / Andaman</option>
+                    </select>
+                  </div>
+                )}
+                {svc === 'heavy-air' && (
+                  <div className="fg">
+                    <label>To Zone</label>
+                    <select value={airZone} onChange={e => { setAirZone(e.target.value); setResult(null); }}>
+                      <option value="srinagar">Srinagar Sector</option>
+                      <option value="biharJh">Bihar &amp; Jharkhand</option>
+                      <option value="metro">Metro Cities</option>
+                      <option value="restIndia">Rest of India</option>
+                      <option value="northEast">North East</option>
+                      <option value="portBlair">Port Blair</option>
+                    </select>
+                  </div>
+                )}
+                {svc === 'international' && (
+                  <>
+                    <div className="fg full">
+                      <label>Destination Country</label>
+                      <select value={country} onChange={e => handleCountryChange(e.target.value)}>
+                        <option value="">-- Select Country --</option>
+                        <optgroup label="Zone A"><option value="bangladesh">Bangladesh</option><option value="bhutan">Bhutan</option><option value="maldives">Maldives</option><option value="nepal">Nepal</option><option value="sri lanka">Sri Lanka</option><option value="united arab emirates">United Arab Emirates</option></optgroup>
+                        <optgroup label="Zone B"><option value="bahrain">Bahrain</option><option value="hong kong">Hong Kong</option><option value="kuwait">Kuwait</option><option value="oman">Oman</option><option value="qatar">Qatar</option><option value="saudi arabia">Saudi Arabia</option><option value="singapore">Singapore</option><option value="yemen">Yemen</option></optgroup>
+                        <optgroup label="Zone C"><option value="australia">Australia</option><option value="china">China</option><option value="indonesia">Indonesia</option><option value="korea">Korea</option><option value="malaysia">Malaysia</option><option value="new zealand">New Zealand</option><option value="philippines">Philippines</option><option value="thailand">Thailand</option><option value="vietnam">Vietnam</option></optgroup>
+                        <optgroup label="Zone D"><option value="belgium">Belgium</option><option value="denmark">Denmark</option><option value="france">France</option><option value="germany">Germany</option><option value="italy">Italy</option><option value="netherlands">Netherlands</option><option value="switzerland">Switzerland</option><option value="united kingdom">United Kingdom</option></optgroup>
+                        <optgroup label="Zone E"><option value="canada">Canada</option><option value="mexico">Mexico</option><option value="united states">United States</option></optgroup>
+                        <optgroup label="Zone F"><option value="japan">Japan</option></optgroup>
+                        <optgroup label="Zone G"><option value="austria">Austria</option><option value="finland">Finland</option><option value="greece">Greece</option><option value="israel">Israel</option><option value="norway">Norway</option><option value="poland">Poland</option><option value="portugal">Portugal</option><option value="south africa">South Africa</option><option value="spain">Spain</option><option value="sweden">Sweden</option><option value="turkey">Turkey</option></optgroup>
+                        <optgroup label="Zone H"><option value="other">Other Countries (+₹300)</option></optgroup>
+                      </select>
+                    </div>
+                    <div className="fg">
+                      <label>Shipment Type</label>
+                      <select value={shipType} onChange={e => { setShipType(e.target.value); setResult(null); }}>
+                        <option value="dox">Documents (DOX)</option>
+                        <option value="nondox">Non-Document / Parcels</option>
+                      </select>
+                    </div>
+                  </>
+                )}
+                <div className="fg">
+                  <label>{svc === 'heavy-sfc' || svc === 'heavy-air' ? 'Weight (kg)' : 'Weight (grams)'}</label>
+                  <input type="number" value={weight} onChange={e => { setWeight(e.target.value); setResult(null); }} placeholder="e.g. 500" min="0.001" step="any" />
+                </div>
+              </div>
+              {zoneInfo && <div className="zone-info show">{zoneInfo}</div>}
+              <div className="fg-checks">
+                <label className="fg-check"><input type="checkbox" checked={insured} onChange={e => setInsured(e.target.checked)} /> Insurance (0.2% min ₹50)</label>
+                {svc === 'international' && (
+                  <div><label className="fg-check"><input type="checkbox" checked={viaDhl} onChange={e => setViaDhl(e.target.checked)} /> Via DHL / FedEx (+₹350)</label></div>
+                )}
+              </div>
+              {result && (
+                <div className="calc-result show">
+                  <div className="cr-head">Estimated Cost Breakdown</div>
+                  <div className="cr-body">
+                    <div className="cr-row"><span>Base Freight</span><span className="cr-val">{fmt(result.base)}</span></div>
+                    <div className="cr-row"><span>Fuel Surcharge (25%)</span><span className="cr-val">{fmt(result.fsc)}</span></div>
+                    {insured && <div className="cr-row"><span>Insurance</span><span className="cr-val">{fmt(result.ins)}</span></div>}
+                    <div className="cr-row"><span>GST (18%)</span><span className="cr-val">{fmt(result.gst)}</span></div>
+                    <div className="cr-total">
+                      <span className="cr-total-lbl">Total Estimate</span>
+                      <span className="cr-total-val">{fmt(result.total)}</span>
+                    </div>
+                    <div className="cr-note">* Indicative. Final based on actual dimensions.</div>
+                  </div>
+                </div>
+              )}
+              <button className="btn-calc" onClick={compute}>⚡ Get Rate</button>
+              <Link to="/book" style={{ display: 'block', textAlign: 'center', marginTop: 10, padding: 11, background: 'var(--navy)', color: '#fff', borderRadius: 'var(--r)', fontSize: '.875rem', fontWeight: 700, textDecoration: 'none' }}>📦 Book This Pickup →</Link>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ════════════════════════════════════════
+   HERO TRACK WIDGET
+════════════════════════════════════════ */
+function TrackWidget() {
+  const navigate = useNavigate();
+  const [tab, setTab]       = useState('track');
+  const [awb, setAwb]       = useState('');
+  const [qqSvc, setQqSvc]   = useState('dom');
+  const [qqDest, setQqDest] = useState('local');
+  const [qqWt, setQqWt]     = useState('');
+  const [qqRes, setQqRes]   = useState(null);
+  const [cbName, setCbName] = useState('');
+  const [cbPhone, setCbPhone] = useState('');
+  const [cbOk, setCbOk]     = useState(false);
+
+  function goToTrack() {
+    if (!awb.trim()) return;
+    navigate(`/track/${encodeURIComponent(awb.trim().toUpperCase())}`);
+  }
+
+  function quickQuote() {
+    const wt = parseFloat(qqWt) || 0;
+    if (!wt) { alert('Please enter a weight.'); return; }
+    const base = (QR[qqSvc] || QR.dom)[qqDest] || 60;
+    const total = (base + Math.max(0, (wt / 1000) - 0.5) * base * 1.1) * 1.27 * 1.18;
+    setQqRes('₹' + Math.round(total));
+  }
+
+  function doCallback() {
+    if (!cbName.trim() || !cbPhone.trim()) { alert('Please fill in your name and phone number.'); return; }
+    window.open(`https://wa.me/919911565523?text=${encodeURIComponent('Hi! Callback request.\nName: ' + cbName + '\nPhone: ' + cbPhone)}`, '_blank');
+    setCbOk(true);
+    setTimeout(() => setCbOk(false), 5000);
+  }
+
+  return (
+    <div className="track-widget rev d2">
+      <div className="tw-tabs">
+        {[['track', '🔍 Track Shipment'], ['quote', '💰 Quick Quote'], ['call', '📞 Callback']].map(([id, label]) => (
+          <button key={id} className={`tw-tab${tab === id ? ' on' : ''}`} onClick={() => setTab(id)}>{label}</button>
+        ))}
+      </div>
+      {tab === 'track' && (
+        <div className="tw-panel on">
+          <div className="tw-row">
+            <div className="tw-field">
+              <label>AWB / Tracking Number</label>
+              <input className="tw-input" value={awb} onChange={e => setAwb(e.target.value)} placeholder="Enter AWB, Docket or Reference No."
+                onKeyDown={e => e.key === 'Enter' && goToTrack()} />
+            </div>
+            <button className="btn-track" onClick={goToTrack}>Track Now</button>
+          </div>
+        </div>
+      )}
+      {tab === 'quote' && (
+        <div className="tw-panel on">
+          <div className="tw-row tw-row-3">
+            <div className="tw-field"><label>Type</label>
+              <select className="tw-select" value={qqSvc} onChange={e => setQqSvc(e.target.value)}>
+                <option value="dom">Domestic</option><option value="intl">International</option><option value="b2b">B2B Bulk</option>
+              </select>
+            </div>
+            <div className="tw-field"><label>Zone</label>
+              <select className="tw-select" value={qqDest} onChange={e => setQqDest(e.target.value)}>
+                <option value="local">Local/NCR</option><option value="metro">Metro City</option><option value="roi">Rest of India</option><option value="ne">North East</option>
+              </select>
+            </div>
+            <div className="tw-field"><label>Weight (g)</label>
+              <input className="tw-input" type="number" value={qqWt} onChange={e => setQqWt(e.target.value)} placeholder="500" min="1" />
+            </div>
+            <button className="btn-track" onClick={quickQuote}>Get Rate</button>
+          </div>
+          {qqRes && (
+            <div style={{ display: 'block', marginTop: 10, padding: '10px 14px', background: 'var(--navy-faint)', border: '1px solid var(--navy-pale)', borderRadius: 'var(--r)', fontSize: '.875rem' }}>
+              <strong>Estimated: </strong><span style={{ color: 'var(--orange)', fontWeight: 800, fontSize: '1.1rem' }}>{qqRes}</span>
+              <span style={{ color: 'var(--ink-3)', fontSize: '.73rem', marginLeft: 8 }}>(incl. fuel &amp; GST) — <a href="#calculator" style={{ color: 'var(--navy-3)', fontWeight: 700 }}>Full breakdown →</a></span>
+            </div>
+          )}
+        </div>
+      )}
+      {tab === 'call' && (
+        <div className="tw-panel on">
+          <div className="tw-row">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, flex: 1 }}>
+              <div className="tw-field"><label>Your Name</label><input className="tw-input" value={cbName} onChange={e => setCbName(e.target.value)} placeholder="Full Name" /></div>
+              <div className="tw-field"><label>Phone Number</label><input className="tw-input" value={cbPhone} onChange={e => setCbPhone(e.target.value)} placeholder="+91 XXXXX XXXXX" /></div>
+            </div>
+            <button className="btn-track" onClick={doCallback}>Request Call</button>
+          </div>
+          {cbOk && <div style={{ marginTop: 10, padding: '9px 13px', background: 'var(--green-bg)', borderRadius: 'var(--r)', fontSize: '.8rem', color: 'var(--green)', fontWeight: 600 }}>✅ We'll call you back within 30 minutes!</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════
+   MAIN LANDING PAGE
+════════════════════════════════════════ */
+export default function LandingPage() {
+  const pageRef = useCounterAnimation();
+  const heroIllRef = useRef(null);
+
+  // Load hero.js and map.js after React renders the DOM
+  useEffect(() => {
+  function loadScript(src, onload) {
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = false;
+    s.onload = onload;
+    document.body.appendChild(s);
+    return s;
+  }
+
+  const s1 = loadScript('/website/js/hero.js', () => {
+    if (window.buildHeroIllustration) window.buildHeroIllustration();
+  });
+  const s2 = loadScript('/website/js/map.js', () => {
+    if (window.buildMap) window.buildMap();
+  });
+
+  return () => { s1.remove(); s2.remove(); };
+}, []);
+
+  return (
+    <PublicLayout>
+      <div ref={pageRef}>
+        {/* ── HERO ── */}
+        <section id="hero">
+          <div className="hero-grid-bg" />
+          <div className="hero-glow-1" /><div className="hero-glow-2" />
+          <div className="wrap">
+            <div className="hero-inner">
+              <div className="rev">
+                <div className="hero-kicker"><span className="dot" />Trusted Since 2004 — 20+ Years Delivering Excellence</div>
+                <h1 className="hero-h1">India's Most Trusted<br /><em>Courier &amp; Cargo</em><br /><span className="sub-line">Partner</span></h1>
+                <p className="hero-p">From same-day Delhi NCR deliveries to international shipments across 220+ countries — we power your logistics with unmatched speed, security and competitive rates.</p>
+                <div className="hero-trust">
+                  {['35,000+ PIN Codes','220+ Countries','24×7 Support','Real-Time Tracking'].map(t => (
+                    <div key={t} className="t-chip"><span className="chk">✓</span>{t}</div>
+                  ))}
+                </div>
+                <div className="hero-cta">
+                  <Link to="/book" className="btn btn-orange btn-lg">📦 Book Free Pickup</Link>
+                  <Link to="/track" className="btn btn-ghost-w btn-lg">🔍 Track Shipment</Link>
+                </div>
+                <div className="hero-mini-stats rev d1">
+                  {[{t:120000,dur:2500,l:'Shipments Delivered'},{t:350,dur:1800,l:'Cities Covered'},{t:220,dur:1600,l:'Countries'},{t:20,dur:1400,l:'Years Experience',sup:'+ Yrs'}].map(({t,dur,l,sup}) => (
+                    <div key={l} className="hms">
+                      <div className="hms-n"><span className="count" data-t={t} data-dur={dur}>0</span><sup>{sup || '+'}</sup></div>
+                      <div className="hms-l">{l}</div>
+                    </div>
+                  ))}
+                </div>
+                <TrackWidget />
+              </div>
+              <div className="hero-visual rev d1">
+                <div className="hero-illustration" id="heroIllustration" ref={heroIllRef} />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── TICKER ── */}
+        <div className="ticker">
+          <div className="ticker-track">
+            {['🚀 Same Day Express Delivery','✈️ International Air Courier','🌍 220+ Countries & Territories','📦 Bulk & LTL Surface Freight','🔍 Real-Time Shipment Tracking','🛡️ Fully Insured Deliveries','💼 B2B Corporate Logistics','📋 35,000+ PIN Codes Covered','🕐 24×7 Customer Support'].flatMap((t, i) => [
+              <span key={`t${i}`} className="tick-item">{t}</span>,
+              <span key={`s${i}`} className="tick-sep" />,
+            ])}
+          </div>
+        </div>
+
+        {/* ── STATS BAND ── */}
+        <section id="stats-band">
+          <div className="wrap">
+            <div className="stats-grid">
+              {[{icon:'📦',t:120000,dur:2800,l:'Shipments Delivered'},{icon:'📍',t:35000,dur:2500,l:'PIN Codes Covered'},{icon:'🏙️',t:800,dur:2000,l:'Cities in India'},{icon:'🌍',t:220,dur:1800,l:'Countries Served'},{icon:'🏆',t:20,dur:1500,l:'Years of Excellence',sup:'+ Yrs'}].map(({icon,t,dur,l,sup},i) => (
+                <div key={l} className={`stat-block rev${i > 0 ? ` d${i}` : ''}`}>
+                  <div className="stat-icon-wrap">{icon}</div>
+                  <div className="stat-number"><span className="count" data-t={t} data-dur={dur}>0</span><sup>{sup || '+'}</sup></div>
+                  <div className="stat-label">{l}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── TRUST SIGNALS ── */}
+        <section style={{ background: 'var(--bg-2)', borderTop: '1px solid var(--border-l)', borderBottom: '1px solid var(--border-l)', padding: '36px 0' }}>
+          <div className="wrap">
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 20, marginBottom: 28 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                {[{icon:'⭐',val:'4.8',lbl:'Google Rating',sub:'200+ reviews'},{icon:'🏆',val:'20+',lbl:'Years Active',sub:'Est. 2004, Gurugram'},{icon:'🛡️',val:'GST',lbl:'Registered',sub:'06AJDPR0914N2Z1'}].map(({icon,val,lbl,sub}) => (
+                  <div key={lbl} style={{ background: '#fff', borderRadius: 'var(--r-lg)', padding: '14px 20px', boxShadow: 'var(--sh-sm)', border: '1.5px solid var(--border-l)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ fontSize: '1.8rem' }}>{icon}</div>
+                    <div>
+                      <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.6rem', fontWeight: 900, color: 'var(--ink)', lineHeight: 1 }}>{val}</div>
+                      <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: 1 }}>{lbl}</div>
+                      <div style={{ fontSize: '.68rem', color: 'var(--ink-4)' }}>{sub}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {['✓ Free Doorstep Pickup','✓ Real-Time Tracking','✓ GST Invoicing','✓ 35,000+ PIN Codes','✓ 24×7 Emergency'].map(t => (
+                  <div key={t} style={{ padding: '6px 14px', background: '#fff', border: '1.5px solid var(--border-l)', borderRadius: 40, fontSize: '.73rem', fontWeight: 700, color: 'var(--ink-2)' }}>{t}</div>
+                ))}
+              </div>
+            </div>
+            <p style={{ textAlign: 'center', fontSize: '.67rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 2, color: 'var(--ink-4)', marginBottom: 16 }}>Verified Channel Partners</p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 12 }}>
+              {[{img:'/images/partners/trackon.png',name:'Trackon'},{img:'/images/partners/dtdc.png',name:'DTDC'},{img:'/images/partners/bluedart.png',name:'BlueDart'},{img:'/images/partners/dhl.png',name:'DHL Express'}].map(({img,name}) => (
+                <div key={name} style={{ background: '#fff', border: '1.5px solid var(--border-l)', borderRadius: 'var(--r-md)', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 8, boxShadow: 'var(--sh-xs)' }}>
+                  <img loading="lazy" src={img} alt={name} style={{ height: 28, width: 'auto', objectFit: 'contain' }} />
+                  <span style={{ fontSize: '.72rem', fontWeight: 800, color: 'var(--ink-2)' }}>{name}</span>
+                </div>
+              ))}
+              {[{icon:'🚀',name:'Delhivery'},{icon:'🟣',name:'FedEx'}].map(({icon,name}) => (
+                <div key={name} style={{ background: '#fff', border: '1.5px solid var(--border-l)', borderRadius: 'var(--r-md)', padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 8, boxShadow: 'var(--sh-xs)' }}>
+                  <span style={{ fontSize: '1.2rem' }}>{icon}</span><span style={{ fontSize: '.72rem', fontWeight: 800, color: 'var(--ink-2)' }}>{name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── SERVICES ── */}
+        <section id="services" className="sec">
+          <div className="wrap">
+            <div className="sec-head">
+              <div className="pill pill-orange rev">What We Offer</div>
+              <h2 className="h-display rev d1">Services <span>Built for Your Business</span></h2>
+              <p className="t-lead rev d2" style={{ margin: '0 auto' }}>From local same-day pickups to air freight across six continents — every shipment backed by 20 years of expertise.</p>
+            </div>
+            <div className="svc-grid">
+              {[
+                {icon:'🚀',t:'Express Delivery',d:'Same-day and next-day delivery to Delhi NCR and all major cities. Fastest transit times with guaranteed POD on every consignment.',note:'📍 Delhi NCR · Metro Cities · North India',link:'#calculator',cta:'Learn more →'},
+                {icon:'✈️',t:'International Courier',d:'Documents and parcels to 220+ countries via DHL, FedEx, Aramex and our own global partner network across 8 international zones.',note:'🌍 USA · UK · UAE · Australia · 220+ Countries',link:'#calculator',cta:'Calculate rate →'},
+                {icon:'📦',t:'Surface & LTL Cargo',d:'Cost-effective road freight for heavy consignments. LTL road express connecting 800+ cities pan-India at competitive rates.',note:'📦 Pan-India · Up to 500 kg per consignment',link:'/contact',cta:'Contact us →'},
+                {icon:'🏢',t:'B2B Logistics',d:'Custom rate contracts, dedicated account manager, monthly invoicing and full client portal access for enterprise shippers.',note:'💼 Custom rates · Volume discounts available',link:'/services#b2b',cta:'Open an account →'},
+                {icon:'🛡️',t:'Insured Shipments',d:"Full declared-value insurance for electronics, jewellery, fragile goods and high-value items at just 5% premium.",note:'🔒 5% premium · Hassle-free claims process',link:'#calculator',cta:'Calculate cost →'},
+                {icon:'📋',t:'Document Courier',d:'Secure delivery of legal documents, passports, bank documents and diplomatic mail — handled with absolute care.',note:'🗂️ Domestic · International · Diplomatic Mail',link:'/contact',cta:'Enquire now →'},
+              ].map(({icon,t,d,note,link,cta},i) => (
+                <div key={t} className={`svc-card rev${i > 0 ? ` d${(i % 3) || ''}` : ''}`}>
+                  <div className="svc-icon">{icon}</div>
+                  <h3 className="svc-title">{t}</h3>
+                  <p className="svc-desc">{d}</p>
+                  <div className="svc-note">{note}</div>
+                  {link.startsWith('/') ? <Link to={link} className="svc-link">{cta}</Link> : <a href={link} className="svc-link">{cta}</a>}
+                </div>
+              ))}
+            </div>
+            <div style={{ textAlign: 'center', marginTop: 44 }} className="rev">
+              <Link to="/services" className="btn btn-navy btn-lg">View All Services →</Link>
+            </div>
+          </div>
+        </section>
+
+        {/* ── CALCULATOR ── */}
+        <RateCalculator />
+
+        {/* ── MAP ── */}
+        <section id="map-section" className="sec" style={{ background: '#fff', borderTop: '1px solid var(--border-l)' }}>
+          <div className="wrap">
+            <div className="sec-head" style={{ marginBottom: 36 }}>
+              <div className="pill pill-orange rev">Our Reach</div>
+              <h2 className="h-display rev d1">Coverage Across <span>India &amp; The World</span></h2>
+              <p className="t-lead rev d2" style={{ margin: '0 auto' }}>Every PIN code in India. 180+ countries worldwide. Real shipments, real routes, every day.</p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 28 }} className="rev d1">
+              {[{t:35000,c:'var(--navy)',bg:'var(--navy-faint)',brd:'var(--navy-pale)',l:'PIN Codes'},{t:800,c:'var(--orange)',bg:'var(--orange-bg)',brd:'var(--orange-brd)',l:'Indian Cities'},{t:180,c:'var(--navy)',bg:'var(--navy-faint)',brd:'var(--navy-pale)',l:'Countries'},{t:6,c:'var(--green)',bg:'var(--green-bg)',brd:'#a7f3d0',l:'Continents'}].map(({t,c,bg,brd,l}) => (
+                <div key={l} style={{ textAlign: 'center', padding: 16, background: bg, borderRadius: 'var(--r-lg)', border: `1.5px solid ${brd}` }}>
+                  <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.7rem', fontWeight: 900, color: c }}><span className="count" data-t={t}>0</span>+</div>
+                  <div style={{ fontSize: '.68rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.5, color: c }}>{l}</div>
+                </div>
+              ))}
+            </div>
+            <div className="map-canvas-wrap rev d2" style={{ borderRadius: 'var(--r-xl)', overflow: 'hidden', boxShadow: 'var(--sh-xl)', border: '1.5px solid var(--border-l)', background: 'var(--navy)' }}>
+              <div className="map-top-bar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 20px', background: 'rgba(255,255,255,.05)', borderBottom: '1px solid rgba(255,255,255,.08)' }}>
+                <span style={{ fontSize: '.75rem', fontWeight: 800, color: 'rgba(255,255,255,.75)', letterSpacing: 1.5, textTransform: 'uppercase' }}>Sea Hawk Global Coverage Map</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <span style={{ fontSize: '.68rem', color: 'rgba(255,255,255,.45)' }}>Left: India Detail &nbsp;|&nbsp; Right: International Network</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '.7rem', color: 'rgba(255,255,255,.5)' }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#4ade80', display: 'inline-block', animation: 'blinkDot 1.2s ease-in-out infinite' }} />Live
+                  </span>
+                </div>
+              </div>
+              <div id="indiaMapCanvas" style={{ lineHeight: 0 }} />
+            </div>
+
+            {/* ── Legend ── */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 20, justifyContent: 'center' }}>
+              {[
+                { color: '#e8580a', title: 'Delhi NCR Hub', sub: 'Origin for all shipments' },
+                { color: '#ff8c45', title: 'Metro Cities', sub: 'Mumbai · Bangalore · Chennai · Kolkata · Hyderabad' },
+                { color: '#4ade80', title: 'North East India', sub: 'All 8 NE states · Assam · Manipur · Meghalaya' },
+                { color: '#fbbf24', title: 'Islands', sub: 'Andaman · Nicobar · Lakshadweep' },
+                { color: '#60a5fa', title: 'International Gateways', sub: 'UAE · UK · USA · SGP · AUS · 180+ countries' },
+              ].map(({ color, title, sub }) => (
+                <div key={title} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: '#fff', borderRadius: 'var(--r-lg)', border: '1.5px solid var(--border-l)', boxShadow: 'var(--sh-xs)' }}>
+                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: '.78rem', fontWeight: 700, color: 'var(--ink)' }}>{title}</div>
+                    <div style={{ fontSize: '.68rem', color: 'var(--ink-3)' }}>{sub}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+          </div>
+        </section>
+
+        {/* ── TESTIMONIALS ── */}
+        <section id="testimonials" className="sec">
+          <div className="wrap">
+            <div className="sec-head">
+              <div className="pill pill-navy rev">Client Stories</div>
+              <h2 className="h-display rev d1">Trusted by <span>Businesses Across India</span></h2>
+            </div>
+            <div className="testi-grid">
+              {[
+                {stars:'★★★★★',text:'We\'ve shipped internationally with Sea Hawk for 7 years. Their rates are consistently competitive and service impeccable. Documents reach Dubai in 2 days, every single time.',av:'RK',name:'Rajan Kapoor',role:'MD, Kapoor Exports · Delhi',bg:''},
+                {stars:'★★★★★',text:'The client portal is outstanding. Real-time tracking, instant invoice downloads and our account manager is always reachable. This is what proper B2B logistics looks like.',av:'AS',name:'Anita Sharma',role:'Procurement Head, TechGrow India',bg:'var(--orange)'},
+                {stars:'★★★★★',text:'Switched from a large courier company to Sea Hawk 2 years ago — best decision. Better pricing, personalised service, and they actually pick up the phone when you call.',av:'PG',name:'Priya Gupta',role:'Founder, Crafted Collections · Noida',bg:'var(--green)'},
+              ].map(({stars,text,av,name,role,bg},i) => (
+                <div key={name} className={`testi rev${i > 0 ? ` d${i}` : ''}`}>
+                  <div className="testi-stars">{stars}</div>
+                  <p className="testi-text">"{text}"</p>
+                  <div className="testi-author">
+                    <div className="testi-av" style={bg ? {background:bg} : {}}>{av}</div>
+                    <div><div className="testi-name">{name}</div><div className="testi-role">{role}</div></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ── CTA BAND ── */}
+        <section id="cta-band">
+          <div className="wrap">
+            <div className="cta-inner">
+              <h2>Ready to <span>Ship with Sea Hawk?</span></h2>
+              <p>Free doorstep pickup. Competitive rates. Real-time tracking. 20+ years of experience.</p>
+              <div className="cta-btns">
+                <Link to="/book" className="btn btn-white btn-lg">📦 Book Free Pickup</Link>
+                <Link to="/track" className="btn btn-ghost-w btn-lg">🔍 Track Shipment</Link>
+                <Link to="/login" className="btn btn-ghost-w btn-lg">🔐 Client Portal</Link>
+              </div>
+              <div className="cta-phones">
+                <div className="cta-phone">📞 <a href="tel:+919911565523">+91 99115 65523</a></div>
+                <div className="cta-div" />
+                <div className="cta-phone">📞 <a href="tel:+918368201122">+91 83682 01122</a></div>
+                <div className="cta-div" />
+                <div className="cta-phone">💬 <a href="https://wa.me/919911565523" target="_blank" rel="noreferrer">WhatsApp Us</a></div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </PublicLayout>
   );
 }

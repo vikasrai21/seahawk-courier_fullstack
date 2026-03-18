@@ -1,3 +1,4 @@
+// App.jsx — Updated with all public website routes integrated into React
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { useToast } from './hooks/useToast';
@@ -5,12 +6,15 @@ import { Toast } from './components/ui/Toast';
 import { AppLayout } from './components/layout/AppLayout';
 import { Spinner } from './components/ui/Loading';
 
-// Public pages
-import LandingPage         from './pages/public/LandingPage';
-import PublicTrackPage     from './pages/public/PublicTrackPage';
-import LoginPage           from './pages/LoginPage';
+// ── Public website pages (no auth needed) ──────────────────────────────────
+import LandingPage        from './pages/public/LandingPage';
+import PublicTrackPage    from './pages/public/PublicTrackPage';
+import ServicesPage       from './pages/public/ServicesPage';
+import ContactPage        from './pages/public/ContactPage';
+import BookPage           from './pages/public/BookPage';
+import LoginPage          from './pages/LoginPage';
 
-// App pages
+// ── App pages (auth required) ───────────────────────────────────────────────
 import DashboardPage       from './pages/DashboardPage';
 import NewEntryPage        from './pages/NewEntryPage';
 import ImportPage          from './pages/ImportPage';
@@ -40,6 +44,7 @@ import PickupSchedulerPage from './pages/PickupSchedulerPage';
 import WalletPage          from './pages/WalletPage';
 import AnalyticsPage       from './pages/AnalyticsPage';
 
+// ── Private route guard ─────────────────────────────────────────────────────
 function PrivateRoute({ children, adminOnly = false, roles = null }) {
   const { user, loading, isAdmin, hasRole } = useAuth();
   if (loading) return (
@@ -63,13 +68,21 @@ function AppRoutes() {
     <>
       <Toast toasts={toasts} removeToast={removeToast} />
       <Routes>
-        {/* ── Public routes (no auth) ─────────────────────────── */}
-        <Route path="/"               element={<LandingPage />} />
-        <Route path="/track"          element={<PublicTrackPage />} />
-        <Route path="/track/:awb"     element={<PublicTrackPage />} />
-        <Route path="/login"          element={<LoginPage />} />
+        {/* ══════════════════════════════════════════════════
+            PUBLIC WEBSITE ROUTES — no auth required
+            The full Sea Hawk website lives here as React pages
+        ══════════════════════════════════════════════════ */}
+        <Route path="/"          element={<LandingPage />} />
+        <Route path="/services"  element={<ServicesPage />} />
+        <Route path="/contact"   element={<ContactPage />} />
+        <Route path="/book"      element={<BookPage />} />
+        <Route path="/track"     element={<PublicTrackPage />} />
+        <Route path="/track/:awb" element={<PublicTrackPage />} />
+        <Route path="/login"     element={<LoginPage />} />
 
-        {/* ── Protected app routes ────────────────────────────── */}
+        {/* ══════════════════════════════════════════════════
+            PROTECTED APP ROUTES — auth required
+        ══════════════════════════════════════════════════ */}
         <Route path="/app/*" element={
           <PrivateRoute>
             <AppLayout>
@@ -107,7 +120,7 @@ function AppRoutes() {
           </PrivateRoute>
         } />
 
-        {/* Legacy /login redirect */}
+        {/* Catch-all — redirect to home */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>

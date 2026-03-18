@@ -88,10 +88,11 @@ app.use('/api/pickups',        require('./routes/pickup.routes'));
 app.use('/api/wallet',         require('./routes/wallet.routes'));
 app.use('/api/analytics',      require('./routes/analytics.routes'));
 app.use('/api/delhivery',      require('./routes/delhivery.routes'));
+app.use('/api/couriers',       require('./routes/courier.routes'));
 app.use('/api/carrier',        require('./routes/carrier.routes'));
 
 // ── Serve React frontend (production) ─────────────────────────────────────
-const frontendBuild = path.join(__dirname, '../frontend/dist');
+const frontendBuild = path.join(__dirname, '../../frontend/dist');
 if (fs.existsSync(frontendBuild)) {
   app.use(express.static(frontendBuild, { maxAge: config.isProd ? '1d' : 0 }));
   // SPA fallback — all non-API routes serve index.html

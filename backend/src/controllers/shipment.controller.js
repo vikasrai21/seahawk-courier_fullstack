@@ -1,5 +1,6 @@
 // src/controllers/shipment.controller.js
-const svc = require('../services/shipment.service');
+const svc          = require('../services/shipment.service');
+const stateMachine = require('../services/stateMachine');
 const { auditLog } = require('../utils/audit');
 const R = require('../utils/response');
 const { asyncHandler } = require('../middleware/errorHandler');
@@ -48,6 +49,12 @@ const bulkImport = asyncHandler(async (req, res) => {
   R.ok(res, result, `Imported ${result.imported} shipments`);
 });
 
+const getValidStatuses = asyncHandler(async (req, res) => {
+  const s = await svc.getById(req.params.id);
+  const transitions = stateMachine.getValidTransitions(s.status);
+  R.ok(res, { currentStatus: s.status, validTransitions: transitions, isTerminal: transitions.length === 0 });
+});
+
 const getTodayStats = asyncHandler(async (req, res) => {
   const stats = await svc.getTodayStats();
   R.ok(res, stats);
@@ -60,4 +67,4 @@ const getMonthlyStats = asyncHandler(async (req, res) => {
   R.ok(res, rows);
 });
 
-module.exports = { getAll, getOne, create, update, patchStatus, remove, bulkImport, getTodayStats, getMonthlyStats };
+module.exports = { getAll, getOne, create, update, patchStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getValidStatuses };

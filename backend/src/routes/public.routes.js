@@ -1,21 +1,22 @@
+'use strict';
 // src/routes/public.routes.js — No auth required
-const router = require('express').Router();
-const prisma  = require('../config/prisma');
-const R       = require('../utils/response');
+const router    = require('express').Router();
+const prisma    = require('../config/prisma');
+const R         = require('../utils/response');
 const rateLimit = require('express-rate-limit');
+const { getValidTransitions } = require('../services/stateMachine');
 
-// Stricter rate limit for public endpoints
 const publicLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max:      60,
-  message:  { success: false, message: 'Too many requests.' },
+  max: 60,
+  message: { success: false, message: 'Too many requests. Please slow down.' },
 });
 
-// GET /api/public/track/:awb — public shipment tracking
+// GET /api/public/track/:awb — public shipment tracking (no auth)
 router.get('/track/:awb', publicLimiter, async (req, res) => {
   try {
     const { awb } = req.params;
-    if (!awb || awb.length < 5) return R.error(res, 'Invalid AWB number.', 400);
+    if (!awb || awb.trim().length < 4) return R.error(res, 'Invalid AWB number.', 400);
 
     const shipment = await prisma.shipment.findUnique({
       where: { awb: awb.trim().toUpperCase() },
@@ -27,7 +28,6 @@ router.get('/track/:awb', publicLimiter, async (req, res) => {
         courier:     true,
         date:        true,
         weight:      true,
-        ndrStatus:   true,
         updatedAt:   true,
         trackingEvents: {
           orderBy: { timestamp: 'desc' },
@@ -38,14 +38,14 @@ router.get('/track/:awb', publicLimiter, async (req, res) => {
 
     if (!shipment) return R.error(res, 'Shipment not found. Please check your AWB number.', 404);
 
-    // Don't expose client financial data publicly
+    // Don't expose financial data publicly
     R.ok(res, shipment);
-  } catch (err) {
-    R.error(res, 'Something went wrong. Please try again.', 500);
+  } catch (e) {
+    R.error(res, 'Something went wrong. Please try again later.', 500);
   }
 });
 
-// GET /api/public/health — simple health for uptime monitors
+// GET /api/public/health
 router.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
