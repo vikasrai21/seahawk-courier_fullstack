@@ -1,12 +1,13 @@
-// App.jsx — Updated with all public website routes integrated into React
+// App.jsx — Phase 3: Client portal added, error boundaries wrapped
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { useToast } from './hooks/useToast';
 import { Toast } from './components/ui/Toast';
 import { AppLayout } from './components/layout/AppLayout';
 import { Spinner } from './components/ui/Loading';
+import ErrorBoundary from './components/ErrorBoundary';
 
-// ── Public website pages (no auth needed) ──────────────────────────────────
+// ── Public website pages ────────────────────────────────────────────────────
 import LandingPage        from './pages/public/LandingPage';
 import PublicTrackPage    from './pages/public/PublicTrackPage';
 import ServicesPage       from './pages/public/ServicesPage';
@@ -14,7 +15,11 @@ import ContactPage        from './pages/public/ContactPage';
 import BookPage           from './pages/public/BookPage';
 import LoginPage          from './pages/LoginPage';
 
-// ── App pages (auth required) ───────────────────────────────────────────────
+// ── Client portal ────────────────────────────────────────────────────────────
+import ClientLoginPage    from './pages/client/ClientLoginPage';
+import ClientPortalPage   from './pages/client/ClientPortalPage';
+
+// ── App pages (staff/admin) ─────────────────────────────────────────────────
 import DashboardPage       from './pages/DashboardPage';
 import NewEntryPage        from './pages/NewEntryPage';
 import ImportPage          from './pages/ImportPage';
@@ -55,9 +60,22 @@ function PrivateRoute({ children, adminOnly = false, roles = null }) {
       </div>
     </div>
   );
-  if (!user)                       return <Navigate to="/login" replace />;
-  if (adminOnly && !isAdmin)       return <Navigate to="/app" replace />;
+  if (!user) return <Navigate to="/login" replace />;
+  if (adminOnly && !isAdmin) return <Navigate to="/app" replace />;
   if (roles && !hasRole(...roles)) return <Navigate to="/app" replace />;
+  return children;
+}
+
+// ── Client portal route guard ───────────────────────────────────────────────
+function ClientRoute({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+      <Spinner size="lg" />
+    </div>
+  );
+  if (!user) return <Navigate to="/client-login" replace />;
+  if (user.role !== 'CLIENT') return <Navigate to="/app" replace />;
   return children;
 }
 
@@ -68,10 +86,7 @@ function AppRoutes() {
     <>
       <Toast toasts={toasts} removeToast={removeToast} />
       <Routes>
-        {/* ══════════════════════════════════════════════════
-            PUBLIC WEBSITE ROUTES — no auth required
-            The full Sea Hawk website lives here as React pages
-        ══════════════════════════════════════════════════ */}
+        {/* ── Public website routes ──────────────────────────────────────── */}
         <Route path="/"          element={<LandingPage />} />
         <Route path="/services"  element={<ServicesPage />} />
         <Route path="/contact"   element={<ContactPage />} />
@@ -80,47 +95,55 @@ function AppRoutes() {
         <Route path="/track/:awb" element={<PublicTrackPage />} />
         <Route path="/login"     element={<LoginPage />} />
 
-        {/* ══════════════════════════════════════════════════
-            PROTECTED APP ROUTES — auth required
-        ══════════════════════════════════════════════════ */}
+        {/* ── Client portal routes ───────────────────────────────────────── */}
+        <Route path="/client-login" element={<ClientLoginPage />} />
+        <Route path="/client-portal" element={
+          <ClientRoute>
+            <ErrorBoundary>
+              <ClientPortalPage />
+            </ErrorBoundary>
+          </ClientRoute>
+        } />
+
+        {/* ── Staff/Admin app routes ─────────────────────────────────────── */}
         <Route path="/app/*" element={
           <PrivateRoute>
             <AppLayout>
               <Routes>
-                <Route path="/"          element={<DashboardPage         {...p} />} />
-                <Route path="/ops"       element={<OperationsDashboard   {...p} />} />
-                <Route path="/entry"     element={<NewEntryPage          {...p} />} />
-                <Route path="/import"    element={<ImportPage            {...p} />} />
-                <Route path="/all"       element={<AllShipmentsPage      {...p} />} />
-                <Route path="/pending"   element={<PendingPage           {...p} />} />
-                <Route path="/track"     element={<TrackPage             {...p} />} />
-                <Route path="/daily"     element={<DailySheetPage        {...p} />} />
-                <Route path="/monthly"   element={<MonthlyReportPage     {...p} />} />
-                <Route path="/clients"        element={<ClientsPage      {...p} />} />
-                <Route path="/contracts"      element={<ContractsPage    {...p} />} />
-                <Route path="/invoices"       element={<InvoicesPage     {...p} />} />
-                <Route path="/reconciliation" element={<ReconciliationPage {...p} />} />
-                <Route path="/rates"     element={<RateCalculatorPage />} />
-                <Route path="/bulk"      element={<BulkComparePage       {...p} />} />
-                <Route path="/rate-card" element={<RateCardPage          {...p} />} />
-                <Route path="/quotes"    element={<QuoteHistoryPage      {...p} />} />
-                <Route path="/whatsapp"  element={<WhatsAppPage          {...p} />} />
-                <Route path="/sync"      element={<SyncPage              {...p} />} />
-                <Route path="/profile"   element={<ProfilePage           {...p} />} />
-                <Route path="/shipments" element={<ShipmentDashboardPage {...p} />} />
-                <Route path="/wallet"    element={<PrivateRoute roles={['ADMIN','OPS_MANAGER']}><WalletPage {...p} /></PrivateRoute>} />
-                <Route path="/analytics" element={<PrivateRoute roles={['ADMIN','OPS_MANAGER']}><AnalyticsPage {...p} /></PrivateRoute>} />
-                <Route path="/ndr"       element={<PrivateRoute roles={['ADMIN','OPS_MANAGER','STAFF']}><NDRPage {...p} /></PrivateRoute>} />
-                <Route path="/pickups"   element={<PrivateRoute roles={['ADMIN','OPS_MANAGER','STAFF']}><PickupSchedulerPage {...p} /></PrivateRoute>} />
-                <Route path="/users"     element={<PrivateRoute adminOnly><UsersPage {...p} /></PrivateRoute>} />
-                <Route path="/audit"     element={<PrivateRoute adminOnly><AuditPage /></PrivateRoute>} />
-                <Route path="/rate-mgmt" element={<PrivateRoute adminOnly><RateManagementPage {...p} /></PrivateRoute>} />
+                <Route path="/"          element={<ErrorBoundary><DashboardPage         {...p} /></ErrorBoundary>} />
+                <Route path="/ops"       element={<ErrorBoundary><OperationsDashboard   {...p} /></ErrorBoundary>} />
+                <Route path="/entry"     element={<ErrorBoundary><NewEntryPage          {...p} /></ErrorBoundary>} />
+                <Route path="/import"    element={<ErrorBoundary><ImportPage            {...p} /></ErrorBoundary>} />
+                <Route path="/all"       element={<ErrorBoundary><AllShipmentsPage      {...p} /></ErrorBoundary>} />
+                <Route path="/pending"   element={<ErrorBoundary><PendingPage           {...p} /></ErrorBoundary>} />
+                <Route path="/track"     element={<ErrorBoundary><TrackPage             {...p} /></ErrorBoundary>} />
+                <Route path="/daily"     element={<ErrorBoundary><DailySheetPage        {...p} /></ErrorBoundary>} />
+                <Route path="/monthly"   element={<ErrorBoundary><MonthlyReportPage     {...p} /></ErrorBoundary>} />
+                <Route path="/clients"        element={<ErrorBoundary><ClientsPage      {...p} /></ErrorBoundary>} />
+                <Route path="/contracts"      element={<ErrorBoundary><ContractsPage    {...p} /></ErrorBoundary>} />
+                <Route path="/invoices"       element={<ErrorBoundary><InvoicesPage     {...p} /></ErrorBoundary>} />
+                <Route path="/reconciliation" element={<ErrorBoundary><ReconciliationPage {...p} /></ErrorBoundary>} />
+                <Route path="/rates"     element={<ErrorBoundary><RateCalculatorPage /></ErrorBoundary>} />
+                <Route path="/bulk"      element={<ErrorBoundary><BulkComparePage       {...p} /></ErrorBoundary>} />
+                <Route path="/rate-card" element={<ErrorBoundary><RateCardPage          {...p} /></ErrorBoundary>} />
+                <Route path="/quotes"    element={<ErrorBoundary><QuoteHistoryPage      {...p} /></ErrorBoundary>} />
+                <Route path="/whatsapp"  element={<ErrorBoundary><WhatsAppPage          {...p} /></ErrorBoundary>} />
+                <Route path="/sync"      element={<ErrorBoundary><SyncPage              {...p} /></ErrorBoundary>} />
+                <Route path="/profile"   element={<ErrorBoundary><ProfilePage           {...p} /></ErrorBoundary>} />
+                <Route path="/shipments" element={<ErrorBoundary><ShipmentDashboardPage {...p} /></ErrorBoundary>} />
+                <Route path="/wallet"    element={<PrivateRoute roles={['ADMIN','OPS_MANAGER']}><ErrorBoundary><WalletPage {...p} /></ErrorBoundary></PrivateRoute>} />
+                <Route path="/analytics" element={<PrivateRoute roles={['ADMIN','OPS_MANAGER']}><ErrorBoundary><AnalyticsPage {...p} /></ErrorBoundary></PrivateRoute>} />
+                <Route path="/ndr"       element={<PrivateRoute roles={['ADMIN','OPS_MANAGER','STAFF']}><ErrorBoundary><NDRPage {...p} /></ErrorBoundary></PrivateRoute>} />
+                <Route path="/pickups"   element={<PrivateRoute roles={['ADMIN','OPS_MANAGER','STAFF']}><ErrorBoundary><PickupSchedulerPage {...p} /></ErrorBoundary></PrivateRoute>} />
+                <Route path="/users"     element={<PrivateRoute adminOnly><ErrorBoundary><UsersPage {...p} /></ErrorBoundary></PrivateRoute>} />
+                <Route path="/audit"     element={<PrivateRoute adminOnly><ErrorBoundary><AuditPage /></ErrorBoundary></PrivateRoute>} />
+                <Route path="/rate-mgmt" element={<PrivateRoute adminOnly><ErrorBoundary><RateManagementPage {...p} /></ErrorBoundary></PrivateRoute>} />
               </Routes>
             </AppLayout>
           </PrivateRoute>
         } />
 
-        {/* Catch-all — redirect to home */}
+        {/* Catch-all */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Eye, Trash2, Download, MessageCircle, FileText, CheckCircle, Send, XCircle } from 'lucide-react';
+import { Plus, Eye, Trash2, Download, MessageCircle, FileText, Send, Mail } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import api from '../services/api';
 import { useFetch } from '../hooks/useFetch';
@@ -19,9 +19,12 @@ const firstOfMonth = () => { const d = new Date(); d.setDate(1); return d.toISOS
 export default function InvoicesPage({ toast }) {
   const { data: invoices, loading, refetch } = useFetch('/invoices');
   const { data: clients }                     = useFetch('/clients');
-  const [creating, setCreating] = useState(false);
-  const [viewing,  setViewing]  = useState(null);   // full invoice object
-  const [saving,   setSaving]   = useState(false);
+  const [creating,    setCreating]    = useState(false);
+  const [viewing,     setViewing]     = useState(null);
+  const [saving,      setSaving]      = useState(false);
+  const [emailModal,  setEmailModal]  = useState(false);
+  const [emailAddr,   setEmailAddr]   = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
   const [form, setForm] = useState({ clientCode:'', fromDate: firstOfMonth(), toDate: today(), gstPercent:'18', notes:'' });
 
   const set = (k,v) => setForm(f => ({...f, [k]:v}));
@@ -63,73 +66,64 @@ export default function InvoicesPage({ toast }) {
     catch (err) { toast?.(err.message, 'error'); }
   };
 
-  const exportExcel = (inv) => {
-    const client = clients?.find(c => c.code === inv.clientCode);
-    const rows = (inv.items || []).map((item, i) => ({
-      'Sr.': i + 1,
-      'Date': item.date,
-      'AWB No': item.awb,
-      'Consignee': item.consignee,
-      'Destination': item.destination,
-      'Courier': item.courier,
-      'Weight (kg)': item.weight,
-      'Amount (₹)': item.amount,
-    }));
-
-    const wb = XLSX.utils.book_new();
-
-    // Header sheet info
-    const headerRows = [
-      ['SEAHAWK COURIER & CARGO'],
-      ['Invoice No:', inv.invoiceNo],
-      ['Client:', `${inv.clientCode} — ${client?.company || ''}`],
-      ['GST No:', client?.gst || ''],
-      ['Period:', `${inv.fromDate} to ${inv.toDate}`],
-      ['Date:', new Date().toLocaleDateString('en-IN')],
-      [],
-    ];
-    const ws = XLSX.utils.aoa_to_sheet(headerRows);
-
-    // Append item rows
-    XLSX.utils.sheet_add_json(ws, rows, { origin: { r: headerRows.length, c: 0 } });
-
-    // Summary rows
-    const summaryRows = [
-      [],
-      ['', '', '', '', '', '', 'Subtotal:', inv.subtotal],
-      ['', '', '', '', '', '', `GST (${inv.gstPercent}%):`, inv.gstAmount],
-      ['', '', '', '', '', '', 'TOTAL:', inv.total],
-    ];
-    const startRow = headerRows.length + rows.length + 1;
-    XLSX.utils.sheet_add_aoa(ws, summaryRows, { origin: { r: startRow, c: 0 } });
-
-    ws['!cols'] = [{ wch: 5 }, { wch: 12 }, { wch: 16 }, { wch: 25 }, { wch: 18 }, { wch: 14 }, { wch: 12 }, { wch: 12 }];
-
-    XLSX.utils.book_append_sheet(wb, ws, 'Invoice');
-    XLSX.writeFile(wb, `${inv.invoiceNo}-${inv.clientCode}.xlsx`);
-    toast?.('Excel downloaded', 'success');
+  // ── Download PDF ──────────────────────────────────────────────────────────
+  const downloadPdf = (inv) => {
+    // Open in new tab — browser handles download via Content-Disposition header
+    window.open(`/api/invoices/${inv.id}/pdf`, '_blank');
   };
 
-  const printInvoice = () => window.print();
+  // ── Send email ────────────────────────────────────────────────────────────
+  const openEmailModal = (inv) => {
+    const client = clients?.find(c => c.code === inv.clientCode);
+    setEmailAddr(client?.email || '');
+    setEmailModal(true);
+  };
 
+  const sendEmail = async () => {
+    if (!emailAddr) { toast?.('Enter an email address', 'error'); return; }
+    setSendingEmail(true);
+    try {
+      await api.post(`/invoices/${viewing.id}/send-email`, { email: emailAddr });
+      toast?.(`Invoice sent to ${emailAddr} ✓`, 'success');
+      setEmailModal(false);
+      await refetch();
+      setViewing(v => ({...v, status: v.status === 'DRAFT' ? 'SENT' : v.status}));
+    } catch (err) { toast?.(err.message, 'error'); }
+    finally { setSendingEmail(false); }
+  };
+
+  // ── Export Excel ──────────────────────────────────────────────────────────
+  const exportExcel = (inv) => {
+    const rows = (inv.items || []).map((item, i) => ({
+      'Sr.': i + 1, 'Date': item.date, 'AWB No': item.awb,
+      'Consignee': item.consignee, 'Destination': item.destination,
+      'Courier': item.courier, 'Weight (kg)': item.weight, 'Amount (₹)': item.amount,
+    }));
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, 'Invoice');
+    // Summary sheet
+    const summary = [
+      ['Invoice No', inv.invoiceNo],
+      ['Client', inv.clientCode],
+      ['Period', `${inv.fromDate} to ${inv.toDate}`],
+      ['Subtotal', inv.subtotal],
+      [`GST (${inv.gstPercent}%)`, inv.gstAmount],
+      ['Total', inv.total],
+      ['Status', inv.status],
+    ];
+    const ws2 = XLSX.utils.aoa_to_sheet(summary);
+    XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
+    XLSX.writeFile(wb, `invoice-${inv.invoiceNo}.xlsx`);
+  };
+
+  // ── WhatsApp ──────────────────────────────────────────────────────────────
   const sendWhatsApp = (inv) => {
     const client = clients?.find(c => c.code === inv.clientCode);
-    const num = (client?.whatsapp || client?.phone || '').replace(/\D/g,'');
-    if (!num) { toast?.('No WhatsApp number for this client', 'error'); return; }
-    const msg = [
-      `🦅 *Seahawk Courier & Cargo*`,
-      `📄 *Invoice: ${inv.invoiceNo}*`,
-      `👤 Client: ${client?.company || inv.clientCode}`,
-      `📅 Period: ${inv.fromDate} to ${inv.toDate}`,
-      ``,
-      `📦 Shipments: *${inv.items?.length || inv._count?.items || 0}*`,
-      `💰 Subtotal: *${fmt(inv.subtotal)}*`,
-      `🏷️ GST (${inv.gstPercent}%): *${fmt(inv.gstAmount)}*`,
-      `✅ *Total Due: ${fmt(inv.total)}*`,
-      ``,
-      `Please confirm receipt. Thank you! 🙏`,
-    ].join('\n');
-    window.open(`https://wa.me/${num.startsWith('91')?num:'91'+num}?text=${encodeURIComponent(msg)}`, '_blank');
+    const msg = `*Invoice ${inv.invoiceNo}*\nClient: ${client?.company || inv.clientCode}\nPeriod: ${inv.fromDate} to ${inv.toDate}\nTotal: ${fmt(inv.total)}\nStatus: ${inv.status}\n\nPlease process payment at your earliest convenience.\n\nSea Hawk Courier & Cargo\n+91 99115 65523`;
+    const phone = client?.whatsapp || client?.phone || '';
+    const waPhone = phone ? phone.replace(/\D/g, '').replace(/^0/, '91') : '919911565523';
+    window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
   return (
@@ -137,71 +131,71 @@ export default function InvoicesPage({ toast }) {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
-          <p className="text-xs text-gray-500 mt-0.5">Generate client-wise billing from shipment data</p>
+          <p className="text-xs text-gray-500 mt-0.5">Generate, download and email invoices to clients</p>
         </div>
-        <button onClick={() => setCreating(true)} className="btn-primary gap-2">
-          <Plus className="w-4 h-4" /> Generate Invoice
+        <button onClick={() => setCreating(true)} className="btn-primary btn-sm gap-1.5">
+          <Plus className="w-3.5 h-3.5" /> Generate Invoice
         </button>
       </div>
 
-      {loading ? <PageLoader /> : !(invoices||[]).length ? (
-        <EmptyState icon="🧾" title="No invoices yet"
-          action={<button onClick={() => setCreating(true)} className="btn-primary btn-sm">Generate first invoice</button>} />
+      {loading ? <PageLoader /> : !invoices?.length ? (
+        <EmptyState icon="🧾" title="No invoices yet" description="Generate your first invoice for a client" />
       ) : (
-        <div className="table-wrap">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <table className="tbl">
             <thead>
-              <tr><th>Invoice No</th><th>Client</th><th>Period</th><th>Shipments</th><th>Subtotal</th><th>GST</th><th>Total</th><th>Status</th><th>Actions</th></tr>
+              <tr>
+                <th className="th">Invoice No</th>
+                <th className="th">Client</th>
+                <th className="th">Period</th>
+                <th className="th text-right">Shipments</th>
+                <th className="th text-right">Total</th>
+                <th className="th">Status</th>
+                <th className="th">Actions</th>
+              </tr>
             </thead>
             <tbody>
-              {(invoices||[]).map(inv => {
-                const client = clients?.find(c => c.code === inv.clientCode);
-                return (
-                  <tr key={inv.id}>
-                    <td className="font-mono font-bold text-navy-600">{inv.invoiceNo}</td>
-                    <td>
-                      <p className="font-semibold text-xs">{inv.clientCode}</p>
-                      <p className="text-[10px] text-gray-400">{inv._count?.items} shipments</p>
-                    </td>
-                    <td className="text-xs text-gray-500">{inv.fromDate} → {inv.toDate}</td>
-                    <td className="text-xs text-center font-semibold">{inv._count?.items || 0}</td>
-                    <td className="text-xs font-medium text-right">{fmt(inv.subtotal)}</td>
-                    <td className="text-xs text-right text-gray-500">{fmt(inv.gstAmount)}</td>
-                    <td className="font-bold text-right text-green-700">{fmt(inv.total)}</td>
-                    <td>
-                      <select value={inv.status}
-                        onChange={e => updateStatus(inv.id, e.target.value)}
-                        className={`text-[10px] font-bold px-2 py-1 rounded border-0 outline-none cursor-pointer ${
-                          inv.status === 'PAID' ? 'bg-green-100 text-green-700' :
-                          inv.status === 'SENT' ? 'bg-blue-100 text-blue-700' :
-                          inv.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
-                          'bg-gray-100 text-gray-700'
-                        }`}>
-                        {['DRAFT','SENT','PAID','CANCELLED'].map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </td>
-                    <td>
-                      <div className="flex gap-1">
-                        <button onClick={() => loadView(inv.id)} title="View" className="p-1.5 text-navy-600 hover:bg-navy-50 rounded-lg">
-                          <Eye className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => sendWhatsApp(inv)} title="WhatsApp" className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg">
-                          <MessageCircle className="w-3.5 h-3.5" />
-                        </button>
-                        <button onClick={() => del(inv.id)} title="Delete" className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {(invoices||[]).map(inv => (
+                <tr key={inv.id} className="hover:bg-gray-50">
+                  <td className="font-mono font-bold text-navy-600">{inv.invoiceNo}</td>
+                  <td>
+                    <div className="font-semibold text-sm">{inv.client?.company || inv.clientCode}</div>
+                    <div className="text-xs text-gray-400">{inv.clientCode}</div>
+                  </td>
+                  <td className="text-sm text-gray-600">{inv.fromDate}<br/><span className="text-xs text-gray-400">to {inv.toDate}</span></td>
+                  <td className="text-right text-sm">{inv._count?.items || 0}</td>
+                  <td className="text-right font-bold">{fmt(inv.total)}</td>
+                  <td>
+                    <select
+                      value={inv.status}
+                      onChange={e => updateStatus(inv.id, e.target.value)}
+                      className={`badge cursor-pointer border-0 ${STATUS_COLORS[inv.status]}`}
+                      style={{ appearance: 'none', background: 'none', fontWeight: 700 }}
+                    >
+                      {['DRAFT','SENT','PAID','CANCELLED'].map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </td>
+                  <td>
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => loadView(inv.id)} title="View" className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg">
+                        <Eye className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => downloadPdf(inv)} title="Download PDF" className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg">
+                        <FileText className="w-3.5 h-3.5" />
+                      </button>
+                      <button onClick={() => sendWhatsApp(inv)} title="Send WhatsApp" className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg">
+                        <MessageCircle className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* Create invoice modal */}
+      {/* ── Generate Invoice Modal ── */}
       <Modal open={creating} onClose={() => setCreating(false)} title="Generate Invoice"
         footer={<>
           <button onClick={() => setCreating(false)} className="btn-secondary">Cancel</button>
@@ -240,20 +234,41 @@ export default function InvoicesPage({ toast }) {
         </div>
       </Modal>
 
-      {/* View invoice modal */}
+      {/* ── Send Email Modal ── */}
+      <Modal open={emailModal} onClose={() => setEmailModal(false)} title="Send Invoice by Email"
+        footer={<>
+          <button onClick={() => setEmailModal(false)} className="btn-secondary">Cancel</button>
+          <button onClick={sendEmail} disabled={sendingEmail} className="btn-primary gap-1.5">
+            <Mail className="w-3.5 h-3.5" />
+            {sendingEmail ? 'Sending…' : 'Send Email'}
+          </button>
+        </>}
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-gray-500">
+            The invoice PDF will be attached and sent to the email address below.
+          </p>
+          <div>
+            <label className="label">Recipient Email *</label>
+            <input type="email" className="input" value={emailAddr} onChange={e => setEmailAddr(e.target.value)} placeholder="client@company.com" />
+            <p className="text-[10px] text-gray-400 mt-0.5">
+              Auto-filled from client profile. You can change it.
+            </p>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── View Invoice Modal ── */}
       {viewing && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl my-8">
-            {/* Invoice header */}
-            <div className="p-6 border-b border-gray-100 print:block">
+            <div className="p-6 border-b border-gray-100">
               <div className="flex items-start justify-between">
-                <div>
-                  <div className="flex items-center gap-3 mb-1">
-                    <span className="text-2xl">🦅</span>
-                    <div>
-                      <h2 className="font-bold text-gray-900">Seahawk Courier & Cargo</h2>
-                      <p className="text-xs text-gray-500">Tax Invoice</p>
-                    </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl">🦅</span>
+                  <div>
+                    <h2 className="font-bold text-gray-900">Sea Hawk Courier & Cargo</h2>
+                    <p className="text-xs text-gray-500">Tax Invoice</p>
                   </div>
                 </div>
                 <div className="text-right">
@@ -276,12 +291,15 @@ export default function InvoicesPage({ toast }) {
               </div>
             </div>
 
-            {/* Items table */}
             <div className="p-6">
               <div className="table-wrap mb-4">
                 <table className="tbl text-xs">
                   <thead>
-                    <tr><th>#</th><th>Date</th><th>AWB No</th><th>Consignee</th><th>Destination</th><th>Courier</th><th className="text-right">Wt(kg)</th><th className="text-right">Amount</th></tr>
+                    <tr>
+                      <th>#</th><th>Date</th><th>AWB No</th><th>Consignee</th>
+                      <th>Destination</th><th>Courier</th>
+                      <th className="text-right">Wt(kg)</th><th className="text-right">Amount</th>
+                    </tr>
                   </thead>
                   <tbody>
                     {(viewing.items||[]).map((item, i) => (
@@ -299,31 +317,31 @@ export default function InvoicesPage({ toast }) {
                   </tbody>
                 </table>
               </div>
-
-              {/* Totals */}
               <div className="flex justify-end">
                 <div className="w-64 space-y-1.5">
-                  <TotalRow label="Subtotal" value={fmt(viewing.subtotal)} />
-                  <TotalRow label={`GST (${viewing.gstPercent}%)`} value={fmt(viewing.gstAmount)} />
-                  <div className="border-t border-gray-200 pt-2 mt-2">
-                    <TotalRow label="Total" value={fmt(viewing.total)} bold />
+                  <div className="flex justify-between text-sm text-gray-600"><span>Subtotal</span><span>{fmt(viewing.subtotal)}</span></div>
+                  <div className="flex justify-between text-sm text-gray-600"><span>GST ({viewing.gstPercent}%)</span><span>{fmt(viewing.gstAmount)}</span></div>
+                  <div className="border-t border-gray-200 pt-2 mt-2 flex justify-between text-sm font-bold text-gray-900">
+                    <span>Total</span><span>{fmt(viewing.total)}</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-between p-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl print:hidden">
+            <div className="flex items-center justify-between p-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl flex-wrap gap-2">
               <button onClick={() => setViewing(null)} className="btn-secondary btn-sm">Close</button>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <button onClick={() => sendWhatsApp(viewing)} className="btn-success btn-sm gap-1.5">
                   <MessageCircle className="w-3.5 h-3.5" /> WhatsApp
                 </button>
+                <button onClick={() => { openEmailModal(viewing); }} className="btn-secondary btn-sm gap-1.5">
+                  <Mail className="w-3.5 h-3.5" /> Email PDF
+                </button>
+                <button onClick={() => downloadPdf(viewing)} className="btn-secondary btn-sm gap-1.5">
+                  <FileText className="w-3.5 h-3.5" /> Download PDF
+                </button>
                 <button onClick={() => exportExcel(viewing)} className="btn-secondary btn-sm gap-1.5">
                   <Download className="w-3.5 h-3.5" /> Excel
-                </button>
-                <button onClick={printInvoice} className="btn-secondary btn-sm gap-1.5">
-                  <FileText className="w-3.5 h-3.5" /> Print / PDF
                 </button>
                 <button onClick={() => del(viewing.id)} className="btn-danger btn-sm gap-1.5">
                   <Trash2 className="w-3.5 h-3.5" /> Delete
@@ -333,15 +351,6 @@ export default function InvoicesPage({ toast }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function TotalRow({ label, value, bold }) {
-  return (
-    <div className={`flex justify-between text-sm ${bold ? 'font-bold text-gray-900' : 'text-gray-600'}`}>
-      <span>{label}</span>
-      <span>{value}</span>
     </div>
   );
 }

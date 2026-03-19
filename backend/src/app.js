@@ -49,18 +49,12 @@ app.use(cookieParser());
 // ── Global rate limit (all API routes) ────────────────────────────────────
 app.use('/api', apiLimiter);
 
-// ── Health check (no auth, no rate limit) ─────────────────────────────────
+// ── Health check ──────────────────────────────────────────────────────────
 app.get('/api/health', async (req, res) => {
   const prisma = require('./config/prisma');
   try {
     await prisma.$queryRaw`SELECT 1`;
-    R.ok(res, {
-      status:   'healthy',
-      database: 'connected',
-      uptime:   Math.floor(process.uptime()),
-      version:  '7.0.0',
-      env:      config.env,
-    });
+    R.ok(res, { status: 'healthy', database: 'connected', uptime: Math.floor(process.uptime()), version: '3.0.0', env: config.env });
   } catch {
     res.status(503).json({ success: false, status: 'unhealthy' });
   }
@@ -69,8 +63,11 @@ app.get('/api/health', async (req, res) => {
 // ── Public routes (no auth required) ──────────────────────────────────────
 app.use('/api/public', require('./routes/public.routes'));
 
-// ── Auth (rate limited separately in auth.routes.js) ──────────────────────
-app.use('/api/auth',           require('./routes/auth.routes'));
+// ── Auth ───────────────────────────────────────────────────────────────────
+app.use('/api/auth', require('./routes/auth.routes'));
+
+// ── Client Portal (CLIENT role only) ──────────────────────────────────────
+app.use('/api/client-portal', require('./routes/client-portal.routes'));
 
 // ── Protected routes ───────────────────────────────────────────────────────
 app.use('/api/shipments',      require('./routes/shipment.routes'));
@@ -95,7 +92,6 @@ app.use('/api/carrier',        require('./routes/carrier.routes'));
 const frontendBuild = path.join(__dirname, '../public');
 if (fs.existsSync(frontendBuild)) {
   app.use(express.static(frontendBuild, { maxAge: config.isProd ? '1d' : 0 }));
-  // SPA fallback — all non-API routes serve index.html
   app.get('*', (req, res) => {
     if (!req.path.startsWith('/api')) {
       res.sendFile(path.join(frontendBuild, 'index.html'));
@@ -106,10 +102,8 @@ if (fs.existsSync(frontendBuild)) {
 // ── 404 for unknown API routes ─────────────────────────────────────────────
 app.use('/api/*', (req, res) => R.error(res, `Route ${req.method} ${req.path} not found`, 404));
 
-// ── Sentry error handler (before global error handler) ────────────────────
+// ── Sentry + Global error handler ─────────────────────────────────────────
 app.use(sentryErrorHandler());
-
-// ── Global error handler ───────────────────────────────────────────────────
 app.use(globalErrorHandler);
 
 module.exports = app;

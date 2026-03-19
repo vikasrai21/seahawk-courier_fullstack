@@ -8,16 +8,18 @@ datasource db {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
-  password  String
-  role      String   @default("STAFF")
-  branch    String?
-  phone     String?
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id          Int      @id @default(autoincrement())
+  name        String
+  email       String   @unique
+  password    String
+  role        String   @default("STAFF")  // ADMIN | STAFF | OPS_MANAGER | CLIENT
+  branch      String?
+  phone       String?
+  active      Boolean  @default(true)
+  // For CLIENT role — links this portal user to a client account
+  clientCode  String?  @map("client_code") @db.VarChar(20)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
   shipmentsCreated        Shipment[]      @relation("CreatedBy")
   shipmentsUpdated        Shipment[]      @relation("UpdatedBy")
   auditLogs               AuditLog[]
@@ -26,6 +28,7 @@ model User {
   rateVersionsUploaded    RateVersion[]   @relation("RateVersionUploadedBy")
   pickupAssignments       PickupRequest[] @relation("AssignedAgent")
   @@index([email])
+  @@index([clientCode])
   @@map("users")
 }
 
