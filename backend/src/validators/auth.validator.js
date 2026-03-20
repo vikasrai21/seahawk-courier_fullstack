@@ -1,31 +1,55 @@
-// src/validators/auth.validator.js
+'use strict';
 const { z } = require('zod');
 
+// ── Password policy ───────────────────────────────────────────────────────
+const passwordPolicy = z.string()
+  .min(8, 'Password must be at least 8 characters')
+  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+  .regex(/[0-9]/, 'Password must contain at least one number')
+  .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character (!@#$%^&* etc.)');
+
+// ── Step 1: Login (credentials) ───────────────────────────────────────────
 const loginSchema = z.object({
-  email:    z.string().email('Invalid email'),
+  email:    z.string().email('Invalid email address'),
   password: z.string().min(1, 'Password required'),
 });
 
+// ── Step 2: Verify OTP ────────────────────────────────────────────────────
+const verifyOTPSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  otp:   z.string().length(6, 'OTP must be 6 digits').regex(/^\d{6}$/, 'OTP must be 6 digits'),
+});
+
+// ── Create user ───────────────────────────────────────────────────────────
 const createUserSchema = z.object({
-  name:     z.string().min(2, 'Name must be at least 2 characters'),
-  email:    z.string().email('Invalid email'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  role:     z.enum(['ADMIN', 'STAFF']).default('STAFF'),
-  branch:   z.string().optional(),
+  name:       z.string().min(2, 'Name must be at least 2 characters'),
+  email:      z.string().email('Invalid email address'),
+  password:   passwordPolicy,
+  role:       z.enum(['ADMIN', 'STAFF', 'OPS_MANAGER', 'WAREHOUSE', 'CLIENT']).default('STAFF'),
+  branch:     z.string().optional(),
+  phone:      z.string().optional(),
+  clientCode: z.string().max(20).optional(),
 });
 
+// ── Update user ───────────────────────────────────────────────────────────
 const updateUserSchema = z.object({
-  name:     z.string().min(2).optional(),
-  email:    z.string().email().optional(),
-  password: z.string().min(6).optional(),
-  role:     z.enum(['ADMIN', 'STAFF']).optional(),
-  branch:   z.string().optional(),
-  active:   z.boolean().optional(),
+  name:       z.string().min(2).optional(),
+  email:      z.string().email().optional(),
+  password:   passwordPolicy.optional(),
+  role:       z.enum(['ADMIN', 'STAFF', 'OPS_MANAGER', 'WAREHOUSE', 'CLIENT']).optional(),
+  branch:     z.string().optional(),
+  phone:      z.string().optional(),
+  active:     z.boolean().optional(),
+  clientCode: z.string().max(20).optional(),
 });
 
+// ── Change password ───────────────────────────────────────────────────────
 const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1),
-  newPassword:     z.string().min(6, 'New password must be at least 6 characters'),
+  currentPassword: z.string().min(1, 'Current password required'),
+  newPassword:     passwordPolicy,
 });
 
-module.exports = { loginSchema, createUserSchema, updateUserSchema, changePasswordSchema };
+module.exports = {
+  loginSchema, verifyOTPSchema,
+  createUserSchema, updateUserSchema, changePasswordSchema,
+};

@@ -1,0 +1,23 @@
+// Add these two things to your existing schema.prisma:
+// 1. Add loginAttempts, lockedUntil, mustChangePassword to User model
+// 2. Add new LoginOTP model
+
+// ── ADD to User model (after the `active` field) ──────────────────────────
+//   loginAttempts    Int       @default(0)   @map("login_attempts")
+//   lockedUntil      DateTime? @map("locked_until")
+//   mustChangePassword Boolean @default(false) @map("must_change_password")
+
+// ── ADD as new model ───────────────────────────────────────────────────────
+
+model LoginOTP {
+  id        Int      @id @default(autoincrement())
+  email     String
+  otp       String
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  @@index([email])
+  @@index([expiresAt])
+  @@map("login_otps")
+}

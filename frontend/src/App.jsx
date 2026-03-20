@@ -7,6 +7,7 @@ import { AppLayout } from './components/layout/AppLayout';
 import { Spinner } from './components/ui/Loading';
 import ErrorBoundary from './components/ErrorBoundary';
 
+
 // ── Public website pages ────────────────────────────────────────────────────
 import LandingPage        from './pages/public/LandingPage';
 import PublicTrackPage    from './pages/public/PublicTrackPage';
@@ -14,6 +15,7 @@ import ServicesPage       from './pages/public/ServicesPage';
 import ContactPage        from './pages/public/ContactPage';
 import BookPage           from './pages/public/BookPage';
 import LoginPage          from './pages/LoginPage';
+import ChangePasswordPage from './pages/ChangePasswordPage';
 
 // ── Client portal ────────────────────────────────────────────────────────────
 import ClientLoginPage    from './pages/client/ClientLoginPage';
@@ -94,6 +96,7 @@ function AppRoutes() {
         <Route path="/track"     element={<PublicTrackPage />} />
         <Route path="/track/:awb" element={<PublicTrackPage />} />
         <Route path="/login"     element={<LoginPage />} />
+        <Route path="/change-password" element={<ChangePasswordPage />} />  {/* ← ADD THIS */}
 
         {/* ── Client portal routes ───────────────────────────────────────── */}
         <Route path="/client-login" element={<ClientLoginPage />} />
