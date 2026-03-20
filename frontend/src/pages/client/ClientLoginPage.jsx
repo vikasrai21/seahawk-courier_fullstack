@@ -74,7 +74,7 @@ export default function ClientLoginPage() {
                 type="password"
                 value={form.password}
                 onChange={e => setForm(f => ({...f, password: e.target.value}))}
-                placeholder="••••••••"
+                placeholder=""
                 required
                 style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #e5e7eb', borderRadius: 8, fontSize: '.9rem', outline: 'none', boxSizing: 'border-box' }}
               />
