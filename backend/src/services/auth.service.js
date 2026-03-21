@@ -1,11 +1,10 @@
-// src/services/auth.service.js — Secure JWT with persisted & revocable refresh tokens
 'use strict';
-const bcrypt  = require('bcryptjs');
-const jwt     = require('jsonwebtoken');
-const crypto  = require('crypto');
-const prisma  = require('../config/prisma');
-const config  = require('../config');
-const logger  = require('../utils/logger');
+const bcrypt = require('bcryptjs');
+const jwt    = require('jsonwebtoken');
+const crypto = require('crypto');
+const prisma = require('../config/prisma');
+const config = require('../config');
+const logger = require('../utils/logger');
 const { AppError } = require('../middleware/errorHandler');
 
 const SALT_ROUNDS = 12;
@@ -27,74 +26,126 @@ function generateRefreshToken() {
   return crypto.randomBytes(48).toString('hex');
 }
 
-async function storeRefreshToken(userId, token, { ip, userAgent } = {}) {
-  const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 30);
-  await prisma.refreshToken.create({
-    data: { token, userId, expiresAt, ip: ip || null, userAgent: userAgent || null },
-  });
+// Store refresh token — gracefully skips if table doesn't exist yet
+async function storeRefreshToken(userId, token, meta = {}) {
+  try {
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 30);
+    await prisma.refreshToken.create({
+      data: {
+        token,
+        userId,
+        expiresAt,
+        ip:        meta.ip        || null,
+        userAgent: meta.userAgent || null,
+      },
+    });
+  } catch {
+    // Table doesn't exist yet — silently skip
+  }
 }
 
 async function login(email, password, meta = {}) {
-  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
-  const dummyHash = '$2a$12$invalidhashtopreventtimingattacks.padding';
+  const normalised = email.toLowerCase().trim();
+  const user = await prisma.user.findUnique({ where: { email: normalised } });
+
+  // Always compare to prevent timing attacks
+  const dummyHash = '$2a$12$invalidhashtopreventtimingattacks.padding.xx';
   const valid = await bcrypt.compare(password, user?.password || dummyHash);
-  if (!user || !valid || !user.active) throw new AppError('Invalid email or password.', 401);
+
+  if (!user || !valid || !user.active) {
+    throw new AppError('Invalid email or password.', 401);
+  }
 
   const accessToken  = signAccess(user);
   const refreshToken = generateRefreshToken();
   await storeRefreshToken(user.id, refreshToken, meta);
 
   logger.info(`Login: ${user.email} [${user.role}]`);
+
   const { password: _, ...safeUser } = user;
   return { accessToken, refreshToken, user: safeUser };
 }
 
+// Refresh — tries DB first, falls back to JWT verification
 async function refreshAccessToken(token) {
-  const stored = await prisma.refreshToken.findUnique({ where: { token } });
-  if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
+  // Try DB-stored token first
+  try {
+    const stored = await prisma.refreshToken.findUnique({ where: { token } });
+    if (stored) {
+      if (stored.revokedAt || stored.expiresAt < new Date()) {
+        throw new AppError('Invalid or expired refresh token.', 401);
+      }
+      const user = await prisma.user.findUnique({
+        where:  { id: stored.userId },
+        select: { id: true, email: true, role: true, active: true },
+      });
+      if (!user || !user.active) throw new AppError('User not found.', 401);
+      return { accessToken: signAccess(user) };
+    }
+  } catch (err) {
+    if (err.isOperational) throw err;
+    // Table doesn't exist — fall through to JWT
+  }
+
+  // Fallback: verify as JWT (old tokens)
+  try {
+    const payload = jwt.verify(token, config.jwt.refreshSecret);
+    const user = await prisma.user.findUnique({
+      where:  { id: payload.id },
+      select: { id: true, email: true, role: true, active: true },
+    });
+    if (!user || !user.active) throw new AppError('User not found.', 401);
+    return { accessToken: signAccess(user) };
+  } catch {
     throw new AppError('Invalid or expired refresh token.', 401);
   }
-  const user = await prisma.user.findUnique({
-    where: { id: stored.userId },
-    select: { id: true, email: true, role: true, active: true },
-  });
-  if (!user || !user.active) {
-    await prisma.refreshToken.update({ where: { id: stored.id }, data: { revokedAt: new Date() } });
-    throw new AppError('User not found or deactivated.', 401);
-  }
-  return { accessToken: signAccess(user) };
 }
 
 async function revokeRefreshToken(token) {
   if (!token) return;
   try {
-    await prisma.refreshToken.update({ where: { token }, data: { revokedAt: new Date() } });
-  } catch {}
+    await prisma.refreshToken.update({
+      where: { token },
+      data:  { revokedAt: new Date() },
+    });
+  } catch {
+    // Token not found or table missing — ignore
+  }
 }
 
 async function revokeAllUserTokens(userId) {
-  await prisma.refreshToken.updateMany({
-    where: { userId, revokedAt: null },
-    data:  { revokedAt: new Date() },
-  });
+  try {
+    await prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data:  { revokedAt: new Date() },
+    });
+  } catch {}
 }
 
 async function cleanupExpiredTokens() {
-  const result = await prisma.refreshToken.deleteMany({
-    where: { OR: [{ expiresAt: { lt: new Date() } }, { revokedAt: { not: null } }] },
-  });
-  logger.info(`Cleaned up ${result.count} expired/revoked refresh tokens`);
+  try {
+    const result = await prisma.refreshToken.deleteMany({
+      where: { OR: [{ expiresAt: { lt: new Date() } }, { revokedAt: { not: null } }] },
+    });
+    logger.info(`Cleaned up ${result.count} expired/revoked refresh tokens`);
+  } catch {}
 }
 
 async function createUser({ name, email, password, role, branch }) {
   const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
   if (existing) throw new AppError('Email already registered.', 409);
   const validRoles = ['ADMIN', 'OPS_MANAGER', 'STAFF', 'CLIENT'];
-  if (role && !validRoles.includes(role)) throw new AppError(`Invalid role. Must be one of: ${validRoles.join(', ')}`, 400);
+  if (role && !validRoles.includes(role)) throw new AppError('Invalid role.', 400);
   const hashed = await bcrypt.hash(password, SALT_ROUNDS);
   const user = await prisma.user.create({
-    data: { name: sanitise(name), email: email.toLowerCase(), password: hashed, role: role || 'STAFF', branch: sanitise(branch) },
+    data: {
+      name:     sanitise(name),
+      email:    email.toLowerCase(),
+      password: hashed,
+      role:     role || 'STAFF',
+      branch:   sanitise(branch),
+    },
     select: { id: true, name: true, email: true, role: true, branch: true, active: true, createdAt: true },
   });
   logger.info(`User created: ${user.email} [${user.role}]`);
@@ -132,4 +183,15 @@ async function getAllUsers() {
   });
 }
 
-module.exports = { login, refreshAccessToken, revokeRefreshToken, revokeAllUserTokens, cleanupExpiredTokens, createUser, updateUser, changePassword, getAllUsers, sanitise };
+module.exports = {
+  login,
+  refreshAccessToken,
+  revokeRefreshToken,
+  revokeAllUserTokens,
+  cleanupExpiredTokens,
+  createUser,
+  updateUser,
+  changePassword,
+  getAllUsers,
+  sanitise,
+};

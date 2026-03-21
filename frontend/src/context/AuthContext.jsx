@@ -1,4 +1,3 @@
-// src/context/AuthContext.jsx — Clean auth with no redirect loops
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api, { tokenManager } from '../services/api';
 
@@ -8,9 +7,10 @@ export function AuthProvider({ children }) {
   const [user,    setUser]    = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Restore session on page load
   useEffect(() => {
     let cancelled = false;
-    const restore = async () => {
+    (async () => {
       try {
         const res = await api.post('/auth/refresh');
         if (cancelled) return;
@@ -18,26 +18,22 @@ export function AuthProvider({ children }) {
         if (!token) throw new Error('No token');
         tokenManager.set(token);
         const meRes = await api.get('/auth/me');
-        if (cancelled) return;
-        setUser(meRes.data);
+        if (!cancelled) setUser(meRes.data);
       } catch {
-        if (!cancelled) {
-          tokenManager.clear();
-          setUser(null);
-        }
+        if (!cancelled) { tokenManager.clear(); setUser(null); }
       } finally {
         if (!cancelled) setLoading(false);
       }
-    };
-    restore();
+    })();
     return () => { cancelled = true; };
   }, []);
 
+  // Handle mid-session expiry
   useEffect(() => {
     const handler = () => {
       tokenManager.clear();
       setUser(null);
-      window.location.replace('/');
+      window.location.replace('/login');
     };
     window.addEventListener('auth:logout', handler);
     return () => window.removeEventListener('auth:logout', handler);
@@ -46,10 +42,11 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (email, password) => {
     const res = await api.post('/auth/login', { email, password });
     const token = res.data?.accessToken;
-    if (!token) throw new Error('No access token received');
+    if (!token) throw new Error('Login failed — no token received');
     tokenManager.set(token);
-    setUser(res.data.user);
-    return res.data.user;
+    const u = res.data.user;
+    setUser(u);
+    return u;
   }, []);
 
   const logout = useCallback(async () => {
@@ -65,13 +62,15 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, login, logout,
-      isAdmin:     user?.role === 'ADMIN',
-      isStaff:     user?.role === 'STAFF',
-      isOps:       user?.role === 'OPS_MANAGER',
-      isCustomer:  user?.role === 'CLIENT',
-      isWarehouse: user?.role === 'WAREHOUSE',
-      canManage:   ['ADMIN','OPS_MANAGER'].includes(user?.role),
+      user,
+      loading,
+      login,
+      logout,
+      isAdmin:   user?.role === 'ADMIN',
+      isStaff:   user?.role === 'STAFF',
+      isOps:     user?.role === 'OPS_MANAGER',
+      isClient:  user?.role === 'CLIENT',
+      canManage: ['ADMIN', 'OPS_MANAGER'].includes(user?.role),
       hasRole,
     }}>
       {children}

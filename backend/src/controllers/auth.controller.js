@@ -1,4 +1,3 @@
-// src/controllers/auth.controller.js — with real logout, meta passing, PII-safe logs
 'use strict';
 const authService = require('../services/auth.service');
 const { auditLog } = require('../utils/audit');
@@ -18,10 +17,7 @@ const login = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
   const meta = { ip: req.ip, userAgent: req.headers['user-agent'] };
   const { accessToken, refreshToken, user } = await authService.login(email, password, meta);
-
   res.cookie('refreshToken', refreshToken, refreshCookieOpts);
-
-  // Audit — do NOT log password or token
   await auditLog({ userId: user.id, userEmail: user.email, action: 'LOGIN', entity: 'AUTH', ip: req.ip });
   R.ok(res, { accessToken, user }, 'Login successful');
 });
@@ -35,7 +31,6 @@ const refresh = asyncHandler(async (req, res) => {
 
 const logout = asyncHandler(async (req, res) => {
   const token = req.cookies?.refreshToken;
-  // Revoke the token in DB — true logout
   await authService.revokeRefreshToken(token);
   res.clearCookie('refreshToken', { path: '/api/auth/refresh' });
   if (req.user) {
@@ -70,7 +65,6 @@ const getAllUsers = asyncHandler(async (req, res) => {
 const changePassword = asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.body;
   await authService.changePassword(req.user.id, currentPassword, newPassword);
-  // Revoke cookie too — force re-login
   res.clearCookie('refreshToken', { path: '/api/auth/refresh' });
   await auditLog({ userId: req.user.id, userEmail: req.user.email, action: 'CHANGE_PASSWORD', entity: 'USER', entityId: req.user.id, ip: req.ip });
   R.ok(res, null, 'Password changed. Please log in again.');
