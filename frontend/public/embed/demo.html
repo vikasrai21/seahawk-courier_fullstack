@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sea Hawk Tracking Widget — Embed Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f0f4f8; padding: 40px 20px; }
+    h1 { font-size: 1.4rem; color: #0b1f3a; margin-bottom: 6px; }
+    p  { color: #64748b; font-size: .9rem; margin-bottom: 30px; }
+    .demo-box { background: white; border-radius: 12px; padding: 30px; max-width: 540px; margin: 0 auto 40px; }
+    pre { background: #0b1f3a; color: #a5f3fc; padding: 16px; border-radius: 8px; font-size: 13px; overflow-x: auto; white-space: pre-wrap; }
+    h2 { font-size: 1rem; color: #0b1f3a; margin: 24px 0 8px; }
+  </style>
+</head>
+<body>
+  <div style="max-width:540px;margin:0 auto">
+    <h1>🦅 Sea Hawk Tracking Widget</h1>
+    <p>Embed real-time shipment tracking on any website with a single line of code.</p>
+
+    <div class="demo-box">
+      <h2>Live Demo</h2>
+      <div id="seahawk-tracker"></div>
+    </div>
+
+    <h2>How to embed on your website</h2>
+    <pre>&lt;!-- 1. Add a container div where you want the widget --&gt;
+&lt;div id="seahawk-tracker"&gt;&lt;/div&gt;
+
+&lt;!-- 2. Add this script tag --&gt;
+&lt;script
+  src="https://seahawk-courierfullstack-production.up.railway.app/embed/tracker.js"
+  data-container="seahawk-tracker"
+  data-theme="light"
+&gt;&lt;/script&gt;</pre>
+
+    <h2>Options</h2>
+    <pre>data-theme        "light" or "dark"
+data-brand-color  Custom hex color, e.g. "#1a56db"
+data-awb          Pre-fill an AWB number
+data-container    ID of your container div</pre>
+
+    <h2>Dark theme example</h2>
+    <pre>&lt;div id="tracker-dark"&gt;&lt;/div&gt;
+&lt;script
+  src=".../embed/tracker.js"
+  data-container="tracker-dark"
+  data-theme="dark"
+  data-brand-color="#3b82f6"
+&gt;&lt;/script&gt;</pre>
+  </div>
+
+  <script src="./tracker.js" data-container="seahawk-tracker"></script>
+</body>
+</html>

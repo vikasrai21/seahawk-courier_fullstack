@@ -1,92 +1,98 @@
-// src/utils/scheduler.js — Background jobs with node-cron
-// Fix #9: Replaces Windows-only .bat backup with cross-platform Node.js scheduler
+// src/utils/scheduler.js — Background jobs + token cleanup + DB backups
+'use strict';
 const cron   = require('node-cron');
-const path   = require('path');
-const fs     = require('fs');
-const { execSync } = require('child_process');
-const logger = require('./logger');
 const prisma = require('../config/prisma');
+const logger = require('./logger');
+const config = require('../config');
+const { cleanupExpiredTokens } = require('../services/auth.service');
 
-// ── Daily database backup at 2:00 AM ─────────────────────────────────────
-function scheduleDailyBackup() {
-  const dbUrl     = process.env.DATABASE_URL;
-  if (!dbUrl) return logger.warn('Scheduler: DATABASE_URL not set, skipping backup job.');
-
-  // Parse DB name from URL
-  const dbMatch   = dbUrl.match(/\/([^/?]+)(\?|$)/);
-  const dbName    = dbMatch?.[1] || 'seahawk_v6';
-  const backupDir = path.join(__dirname, '../../backups');
-
-  if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
-
-  cron.schedule('0 2 * * *', () => {
-    const date     = new Date().toISOString().split('T')[0];
-    const filename = path.join(backupDir, `backup_${dbName}_${date}.sql`);
-
-    try {
-      execSync(`pg_dump "${dbUrl}" > "${filename}"`);
-      logger.info(`Backup created: ${filename}`);
-
-      // Delete backups older than 30 days
-      const files = fs.readdirSync(backupDir).filter((f) => f.endsWith('.sql'));
-      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
-      files.forEach((f) => {
-        const fp = path.join(backupDir, f);
-        if (fs.statSync(fp).mtimeMs < cutoff) {
-          fs.unlinkSync(fp);
-          logger.info(`Old backup deleted: ${f}`);
-        }
-      });
-    } catch (err) {
-      logger.error('Backup failed', { error: err.message });
-    }
-  }, { timezone: 'Asia/Kolkata' });
-
-  logger.info('Scheduler: Daily backup job registered (2:00 AM IST)');
+// ── Tracking sync ──────────────────────────────────────────────────────────
+async function syncTracking() {
+  try {
+    logger.info('Scheduler: starting tracking sync...');
+    const pending = await prisma.shipment.findMany({
+      where: { status: { notIn: ['Delivered', 'RTO', 'Cancelled'] } },
+      select: { id: true, awb: true, courier: true },
+      take: 200,
+    });
+    logger.info(`Scheduler: ${pending.length} shipments to sync`);
+    // Actual sync is handled by carrier service when called
+  } catch (err) {
+    logger.error('Scheduler: tracking sync failed', { error: err.message });
+  }
 }
 
-// ── Weekly audit log cleanup (keep 6 months) ──────────────────────────────
-function scheduleAuditCleanup() {
-  cron.schedule('0 3 * * 0', async () => { // Sunday 3:00 AM
-    try {
-      const cutoff = new Date();
-      cutoff.setMonth(cutoff.getMonth() - 6);
+// ── DB Backup to S3 / R2 ──────────────────────────────────────────────────
+async function backupDatabase() {
+  if (!config.backups.s3Bucket) {
+    logger.warn('Scheduler: DB backup skipped — BACKUP_S3_BUCKET not configured');
+    return;
+  }
+  const { exec } = require('child_process');
+  const { promisify } = require('util');
+  const execAsync = promisify(exec);
+  const date  = new Date().toISOString().split('T')[0];
+  const file  = `/tmp/seahawk-backup-${date}.sql`;
 
-      const result = await prisma.auditLog.deleteMany({
-        where: { createdAt: { lt: cutoff } },
-      });
-      logger.info(`Audit cleanup: removed ${result.count} old records`);
-    } catch (err) {
-      logger.error('Audit cleanup failed', { error: err.message });
-    }
-  }, { timezone: 'Asia/Kolkata' });
+  try {
+    logger.info('Scheduler: starting DB backup...');
+    const dbUrl = config.db.url;
+    await execAsync(`pg_dump "${dbUrl}" -f "${file}" --no-password`);
 
-  logger.info('Scheduler: Weekly audit cleanup job registered (Sunday 3:00 AM IST)');
+    // Upload to S3/R2
+    const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+    const fs = require('fs');
+    const s3 = new S3Client({
+      region: config.backups.s3Region,
+      credentials: { accessKeyId: config.backups.s3Key, secretAccessKey: config.backups.s3Secret },
+    });
+    const fileStream = fs.createReadStream(file);
+    await s3.send(new PutObjectCommand({
+      Bucket: config.backups.s3Bucket,
+      Key:    `backups/seahawk-${date}.sql`,
+      Body:   fileStream,
+    }));
+    fs.unlinkSync(file);
+    logger.info(`Scheduler: DB backup uploaded → s3://${config.backups.s3Bucket}/backups/seahawk-${date}.sql`);
+  } catch (err) {
+    logger.error('Scheduler: DB backup failed', { error: err.message });
+  }
 }
 
-// ── Daily pending shipment summary log ───────────────────────────────────
-function scheduleDailyReport() {
-  cron.schedule('0 8 * * *', async () => { // 8:00 AM daily
-    try {
-      const pending = await prisma.shipment.count({
-        where: { status: { in: ['Booked', 'InTransit', 'OutForDelivery'] } },
-      });
-      const delayed = await prisma.shipment.count({ where: { status: 'Delayed' } });
-      const rto     = await prisma.shipment.count({ where: { status: 'RTO' } });
-      logger.info('Daily summary', { pending, delayed, rto, time: new Date().toISOString() });
-    } catch (err) {
-      logger.error('Daily summary failed', { error: err.message });
+// ── NDR auto-escalation ───────────────────────────────────────────────────
+async function escalateStaleNDRs() {
+  try {
+    const threeDaysAgo = new Date();
+    threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+    const stale = await prisma.nDREvent.findMany({
+      where: { action: 'PENDING', createdAt: { lt: threeDaysAgo } },
+      select: { id: true, awb: true },
+    });
+    if (stale.length > 0) {
+      logger.warn(`Scheduler: ${stale.length} NDRs pending > 3 days — consider escalation`);
     }
-  }, { timezone: 'Asia/Kolkata' });
-
-  logger.info('Scheduler: Daily summary job registered (8:00 AM IST)');
+  } catch (err) {
+    logger.error('Scheduler: NDR check failed', { error: err.message });
+  }
 }
 
+// ── Start all scheduled jobs ──────────────────────────────────────────────
 function startScheduler() {
-  logger.info('Starting background scheduler...');
-  scheduleDailyBackup();
-  scheduleAuditCleanup();
-  scheduleDailyReport();
+  // Tracking sync every 30 minutes
+  cron.schedule('*/30 * * * *', syncTracking);
+
+  // Cleanup expired/revoked refresh tokens — daily at 3am
+  cron.schedule('0 3 * * *', () => {
+    cleanupExpiredTokens().catch(err => logger.error('Token cleanup failed', { error: err.message }));
+  });
+
+  // DB backup — daily at 2am (only if configured)
+  cron.schedule('0 2 * * *', backupDatabase);
+
+  // NDR escalation check — daily at 9am
+  cron.schedule('0 9 * * *', escalateStaleNDRs);
+
+  logger.info('Scheduler started: tracking sync (30m), token cleanup (3am), DB backup (2am), NDR check (9am)');
 }
 
 module.exports = { startScheduler };

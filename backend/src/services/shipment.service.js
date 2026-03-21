@@ -1,6 +1,4 @@
 'use strict';
-// src/services/shipment.service.js — Phase 2: State machine + wallet + notifications
-
 const prisma       = require('../config/prisma');
 const { AppError } = require('../middleware/errorHandler');
 const stateMachine = require('./stateMachine');
@@ -14,7 +12,13 @@ function buildFilters({ client, courier, status, dateFrom, dateTo, q }) {
   if (courier) where.courier = { contains: courier, mode: 'insensitive' };
   if (status)  where.status = status;
   if (dateFrom || dateTo) { where.date = {}; if (dateFrom) where.date.gte = dateFrom; if (dateTo) where.date.lte = dateTo; }
-  if (q) { where.OR = [ { awb: { contains: q, mode: 'insensitive' } }, { clientCode: { contains: q, mode: 'insensitive' } }, { consignee: { contains: q, mode: 'insensitive' } }, { destination: { contains: q, mode: 'insensitive' } }, { courier: { contains: q, mode: 'insensitive' } } ]; }
+  if (q) { where.OR = [
+    { awb: { contains: q, mode: 'insensitive' } },
+    { clientCode: { contains: q, mode: 'insensitive' } },
+    { consignee: { contains: q, mode: 'insensitive' } },
+    { destination: { contains: q, mode: 'insensitive' } },
+    { courier: { contains: q, mode: 'insensitive' } },
+  ];}
   return where;
 }
 
@@ -43,17 +47,10 @@ async function create(data, userId) {
     data: { ...data, date: data.date || today, consignee: (data.consignee || '').toUpperCase(), destination: (data.destination || '').toUpperCase(), status: 'Booked', createdById: userId || null, updatedById: userId || null },
     include: { client: { select: { company: true, phone: true } } },
   });
-
-  // Auto-debit wallet
   if (shipment.amount > 0) {
-    try { await walletSvc.debit({ clientCode: shipment.clientCode, amount: shipment.amount, description: `Shipment — AWB ${shipment.awb}`, refNo: shipment.awb }); }
+    try { await walletSvc.debit({ clientCode: shipment.clientCode, amount: shipment.amount, description: `Shipment — AWB ${shipment.awb}`, reference: shipment.awb }); }
     catch (e) { logger.warn(`[Wallet] Debit failed for ${shipment.awb}: ${e.message}`); }
   }
-
-  // Booking notification
-  try { await notify.shipmentBooked(shipment, shipment.client?.company); }
-  catch (e) { logger.warn(`[Notify] Booking failed: ${e.message}`); }
-
   return shipment;
 }
 
@@ -66,33 +63,35 @@ async function update(id, data, userId) {
 
 async function updateStatus(id, newStatus, userId) {
   const shipment = await getById(id);
-
-  // Enforce state machine
-  stateMachine.assertValidTransition(shipment.status, newStatus);
+  if (stateMachine.assertValidTransition) stateMachine.assertValidTransition(shipment.status, newStatus);
 
   const updated = await prisma.shipment.update({
     where: { id: parseInt(id) },
     data:  { status: newStatus, updatedById: userId },
-    include: { client: { select: { company: true, phone: true } } },
+    include: { client: { select: { company: true, phone: true, email: true } } },
   });
 
   // Log tracking event
   try {
-    await prisma.trackingEvent.create({ data: { shipmentId: parseInt(id), status: newStatus, description: `Status updated to ${newStatus}`, timestamp: new Date(), source: 'MANUAL' } });
+    await prisma.trackingEvent.create({ data: { shipmentId: parseInt(id), awb: updated.awb, status: newStatus, description: `Status updated to ${newStatus}`, timestamp: new Date(), source: 'MANUAL' } });
   } catch (e) { logger.warn(`[Tracking] Event log failed: ${e.message}`); }
 
   // Auto-refund on cancel/RTO
-  if (stateMachine.shouldRefund(newStatus) && shipment.amount > 0) {
+  if (stateMachine.shouldRefund && stateMachine.shouldRefund(newStatus) && shipment.amount > 0) {
     try {
-      await walletSvc.credit({ clientCode: shipment.clientCode, amount: shipment.amount, description: `Refund — AWB ${shipment.awb} (${newStatus})`, refNo: shipment.awb });
+      await walletSvc.credit({ clientCode: shipment.clientCode, amount: shipment.amount, description: `Refund — AWB ${shipment.awb} (${newStatus})`, reference: shipment.awb });
       logger.info(`[Wallet] Refunded ₹${shipment.amount} for ${shipment.awb}`);
     } catch (e) { logger.warn(`[Wallet] Refund failed: ${e.message}`); }
   }
 
-  // Status notification
-  if (stateMachine.shouldNotify(newStatus)) {
-    try { await notify.statusChanged(updated, newStatus); }
-    catch (e) { logger.warn(`[Notify] Status notification failed: ${e.message}`); }
+  // ── Fire WhatsApp + email notifications ────────────────────────────────
+  try { await notify.notifyStatusChange({ ...updated, status: newStatus }); }
+  catch (e) { logger.warn(`[Notify] Status notification failed: ${e.message}`); }
+
+  // POD email on delivery
+  if (newStatus === 'Delivered') {
+    try { await notify.sendPODEmail(updated, updated.labelUrl); }
+    catch (e) { logger.warn(`[Notify] POD email failed: ${e.message}`); }
   }
 
   return updated;
@@ -129,8 +128,7 @@ async function getTodayStats() {
   const totals = summary.reduce((acc, row) => {
     acc.total += row._count.id; acc.amount += row._sum.amount || 0; acc.weight += row._sum.weight || 0;
     if (row.status === 'Delivered') acc.delivered++;
-    if (['In Transit','Booked','Out for Delivery','Picked Up'].includes(row.status)) acc.inTransit++;
-    if (['Failed','RTO'].includes(row.status)) acc.delayed++;
+    if (['InTransit','Booked','OutForDelivery'].includes(row.status)) acc.inTransit++;
     return acc;
   }, { total: 0, delivered: 0, inTransit: 0, delayed: 0, amount: 0, weight: 0 });
   return { date: today, ...totals, byCourier, recentActivity };
@@ -142,4 +140,19 @@ async function getMonthlyStats(year, month) {
   return prisma.shipment.findMany({ where: { date: { gte: from, lte: to } }, select: { date: true, clientCode: true, courier: true, status: true, amount: true, weight: true } });
 }
 
-module.exports = { getAll, getById, create, update, updateStatus, remove, bulkImport, getTodayStats, getMonthlyStats };
+// Client-facing: shipments for a specific client (for portal)
+async function getMyShipments(clientCode, { page = 1, limit = 25, search, status } = {}) {
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const where = { clientCode, ...(status && { status }), ...(search && { OR: [
+    { awb:         { contains: search, mode: 'insensitive' } },
+    { consignee:   { contains: search, mode: 'insensitive' } },
+    { destination: { contains: search, mode: 'insensitive' } },
+  ]}) };
+  const [total, shipments] = await prisma.$transaction([
+    prisma.shipment.count({ where }),
+    prisma.shipment.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: parseInt(limit), select: { id: true, awb: true, date: true, consignee: true, destination: true, courier: true, status: true, weight: true, amount: true } }),
+  ]);
+  return { shipments, pagination: { total, page: parseInt(page), limit: parseInt(limit) } };
+}
+
+module.exports = { getAll, getById, create, update, updateStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getMyShipments };

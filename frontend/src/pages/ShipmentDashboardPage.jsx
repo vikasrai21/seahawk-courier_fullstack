@@ -9,6 +9,8 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { Modal } from '../components/ui/Modal';
 import ShipmentForm from '../components/ShipmentForm';
 import { useAuth } from '../context/AuthContext';
+import { EmptyState } from '../components/ui/EmptyState';
+import { useDebounce } from '../hooks/useDebounce';
 
 const fmt     = n => `₹${Number(n||0).toLocaleString('en-IN')}`;
 const fmtWt   = n => `${Number(n||0).toFixed(3)} kg`;
@@ -49,12 +51,15 @@ export default function ShipmentDashboardPage({ toast }) {
   const canEdit   = isAdmin || hasRole('OPS_MANAGER') || hasRole('STAFF');
   const canDelete = isAdmin;
 
+  // Debounce the search field — prevents API call on every keystroke
+  const debouncedSearch = useDebounce(filters.search, 300);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const p = new URLSearchParams({
         page, limit: pageSize, sortBy, sortDir,
-        ...(filters.search     && { search:     filters.search }),
+        ...(debouncedSearch       && { search:     debouncedSearch }),
         ...(filters.courier    && { courier:     filters.courier }),
         ...(filters.status     && { status:      filters.status }),
         ...(filters.clientCode && { clientCode:  filters.clientCode }),
@@ -70,7 +75,7 @@ export default function ShipmentDashboardPage({ toast }) {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, filters, sortBy, sortDir]);
+  }, [page, pageSize, debouncedSearch, filters.courier, filters.status, filters.clientCode, filters.dateFrom, filters.dateTo, sortBy, sortDir]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { api.get('/clients?limit=200').then(r => setClients(r.data||[])).catch(()=>{}); }, []);
@@ -245,11 +250,13 @@ export default function ShipmentDashboardPage({ toast }) {
             <RefreshCw className="w-6 h-6 animate-spin mr-2" /> Loading…
           </div>
         ) : rows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-            <Package className="w-12 h-12 mb-3 opacity-30" />
-            <p className="font-medium text-gray-500">No shipments found</p>
-            <p className="text-sm mt-1">Try clearing your filters</p>
-          </div>
+          <EmptyState
+            icon="📦"
+            title="No shipments found"
+            message={hasFilters ? 'No shipments match your current filters.' : 'No shipments yet — create one with New Entry.'}
+            action={hasFilters ? 'Clear filters' : undefined}
+            onAction={hasFilters ? clearFilters : undefined}
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="tbl">

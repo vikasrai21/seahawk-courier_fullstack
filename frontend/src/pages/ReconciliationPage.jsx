@@ -1,3 +1,4 @@
+import { EmptyState } from '../components/ui/EmptyState';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Upload, Shield, AlertTriangle, CheckCircle, X, Loader, ChevronDown, Eye, TrendingDown, IndianRupee, Package } from 'lucide-react';
 import api from '../services/api';
@@ -228,10 +229,7 @@ export default function ReconciliationPage({ toast }) {
         {loading ? (
           <div className="py-12 text-center"><Loader className="w-6 h-6 animate-spin mx-auto text-gray-400 mb-2" /><p className="text-gray-400 text-sm">Loading…</p></div>
         ) : invoices.length === 0 ? (
-          <div className="py-12 text-center">
-            <Shield className="w-12 h-12 mx-auto mb-3 text-gray-200" />
-            <p className="text-gray-400">No invoices yet — upload your first partner invoice above</p>
-          </div>
+          <EmptyState icon="🛡️" title="No invoices yet" message="Upload your first courier partner invoice using the button above to start reconciliation." />
         ) : (
           <div className="divide-y divide-gray-50">
             {invoices.map(inv => (

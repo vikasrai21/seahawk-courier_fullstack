@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Calendar, MapPin, Package, RefreshCw, Plus, User, Clock, CheckCircle2, X, ChevronRight } from 'lucide-react';
 import api from '../services/api';
 import { Modal } from '../components/ui/Modal';
+import { EmptyState } from '../components/ui/EmptyState';
 import { useAuth } from '../context/AuthContext';
 
 const STATUS_COLORS = {
@@ -131,10 +132,7 @@ export default function PickupSchedulerPage({ toast }) {
       {loading ? (
         <div className="flex justify-center py-12"><RefreshCw className="w-6 h-6 animate-spin text-gray-300"/></div>
       ) : pickups.length === 0 ? (
-        <div className="text-center py-12 text-gray-400">
-          <Calendar className="w-12 h-12 mx-auto mb-3 opacity-20"/>
-          <p className="font-medium text-gray-500">No pickups found</p>
-        </div>
+        <EmptyState icon="📅" title="No pickups scheduled" message="No pickup requests match the current filter. Create one using the button above." />
       ) : (
         <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
           {pickups.map(p => {

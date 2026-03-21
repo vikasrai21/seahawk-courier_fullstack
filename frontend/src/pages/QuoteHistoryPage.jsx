@@ -1,4 +1,7 @@
+import { EmptyState } from '../components/ui/EmptyState';
 import { useState, useEffect, useCallback } from 'react';
+import { useDebounce } from '../hooks/useDebounce';
+import { EmptyState } from '../components/ui/EmptyState';
 import { FileText, Search, Filter, TrendingUp, CheckCircle, X, Clock, Loader, ChevronDown, Printer } from 'lucide-react';
 import api from '../services/api';
 
@@ -18,6 +21,7 @@ export default function QuoteHistoryPage({ toast }) {
   const [stats, setStats]     = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState('');
+  const debouncedSearch = useDebounce(search, 300);
   const [statusFilter, setStatusFilter] = useState('');
   const [page, setPage]       = useState(1);
   const [total, setTotal]     = useState(0);
@@ -83,10 +87,10 @@ ${q.notes ? `<p><strong>Notes:</strong> ${q.notes}</p>` : ''}
   };
 
   const displayed = quotes.filter(q =>
-    !search || q.destination?.toLowerCase().includes(search.toLowerCase()) ||
-    q.quoteNo?.toLowerCase().includes(search.toLowerCase()) ||
-    q.courier?.toLowerCase().includes(search.toLowerCase()) ||
-    q.client?.company?.toLowerCase().includes(search.toLowerCase())
+    !debouncedSearch || q.destination?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    q.quoteNo?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    q.courier?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    q.client?.company?.toLowerCase().includes(debouncedSearch.toLowerCase())
   );
 
   const totalPages = Math.ceil(total / 20);
@@ -149,9 +153,8 @@ ${q.notes ? `<p><strong>Notes:</strong> ${q.notes}</p>` : ''}
                   <p className="text-gray-400">Loading quotes…</p>
                 </td></tr>
               ) : displayed.length === 0 ? (
-                <tr><td colSpan={12} className="px-4 py-12 text-center text-gray-400">
-                  <FileText className="w-10 h-10 mx-auto mb-3 opacity-20" />
-                  No quotes found
+                <tr><td colSpan={12} className="px-4 py-4">
+                  <EmptyState icon="📋" title="No quotes found" message="Try adjusting your search or date range." action={debouncedSearch ? 'Clear search' : undefined} onAction={debouncedSearch ? () => setSearch('') : undefined} />
                 </td></tr>
               ) : displayed.map(q => {
                 const sc = STATUS_CONFIG[q.status] || STATUS_CONFIG.QUOTED;

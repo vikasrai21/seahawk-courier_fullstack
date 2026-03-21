@@ -23,10 +23,13 @@ const api = axios.create({
   withCredentials:  true, // Required for httpOnly refresh token cookie
 });
 
-// ── Request interceptor: attach access token ──────────────────────────────
+// ── Request interceptor: attach access token + CSRF token ─────────────────
 api.interceptors.request.use((config) => {
   const token = tokenManager.get();
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  // Attach CSRF token from cookie for cookie-based auth paths
+  const csrf = document.cookie.split('; ').find(r => r.startsWith('csrf_token='))?.split('=')[1];
+  if (csrf) config.headers['x-csrf-token'] = csrf;
   return config;
 });
 

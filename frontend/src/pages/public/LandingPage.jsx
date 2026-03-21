@@ -1,12 +1,9 @@
 // LandingPage.jsx — Full React conversion of the Sea Hawk website homepage
-// - CSS loaded/unloaded via PublicLayout
-// - Calculator: pure React state (no DOM manipulation)
-// - Counter animations: useEffect with IntersectionObserver
-// - Hero illustration + Map: hero.js / map.js loaded via useEffect (complex canvas)
-// - All navigation: React Router <Link>
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import PublicLayout from './PublicLayout';
+import { PageMeta } from '../../components/seo/PageMeta';
+import { LocalBusinessSchema } from '../../components/seo/LocalBusinessSchema';
 
 /* ════════════════════════════════════════
    RATE CALCULATOR DATA (from calculator.js)
@@ -167,6 +164,7 @@ function RateCalculator() {
   const [viaDhl, setViaDhl]         = useState(false);
   const [result, setResult]         = useState(null);
   const [zoneInfo, setZoneInfo]     = useState('');
+  const [calcError, setCalcError]   = useState('');
 
   function handleCountryChange(c) {
     setCountry(c);
@@ -190,10 +188,12 @@ function RateCalculator() {
       else if (w <= 1000) base = r.w1kg;
       else base = r.w1kg + Math.ceil((w - 1000) / 500) * r.addl;
     } else if (svc === 'heavy-sfc') {
-      if (w < 3) { alert('Minimum chargeable weight: 3 kg'); return; }
+      if (w < 3) { setCalcError('Minimum chargeable weight: 3 kg'); return; }
+      setCalcError('');
       base = w * sfcRate(sfcZone, w);
     } else if (svc === 'heavy-air') {
-      if (w < 3) { alert('Minimum chargeable weight: 3 kg'); return; }
+      if (w < 3) { setCalcError('Minimum chargeable weight: 3 kg'); return; }
+      setCalcError('');
       base = w * airRate(airZone, w);
     } else if (svc === 'international') {
       let r;
@@ -209,6 +209,7 @@ function RateCalculator() {
     const insAmt = insured ? Math.max(rnd(base * INS_RATE), 50) : 0;
     const gstAmt = rnd((base + fscAmt + insAmt) * GST);
     const total  = rnd(base + fscAmt + insAmt + gstAmt);
+    setCalcError('');
     setResult({ base, fsc: fscAmt, ins: insAmt, gst: gstAmt, total });
   }
 
@@ -345,6 +346,11 @@ function RateCalculator() {
                 </div>
               )}
               <button className="btn-calc" onClick={compute}>⚡ Get Rate</button>
+              {calcError && (
+                <div style={{ marginTop: 8, padding: '8px 12px', background: '#FCEBEB', border: '1px solid #F7C1C1', borderRadius: 'var(--r)', fontSize: '.8rem', color: '#A32D2D', fontWeight: 600 }}>
+                  ⚠️ {calcError}
+                </div>
+              )}
               <Link to="/book" style={{ display: 'block', textAlign: 'center', marginTop: 10, padding: 11, background: 'var(--navy)', color: '#fff', borderRadius: 'var(--r)', fontSize: '.875rem', fontWeight: 700, textDecoration: 'none' }}>📦 Book This Pickup →</Link>
             </div>
           </div>
@@ -365,9 +371,11 @@ function TrackWidget() {
   const [qqDest, setQqDest] = useState('local');
   const [qqWt, setQqWt]     = useState('');
   const [qqRes, setQqRes]   = useState(null);
+  const [qqErr, setQqErr]   = useState('');
   const [cbName, setCbName] = useState('');
   const [cbPhone, setCbPhone] = useState('');
   const [cbOk, setCbOk]     = useState(false);
+  const [cbErr, setCbErr]   = useState('');
 
   function goToTrack() {
     if (!awb.trim()) return;
@@ -376,14 +384,16 @@ function TrackWidget() {
 
   function quickQuote() {
     const wt = parseFloat(qqWt) || 0;
-    if (!wt) { alert('Please enter a weight.'); return; }
+    if (!wt) { setQqErr('Please enter a weight.'); return; }
+    setQqErr('');
     const base = (QR[qqSvc] || QR.dom)[qqDest] || 60;
     const total = (base + Math.max(0, (wt / 1000) - 0.5) * base * 1.1) * 1.27 * 1.18;
     setQqRes('₹' + Math.round(total));
   }
 
   function doCallback() {
-    if (!cbName.trim() || !cbPhone.trim()) { alert('Please fill in your name and phone number.'); return; }
+    if (!cbName.trim() || !cbPhone.trim()) { setCbErr('Please fill in your name and phone number.'); return; }
+    setCbErr('');
     window.open(`https://wa.me/919911565523?text=${encodeURIComponent('Hi! Callback request.\nName: ' + cbName + '\nPhone: ' + cbPhone)}`, '_blank');
     setCbOk(true);
     setTimeout(() => setCbOk(false), 5000);
@@ -426,6 +436,7 @@ function TrackWidget() {
             </div>
             <button className="btn-track" onClick={quickQuote}>Get Rate</button>
           </div>
+          {qqErr && <div style={{ marginTop: 6, fontSize: '.78rem', color: '#A32D2D', fontWeight: 600 }}>⚠️ {qqErr}</div>}
           {qqRes && (
             <div style={{ display: 'block', marginTop: 10, padding: '10px 14px', background: 'var(--navy-faint)', border: '1px solid var(--navy-pale)', borderRadius: 'var(--r)', fontSize: '.875rem' }}>
               <strong>Estimated: </strong><span style={{ color: 'var(--orange)', fontWeight: 800, fontSize: '1.1rem' }}>{qqRes}</span>
@@ -443,6 +454,7 @@ function TrackWidget() {
             </div>
             <button className="btn-track" onClick={doCallback}>Request Call</button>
           </div>
+          {cbErr && <div style={{ marginTop: 6, fontSize: '.78rem', color: '#A32D2D', fontWeight: 600 }}>⚠️ {cbErr}</div>}
           {cbOk && <div style={{ marginTop: 10, padding: '9px 13px', background: 'var(--green-bg)', borderRadius: 'var(--r)', fontSize: '.8rem', color: 'var(--green)', fontWeight: 600 }}>✅ We'll call you back within 30 minutes!</div>}
         </div>
       )}
@@ -480,6 +492,12 @@ export default function LandingPage() {
 
   return (
     <PublicLayout>
+      <PageMeta
+        canonical="/"
+        title="Sea Hawk Courier & Cargo — Delhi NCR Courier Service Since 2004"
+        description="Sea Hawk Courier & Cargo — Gurugram's most trusted courier service. Same-day Delhi NCR delivery, international shipping to 220+ countries, real-time tracking. Call +91 99115 65523."
+      />
+      <LocalBusinessSchema />
       <div ref={pageRef}>
         {/* ── HERO ── */}
         <section id="hero">

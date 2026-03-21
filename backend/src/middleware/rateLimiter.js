@@ -1,9 +1,9 @@
-'use strict';
+// src/middleware/rateLimiter.js
 const rateLimit = require('express-rate-limit');
 
-// ── Login: 5 attempts per 15 min ──────────────────────────────────────────
+// Strict limit for login — prevents brute force
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 15 * 60 * 1000, // 15 minutes
   max:      5,
   message:  { success: false, message: 'Too many login attempts. Try again in 15 minutes.' },
   standardHeaders: true,
@@ -11,16 +11,7 @@ const loginLimiter = rateLimit({
   skipSuccessfulRequests: true,
 });
 
-// ── OTP: 10 attempts per 15 min (stricter) ────────────────────────────────
-const otpLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max:      10,
-  message:  { success: false, message: 'Too many OTP attempts. Try again in 15 minutes.' },
-  standardHeaders: true,
-  legacyHeaders:   false,
-});
-
-// ── General API: 300 per 15 min ───────────────────────────────────────────
+// General API limit
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max:      300,
@@ -29,13 +20,13 @@ const apiLimiter = rateLimit({
   legacyHeaders:   false,
 });
 
-// ── Sensitive actions: 3 per hour ────────────────────────────────────────
+// Strict limit for password reset / OTP
 const sensitiveActionLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
+  windowMs: 60 * 60 * 1000, // 1 hour
   max:      3,
   message:  { success: false, message: 'Too many attempts. Try again in 1 hour.' },
   standardHeaders: true,
   legacyHeaders:   false,
 });
 
-module.exports = { loginLimiter, otpLimiter, apiLimiter, sensitiveActionLimiter };
+module.exports = { loginLimiter, apiLimiter, sensitiveActionLimiter };

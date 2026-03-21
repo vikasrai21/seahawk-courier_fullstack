@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useDebounce } from '../hooks/useDebounce';
+import { EmptyState } from '../components/ui/EmptyState';
 import { CreditCard, RefreshCw, ArrowUpCircle, ArrowDownCircle, Plus, Search, TrendingUp } from 'lucide-react';
 import api from '../services/api';
 import { Modal } from '../components/ui/Modal';
+import { EmptyState } from '../components/ui/EmptyState';
 import { useAuth } from '../context/AuthContext';
 
 const fmt    = n => `₹${Number(n||0).toLocaleString('en-IN')}`;
@@ -15,6 +18,7 @@ export default function WalletPage({ toast }) {
   const [txns,       setTxns]       = useState([]);
   const [txLoading,  setTxLoading]  = useState(false);
   const [search,     setSearch]     = useState('');
+  const debouncedSearch = useDebounce(search, 300);
   const [showRecharge, setShowRecharge] = useState(false);
   const [showAdjust,   setShowAdjust]   = useState(false);
   const [rechargeClient, setRechargeClient] = useState(null);
@@ -55,8 +59,8 @@ export default function WalletPage({ toast }) {
   };
 
   const filtered = wallets.filter(w =>
-    !search || w.clientCode?.toLowerCase().includes(search.toLowerCase()) ||
-    w.company?.toLowerCase().includes(search.toLowerCase())
+    !debouncedSearch || w.clientCode?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    w.company?.toLowerCase().includes(debouncedSearch.toLowerCase())
   );
 
   const totalBalance = wallets.reduce((s,w) => s + (w.walletBalance || w.balance || 0), 0);
@@ -172,7 +176,7 @@ export default function WalletPage({ toast }) {
                 {txLoading ? (
                   <div className="flex justify-center py-8"><RefreshCw className="w-5 h-5 animate-spin text-gray-300"/></div>
                 ) : txns.length === 0 ? (
-                  <p className="text-center text-sm text-gray-400 py-6">No transactions yet</p>
+                  <EmptyState icon="💸" title="No transactions yet" message="Transactions will appear here once wallet activity begins." />
                 ) : (
                   <div className="space-y-2">
                     {txns.map(t => (

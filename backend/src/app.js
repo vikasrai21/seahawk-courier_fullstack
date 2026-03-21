@@ -11,21 +11,20 @@ const logger       = require('./utils/logger');
 const { globalErrorHandler } = require('./middleware/errorHandler');
 const { apiLimiter }         = require('./middleware/rateLimiter');
 const { initSentry, sentryErrorHandler } = require('./config/sentry');
+const { sanitiseBody } = require('./middleware/sanitise.middleware');
+const { issueCsrfCookie, validateCsrf } = require('./middleware/csrf.middleware');
 const R = require('./utils/response');
 
 const app = express();
 app.set('trust proxy', 1);
 
-// ── Sentry (must be before other middleware) ───────────────────────────────
 initSentry(app);
 
-// ── Security headers ───────────────────────────────────────────────────────
 app.use(helmet({
   contentSecurityPolicy: config.isProd ? undefined : false,
   crossOriginEmbedderPolicy: false,
 }));
 
-// ── CORS ───────────────────────────────────────────────────────────────────
 app.use(cors({
   origin:      config.cors.origin,
   credentials: true,
@@ -33,7 +32,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type','Authorization'],
 }));
 
-// ── Request logging ────────────────────────────────────────────────────────
 const logsDir = path.join(__dirname, '../logs');
 if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
 app.use(morgan(config.isProd ? 'combined' : 'dev', {
@@ -41,35 +39,35 @@ app.use(morgan(config.isProd ? 'combined' : 'dev', {
   skip:   (req) => req.path === '/api/health',
 }));
 
-// ── Body parsers ───────────────────────────────────────────────────────────
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// ── Global rate limit (all API routes) ────────────────────────────────────
+// ── Global XSS sanitisation ────────────────────────────────────────────────
+app.use(sanitiseBody);
+
+// ── CSRF protection (cookie-based sessions) ────────────────────────────────
+app.use(issueCsrfCookie);   // issues token cookie on all requests
+app.use('/api', validateCsrf); // validates on all mutating API requests
+
+// ── Global rate limit ──────────────────────────────────────────────────────
 app.use('/api', apiLimiter);
 
-// ── Health check ──────────────────────────────────────────────────────────
+// ── Health ─────────────────────────────────────────────────────────────────
 app.get('/api/health', async (req, res) => {
   const prisma = require('./config/prisma');
   try {
     await prisma.$queryRaw`SELECT 1`;
-    R.ok(res, { status: 'healthy', database: 'connected', uptime: Math.floor(process.uptime()), version: '3.0.0', env: config.env });
+    R.ok(res, { status: 'healthy', database: 'connected', uptime: Math.floor(process.uptime()), version: '8.0.0', env: config.env });
   } catch {
     res.status(503).json({ success: false, status: 'unhealthy' });
   }
 });
 
-// ── Public routes (no auth required) ──────────────────────────────────────
-app.use('/api/public', require('./routes/public.routes'));
-
-// ── Auth ───────────────────────────────────────────────────────────────────
-app.use('/api/auth', require('./routes/auth.routes'));
-
-// ── Client Portal (CLIENT role only) ──────────────────────────────────────
-app.use('/api/client-portal', require('./routes/client-portal.routes'));
-
-// ── Protected routes ───────────────────────────────────────────────────────
+// ── Routes ─────────────────────────────────────────────────────────────────
+app.use('/api/public',         require('./routes/public.routes'));
+app.use('/api/auth',           require('./routes/auth.routes'));
+app.use('/api/portal',         require('./routes/client-portal.routes'));
 app.use('/api/shipments',      require('./routes/shipment.routes'));
 app.use('/api/clients',        require('./routes/client.routes'));
 app.use('/api/contracts',      require('./routes/contract.routes'));
@@ -88,7 +86,7 @@ app.use('/api/delhivery',      require('./routes/delhivery.routes'));
 app.use('/api/couriers',       require('./routes/courier.routes'));
 app.use('/api/carrier',        require('./routes/carrier.routes'));
 
-// ── Serve React frontend (production) ─────────────────────────────────────
+// ── Serve React (production) ───────────────────────────────────────────────
 const frontendBuild = path.join(__dirname, '../public');
 if (fs.existsSync(frontendBuild)) {
   app.use(express.static(frontendBuild, { maxAge: config.isProd ? '1d' : 0 }));
@@ -99,11 +97,7 @@ if (fs.existsSync(frontendBuild)) {
   });
 }
 
-// ── 404 for unknown API routes ─────────────────────────────────────────────
-app.use('/api/*', (req, res) => R.error(res, `Route ${req.method} ${req.path} not found`, 404));
-
-// ── Sentry + Global error handler ─────────────────────────────────────────
-app.use(sentryErrorHandler());
+sentryErrorHandler(app);
 app.use(globalErrorHandler);
 
 module.exports = app;

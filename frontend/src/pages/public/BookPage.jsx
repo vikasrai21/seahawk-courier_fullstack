@@ -1,5 +1,5 @@
 // BookPage.jsx — Book a Pickup page as React component
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import PublicLayout from './PublicLayout';
 
@@ -136,6 +136,43 @@ ${form.notes ? `Notes: ${form.notes}` : ''}`;
               </div>
               <div className="fg"><label htmlFor="declaredValue">Declared Value (₹)</label><input id="declaredValue" name="declaredValue" type="number" value={form.declaredValue} onChange={handleChange} placeholder="For insurance" /></div>
             </div>
+
+            {/* ── Best Rate Panel — shown when weight + destination filled ── */}
+            {rateOptions.length > 0 && (
+              <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border-l)', background: 'var(--bg-2)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                  <span style={{ fontSize: '1rem' }}>⚡</span>
+                  <h3 style={{ fontFamily: 'var(--font-head)', fontWeight: 800, color: 'var(--navy)', margin: 0, fontSize: '1rem' }}>Best Rate Options</h3>
+                  <span style={{ fontSize: '.72rem', color: 'var(--ink-4)', marginLeft: 4 }}>incl. FSC 25% + GST 18% · {zone} zone · tap to select</span>
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                  {rateOptions.map((opt, i) => (
+                    <div
+                      key={opt.carrier}
+                      onClick={() => selectCarrier(opt.carrier)}
+                      style={{
+                        flex: '1 1 140px', padding: '12px 16px', borderRadius: 'var(--r-lg)', cursor: 'pointer',
+                        border: form.preferredCarrier === opt.carrier ? '2px solid var(--orange)' : '1.5px solid var(--border-l)',
+                        background: form.preferredCarrier === opt.carrier ? 'var(--orange-bg)' : '#fff',
+                        position: 'relative', transition: 'border .15s',
+                      }}
+                    >
+                      {i === 0 && (
+                        <div style={{ position: 'absolute', top: -8, left: 12, background: 'var(--green)', color: '#fff', fontSize: '.62rem', fontWeight: 800, padding: '2px 8px', borderRadius: 20 }}>BEST PRICE</div>
+                      )}
+                      <div style={{ fontWeight: 800, fontSize: '.9rem', color: 'var(--ink)', marginBottom: 2 }}>{opt.carrier}</div>
+                      <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.3rem', fontWeight: 900, color: i === 0 ? 'var(--green)' : 'var(--navy)' }}>₹{opt.total.toLocaleString('en-IN')}</div>
+                      <div style={{ fontSize: '.68rem', color: 'var(--ink-4)', marginTop: 2 }}>₹{opt.perKg}/kg base rate</div>
+                    </div>
+                  ))}
+                </div>
+                {form.preferredCarrier && (
+                  <div style={{ marginTop: 10, fontSize: '.78rem', color: 'var(--green)', fontWeight: 700 }}>
+                    ✓ {form.preferredCarrier} selected — this will be requested in your booking
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Section: Schedule */}
             <div style={{ padding: '24px 28px', borderBottom: '1px solid var(--border-l)', background: 'var(--navy-faint)' }}>

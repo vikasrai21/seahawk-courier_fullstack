@@ -7,19 +7,24 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum UserRole {
+  ADMIN
+  OPS_MANAGER
+  STAFF
+  CLIENT
+}
+
 model User {
-  id          Int      @id @default(autoincrement())
-  name        String
-  email       String   @unique
-  password    String
-  role        String   @default("STAFF")  // ADMIN | STAFF | OPS_MANAGER | CLIENT
-  branch      String?
-  phone       String?
-  active      Boolean  @default(true)
-  // For CLIENT role — links this portal user to a client account
-  clientCode  String?  @map("client_code") @db.VarChar(20)
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      UserRole @default(STAFF)
+  branch    String?
+  phone     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
   shipmentsCreated        Shipment[]      @relation("CreatedBy")
   shipmentsUpdated        Shipment[]      @relation("UpdatedBy")
   auditLogs               AuditLog[]
@@ -27,9 +32,34 @@ model User {
   courierInvoicesUploaded CourierInvoice[] @relation("InvoiceUploadedBy")
   rateVersionsUploaded    RateVersion[]   @relation("RateVersionUploadedBy")
   pickupAssignments       PickupRequest[] @relation("AssignedAgent")
+  refreshTokens           RefreshToken[]
+  clientProfile           ClientUser?
   @@index([email])
-  @@index([clientCode])
   @@map("users")
+}
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String   @unique
+  userId    Int      @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  revokedAt DateTime? @map("revoked_at")
+  ip        String?
+  userAgent String?  @map("user_agent")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+model ClientUser {
+  id         Int    @id @default(autoincrement())
+  userId     Int    @unique @map("user_id")
+  clientCode String @map("client_code") @db.VarChar(20)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client Client @relation(fields: [clientCode], references: [code])
+  @@map("client_users")
 }
 
 model Client {
@@ -53,6 +83,7 @@ model Client {
   quotes       Quote[]
   pickups      PickupRequest[]
   transactions WalletTransaction[]
+  clientUsers  ClientUser[]
   @@index([code])
   @@map("clients")
 }
@@ -114,6 +145,7 @@ model Shipment {
   @@index([courier])
   @@index([ndrStatus])
   @@index([date, clientCode])
+  @@index([courier, status])
   @@map("shipments")
 }
 

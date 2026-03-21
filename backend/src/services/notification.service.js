@@ -1,151 +1,132 @@
+// src/services/notification.service.js — Email + WhatsApp notifications
 'use strict';
-// src/services/notification.service.js — Phase 2: Unified notification service
-// Channels: WhatsApp (MSG91), SMS (MSG91), Email (Nodemailer)
-// Gracefully skips if API keys not configured
+const prisma  = require('../config/prisma');
+const logger  = require('../utils/logger');
+const config  = require('../config');
 
-const logger = require('../utils/logger');
+// ── Email via nodemailer ───────────────────────────────────────────────────
+let transporter = null;
+function getTransporter() {
+  if (transporter) return transporter;
+  if (!config.email.host || !config.email.user) return null;
+  const nodemailer = require('nodemailer');
+  transporter = nodemailer.createTransport({
+    host: config.email.host,
+    port: config.email.port,
+    secure: config.email.port === 465,
+    auth: { user: config.email.user, pass: config.email.pass },
+  });
+  return transporter;
+}
 
-// ── Tracking URL ────────────────────────────────────────────────────────────
-const TRACK_URL = (awb) => `${process.env.PUBLIC_URL || 'https://seahawkcourier.in'}/track/${awb}`;
+async function sendEmail({ to, subject, html, text }) {
+  const t = getTransporter();
+  if (!t) { logger.warn('Email skipped — SMTP not configured'); return; }
+  try {
+    await t.sendMail({ from: config.email.from, to, subject, html, text });
+    logger.info(`Email sent to ${to}: ${subject}`);
+  } catch (err) {
+    logger.error('Email failed', { to, subject, error: err.message });
+  }
+}
 
-// ── Templates ───────────────────────────────────────────────────────────────
-const templates = {
-  booked: (s, company) => ({
-    whatsapp: `🦅 *Sea Hawk Courier*\n\n📦 *Shipment Booked!*\n*AWB:* ${s.awb}\n*Courier:* ${s.courier || 'To be assigned'}\n*To:* ${s.destination}\n\n🔗 Track: ${TRACK_URL(s.awb)}\n\nQueries? +91 99115 65523`,
-    sms:      `Sea Hawk: Shipment booked. AWB: ${s.awb}. Track: ${TRACK_URL(s.awb)}`,
-    email: {
-      subject: `Shipment Booked — AWB ${s.awb}`,
-      html:    `<p>Your shipment <strong>${s.awb}</strong> has been booked via Sea Hawk Courier.</p><p>Destination: ${s.destination}</p><p><a href="${TRACK_URL(s.awb)}">Track your shipment</a></p>`,
-    },
-  }),
-
-  'Picked Up': (s) => ({
-    whatsapp: `🦅 *Sea Hawk Courier*\n\n✅ *Picked Up!*\n*AWB:* ${s.awb}\n*En route to:* ${s.destination}\n\nTrack: ${TRACK_URL(s.awb)}`,
-    sms:      `Sea Hawk: AWB ${s.awb} picked up. En route to ${s.destination}.`,
-    email:    { subject: `Picked Up — ${s.awb}`, html: `<p>AWB ${s.awb} has been picked up and is on its way to ${s.destination}.</p>` },
-  }),
-
-  'In Transit': (s) => ({
-    whatsapp: `🦅 *Sea Hawk Courier*\n\n✈️ *In Transit*\n*AWB:* ${s.awb}\n*To:* ${s.destination}\n\nTrack: ${TRACK_URL(s.awb)}`,
-    sms:      `Sea Hawk: AWB ${s.awb} in transit to ${s.destination}.`,
-    email:    { subject: `In Transit — ${s.awb}`, html: `<p>AWB ${s.awb} is in transit to ${s.destination}.</p>` },
-  }),
-
-  'Out for Delivery': (s) => ({
-    whatsapp: `🦅 *Sea Hawk Courier*\n\n🛵 *Out for Delivery!*\n*AWB:* ${s.awb}\n*Consignee:* ${s.consignee}\n*Address:* ${s.destination}\n\nPlease be available. Queries? +91 99115 65523`,
-    sms:      `Sea Hawk: AWB ${s.awb} out for delivery. Please be available. 9911565523`,
-    email:    { subject: `Out for Delivery — ${s.awb}`, html: `<p>AWB ${s.awb} is out for delivery to ${s.consignee} at ${s.destination}. Please be available.</p>` },
-  }),
-
-  'Delivered': (s) => ({
-    whatsapp: `🦅 *Sea Hawk Courier*\n\n✅ *Delivered!*\n*AWB:* ${s.awb}\n*Delivered to:* ${s.consignee}\n\nThank you for choosing Sea Hawk Courier 🙏`,
-    sms:      `Sea Hawk: AWB ${s.awb} delivered. Thank you!`,
-    email:    { subject: `Delivered — ${s.awb}`, html: `<p>AWB ${s.awb} has been successfully delivered to ${s.consignee}. Thank you!</p>` },
-  }),
-
-  'Failed': (s) => ({
-    whatsapp: `🦅 *Sea Hawk Courier*\n\n⚠️ *Delivery Attempted*\n*AWB:* ${s.awb}\n\nDelivery was unsuccessful. We will reattempt. For address correction call +91 99115 65523`,
-    sms:      `Sea Hawk: Delivery attempt for AWB ${s.awb} unsuccessful. Will reattempt. Call 9911565523.`,
-    email:    { subject: `Delivery Attempted — ${s.awb}`, html: `<p>Delivery attempt for AWB ${s.awb} was unsuccessful. We will reattempt delivery.</p>` },
-  }),
-
-  'RTO': (s) => ({
-    whatsapp: `🦅 *Sea Hawk Courier*\n\n🔄 *Return Initiated*\n*AWB:* ${s.awb}\n\nShipment is being returned. Your wallet will be refunded. Queries? +91 99115 65523`,
-    sms:      `Sea Hawk: AWB ${s.awb} RTO initiated. Wallet refund processed.`,
-    email:    { subject: `RTO Initiated — ${s.awb}`, html: `<p>AWB ${s.awb} is being returned. Your wallet balance has been refunded.</p>` },
-  }),
-};
-
-// ── Send WhatsApp via MSG91 ──────────────────────────────────────────────────
+// ── WhatsApp via Meta Cloud API ────────────────────────────────────────────
 async function sendWhatsApp(phone, message) {
-  if (!process.env.MSG91_AUTH_KEY || !phone) return false;
+  if (!config.whatsapp.token || !config.whatsapp.phoneId) {
+    logger.warn('WhatsApp skipped — WHATSAPP_TOKEN or WHATSAPP_PHONE_ID not configured');
+    return;
+  }
+  const cleaned = phone.replace(/\D/g, '');
+  const to = cleaned.startsWith('91') ? cleaned : `91${cleaned}`;
   try {
-    const mobile = phone.replace(/\D/g, '');
-    const to = mobile.startsWith('91') ? mobile : `91${mobile}`;
-    const res = await fetch('https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', authkey: process.env.MSG91_AUTH_KEY },
-      body: JSON.stringify({
-        integrated_number: process.env.MSG91_WA_FROM || '919911565523',
-        content_type: 'template',
-        payload: {
-          messaging_product: 'whatsapp',
-          type:              'text',
-          to,
-          text: { body: message },
-        },
-      }),
-      signal: AbortSignal.timeout(8000),
+    const axios = require('axios');
+    await axios.post(
+      `https://graph.facebook.com/v18.0/${config.whatsapp.phoneId}/messages`,
+      {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { body: message },
+      },
+      { headers: { Authorization: `Bearer ${config.whatsapp.token}`, 'Content-Type': 'application/json' } }
+    );
+    // Log to DB
+    await prisma.notification.create({
+      data: { channel: 'WHATSAPP', to, template: 'TEXT', message, status: 'SENT', provider: 'META', sentAt: new Date() },
     });
-    if (!res.ok) { logger.warn(`[WhatsApp] Send failed: ${res.status}`); return false; }
-    return true;
-  } catch (e) { logger.warn(`[WhatsApp] Error: ${e.message}`); return false; }
-}
-
-// ── Send SMS via MSG91 ───────────────────────────────────────────────────────
-async function sendSMS(phone, message) {
-  if (!process.env.MSG91_AUTH_KEY || !phone) return false;
-  try {
-    const mobile = phone.replace(/\D/g, '');
-    const to = mobile.startsWith('91') ? mobile : `91${mobile}`;
-    const res = await fetch('https://api.msg91.com/api/v5/flow/', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json', authkey: process.env.MSG91_AUTH_KEY },
-      body: JSON.stringify({ template_id: process.env.MSG91_TEMPLATE_ID, short_url: '0', mobiles: to, message }),
-      signal: AbortSignal.timeout(8000),
+    logger.info(`WhatsApp sent to ${to}`);
+  } catch (err) {
+    logger.error('WhatsApp failed', { to, error: err.message });
+    await prisma.notification.create({
+      data: { channel: 'WHATSAPP', to, template: 'TEXT', message, status: 'FAILED', error: err.message },
     });
-    if (!res.ok) { logger.warn(`[SMS] Send failed: ${res.status}`); return false; }
-    return true;
-  } catch (e) { logger.warn(`[SMS] Error: ${e.message}`); return false; }
+  }
 }
 
-// ── Send Email via Nodemailer ────────────────────────────────────────────────
-async function sendEmail(to, subject, html) {
-  if (!process.env.SMTP_HOST || !to) return false;
-  try {
-    const nodemailer = require('nodemailer');
-    const transporter = nodemailer.createTransport({
-      host:   process.env.SMTP_HOST,
-      port:   parseInt(process.env.SMTP_PORT) || 587,
-      secure: false,
-      auth:   { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    });
-    await transporter.sendMail({
-      from:    process.env.SMTP_FROM || 'Sea Hawk Courier <noreply@seahawkcourier.in>',
-      to,
-      subject,
-      html,
-    });
-    return true;
-  } catch (e) { logger.warn(`[Email] Send failed: ${e.message}`); return false; }
+// ── Shipment status change notifications ───────────────────────────────────
+async function notifyStatusChange(shipment) {
+  const { awb, status, consignee, phone, courier, clientCode } = shipment;
+
+  // Notify consignee via WhatsApp when out for delivery or delivered
+  if (phone && ['OutForDelivery', 'Delivered'].includes(status)) {
+    let msg;
+    if (status === 'OutForDelivery') {
+      msg = `🚚 Your shipment (AWB: ${awb}) is out for delivery today. Please be available to receive it.\n\nTrack: https://seahawk-courierfullstack-production.up.railway.app/track/${awb}\n\n— Sea Hawk Courier`;
+    } else {
+      msg = `✅ Your shipment (AWB: ${awb}) has been delivered successfully. Thank you for choosing Sea Hawk Courier!\n\nFor any queries call: +91 99115 65523`;
+    }
+    await sendWhatsApp(phone, msg);
+  }
+
+  // Notify RTO to client via email
+  if (status === 'RTO' && clientCode) {
+    const client = await prisma.client.findUnique({ where: { code: clientCode }, select: { email: true, company: true } });
+    if (client?.email) {
+      await sendEmail({
+        to: client.email,
+        subject: `RTO Alert — AWB ${awb}`,
+        text: `Dear ${client.company},\n\nShipment AWB ${awb} (${consignee}) has been marked as Return to Origin (RTO).\n\nPlease log in to your portal to take action.\n\n— Sea Hawk Courier`,
+        html: `<p>Dear <strong>${client.company}</strong>,</p><p>Shipment AWB <strong>${awb}</strong> addressed to <strong>${consignee}</strong> has been marked as <strong>Return to Origin (RTO)</strong>.</p><p>Please <a href="https://seahawk-courierfullstack-production.up.railway.app/portal">log in to your portal</a> to take action.</p><p>— Sea Hawk Courier</p>`,
+      });
+    }
+  }
+
+  // Notify on NDR
+  if (status === 'NDR' && clientCode) {
+    const client = await prisma.client.findUnique({ where: { code: clientCode }, select: { email: true, company: true } });
+    if (client?.email) {
+      await sendEmail({
+        to: client.email,
+        subject: `Delivery Attempt Failed — AWB ${awb}`,
+        text: `Dear ${client.company},\n\nDelivery attempt for AWB ${awb} (${consignee}) has failed. Please update delivery instructions in your portal.\n\n— Sea Hawk Courier`,
+        html: `<p>Dear <strong>${client.company}</strong>,</p><p>Delivery attempt for AWB <strong>${awb}</strong> addressed to <strong>${consignee}</strong> has failed.</p><p>Please <a href="https://seahawk-courierfullstack-production.up.railway.app/portal">update delivery instructions</a>.</p><p>— Sea Hawk Courier</p>`,
+      });
+    }
+  }
 }
 
-// ── Get phone from shipment + client ────────────────────────────────────────
-function getPhone(shipment) {
-  return shipment.phone || shipment.client?.phone || null;
+// ── POD email to client ────────────────────────────────────────────────────
+async function sendPODEmail(shipment, pdfUrl) {
+  if (!shipment.clientCode) return;
+  const client = await prisma.client.findUnique({ where: { code: shipment.clientCode }, select: { email: true, company: true } });
+  if (!client?.email) return;
+  await sendEmail({
+    to: client.email,
+    subject: `Delivery Confirmation — AWB ${shipment.awb}`,
+    html: `<p>Dear <strong>${client.company}</strong>,</p><p>Shipment AWB <strong>${shipment.awb}</strong> to <strong>${shipment.consignee}</strong> was delivered successfully.</p>${pdfUrl ? `<p><a href="${pdfUrl}">Download Proof of Delivery (PDF)</a></p>` : ''}<p>— Sea Hawk Courier</p>`,
+    text: `AWB ${shipment.awb} delivered to ${shipment.consignee}. ${pdfUrl ? 'POD: ' + pdfUrl : ''}`,
+  });
 }
 
-// ── Public API ───────────────────────────────────────────────────────────────
-async function shipmentBooked(shipment, companyName) {
-  const t     = templates.booked(shipment, companyName);
-  const phone = getPhone(shipment);
-  await Promise.allSettled([
-    sendWhatsApp(phone, t.whatsapp),
-    sendSMS(phone, t.sms),
-  ]);
-  logger.info(`[Notify] Booking notifications sent for AWB ${shipment.awb}`);
+// ── Welcome email for new client portal user ──────────────────────────────
+async function sendWelcomeEmail(user, tempPassword) {
+  if (!user.email) return;
+  await sendEmail({
+    to: user.email,
+    subject: 'Welcome to Sea Hawk Client Portal',
+    html: `<p>Dear <strong>${user.name}</strong>,</p><p>Your client portal account has been created.</p><p>Login: <a href="https://seahawk-courierfullstack-production.up.railway.app/login">https://seahawk-courierfullstack-production.up.railway.app/login</a></p><p>Email: ${user.email}<br>Temporary password: <strong>${tempPassword}</strong></p><p>Please change your password after first login.</p><p>— Sea Hawk Courier</p>`,
+    text: `Welcome ${user.name}! Your portal login: ${user.email} / ${tempPassword}. Change password after first login.`,
+  });
 }
 
-async function statusChanged(shipment, newStatus) {
-  const tmpl = templates[newStatus];
-  if (!tmpl) return;
-  const t     = tmpl(shipment);
-  const phone = getPhone(shipment);
-  await Promise.allSettled([
-    sendWhatsApp(phone, t.whatsapp),
-    sendSMS(phone, t.sms),
-  ]);
-  logger.info(`[Notify] ${newStatus} notifications sent for AWB ${shipment.awb}`);
-}
-
-module.exports = { shipmentBooked, statusChanged, sendWhatsApp, sendSMS, sendEmail };
+module.exports = { sendEmail, sendWhatsApp, notifyStatusChange, sendPODEmail, sendWelcomeEmail };

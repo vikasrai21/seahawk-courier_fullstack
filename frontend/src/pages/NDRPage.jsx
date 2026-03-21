@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useDebounce } from '../hooks/useDebounce';
+import { EmptyState } from '../components/ui/EmptyState';
 import { AlertTriangle, RefreshCw, ChevronRight, Search, Filter, X, CheckCircle2, RotateCcw, MapPin } from 'lucide-react';
 import api from '../services/api';
 import { Modal } from '../components/ui/Modal';
@@ -35,6 +37,7 @@ export default function NDRPage({ toast }) {
   const [page,       setPage]       = useState(1);
   const [filter,     setFilter]     = useState('');
   const [search,     setSearch]     = useState('');
+  const debouncedSearch = useDebounce(search, 300);
   const [selected,   setSelected]   = useState(null);
   const [newNDR,     setNewNDR]     = useState(false);
   const [actionForm, setActionForm] = useState({ action:'', newAddress:'', notes:'' });
@@ -70,8 +73,8 @@ export default function NDRPage({ toast }) {
   };
 
   const filtered = ndrs.filter(n =>
-    !search || n.awb?.toLowerCase().includes(search.toLowerCase()) ||
-    n.shipment?.consignee?.toLowerCase().includes(search.toLowerCase())
+    !debouncedSearch || n.awb?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+    n.shipment?.consignee?.toLowerCase().includes(debouncedSearch.toLowerCase())
   );
 
   const StatCard = ({ label, val, color }) => (
@@ -131,10 +134,13 @@ export default function NDRPage({ toast }) {
         {loading ? (
           <div className="flex justify-center py-12"><RefreshCw className="w-6 h-6 animate-spin text-gray-300"/></div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-12 text-gray-400">
-            <AlertTriangle className="w-12 h-12 mx-auto mb-3 opacity-20"/>
-            <p className="font-medium text-gray-500">No NDRs found</p>
-          </div>
+          <EmptyState
+            icon="📦"
+            title={debouncedSearch ? 'No NDRs match your search' : 'No NDRs found'}
+            message={debouncedSearch ? 'Try clearing your search or changing the filter.' : 'All shipments are on track — no delivery exceptions right now.'}
+            action={debouncedSearch ? 'Clear search' : undefined}
+            onAction={debouncedSearch ? () => setSearch('') : undefined}
+          />
         ) : filtered.map(n => {
           const action = fmt(n.action || 'PENDING');
           return (

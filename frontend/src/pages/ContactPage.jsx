@@ -13,7 +13,8 @@ export default function ContactPage() {
 
   function sendContact(e) {
     e.preventDefault();
-    if (!form.name.trim() || !form.contact.trim()) { alert('Please fill in your name and contact details.'); return; }
+    if (!form.name.trim() || !form.contact.trim()) { setFormError('Please fill in your name and contact details.'); return; }
+    setFormError('');
     const text = `Hi Sea Hawk!\n\nName: ${form.name}\nContact: ${form.contact}\nSubject: ${form.subj}\nMessage: ${form.msg || '—'}`;
     window.open(`https://wa.me/919911565523?text=${encodeURIComponent(text)}`, '_blank');
     setSent(true);

@@ -1,84 +1,88 @@
-// App.jsx — Phase 3: Client portal added, error boundaries wrapped
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+// App.jsx — Lazy-loaded routes for optimal bundle splitting
+import { BrowserRouter, Routes, Route, Navigate, Suspense, lazy } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { useToast } from './hooks/useToast';
 import { Toast } from './components/ui/Toast';
 import { AppLayout } from './components/layout/AppLayout';
 import { Spinner } from './components/ui/Loading';
-import ErrorBoundary from './components/ErrorBoundary';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
+// ── Public pages (small — load immediately) ────────────────────────────────
+import LandingPage     from './pages/public/LandingPage';
+import LoginPage       from './pages/LoginPage';
 
-// ── Public website pages ────────────────────────────────────────────────────
-import LandingPage        from './pages/public/LandingPage';
-import PublicTrackPage    from './pages/public/PublicTrackPage';
-import ServicesPage       from './pages/public/ServicesPage';
-import ContactPage        from './pages/public/ContactPage';
-import BookPage           from './pages/public/BookPage';
-import LoginPage          from './pages/LoginPage';
-import ChangePasswordPage from './pages/ChangePasswordPage';
+// ── Public pages — lazy (loaded only when visited) ─────────────────────────
+const PublicTrackPage = lazy(() => import('./pages/public/PublicTrackPage'));
+const ServicesPage    = lazy(() => import('./pages/public/ServicesPage'));
+const ContactPage     = lazy(() => import('./pages/public/ContactPage'));
+const BookPage        = lazy(() => import('./pages/public/BookPage'));
 
-// ── Client portal ────────────────────────────────────────────────────────────
-import ClientLoginPage    from './pages/client/ClientLoginPage';
-import ClientPortalPage   from './pages/client/ClientPortalPage';
+// ── App pages — ALL lazy-loaded (none load until user is authenticated) ────
+const DashboardPage         = lazy(() => import('./pages/DashboardPage'));
+const NewEntryPage          = lazy(() => import('./pages/NewEntryPage'));
+const ImportPage            = lazy(() => import('./pages/ImportPage'));
+const AllShipmentsPage      = lazy(() => import('./pages/AllShipmentsPage'));
+const DailySheetPage        = lazy(() => import('./pages/DailySheetPage'));
+const MonthlyReportPage     = lazy(() => import('./pages/MonthlyReportPage'));
+const ClientsPage           = lazy(() => import('./pages/ClientsPage'));
+const ContractsPage         = lazy(() => import('./pages/ContractsPage'));
+const InvoicesPage          = lazy(() => import('./pages/InvoicesPage'));
+const PendingPage           = lazy(() => import('./pages/PendingPage'));
+const TrackPage             = lazy(() => import('./pages/TrackPage'));
+const SyncPage              = lazy(() => import('./pages/SyncPage'));
+const UsersPage             = lazy(() => import('./pages/UsersPage'));
+const AuditPage             = lazy(() => import('./pages/AuditPage'));
+const RateCalculatorPage    = lazy(() => import('./pages/RateCalculatorPage'));
+const ProfilePage           = lazy(() => import('./pages/ProfilePage'));
+const OperationsDashboard   = lazy(() => import('./pages/OperationsDashboard'));
+const BulkComparePage       = lazy(() => import('./pages/BulkComparePage'));
+const RateCardPage          = lazy(() => import('./pages/RateCardPage'));
+const QuoteHistoryPage      = lazy(() => import('./pages/QuoteHistoryPage'));
+const ReconciliationPage    = lazy(() => import('./pages/ReconciliationPage'));
+const RateManagementPage    = lazy(() => import('./pages/RateManagementPage'));
+const WhatsAppPage          = lazy(() => import('./pages/WhatsAppPage'));
+const ShipmentDashboardPage = lazy(() => import('./pages/ShipmentDashboardPage'));
+const NDRPage               = lazy(() => import('./pages/NDRPage'));
+const PickupSchedulerPage   = lazy(() => import('./pages/PickupSchedulerPage'));
+const WalletPage            = lazy(() => import('./pages/WalletPage'));
+const AnalyticsPage         = lazy(() => import('./pages/AnalyticsPage'));
 
-// ── App pages (staff/admin) ─────────────────────────────────────────────────
-import DashboardPage       from './pages/DashboardPage';
-import NewEntryPage        from './pages/NewEntryPage';
-import ImportPage          from './pages/ImportPage';
-import AllShipmentsPage    from './pages/AllShipmentsPage';
-import DailySheetPage      from './pages/DailySheetPage';
-import MonthlyReportPage   from './pages/MonthlyReportPage';
-import ClientsPage         from './pages/ClientsPage';
-import ContractsPage       from './pages/ContractsPage';
-import InvoicesPage        from './pages/InvoicesPage';
-import PendingPage         from './pages/PendingPage';
-import TrackPage           from './pages/TrackPage';
-import SyncPage            from './pages/SyncPage';
-import UsersPage           from './pages/UsersPage';
-import AuditPage           from './pages/AuditPage';
-import RateCalculatorPage  from './pages/RateCalculatorPage';
-import ProfilePage         from './pages/ProfilePage';
-import OperationsDashboard from './pages/OperationsDashboard';
-import BulkComparePage     from './pages/BulkComparePage';
-import RateCardPage        from './pages/RateCardPage';
-import QuoteHistoryPage    from './pages/QuoteHistoryPage';
-import ReconciliationPage  from './pages/ReconciliationPage';
-import RateManagementPage  from './pages/RateManagementPage';
-import WhatsAppPage        from './pages/WhatsAppPage';
-import ShipmentDashboardPage from './pages/ShipmentDashboardPage';
-import NDRPage             from './pages/NDRPage';
-import PickupSchedulerPage from './pages/PickupSchedulerPage';
-import WalletPage          from './pages/WalletPage';
-import AnalyticsPage       from './pages/AnalyticsPage';
+// ── Client portal pages ────────────────────────────────────────────────────
+const ClientPortalPage      = lazy(() => import('./pages/client/ClientPortalPage'));
+const ClientShipmentsPage   = lazy(() => import('./pages/client/ClientShipmentsPage'));
+const ClientInvoicesPage    = lazy(() => import('./pages/client/ClientInvoicesPage'));
+const ClientWalletPage      = lazy(() => import('./pages/client/ClientWalletPage'));
+const ClientTrackPage       = lazy(() => import('./pages/client/ClientTrackPage'));
 
-// ── Private route guard ─────────────────────────────────────────────────────
-function PrivateRoute({ children, adminOnly = false, roles = null }) {
-  const { user, loading, isAdmin, hasRole } = useAuth();
-  if (loading) return (
-    <div className="flex items-center justify-center h-screen bg-gray-50">
-      <div className="text-center">
-        <div className="text-5xl mb-3">🦅</div>
+// ── Fallback spinner shown while lazy chunks load ──────────────────────────
+function PageLoader() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🦅</div>
         <Spinner size="lg" />
       </div>
     </div>
   );
-  if (!user) return <Navigate to="/login" replace />;
-  if (adminOnly && !isAdmin) return <Navigate to="/app" replace />;
+}
+
+// ── Route guard ────────────────────────────────────────────────────────────
+function PrivateRoute({ children, adminOnly = false, roles = null }) {
+  const { user, loading, isAdmin, hasRole } = useAuth();
+  if (loading) return <PageLoader />;
+  if (!user)                       return <Navigate to="/login" replace />;
+  if (adminOnly && !isAdmin)       return <Navigate to="/app" replace />;
   if (roles && !hasRole(...roles)) return <Navigate to="/app" replace />;
   return children;
 }
 
-// ── Client portal route guard ───────────────────────────────────────────────
+// ── Client-only route ──────────────────────────────────────────────────────
 function ClientRoute({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
-      <Spinner size="lg" />
-    </div>
-  );
-  if (!user) return <Navigate to="/client-login" replace />;
-  if (user.role !== 'CLIENT') return <Navigate to="/app" replace />;
-  return children;
+  if (loading) return <PageLoader />;
+  if (!user)            return <Navigate to="/login" replace />;
+  if (user.role === 'CLIENT') return children;
+  return <Navigate to="/app" replace />;
 }
 
 function AppRoutes() {
@@ -87,68 +91,73 @@ function AppRoutes() {
   return (
     <>
       <Toast toasts={toasts} removeToast={removeToast} />
-      <Routes>
-        {/* ── Public website routes ──────────────────────────────────────── */}
-        <Route path="/"          element={<LandingPage />} />
-        <Route path="/services"  element={<ServicesPage />} />
-        <Route path="/contact"   element={<ContactPage />} />
-        <Route path="/book"      element={<BookPage />} />
-        <Route path="/track"     element={<PublicTrackPage />} />
-        <Route path="/track/:awb" element={<PublicTrackPage />} />
-        <Route path="/login"     element={<LoginPage />} />
-        <Route path="/change-password" element={<ChangePasswordPage />} />  {/* ← ADD THIS */}
+      <ErrorBoundary>
+        <Suspense fallback={<PageLoader />}>
+        <Routes>
+          {/* ── Public ── */}
+          <Route path="/"           element={<LandingPage />} />
+          <Route path="/services"   element={<ServicesPage />} />
+          <Route path="/contact"    element={<ContactPage />} />
+          <Route path="/book"       element={<BookPage />} />
+          <Route path="/track"      element={<PublicTrackPage />} />
+          <Route path="/track/:awb" element={<PublicTrackPage />} />
+          <Route path="/login"      element={<LoginPage />} />
 
-        {/* ── Client portal routes ───────────────────────────────────────── */}
-        <Route path="/client-login" element={<ClientLoginPage />} />
-        <Route path="/client-portal" element={
-          <ClientRoute>
-            <ErrorBoundary>
-              <ClientPortalPage />
-            </ErrorBoundary>
-          </ClientRoute>
-        } />
-
-        {/* ── Staff/Admin app routes ─────────────────────────────────────── */}
-        <Route path="/app/*" element={
-          <PrivateRoute>
-            <AppLayout>
+          {/* ── Client self-service portal ── */}
+          <Route path="/portal/*" element={
+            <ClientRoute>
               <Routes>
-                <Route path="/"          element={<ErrorBoundary><DashboardPage         {...p} /></ErrorBoundary>} />
-                <Route path="/ops"       element={<ErrorBoundary><OperationsDashboard   {...p} /></ErrorBoundary>} />
-                <Route path="/entry"     element={<ErrorBoundary><NewEntryPage          {...p} /></ErrorBoundary>} />
-                <Route path="/import"    element={<ErrorBoundary><ImportPage            {...p} /></ErrorBoundary>} />
-                <Route path="/all"       element={<ErrorBoundary><AllShipmentsPage      {...p} /></ErrorBoundary>} />
-                <Route path="/pending"   element={<ErrorBoundary><PendingPage           {...p} /></ErrorBoundary>} />
-                <Route path="/track"     element={<ErrorBoundary><TrackPage             {...p} /></ErrorBoundary>} />
-                <Route path="/daily"     element={<ErrorBoundary><DailySheetPage        {...p} /></ErrorBoundary>} />
-                <Route path="/monthly"   element={<ErrorBoundary><MonthlyReportPage     {...p} /></ErrorBoundary>} />
-                <Route path="/clients"        element={<ErrorBoundary><ClientsPage      {...p} /></ErrorBoundary>} />
-                <Route path="/contracts"      element={<ErrorBoundary><ContractsPage    {...p} /></ErrorBoundary>} />
-                <Route path="/invoices"       element={<ErrorBoundary><InvoicesPage     {...p} /></ErrorBoundary>} />
-                <Route path="/reconciliation" element={<ErrorBoundary><ReconciliationPage {...p} /></ErrorBoundary>} />
-                <Route path="/rates"     element={<ErrorBoundary><RateCalculatorPage /></ErrorBoundary>} />
-                <Route path="/bulk"      element={<ErrorBoundary><BulkComparePage       {...p} /></ErrorBoundary>} />
-                <Route path="/rate-card" element={<ErrorBoundary><RateCardPage          {...p} /></ErrorBoundary>} />
-                <Route path="/quotes"    element={<ErrorBoundary><QuoteHistoryPage      {...p} /></ErrorBoundary>} />
-                <Route path="/whatsapp"  element={<ErrorBoundary><WhatsAppPage          {...p} /></ErrorBoundary>} />
-                <Route path="/sync"      element={<ErrorBoundary><SyncPage              {...p} /></ErrorBoundary>} />
-                <Route path="/profile"   element={<ErrorBoundary><ProfilePage           {...p} /></ErrorBoundary>} />
-                <Route path="/shipments" element={<ErrorBoundary><ShipmentDashboardPage {...p} /></ErrorBoundary>} />
-                <Route path="/wallet"    element={<PrivateRoute roles={['ADMIN','OPS_MANAGER']}><ErrorBoundary><WalletPage {...p} /></ErrorBoundary></PrivateRoute>} />
-                <Route path="/analytics" element={<PrivateRoute roles={['ADMIN','OPS_MANAGER']}><ErrorBoundary><AnalyticsPage {...p} /></ErrorBoundary></PrivateRoute>} />
-                <Route path="/ndr"       element={<PrivateRoute roles={['ADMIN','OPS_MANAGER','STAFF']}><ErrorBoundary><NDRPage {...p} /></ErrorBoundary></PrivateRoute>} />
-                <Route path="/pickups"   element={<PrivateRoute roles={['ADMIN','OPS_MANAGER','STAFF']}><ErrorBoundary><PickupSchedulerPage {...p} /></ErrorBoundary></PrivateRoute>} />
-                <Route path="/users"     element={<PrivateRoute adminOnly><ErrorBoundary><UsersPage {...p} /></ErrorBoundary></PrivateRoute>} />
-                <Route path="/audit"     element={<PrivateRoute adminOnly><ErrorBoundary><AuditPage /></ErrorBoundary></PrivateRoute>} />
-                <Route path="/rate-mgmt" element={<PrivateRoute adminOnly><ErrorBoundary><RateManagementPage {...p} /></ErrorBoundary></PrivateRoute>} />
+                <Route path="/"          element={<ClientPortalPage   {...p} />} />
+                <Route path="/shipments" element={<ClientShipmentsPage {...p} />} />
+                <Route path="/invoices"  element={<ClientInvoicesPage  {...p} />} />
+                <Route path="/wallet"    element={<ClientWalletPage    {...p} />} />
+                <Route path="/track"     element={<ClientTrackPage     {...p} />} />
               </Routes>
-            </AppLayout>
-          </PrivateRoute>
-        } />
+            </ClientRoute>
+          } />
 
-        {/* Catch-all */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+          {/* ── Staff/admin app ── */}
+          <Route path="/app/*" element={
+            <PrivateRoute>
+              <AppLayout>
+                <Routes>
+                  <Route path="/"               element={<DashboardPage         {...p} />} />
+                  <Route path="/ops"            element={<OperationsDashboard   {...p} />} />
+                  <Route path="/entry"          element={<NewEntryPage          {...p} />} />
+                  <Route path="/import"         element={<ImportPage            {...p} />} />
+                  <Route path="/all"            element={<AllShipmentsPage      {...p} />} />
+                  <Route path="/pending"        element={<PendingPage           {...p} />} />
+                  <Route path="/track"          element={<TrackPage             {...p} />} />
+                  <Route path="/daily"          element={<DailySheetPage        {...p} />} />
+                  <Route path="/monthly"        element={<MonthlyReportPage     {...p} />} />
+                  <Route path="/clients"        element={<ClientsPage           {...p} />} />
+                  <Route path="/contracts"      element={<ContractsPage         {...p} />} />
+                  <Route path="/invoices"       element={<InvoicesPage          {...p} />} />
+                  <Route path="/reconciliation" element={<ReconciliationPage    {...p} />} />
+                  <Route path="/rates"          element={<RateCalculatorPage />} />
+                  <Route path="/bulk"           element={<BulkComparePage       {...p} />} />
+                  <Route path="/rate-card"      element={<RateCardPage          {...p} />} />
+                  <Route path="/quotes"         element={<QuoteHistoryPage      {...p} />} />
+                  <Route path="/whatsapp"       element={<WhatsAppPage          {...p} />} />
+                  <Route path="/sync"           element={<SyncPage              {...p} />} />
+                  <Route path="/profile"        element={<ProfilePage           {...p} />} />
+                  <Route path="/shipments"      element={<ShipmentDashboardPage {...p} />} />
+                  <Route path="/wallet"         element={<PrivateRoute roles={['ADMIN','OPS_MANAGER']}><WalletPage {...p} /></PrivateRoute>} />
+                  <Route path="/analytics"      element={<PrivateRoute roles={['ADMIN','OPS_MANAGER']}><AnalyticsPage {...p} /></PrivateRoute>} />
+                  <Route path="/ndr"            element={<PrivateRoute roles={['ADMIN','OPS_MANAGER','STAFF']}><NDRPage {...p} /></PrivateRoute>} />
+                  <Route path="/pickups"        element={<PrivateRoute roles={['ADMIN','OPS_MANAGER','STAFF']}><PickupSchedulerPage {...p} /></PrivateRoute>} />
+                  <Route path="/users"          element={<PrivateRoute adminOnly><UsersPage {...p} /></PrivateRoute>} />
+                  <Route path="/audit"          element={<PrivateRoute adminOnly><AuditPage /></PrivateRoute>} />
+                  <Route path="/rate-mgmt"      element={<PrivateRoute adminOnly><RateManagementPage {...p} /></PrivateRoute>} />
+                </Routes>
+              </AppLayout>
+            </PrivateRoute>
+          } />
+
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+      </ErrorBoundary>
     </>
   );
 }
