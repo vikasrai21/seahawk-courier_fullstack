@@ -743,8 +743,7 @@ export default function RateCalculatorPage() {
   const [expanded,   setExpanded]  = useState(null); // courier id with expanded breakdown
   const [tab,        setTab]       = useState('calc');// calc | sensitivity | quote
   const [showSettings,setShowSettings]=useState(false);
-  const [hiddenIds,  setHiddenIds] = useState(()=>{ try{return new Set(JSON.parse(sessionStorage.getItem('sh_hidden_couriers'))||'[]'));}catch{return new Set();} });
-
+const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.parse(sessionStorage.getItem('sh_hidden_couriers') || '[]')); } catch { return new Set(); } });
   // ── Recent searches ──
   const [recent, setRecent] = useState([]);
 
@@ -784,10 +783,9 @@ export default function RateCalculatorPage() {
   },[selClient]);
 
   // Persist hidden couriers
-  useEffect(()=>{
-    sessionStorage.setItem('sh_hidden_couriers'),JSON.stringify([...hiddenIds]));
+ useEffect(()=>{
+    sessionStorage.setItem('sh_hidden_couriers', JSON.stringify([...hiddenIds]));
   },[hiddenIds]);
-
   const lookupPin = useCallback(async pin=>{
     setPinLoad(true);setPinErr('');setZone(null);setLocInfo(null);
     try{

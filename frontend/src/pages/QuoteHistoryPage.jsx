@@ -1,7 +1,6 @@
 import { EmptyState } from '../components/ui/EmptyState';
 import { useState, useEffect, useCallback } from 'react';
 import { useDebounce } from '../hooks/useDebounce';
-import { EmptyState } from '../components/ui/EmptyState';
 import { FileText, Search, Filter, TrendingUp, CheckCircle, X, Clock, Loader, ChevronDown, Printer } from 'lucide-react';
 import api from '../services/api';
 

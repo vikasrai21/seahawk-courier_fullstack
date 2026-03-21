@@ -4,7 +4,6 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { CreditCard, RefreshCw, ArrowUpCircle, ArrowDownCircle, Plus, Search, TrendingUp } from 'lucide-react';
 import api from '../services/api';
 import { Modal } from '../components/ui/Modal';
-import { EmptyState } from '../components/ui/EmptyState';
 import { useAuth } from '../context/AuthContext';
 
 const fmt    = n => `₹${Number(n||0).toLocaleString('en-IN')}`;
