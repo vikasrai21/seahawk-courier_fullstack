@@ -1,12 +1,13 @@
-// App.jsx — Updated with all public website routes integrated into React
+// App.jsx
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { useToast } from './hooks/useToast';
 import { Toast } from './components/ui/Toast';
 import { AppLayout } from './components/layout/AppLayout';
 import { Spinner } from './components/ui/Loading';
+import './styles/theme.css';
 
-// ── Public website pages (no auth needed) ──────────────────────────────────
 import LandingPage        from './pages/public/LandingPage';
 import PublicTrackPage    from './pages/public/PublicTrackPage';
 import ServicesPage       from './pages/public/ServicesPage';
@@ -14,7 +15,6 @@ import ContactPage        from './pages/public/ContactPage';
 import BookPage           from './pages/public/BookPage';
 import LoginPage          from './pages/LoginPage';
 
-// ── App pages (auth required) ───────────────────────────────────────────────
 import DashboardPage       from './pages/DashboardPage';
 import NewEntryPage        from './pages/NewEntryPage';
 import ImportPage          from './pages/ImportPage';
@@ -44,40 +44,26 @@ import PickupSchedulerPage from './pages/PickupSchedulerPage';
 import WalletPage          from './pages/WalletPage';
 import AnalyticsPage       from './pages/AnalyticsPage';
 
-// ── Global auth loading screen ──────────────────────────────────────────────
-// Rendered at the APP level while the refresh token check is in flight.
-// This prevents ANY route from rendering (and redirecting) before we know
-// whether the user is logged in or not.
 function AuthLoadingScreen() {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      height: '100vh', background: '#0a0f1a',
-    }}>
-      <div style={{ textAlign: 'center' }}>
-        <div style={{ fontSize: 52, marginBottom: 16 }}>🦅</div>
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', background:'#080d18' }}>
+      <div style={{ textAlign:'center' }}>
+        <div style={{ fontSize:52, marginBottom:16 }}>🦅</div>
         <Spinner size="lg" />
-        <p style={{ color: '#475569', fontSize: 12, marginTop: 12, fontFamily: 'monospace' }}>
-          Authenticating...
-        </p>
+        <p style={{ color:'#475569', fontSize:12, marginTop:12, fontFamily:'monospace' }}>Authenticating...</p>
       </div>
     </div>
   );
 }
 
-// ── Private route guard ─────────────────────────────────────────────────────
-// By the time this renders, loading is ALWAYS false (AuthGate above ensures it).
-// So we never need to handle loading here — just check user.
 function PrivateRoute({ children, adminOnly = false, roles = null }) {
   const { user, isAdmin, hasRole } = useAuth();
-
   if (!user)                       return <Navigate to="/login" replace />;
   if (adminOnly && !isAdmin)       return <Navigate to="/app" replace />;
   if (roles && !hasRole(...roles)) return <Navigate to="/app" replace />;
   return children;
 }
 
-// ── Auth gate — blocks ALL routes until auth check is done ──────────────────
 function AuthGate({ children }) {
   const { loading } = useAuth();
   if (loading) return <AuthLoadingScreen />;
@@ -90,7 +76,6 @@ function AppRoutes() {
   return (
     <>
       <Toast toasts={toasts} removeToast={removeToast} />
-      {/* AuthGate ensures loading is done before ANY route renders */}
       <AuthGate>
         <Routes>
           <Route path="/"           element={<LandingPage />} />
@@ -100,7 +85,6 @@ function AppRoutes() {
           <Route path="/track"      element={<PublicTrackPage />} />
           <Route path="/track/:awb" element={<PublicTrackPage />} />
           <Route path="/login"      element={<LoginPage />} />
-
           <Route path="/app/*" element={
             <PrivateRoute>
               <AppLayout>
@@ -137,7 +121,6 @@ function AppRoutes() {
               </AppLayout>
             </PrivateRoute>
           } />
-
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthGate>
@@ -148,9 +131,11 @@ function AppRoutes() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
+      </ThemeProvider>
     </BrowserRouter>
   );
 }

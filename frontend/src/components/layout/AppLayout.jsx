@@ -1,59 +1,75 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
+
 import {
   LayoutDashboard, PlusCircle, FileUp, Package, Calendar,
   BarChart2, Users, Clock, Search, RefreshCw, ShieldAlert,
   LogOut, UserCircle, Menu, X, ChevronRight, FileText,
   Receipt, ScrollText, Calculator, Activity, Layers,
-  CreditCard, GitCompare, Shield, Settings2, MessageCircle
+  CreditCard, GitCompare, Shield, Settings2, MessageCircle,
+  Sun, Moon
 } from 'lucide-react';
 import { useState } from 'react';
 import { usePWA } from '../../hooks/usePWA';
 import { ShortcutsHelp } from '../ui/ShortcutsHelp';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 
+// ── Design tokens (must match DashboardPage) ───────────────────────────────
+const C = {
+  bg:        '#0a0f1a',
+  sidebar:   '#0d1424',
+  surface:   '#111827',
+  border:    '#1f2d45',
+  borderHi:  '#2d4060',
+  orange:    '#f97316',
+  text:      '#f1f5f9',
+  textMid:   '#94a3b8',
+  textDim:   '#475569',
+};
+
 const navGroups = [
   {
     label: null,
     items: [
-      { to: '/app/',      label: 'Dashboard',      icon: LayoutDashboard },
-      { to: '/app/ops',   label: 'Operations',     icon: Activity, badge: 'CEO' },
-      { to: '/app/analytics', label: 'Analytics',      icon: BarChart2, roles: ['ADMIN','OPS_MANAGER'] },
-      { to: '/app/entry', label: 'New Entry',      icon: PlusCircle, accent: true },
-      { to: '/app/import', label: 'Import',         icon: FileUp },
+      { to: '/app/',          label: 'Dashboard',           icon: LayoutDashboard },
+      { to: '/app/ops',       label: 'Operations',          icon: Activity, badge: 'CEO' },
+      { to: '/app/analytics', label: 'Analytics',           icon: BarChart2, roles: ['ADMIN','OPS_MANAGER'] },
+      { to: '/app/entry',     label: 'New Entry',           icon: PlusCircle, accent: true },
+      { to: '/app/import',    label: 'Import',              icon: FileUp },
     ],
   },
   {
     label: 'Shipments',
     items: [
-      { to: '/app/shipments', label: 'Shipment Dashboard', icon: Layers, badge: 'NEW' },
-      { to: '/app/all',  label: 'All Shipments',      icon: Package },
-      { to: '/app/pending', label: 'Pending',             icon: Clock },
-      { to: '/app/track', label: 'Track',               icon: Search },
-      { to: '/app/ndr',  label: 'NDR Management',      icon: ShieldAlert },
-      { to: '/app/pickups', label: 'Pickup Scheduler',    icon: Calendar },
-      { to: '/app/daily', label: 'Daily Sheet',         icon: Calendar },
-      { to: '/app/monthly', label: 'Monthly Report',      icon: BarChart2 },
+      { to: '/app/shipments', label: 'Shipment Dashboard',  icon: Layers, badge: 'NEW' },
+      { to: '/app/all',       label: 'All Shipments',       icon: Package },
+      { to: '/app/pending',   label: 'Pending',             icon: Clock },
+      { to: '/app/track',     label: 'Track',               icon: Search },
+      { to: '/app/ndr',       label: 'NDR Management',      icon: ShieldAlert },
+      { to: '/app/pickups',   label: 'Pickup Scheduler',    icon: Calendar },
+      { to: '/app/daily',     label: 'Daily Sheet',         icon: Calendar },
+      { to: '/app/monthly',   label: 'Monthly Report',      icon: BarChart2 },
     ],
   },
   {
     label: 'Clients & Billing',
     items: [
-      { to: '/app/clients', label: 'Clients',         icon: Users },
-      { to: '/app/contracts', label: 'Contracts',       icon: ScrollText },
-      { to: '/app/invoices', label: 'Invoices',        icon: Receipt },
-      { to: '/app/wallet', label: 'Wallet',          icon: CreditCard, roles: ['ADMIN','OPS_MANAGER'] },
-      { to: '/app/reconciliation', label: 'Reconciliation',  icon: Shield },
+      { to: '/app/clients',        label: 'Clients',          icon: Users },
+      { to: '/app/contracts',      label: 'Contracts',        icon: ScrollText },
+      { to: '/app/invoices',       label: 'Invoices',         icon: Receipt },
+      { to: '/app/wallet',         label: 'Wallet',           icon: CreditCard, roles: ['ADMIN','OPS_MANAGER'] },
+      { to: '/app/reconciliation', label: 'Reconciliation',   icon: Shield },
     ],
   },
   {
     label: 'Rates & Quotes',
     items: [
-      { to: '/app/rates', label: 'Rate Calculator', icon: Calculator },
-      { to: '/app/bulk',  label: 'Bulk Compare',    icon: GitCompare },
-      { to: '/app/rate-card', label: 'Rate Card PDF',   icon: CreditCard },
-      { to: '/app/quotes', label: 'Quote History',   icon: FileText },
-      { to: '/app/whatsapp', label: 'WhatsApp Rates',  icon: MessageCircle, badge: 'NEW' },
+      { to: '/app/rates',     label: 'Rate Calculator',  icon: Calculator },
+      { to: '/app/bulk',      label: 'Bulk Compare',     icon: GitCompare },
+      { to: '/app/rate-card', label: 'Rate Card PDF',    icon: CreditCard },
+      { to: '/app/quotes',    label: 'Quote History',    icon: FileText },
+      { to: '/app/whatsapp',  label: 'WhatsApp Rates',   icon: MessageCircle, badge: 'NEW' },
     ],
   },
   {
@@ -65,81 +81,136 @@ const navGroups = [
 ];
 
 const adminItems = [
-  { to: '/app/users', label: 'Users',          icon: UserCircle },
-  { to: '/app/audit', label: 'Audit Logs',     icon: ShieldAlert },
-  { to: '/app/rate-mgmt', label: 'Rate Management',icon: Settings2 },
+  { to: '/app/users',    label: 'Users',           icon: UserCircle },
+  { to: '/app/audit',    label: 'Audit Logs',      icon: ShieldAlert },
+  { to: '/app/rate-mgmt',label: 'Rate Management', icon: Settings2 },
 ];
 
+// ── Nav item ───────────────────────────────────────────────────────────────
 function NavItem({ to, label, icon: Icon, accent, badge, roles: itemRoles }) {
   const { hasRole, isAdmin } = useAuth();
   if (itemRoles && !isAdmin && !hasRole(...itemRoles)) return null;
+
   return (
-    <NavLink to={to} end={to === '/app/'}
-      className={({ isActive }) =>
-        `flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all
-         ${isActive
-           ? 'bg-white/15 text-white'
-           : 'text-white/60 hover:bg-white/10 hover:text-white'
-         }`
-      }
+    <NavLink
+      to={to}
+      end={to === '/app/'}
+      style={({ isActive }) => ({
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '7px 10px',
+        borderRadius: 9,
+        fontSize: 13,
+        fontWeight: isActive ? 700 : 500,
+        textDecoration: 'none',
+        color:      isActive ? C.text : C.textMid,
+        background: isActive ? 'rgba(249,115,22,0.12)' : 'transparent',
+        borderLeft: isActive ? `2px solid ${C.orange}` : '2px solid transparent',
+        transition: 'all 0.15s',
+      })}
+      onMouseEnter={e => {
+        if (!e.currentTarget.style.background.includes('249')) {
+          e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+          e.currentTarget.style.color = C.text;
+        }
+      }}
+      onMouseLeave={e => {
+        if (!e.currentTarget.style.background.includes('249')) {
+          e.currentTarget.style.background = 'transparent';
+          e.currentTarget.style.color = C.textMid;
+        }
+      }}
     >
-      <Icon className="w-4 h-4 shrink-0" />
-      <span className="flex-1">{label}</span>
+      <Icon size={14} style={{ flexShrink: 0 }} />
+      <span style={{ flex: 1 }}>{label}</span>
       {badge && (
-        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${
-          badge === 'NEW' ? 'bg-green-500/80 text-white' : 'bg-white/20 text-white/80'
-        }`}>{badge}</span>
+        <span style={{
+          fontSize: 8, fontWeight: 800, padding: '2px 6px', borderRadius: 20,
+          background: badge === 'NEW' ? 'rgba(34,197,94,0.2)' : 'rgba(255,255,255,0.1)',
+          color:      badge === 'NEW' ? '#22c55e'              : C.textMid,
+          letterSpacing: '0.05em',
+        }}>{badge}</span>
       )}
     </NavLink>
   );
 }
 
-export function AppLayout({ children }) {
-  const { user, logout, isAdmin } = useAuth();
-  const navigate = useNavigate();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const { canInstall, promptInstall } = usePWA();
+// ── Section label ──────────────────────────────────────────────────────────
+function SectionLabel({ label }) {
+  return (
+    <p style={{
+      padding: '0 10px', marginBottom: 4,
+      fontSize: 9, fontWeight: 800,
+      textTransform: 'uppercase', letterSpacing: '0.12em',
+      color: C.textDim,
+      fontFamily: 'monospace',
+    }}>{label}</p>
+  );
+}
 
-  // Keyboard shortcuts active for all app pages
-  useKeyboardShortcuts();
+// ── Sidebar content ────────────────────────────────────────────────────────
+function SidebarContent({ onClose }) {
+  const { user, logout, isAdmin } = useAuth();
+  const { dark, toggle } = useTheme();
+  const navigate = useNavigate();
 
   const handleLogout = async () => {
     await logout();
     navigate('/');
   };
 
-  const SidebarContent = () => (
-    <div className="flex flex-col h-full overflow-hidden">
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column',
+      height: '100%', overflow: 'hidden',
+      background: C.sidebar,
+    }}>
+
       {/* Logo */}
-      <div className="px-4 py-4 border-b border-white/10 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center text-xl">🦅</div>
+      <div style={{
+        padding: '16px 14px',
+        borderBottom: `1px solid ${C.border}`,
+        display: 'flex', alignItems: 'center',
+        justifyContent: 'space-between', flexShrink: 0,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 10,
+            background: `linear-gradient(135deg, ${C.orange}, #c94d08)`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 18, boxShadow: `0 0 16px rgba(249,115,22,0.4)`,
+          }}>🦅</div>
           <div>
-            <h1 className="font-bold text-sm text-white">Seahawk</h1>
-            <p className="text-white/40 text-[10px] tracking-widest uppercase">Courier & Cargo</p>
+            <div style={{ fontWeight: 800, fontSize: 13, color: C.text, lineHeight: 1.2 }}>Seahawk</div>
+            <div style={{ fontSize: 9, color: C.textDim, letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: 'monospace' }}>
+              Courier & Cargo
+            </div>
           </div>
         </div>
+        {/* Mobile close button */}
+        {onClose && (
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.textDim, padding: 4 }}>
+            <X size={16} />
+          </button>
+        )}
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+      <nav style={{ flex: 1, overflowY: 'auto', padding: '12px 8px' }}>
         {navGroups.map((group, gi) => (
-          <div key={gi}>
-            {group.label && (
-              <p className="px-3 mb-1 text-[9px] uppercase font-bold tracking-widest text-white/30">
-                {group.label}
-              </p>
-            )}
-            <div className="space-y-0.5">
+          <div key={gi} style={{ marginBottom: 20 }}>
+            {group.label && <SectionLabel label={group.label} />}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {group.items.map(item => <NavItem key={item.to} {...item} />)}
             </div>
           </div>
         ))}
 
         {isAdmin && (
-          <div>
-            <p className="px-3 mb-1 text-[9px] uppercase font-bold tracking-widest text-white/30">Admin</p>
-            <div className="space-y-0.5">
+          <div style={{ marginBottom: 20 }}>
+            <SectionLabel label="Admin" />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {adminItems.map(item => <NavItem key={item.to} {...item} />)}
             </div>
           </div>
@@ -147,70 +218,176 @@ export function AppLayout({ children }) {
       </nav>
 
       {/* User footer */}
-      <div className="border-t border-white/10 p-3 shrink-0">
-        <NavLink to="/app/profile"
-          className="flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-white/10 transition-all group mb-1">
-          <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center text-xs font-bold text-white shrink-0">
+      <div style={{ borderTop: `1px solid ${C.border}`, padding: '10px 8px', flexShrink: 0 }}>
+        <NavLink to="/app/profile" style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '8px 10px', borderRadius: 10,
+          textDecoration: 'none',
+          transition: 'background 0.15s',
+        }}
+          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+          onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        >
+          <div style={{
+            width: 30, height: 30, borderRadius: 9, flexShrink: 0,
+            background: `rgba(249,115,22,0.15)`,
+            border: `1px solid rgba(249,115,22,0.25)`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 12, fontWeight: 800, color: C.orange,
+          }}>
             {user?.name?.[0]?.toUpperCase()}
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-white truncate">{user?.name}</p>
-            <p className="text-[10px] text-white/40 truncate">{user?.role}</p>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {user?.name}
+            </div>
+            <div style={{ fontSize: 10, color: C.textDim, fontFamily: 'monospace' }}>{user?.role}</div>
           </div>
-          <ChevronRight className="w-3 h-3 text-white/20 group-hover:text-white/50" />
+          <ChevronRight size={12} color={C.textDim} />
         </NavLink>
-        <button onClick={handleLogout}
-          className="w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs text-white/40 hover:bg-white/10 hover:text-white/80 transition-all">
-          <LogOut className="w-3.5 h-3.5" /> Sign out
+
+        <button
+          onClick={toggle}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+            padding: '7px 10px', borderRadius: 8, marginBottom: 2,
+            background: 'none', border: `1px solid ${C.border}`, cursor: 'pointer',
+            fontSize: 12, color: C.textMid, fontFamily: 'Outfit, sans-serif',
+            transition: 'all 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = C.text; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = C.textMid; }}
+        >
+          {dark ? <Sun size={13} color="#f59e0b" /> : <Moon size={13} color="#6366f1" />}
+          {dark ? 'Switch to Light' : 'Switch to Dark'}
+        </button>
+
+        <button
+          onClick={handleLogout}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+            padding: '7px 10px', borderRadius: 8, marginTop: 2,
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 12, color: C.textDim,
+            transition: 'all 0.15s',
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; e.currentTarget.style.color = '#ef4444'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = C.textDim; }}
+        >
+          <LogOut size={13} /> Sign out
         </button>
       </div>
     </div>
   );
+}
+
+// ── App Layout ─────────────────────────────────────────────────────────────
+export function AppLayout({ children }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const { canInstall, promptInstall } = usePWA();
+  useKeyboardShortcuts();
 
   return (
-    <div className="flex h-screen bg-gray-50 overflow-hidden">
-      {/* Keyboard shortcuts modal */}
+    <div style={{
+      display: 'flex', height: '100vh',
+      background: C.bg,
+      overflow: 'hidden',
+      fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+    }}>
       <ShortcutsHelp />
 
       {/* PWA install banner */}
       {canInstall && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-navy-700 text-white px-5 py-3 rounded-xl shadow-xl border border-white/10" style={{ background: '#0b1f3a' }}>
-          <span className="text-xl">🦅</span>
+        <div style={{
+          position: 'fixed', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 50, display: 'flex', alignItems: 'center', gap: 12,
+          background: C.surface, border: `1px solid ${C.border}`,
+          padding: '12px 18px', borderRadius: 14,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+          color: C.text, fontSize: 13,
+        }}>
+          <span style={{ fontSize: 20 }}>🦅</span>
           <div>
-            <div className="text-sm font-semibold">Install Sea Hawk App</div>
-            <div className="text-xs opacity-70">Add to home screen for offline access</div>
+            <div style={{ fontWeight: 700 }}>Install Sea Hawk App</div>
+            <div style={{ fontSize: 11, color: C.textDim }}>Add to home screen for offline access</div>
           </div>
-          <button onClick={promptInstall} className="ml-2 px-3 py-1.5 bg-orange-500 text-white text-xs font-bold rounded-lg hover:bg-orange-600" style={{ background: '#e8580a' }}>Install</button>
-          <button onClick={() => {}} className="text-white/50 hover:text-white text-lg leading-none">✕</button>
+          <button onClick={promptInstall} style={{
+            marginLeft: 8, padding: '6px 14px', background: C.orange,
+            color: '#fff', border: 'none', borderRadius: 8,
+            fontSize: 12, fontWeight: 700, cursor: 'pointer',
+          }}>Install</button>
         </div>
       )}
+
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex w-56 shrink-0 bg-navy-600 flex-col">
+      <aside style={{
+        display: 'none',
+        width: 220, flexShrink: 0,
+        borderRight: `1px solid ${C.border}`,
+      }}
+        className="shk-sidebar-desktop"
+      >
         <SidebarContent />
       </aside>
 
-      {/* Mobile overlay */}
+      {/* Mobile sidebar overlay */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setMobileOpen(false)} />
-          <aside className="relative w-56 h-full bg-navy-600 flex flex-col">
-            <SidebarContent />
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50 }}>
+          <div
+            style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)' }}
+            onClick={() => setMobileOpen(false)}
+          />
+          <aside style={{ position: 'relative', width: 220, height: '100%', borderRight: `1px solid ${C.border}` }}>
+            <SidebarContent onClose={() => setMobileOpen(false)} />
           </aside>
         </div>
       )}
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="md:hidden flex items-center gap-3 px-4 py-3 bg-white border-b border-gray-100 shrink-0">
-          <button onClick={() => setMobileOpen(true)} className="text-gray-600">
-            <Menu className="w-5 h-5" />
+      {/* Main area */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
+
+        {/* Mobile top bar */}
+        <header style={{
+          display: 'flex', alignItems: 'center', gap: 12,
+          padding: '12px 16px',
+          background: C.sidebar,
+          borderBottom: `1px solid ${C.border}`,
+          flexShrink: 0,
+        }}
+          className="shk-mobile-header"
+        >
+          <button
+            onClick={() => setMobileOpen(true)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: C.textMid, padding: 2 }}
+          >
+            <Menu size={20} />
           </button>
-          <span className="font-bold text-gray-900 text-sm">🦅 Seahawk</span>
+          <span style={{ fontWeight: 800, color: C.text, fontSize: 14 }}>🦅 Seahawk</span>
         </header>
-        <main className="flex-1 overflow-y-auto">
+
+        <main style={{ flex: 1, overflowY: 'auto', background: 'var(--shk-bg, #080d18)', transition: 'background 0.3s' }}>
           {children}
         </main>
       </div>
+
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
+
+        /* Show desktop sidebar on md+ */
+        @media (min-width: 768px) {
+          .shk-sidebar-desktop { display: flex !important; flex-direction: column; }
+          .shk-mobile-header   { display: none !important; }
+        }
+
+        /* Scrollbar styling */
+        nav::-webkit-scrollbar       { width: 3px; }
+        nav::-webkit-scrollbar-track { background: transparent; }
+        nav::-webkit-scrollbar-thumb { background: #1f2d45; border-radius: 3px; }
+
+        main::-webkit-scrollbar       { width: 4px; }
+        main::-webkit-scrollbar-track { background: transparent; }
+        main::-webkit-scrollbar-thumb { background: #1f2d45; border-radius: 4px; }
+      `}</style>
     </div>
   );
 }

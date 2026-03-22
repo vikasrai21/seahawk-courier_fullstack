@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-/* ── Canvas fire particle system ─────────────────────────────────────────── */
+/* ── Canvas fire system ───────────────────────────────────────────────────── */
 function FireCanvas() {
   const canvasRef = useRef(null);
   const animRef   = useRef(null);
@@ -19,98 +19,136 @@ function FireCanvas() {
     resize();
     window.addEventListener('resize', resize);
 
-    // ── Particle class ──────────────────────────────────────────────────────
-    class Particle {
+    // ── Tiny flame particle ─────────────────────────────────────────────────
+    // Small, fast, concentrated at the bottom strip — looks like a real fire line
+    class Flame {
       constructor() { this.reset(true); }
 
       reset(initial = false) {
         const w = canvas.width;
         const h = canvas.height;
 
-        // Spread across bottom, bias toward center
-        const spread = w * 0.55;
-        this.x  = w / 2 + (Math.random() - 0.5) * spread;
-        this.y  = initial ? h * (0.7 + Math.random() * 0.3) : h + 10;
+        // Spawn across full width at the very bottom
+        this.x = Math.random() * w;
+        this.y = initial ? h - Math.random() * h * 0.18 : h + 2;
 
-        // Upward velocity with slight horizontal drift
-        this.vy = -(1.2 + Math.random() * 3.5);
-        this.vx = (Math.random() - 0.5) * 1.2;
+        // Fast upward, slow horizontal
+        this.vy = -(0.6 + Math.random() * 2.2);
+        this.vx = (Math.random() - 0.5) * 1.0;
 
-        // Size: big at bottom, shrinks as it rises
-        this.size     = 3 + Math.random() * 10;
-        this.maxLife  = 80 + Math.random() * 120;
-        this.life     = initial ? Math.random() * this.maxLife : 0;
+        // SMALL sizes — this was the key fix
+        this.size    = 2 + Math.random() * 7;
+        this.maxLife = 35 + Math.random() * 65;
+        this.life    = initial ? Math.random() * this.maxLife : 0;
 
-        // Colour phase: white-yellow core → orange → red → dark red → transparent
-        this.type = Math.random();   // 0-0.3 = ember, rest = flame
+        this.wobbleAmp  = 0.3 + Math.random() * 0.8;
+        this.wobbleFreq = 0.08 + Math.random() * 0.12;
+        this.wobbleOff  = Math.random() * Math.PI * 2;
+
+        // 15% are tiny bright embers
+        this.isEmber = Math.random() < 0.15;
       }
 
       update() {
         this.life++;
-        this.x  += this.vx + Math.sin(this.life * 0.05) * 0.4;
-        this.y  += this.vy;
-        this.vy *= 0.995;           // slight drag
-        this.size *= 0.993;
-        if (this.life >= this.maxLife || this.size < 0.3) this.reset();
+        this.x    += this.vx + Math.sin(this.life * this.wobbleFreq + this.wobbleOff) * this.wobbleAmp;
+        this.y    += this.vy;
+        this.size *= 0.984; // shrink steadily
+        if (this.life >= this.maxLife || this.size < 0.4) this.reset();
       }
 
       draw() {
-        const progress = this.life / this.maxLife;   // 0 → 1
-        let r, g, b, a;
+        const p = this.life / this.maxLife;
 
-        if (this.type < 0.15) {
-          // Bright ember / spark — small, white-hot
-          r = 255; g = 240; b = 180;
-          a = (1 - progress) * 0.9;
-        } else if (progress < 0.2) {
-          // Core: white → yellow
-          const t = progress / 0.2;
-          r = 255; g = 255; b = Math.round(255 * (1 - t));
-          a = 0.85;
-        } else if (progress < 0.5) {
-          // Yellow → orange
-          const t = (progress - 0.2) / 0.3;
-          r = 255; g = Math.round(200 - t * 90); b = 0;
-          a = 0.75 - t * 0.1;
-        } else if (progress < 0.78) {
-          // Orange → deep red
-          const t = (progress - 0.5) / 0.28;
-          r = Math.round(255 - t * 60); g = Math.round(110 - t * 80); b = 0;
-          a = 0.6 - t * 0.25;
-        } else {
-          // Deep red → transparent smoke
-          const t = (progress - 0.78) / 0.22;
-          r = 80; g = 20; b = 10;
-          a = 0.3 * (1 - t);
+        if (this.isEmber) {
+          // Tiny yellow-white spark
+          ctx.beginPath();
+          ctx.arc(this.x, this.y, Math.max(0.3, this.size * 0.35), 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255,230,120,${(1 - p) * 0.9})`;
+          ctx.fill();
+          return;
         }
 
-        const gradient = ctx.createRadialGradient(
-          this.x, this.y, 0,
-          this.x, this.y, this.size
-        );
-        gradient.addColorStop(0,   `rgba(${r},${g},${b},${a})`);
-        gradient.addColorStop(0.4, `rgba(${r},${g},${b},${a * 0.6})`);
-        gradient.addColorStop(1,   `rgba(${r},${g},${b},0)`);
+        // Fire color ramp: white-yellow → orange → red → gone
+        let r, g, b, a;
+        if (p < 0.15) {
+          // White-hot base
+          r=255; g=240; b=180; a=0.9;
+        } else if (p < 0.4) {
+          const t=(p-0.15)/0.25;
+          r=255; g=Math.round(200-t*100); b=Math.round(20-t*20); a=0.85;
+        } else if (p < 0.7) {
+          const t=(p-0.4)/0.3;
+          r=255; g=Math.round(100-t*80); b=0; a=0.7-t*0.15;
+        } else {
+          const t=(p-0.7)/0.3;
+          r=Math.round(200-t*120); g=Math.round(20-t*20); b=0; a=0.45*(1-t);
+        }
+
+        // Draw as teardrop-ish shape: tall narrow gradient
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        // Stretch tall — 2.5× taller than wide = flame tongue shape
+        ctx.scale(1, 2.5);
+
+        const g2 = ctx.createRadialGradient(0, 0, 0, 0, 0, this.size);
+        g2.addColorStop(0,   `rgba(${r},${g},${b},${a})`);
+        g2.addColorStop(0.45,`rgba(${r},${g},${b},${a*0.55})`);
+        g2.addColorStop(1,   `rgba(${r},${g},${b},0)`);
 
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-        ctx.fillStyle = gradient;
+        ctx.arc(0, 0, this.size, 0, Math.PI * 2);
+        ctx.fillStyle = g2;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // ── Ember — rises high, floats across screen ────────────────────────────
+    class Ember {
+      constructor() { this.reset(true); }
+      reset(initial = false) {
+        const w = canvas.width;
+        const h = canvas.height;
+        this.x    = Math.random() * w;
+        this.y    = initial ? h * (0.5 + Math.random() * 0.5) : h + 5;
+        this.vy   = -(0.4 + Math.random() * 1.5);
+        this.vx   = (Math.random() - 0.5) * 2.5; // strong horizontal drift
+        this.size = 0.8 + Math.random() * 2.2;
+        this.maxLife = 80 + Math.random() * 140;
+        this.life    = initial ? Math.random() * this.maxLife : 0;
+      }
+      update() {
+        this.life++;
+        this.x += this.vx + Math.sin(this.life * 0.04) * 0.5;
+        this.y += this.vy;
+        this.vy *= 0.998;
+        if (this.life >= this.maxLife || this.y < 0) this.reset();
+      }
+      draw() {
+        const p = this.life / this.maxLife;
+        const a = (1 - p) * 0.85;
+        // Flicker
+        const flicker = 0.5 + 0.5 * Math.sin(this.life * 0.3);
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * flicker, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255,${Math.round(160 - p*100)},0,${a})`;
         ctx.fill();
       }
     }
 
-    // ── Star field ──────────────────────────────────────────────────────────
+    // ── Stars ───────────────────────────────────────────────────────────────
     class Star {
       constructor() {
-        this.x    = Math.random() * canvas.width;
-        this.y    = Math.random() * canvas.height * 0.85;
-        this.r    = Math.random() * 1.5;
-        this.alpha= 0.3 + Math.random() * 0.7;
-        this.twinkleSpeed = 0.005 + Math.random() * 0.02;
+        this.x     = Math.random() * canvas.width;
+        this.y     = Math.random() * canvas.height * 0.78;
+        this.r     = 0.3 + Math.random() * 1.2;
+        this.alpha = 0.3 + Math.random() * 0.7;
+        this.speed = 0.003 + Math.random() * 0.015;
         this.phase = Math.random() * Math.PI * 2;
       }
       draw(t) {
-        const a = this.alpha * (0.5 + 0.5 * Math.sin(t * this.twinkleSpeed + this.phase));
+        const a = this.alpha * (0.4 + 0.6 * Math.sin(t * this.speed + this.phase));
         ctx.beginPath();
         ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(255,255,255,${a})`;
@@ -118,14 +156,17 @@ function FireCanvas() {
       }
     }
 
-    // ── Init ────────────────────────────────────────────────────────────────
-    const PARTICLE_COUNT = 220;
-    const STAR_COUNT     = 180;
-    const particles = Array.from({ length: PARTICLE_COUNT }, () => new Particle());
-    const stars     = Array.from({ length: STAR_COUNT },     () => new Star());
-    let   frame     = 0;
+    // ── Init — fewer particles on mobile ───────────────────────────────────
+    const isMobile     = window.innerWidth < 600;
+    const FLAME_COUNT  = isMobile ? 120 : 200;
+    const EMBER_COUNT  = isMobile ? 30  : 60;
+    const STAR_COUNT   = isMobile ? 100 : 180;
 
-    // ── Loop ────────────────────────────────────────────────────────────────
+    const flames = Array.from({ length: FLAME_COUNT }, () => new Flame());
+    const embers = Array.from({ length: EMBER_COUNT  }, () => new Ember());
+    const stars  = Array.from({ length: STAR_COUNT   }, () => new Star());
+    let frame = 0;
+
     const tick = () => {
       frame++;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -133,23 +174,26 @@ function FireCanvas() {
       // Stars
       stars.forEach(s => s.draw(frame));
 
-      // Ground glow
-      const groundGrad = ctx.createLinearGradient(0, canvas.height * 0.75, 0, canvas.height);
-      groundGrad.addColorStop(0, 'rgba(232,88,10,0)');
-      groundGrad.addColorStop(1, 'rgba(232,88,10,0.18)');
+      // Bottom glow strip — full width
+      const gh = canvas.height;
+      const gw = canvas.width;
+      const groundGrad = ctx.createLinearGradient(0, gh * 0.78, 0, gh);
+      groundGrad.addColorStop(0,   'rgba(180,50,0,0)');
+      groundGrad.addColorStop(0.7, 'rgba(180,50,0,0.10)');
+      groundGrad.addColorStop(1,   'rgba(100,25,0,0.25)');
       ctx.fillStyle = groundGrad;
-      ctx.fillRect(0, canvas.height * 0.75, canvas.width, canvas.height * 0.25);
+      ctx.fillRect(0, gh * 0.78, gw, gh * 0.22);
 
-      // Particles (additive blending for glow effect)
+      // Fire (screen blend = natural glow/light effect)
       ctx.globalCompositeOperation = 'screen';
-      particles.forEach(p => { p.update(); p.draw(); });
+      flames.forEach(f => { f.update(); f.draw(); });
+      embers.forEach(e => { e.update(); e.draw(); });
       ctx.globalCompositeOperation = 'source-over';
 
       animRef.current = requestAnimationFrame(tick);
     };
 
     animRef.current = requestAnimationFrame(tick);
-
     return () => {
       cancelAnimationFrame(animRef.current);
       window.removeEventListener('resize', resize);
@@ -162,8 +206,7 @@ function FireCanvas() {
       style={{
         position: 'fixed', inset: 0,
         width: '100%', height: '100%',
-        pointerEvents: 'none',
-        zIndex: 0,
+        pointerEvents: 'none', zIndex: 0,
       }}
     />
   );
@@ -214,19 +257,18 @@ export default function LoginPage() {
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'flex-end',   /* card sits near the fire at the bottom */
-      padding: '0 24px 64px',
+      padding: '0 16px 48px',
       fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
       position: 'relative',
       overflow: 'hidden',
+      boxSizing: 'border-box',
     }}>
 
       {/* Fire canvas */}
       <FireCanvas />
 
       {/* Seahawk brand — floats at the top of the page */}
-      <div style={{
-        position: 'fixed', top: 36, left: '50%',
-        transform: 'translateX(-50%)',
+      <div className="shk-login-brand" style={{
         textAlign: 'center', zIndex: 10,
         opacity: mounted ? 1 : 0,
         transition: 'opacity 0.8s ease 0.2s',
@@ -250,8 +292,7 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Login card — near bottom, above the fire */}
-      <div style={{
+      <div className="shk-login-wrap" style={{
         width: '100%', maxWidth: 400,
         position: 'relative', zIndex: 10,
         opacity:   mounted ? 1 : 0,
@@ -269,7 +310,7 @@ export default function LoginPage() {
           filter: 'blur(8px)',
         }} />
 
-        <div style={{
+        <div className="shk-login-card" style={{
           background: 'rgba(10, 15, 26, 0.82)',
           border: '1px solid rgba(249,115,22,0.2)',
           borderRadius: 20,
@@ -424,6 +465,8 @@ export default function LoginPage() {
 
         @keyframes shkSpin { to { transform: rotate(360deg); } }
 
+        *, *::before, *::after { box-sizing: border-box; }
+
         input::placeholder { color: rgba(255,255,255,0.18) !important; }
 
         input:-webkit-autofill,
@@ -432,6 +475,27 @@ export default function LoginPage() {
           -webkit-box-shadow: 0 0 0 100px #0a0f1a inset !important;
           -webkit-text-fill-color: #f1f5f9 !important;
           caret-color: #f1f5f9;
+        }
+
+        @media (max-width: 480px) {
+          .shk-login-brand {
+            top: 16px !important;
+          }
+          .shk-login-brand-icon {
+            width: 32px !important;
+            height: 32px !important;
+            font-size: 16px !important;
+          }
+          .shk-login-brand-title {
+            font-size: 13px !important;
+          }
+          .shk-login-card {
+            padding: 22px 18px !important;
+            border-radius: 16px !important;
+          }
+          .shk-login-wrap {
+            padding-bottom: 32px !important;
+          }
         }
       `}</style>
     </div>

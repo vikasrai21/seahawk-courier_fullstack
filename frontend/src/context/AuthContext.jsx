@@ -1,7 +1,13 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import api, { tokenManager } from '../services/api';
 
 const AuthContext = createContext(null);
+
+function getCookie(name) {
+  const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+  return match ? decodeURIComponent(match[2]) : null;
+}
 
 export function AuthProvider({ children }) {
   const [user,    setUser]    = useState(null);
@@ -11,14 +17,20 @@ export function AuthProvider({ children }) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await api.post('/auth/refresh');
+        const csrf = getCookie('csrf_token');
+        const res = await axios.post(
+          `${import.meta.env.VITE_API_URL || '/api'}/auth/refresh`,
+          {},
+          {
+            withCredentials: true,
+            headers: csrf ? { 'x-csrf-token': csrf } : {},
+          }
+        );
         if (cancelled) return;
-        // res is { success, message, data: { accessToken } }
-        const token = res.data?.accessToken;
+        const token = res.data?.data?.accessToken;
         if (!token) throw new Error('No token');
         tokenManager.set(token);
         const meRes = await api.get('/auth/me');
-        // meRes is { success, message, data: { id, email, role... } }
         if (!cancelled) setUser(meRes.data);
       } catch {
         if (!cancelled) { tokenManager.clear(); setUser(null); }
@@ -40,8 +52,22 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = useCallback(async (email, password) => {
-    const res = await api.post('/auth/login', { email, password });
-    // res is { success, message, data: { accessToken, user } }
+    // Seed CSRF cookie first via a GET request
+    try {
+      await axios.get(
+        `${import.meta.env.VITE_API_URL || '/api'}/health`,
+        { withCredentials: true }
+      );
+    } catch {}
+
+    // Read the csrf_token cookie that was just set
+    const csrf = getCookie('csrf_token');
+
+    // Now do the actual login with CSRF header
+    const res = await api.post('/auth/login', { email, password }, {
+      headers: csrf ? { 'x-csrf-token': csrf } : {},
+    });
+
     const token = res.data?.accessToken;
     if (!token) throw new Error('Login failed — no token received');
     tokenManager.set(token);
@@ -64,10 +90,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user,
-      loading,
-      login,
-      logout,
+      user, loading, login, logout,
       isAdmin:   user?.role === 'ADMIN',
       isStaff:   user?.role === 'STAFF',
       isOps:     user?.role === 'OPS_MANAGER',
