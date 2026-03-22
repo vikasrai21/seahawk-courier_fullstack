@@ -12,24 +12,24 @@ export default function LoginPage() {
   const [error,    setError]    = useState('');
   const [loading,  setLoading]  = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    try {
-      const user = await login(email.trim(), password);
-      if (user?.role === 'CLIENT') {
-        navigate('/portal', { replace: true });
-      } else {
-        navigate('/app', { replace: true });
-      }
-    } catch (err) {
-      setError(err.message || 'Invalid email or password');
-      setPassword('');
-    } finally {
-      setLoading(false);
+ const handleSubmit = async (e) => {
+  e.preventDefault();
+  setError('');
+  setLoading(true);
+  try {
+    const user = await login(email.trim(), password);
+    if (user?.role === 'CLIENT') {
+      navigate('/portal', { replace: true });
+    } else {
+      navigate('/app', { replace: true });
     }
-  };
+  } catch (err) {
+    setError(err.message || 'Invalid email or password');
+    setPassword('');
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div style={{

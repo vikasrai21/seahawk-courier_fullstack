@@ -7,17 +7,18 @@ export function AuthProvider({ children }) {
   const [user,    setUser]    = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore session on page load
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const res = await api.post('/auth/refresh');
         if (cancelled) return;
+        // res is { success, message, data: { accessToken } }
         const token = res.data?.accessToken;
         if (!token) throw new Error('No token');
         tokenManager.set(token);
         const meRes = await api.get('/auth/me');
+        // meRes is { success, message, data: { id, email, role... } }
         if (!cancelled) setUser(meRes.data);
       } catch {
         if (!cancelled) { tokenManager.clear(); setUser(null); }
@@ -28,7 +29,6 @@ export function AuthProvider({ children }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Handle mid-session expiry
   useEffect(() => {
     const handler = () => {
       tokenManager.clear();
@@ -41,10 +41,12 @@ export function AuthProvider({ children }) {
 
   const login = useCallback(async (email, password) => {
     const res = await api.post('/auth/login', { email, password });
+    // res is { success, message, data: { accessToken, user } }
     const token = res.data?.accessToken;
     if (!token) throw new Error('Login failed — no token received');
     tokenManager.set(token);
-    const u = res.data.user;
+    const u = res.data?.user;
+    if (!u) throw new Error('Login failed — no user received');
     setUser(u);
     return u;
   }, []);
