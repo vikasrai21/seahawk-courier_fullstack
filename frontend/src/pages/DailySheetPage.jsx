@@ -61,7 +61,7 @@ export default function DailySheetPage({ toast }) {
         .sum-val { font-size: 14px; font-weight: bold; }
         .footer { margin-top: 20px; font-size: 9px; color: #aaa; text-align: center; }
       </style></head><body>
-      <h1>🦅 Sea Hawk Courier & Cargo — Daily Dispatch Sheet</h1>
+      <h1><img src="/images/logo.png" alt="Logo" style="height: 20px; vertical-align: middle; margin-right: 8px;" /> Sea Hawk Courier & Cargo — Daily Dispatch Sheet</h1>
       <div class="meta">Date: ${date} | Client: ${clientFilter || 'All'} | Generated: ${new Date().toLocaleString('en-IN')}</div>
       <table>
         <thead><tr><th>#</th><th>AWB No.</th><th>Client</th><th>Consignee</th><th>Destination</th><th>Courier</th><th>Wt (kg)</th><th>Amount</th><th>Status</th></tr></thead>
@@ -111,7 +111,7 @@ export default function DailySheetPage({ toast }) {
         .footer { margin-top: 20px; font-size: 9px; color: #aaa; text-align: center; }
         @media print { .no-print { display: none; } }
       </style></head><body>
-      <h1>🦅 Sea Hawk Courier & Cargo — Courier Handover Manifest</h1>
+      <h1><img src="/images/logo.png" alt="Logo" style="height: 20px; vertical-align: middle; margin-right: 8px;" /> Sea Hawk Courier & Cargo — Courier Handover Manifest</h1>
       <div class="meta">Date: ${date} | Total: ${manifest.totalShipments} shipments | ${manifest.totalWeight?.toFixed(2)} kg | ₹${Number(manifest.totalAmount||0).toLocaleString('en-IN')} | Generated: ${new Date().toLocaleString('en-IN')}</div>
       ${(manifest.couriers || []).map(c => `
         <h2>${c.courier} — ${c.totalPieces} pieces</h2>

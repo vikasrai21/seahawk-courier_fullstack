@@ -278,12 +278,18 @@ export default function LoginPage() {
         transition:'opacity 0.7s ease, transform 0.7s ease',
       }}>
         <div style={{display:'flex',alignItems:'center',gap:12,justifyContent:'center'}}>
-          <div style={{
-            width:48,height:48,borderRadius:14,
-            background:'linear-gradient(135deg,#f97316,#c94d08)',
-            display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,
-            boxShadow:'0 0 32px rgba(249,115,22,0.6),0 0 80px rgba(249,115,22,0.2)',
-          }}>🦅</div>
+          <img 
+            src="/images/logo.png" 
+            alt="Sea Hawk Logo" 
+            style={{ 
+              height: 54, 
+              width: 'auto', 
+              objectFit: 'contain',
+              background: '#fff',
+              borderRadius: 8,
+              padding: 2
+            }} 
+          />
           <div style={{textAlign:'left'}}>
             <div style={{color:'#f1f5f9',fontSize:18,fontWeight:800,lineHeight:1.2,letterSpacing:'-0.3px'}}>
               Sea Hawk Courier

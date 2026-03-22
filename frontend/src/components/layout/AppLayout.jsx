@@ -1,6 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import '../../styles/theme.css';
 
 import {
   LayoutDashboard, PlusCircle, FileUp, Package, Calendar,
@@ -17,15 +18,15 @@ import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 
 // ── Design tokens (must match DashboardPage) ───────────────────────────────
 const C = {
-  bg:        '#0a0f1a',
-  sidebar:   '#0d1424',
-  surface:   '#111827',
-  border:    '#1f2d45',
-  borderHi:  '#2d4060',
-  orange:    '#f97316',
-  text:      '#f1f5f9',
-  textMid:   '#94a3b8',
-  textDim:   '#475569',
+  bg:        'var(--shk-bg, #0a0f1a)',
+  sidebar:   'var(--shk-surface, #0d1424)',
+  surface:   'var(--shk-surface, #111827)',
+  border:    'var(--shk-border, #1f2d45)',
+  borderHi:  'var(--shk-border-hi, #2d4060)',
+  orange:    'var(--shk-orange, #f97316)',
+  text:      'var(--shk-text, #f1f5f9)',
+  textMid:   'var(--shk-text-mid, #94a3b8)',
+  textDim:   'var(--shk-text-dim, #475569)',
 };
 
 const navGroups = [
@@ -175,12 +176,18 @@ function SidebarContent({ onClose }) {
         justifyContent: 'space-between', flexShrink: 0,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: `linear-gradient(135deg, ${C.orange}, #c94d08)`,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 18, boxShadow: `0 0 16px rgba(249,115,22,0.4)`,
-          }}>🦅</div>
+          <img 
+            src="/images/logo.png" 
+            alt="Sea Hawk Logo" 
+            style={{ 
+              height: 40, 
+              width: 'auto', 
+              objectFit: 'contain',
+              background: '#fff',
+              borderRadius: 6,
+              padding: 2
+            }} 
+          />
           <div>
             <div style={{ fontWeight: 800, fontSize: 13, color: C.text, lineHeight: 1.2 }}>Seahawk</div>
             <div style={{ fontSize: 9, color: C.textDim, letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: 'monospace' }}>
@@ -306,7 +313,7 @@ export function AppLayout({ children }) {
           boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
           color: C.text, fontSize: 13,
         }}>
-          <span style={{ fontSize: 20 }}>🦅</span>
+          <img src="/images/logo.png" style={{ height: 32, width: 'auto', objectFit: 'contain', background: '#fff', borderRadius: 6, padding: 2 }} alt="Logo" />
           <div>
             <div style={{ fontWeight: 700 }}>Install Sea Hawk App</div>
             <div style={{ fontSize: 11, color: C.textDim }}>Add to home screen for offline access</div>
@@ -362,7 +369,10 @@ export function AppLayout({ children }) {
           >
             <Menu size={20} />
           </button>
-          <span style={{ fontWeight: 800, color: C.text, fontSize: 14 }}>🦅 Seahawk</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 800, color: C.text, fontSize: 14 }}>
+            <img src="/images/logo.png" style={{ height: 28, width: 'auto', objectFit: 'contain', background: '#fff', borderRadius: 4, padding: 2 }} alt="Logo" />
+            Seahawk
+          </span>
         </header>
 
         <main style={{ flex: 1, overflowY: 'auto', background: 'var(--shk-bg, #080d18)', transition: 'background 0.3s' }}>

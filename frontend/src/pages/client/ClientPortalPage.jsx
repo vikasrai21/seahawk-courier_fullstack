@@ -32,7 +32,11 @@ export default function ClientPortalPage({ toast }) {
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className="text-2xl">🦅</span>
+          <img 
+            src="/images/logo.png" 
+            alt="Sea Hawk Logo" 
+            style={{ height: 32, width: 'auto', objectFit: 'contain' }} 
+          />
           <div>
             <div className="font-bold text-gray-900">Sea Hawk Courier</div>
             <div className="text-xs text-gray-500">Client Portal</div>

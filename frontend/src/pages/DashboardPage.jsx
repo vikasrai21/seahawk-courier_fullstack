@@ -22,21 +22,21 @@ const fmtPct = n => `${Number(n || 0).toFixed(1)}%`;
 
 /* ── Design tokens ─────────────────────────────────────────────────────── */
 const T = {
-  bg:        '#0a0f1a',
-  surface:   '#111827',
-  surfaceHi: '#1a2236',
-  border:    '#1f2d45',
-  borderHi:  '#2d4060',
-  orange:    '#f97316',
+  bg:        'var(--shk-bg, #0a0f1a)',
+  surface:   'var(--shk-surface, #111827)',
+  surfaceHi: 'var(--shk-surface-hi, #1a2236)',
+  border:    'var(--shk-border, #1f2d45)',
+  borderHi:  'var(--shk-border-hi, #2d4060)',
+  orange:    'var(--shk-orange, #f97316)',
   orangeDim: '#7c3410',
-  blue:      '#3b82f6',
-  green:     '#22c55e',
-  red:       '#ef4444',
-  yellow:    '#eab308',
-  purple:    '#a855f7',
-  text:      '#f1f5f9',
-  textMid:   '#94a3b8',
-  textDim:   '#475569',
+  blue:      'var(--shk-blue, #3b82f6)',
+  green:     'var(--shk-green, #22c55e)',
+  red:       'var(--shk-red, #ef4444)',
+  yellow:    'var(--shk-yellow, #eab308)',
+  purple:    'var(--shk-purple, #a855f7)',
+  text:      'var(--shk-text, #f1f5f9)',
+  textMid:   'var(--shk-text-mid, #94a3b8)',
+  textDim:   'var(--shk-text-dim, #475569)',
   navy:      '#0b1f3a',
 };
 
@@ -575,9 +575,18 @@ export default function DashboardPage() {
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 12 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
-              <div style={{ width: 40, height: 40, borderRadius: 12, background: `linear-gradient(135deg, ${T.orange}, #fb923c)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, boxShadow: `0 0 20px ${T.orange}55` }}>
-                🦅
-              </div>
+              <img 
+                src="/images/logo.png" 
+                alt="Sea Hawk Logo" 
+                style={{ 
+                  height: 48, 
+                  width: 'auto', 
+                  objectFit: 'contain',
+                  background: '#fff',
+                  borderRadius: 6,
+                  padding: 2
+                }} 
+              />
               <div>
                 <h1 style={{ fontSize: 22, fontWeight: 900, color: T.text, margin: 0, letterSpacing: '-0.5px' }}>
                   {getGreeting()}, <span style={{ color: T.orange }}>{user?.name?.split(' ')[0]}</span>

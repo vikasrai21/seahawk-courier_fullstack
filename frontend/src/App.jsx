@@ -6,7 +6,7 @@ import { useToast } from './hooks/useToast';
 import { Toast } from './components/ui/Toast';
 import { AppLayout } from './components/layout/AppLayout';
 import { Spinner } from './components/ui/Loading';
-import './styles/theme.css';
+
 
 import LandingPage        from './pages/public/LandingPage';
 import PublicTrackPage    from './pages/public/PublicTrackPage';
@@ -48,7 +48,20 @@ function AuthLoadingScreen() {
   return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh', background:'#080d18' }}>
       <div style={{ textAlign:'center' }}>
-        <div style={{ fontSize:52, marginBottom:16 }}>🦅</div>
+        <div style={{ marginBottom:16 }}>
+          <img 
+            src="/images/logo.png" 
+            alt="Sea Hawk Logo" 
+            style={{ 
+              height: 64, 
+              width: 'auto', 
+              objectFit: 'contain',
+              background: '#fff',
+              borderRadius: 8,
+              padding: 4
+            }} 
+          />
+        </div>
         <Spinner size="lg" />
         <p style={{ color:'#475569', fontSize:12, marginTop:12, fontFamily:'monospace' }}>Authenticating...</p>
       </div>

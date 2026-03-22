@@ -265,7 +265,11 @@ export default function InvoicesPage({ toast }) {
             <div className="p-6 border-b border-gray-100">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-2xl">🦅</span>
+                  <img 
+                    src="/images/logo.png" 
+                    alt="Sea Hawk Logo" 
+                    style={{ height: 32, width: 'auto', objectFit: 'contain' }} 
+                  />
                   <div>
                     <h2 className="font-bold text-gray-900">Sea Hawk Courier & Cargo</h2>
                     <p className="text-xs text-gray-500">Tax Invoice</p>
