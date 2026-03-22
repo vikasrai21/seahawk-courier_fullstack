@@ -42,7 +42,9 @@ module.exports = {
 
   cookie: {
     secure:   env === 'production',
-    sameSite: env === 'production' ? 'strict' : 'lax',
+    // FIX: 'strict' blocks the cookie on page reload — use 'none' for production
+    // 'none' requires secure:true (which is already set in production above)
+    sameSite: env === 'production' ? 'none' : 'lax',
     maxAge:   30 * 24 * 60 * 60 * 1000,
   },
 
