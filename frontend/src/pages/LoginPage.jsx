@@ -2,8 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-/* ── Canvas fire system ───────────────────────────────────────────────────── */
-function FireCanvas() {
+/* ── Space + Fire Particle Canvas ─────────────────────────────────────────── */
+function SpaceCanvas() {
   const canvasRef = useRef(null);
   const animRef   = useRef(null);
 
@@ -19,132 +19,15 @@ function FireCanvas() {
     resize();
     window.addEventListener('resize', resize);
 
-    // ── Tiny flame particle ─────────────────────────────────────────────────
-    // Small, fast, concentrated at the bottom strip — looks like a real fire line
-    class Flame {
-      constructor() { this.reset(true); }
-
-      reset(initial = false) {
-        const w = canvas.width;
-        const h = canvas.height;
-
-        // Spawn across full width at the very bottom
-        this.x = Math.random() * w;
-        this.y = initial ? h - Math.random() * h * 0.18 : h + 2;
-
-        // Fast upward, slow horizontal
-        this.vy = -(0.6 + Math.random() * 2.2);
-        this.vx = (Math.random() - 0.5) * 1.0;
-
-        // SMALL sizes — this was the key fix
-        this.size    = 2 + Math.random() * 7;
-        this.maxLife = 35 + Math.random() * 65;
-        this.life    = initial ? Math.random() * this.maxLife : 0;
-
-        this.wobbleAmp  = 0.3 + Math.random() * 0.8;
-        this.wobbleFreq = 0.08 + Math.random() * 0.12;
-        this.wobbleOff  = Math.random() * Math.PI * 2;
-
-        // 15% are tiny bright embers
-        this.isEmber = Math.random() < 0.15;
-      }
-
-      update() {
-        this.life++;
-        this.x    += this.vx + Math.sin(this.life * this.wobbleFreq + this.wobbleOff) * this.wobbleAmp;
-        this.y    += this.vy;
-        this.size *= 0.984; // shrink steadily
-        if (this.life >= this.maxLife || this.size < 0.4) this.reset();
-      }
-
-      draw() {
-        const p = this.life / this.maxLife;
-
-        if (this.isEmber) {
-          // Tiny yellow-white spark
-          ctx.beginPath();
-          ctx.arc(this.x, this.y, Math.max(0.3, this.size * 0.35), 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(255,230,120,${(1 - p) * 0.9})`;
-          ctx.fill();
-          return;
-        }
-
-        // Fire color ramp: white-yellow → orange → red → gone
-        let r, g, b, a;
-        if (p < 0.15) {
-          // White-hot base
-          r=255; g=240; b=180; a=0.9;
-        } else if (p < 0.4) {
-          const t=(p-0.15)/0.25;
-          r=255; g=Math.round(200-t*100); b=Math.round(20-t*20); a=0.85;
-        } else if (p < 0.7) {
-          const t=(p-0.4)/0.3;
-          r=255; g=Math.round(100-t*80); b=0; a=0.7-t*0.15;
-        } else {
-          const t=(p-0.7)/0.3;
-          r=Math.round(200-t*120); g=Math.round(20-t*20); b=0; a=0.45*(1-t);
-        }
-
-        // Draw as teardrop-ish shape: tall narrow gradient
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        // Stretch tall — 2.5× taller than wide = flame tongue shape
-        ctx.scale(1, 2.5);
-
-        const g2 = ctx.createRadialGradient(0, 0, 0, 0, 0, this.size);
-        g2.addColorStop(0,   `rgba(${r},${g},${b},${a})`);
-        g2.addColorStop(0.45,`rgba(${r},${g},${b},${a*0.55})`);
-        g2.addColorStop(1,   `rgba(${r},${g},${b},0)`);
-
-        ctx.beginPath();
-        ctx.arc(0, 0, this.size, 0, Math.PI * 2);
-        ctx.fillStyle = g2;
-        ctx.fill();
-        ctx.restore();
-      }
-    }
-
-    // ── Ember — rises high, floats across screen ────────────────────────────
-    class Ember {
-      constructor() { this.reset(true); }
-      reset(initial = false) {
-        const w = canvas.width;
-        const h = canvas.height;
-        this.x    = Math.random() * w;
-        this.y    = initial ? h * (0.5 + Math.random() * 0.5) : h + 5;
-        this.vy   = -(0.4 + Math.random() * 1.5);
-        this.vx   = (Math.random() - 0.5) * 2.5; // strong horizontal drift
-        this.size = 0.8 + Math.random() * 2.2;
-        this.maxLife = 80 + Math.random() * 140;
-        this.life    = initial ? Math.random() * this.maxLife : 0;
-      }
-      update() {
-        this.life++;
-        this.x += this.vx + Math.sin(this.life * 0.04) * 0.5;
-        this.y += this.vy;
-        this.vy *= 0.998;
-        if (this.life >= this.maxLife || this.y < 0) this.reset();
-      }
-      draw() {
-        const p = this.life / this.maxLife;
-        const a = (1 - p) * 0.85;
-        // Flicker
-        const flicker = 0.5 + 0.5 * Math.sin(this.life * 0.3);
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size * flicker, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255,${Math.round(160 - p*100)},0,${a})`;
-        ctx.fill();
-      }
-    }
-
-    // ── Stars ───────────────────────────────────────────────────────────────
+    // ── Star ───────────────────────────────────────────────────────────────
     class Star {
-      constructor() {
+      constructor() { this.reset(); }
+      reset() {
         this.x     = Math.random() * canvas.width;
-        this.y     = Math.random() * canvas.height * 0.78;
-        this.r     = 0.3 + Math.random() * 1.2;
-        this.alpha = 0.3 + Math.random() * 0.7;
-        this.speed = 0.003 + Math.random() * 0.015;
+        this.y     = Math.random() * canvas.height;
+        this.r     = 0.3 + Math.random() * 1.4;
+        this.alpha = 0.2 + Math.random() * 0.8;
+        this.speed = 0.003 + Math.random() * 0.012;
         this.phase = Math.random() * Math.PI * 2;
       }
       draw(t) {
@@ -156,37 +39,154 @@ function FireCanvas() {
       }
     }
 
-    // ── Init — fewer particles on mobile ───────────────────────────────────
-    const isMobile     = window.innerWidth < 600;
-    const FLAME_COUNT  = isMobile ? 120 : 200;
-    const EMBER_COUNT  = isMobile ? 30  : 60;
-    const STAR_COUNT   = isMobile ? 100 : 180;
+    // ── Planet ─────────────────────────────────────────────────────────────
+    class Planet {
+      constructor(x, y, r, color, ringColor) {
+        this.x = x; this.y = y; this.r = r;
+        this.color = color; this.ringColor = ringColor;
+        this.glowSize = r * 1.8;
+      }
+      draw() {
+        // Glow
+        const glow = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.glowSize);
+        glow.addColorStop(0,   this.color.replace(')', ',0.12)').replace('rgb', 'rgba'));
+        glow.addColorStop(1,   'rgba(0,0,0,0)');
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.glowSize, 0, Math.PI * 2);
+        ctx.fillStyle = glow;
+        ctx.fill();
+        // Planet body
+        const grad = ctx.createRadialGradient(
+          this.x - this.r * 0.3, this.y - this.r * 0.3, this.r * 0.1,
+          this.x, this.y, this.r
+        );
+        grad.addColorStop(0, this.color.replace(')', ',0.9)').replace('rgb','rgba'));
+        grad.addColorStop(1, this.color.replace(')', ',0.3)').replace('rgb','rgba'));
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+        // Ring (subtle ellipse)
+        if (this.ringColor) {
+          ctx.save();
+          ctx.translate(this.x, this.y);
+          ctx.scale(1, 0.25);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, this.r * 1.8, this.r * 1.8, 0, 0, Math.PI * 2);
+          ctx.strokeStyle = this.ringColor;
+          ctx.lineWidth = this.r * 0.18;
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
 
-    const flames = Array.from({ length: FLAME_COUNT }, () => new Flame());
-    const embers = Array.from({ length: EMBER_COUNT  }, () => new Ember());
-    const stars  = Array.from({ length: STAR_COUNT   }, () => new Star());
+    // ── Fire Ember ─────────────────────────────────────────────────────────
+    // Individual glowing particles — float upward from anywhere on screen
+    class Ember {
+      constructor(initial = false) { this.reset(initial); }
+      reset(initial = false) {
+        const w = canvas.width;
+        const h = canvas.height;
+        // Spawn at random x, bottom 40% of screen
+        this.x       = Math.random() * w;
+        this.y       = initial ? h * (0.3 + Math.random() * 0.7) : h + 10;
+        // Mostly upward, with sideways drift
+        this.vy      = -(0.3 + Math.random() * 1.6);
+        this.vx      = (Math.random() - 0.5) * 1.8;
+        // Small glowing dot
+        this.size    = 1.2 + Math.random() * 3.5;
+        this.maxLife = 120 + Math.random() * 200;
+        this.life    = initial ? Math.random() * this.maxLife : 0;
+        // Color: white-hot → yellow → orange → red → gone
+        this.hue     = 15 + Math.random() * 35; // 15-50 = red to orange-yellow
+        this.wobble  = Math.random() * Math.PI * 2;
+        this.wobbleS = 0.03 + Math.random() * 0.05;
+        this.wobbleA = 0.3 + Math.random() * 1.2;
+        // Some particles are cooler (more red/purple — space-like)
+        this.cool    = Math.random() < 0.12;
+        if (this.cool) this.hue = 260 + Math.random() * 60; // purple/blue
+      }
+      update() {
+        this.life++;
+        this.x += this.vx + Math.sin(this.life * this.wobbleS + this.wobble) * this.wobbleA;
+        this.y += this.vy;
+        this.vy *= 0.999;
+        this.size *= 0.997;
+        if (this.life >= this.maxLife || this.size < 0.3 || this.y < -20) this.reset();
+      }
+      draw() {
+        const p = this.life / this.maxLife;
+        let r, g, b, a;
+        if (this.cool) {
+          // Purple/blue space particle
+          r = 140 + Math.round(80 * (1-p));
+          g = 60;
+          b = 255;
+          a = (1 - p) * 0.7;
+        } else if (p < 0.15) {
+          // White-yellow core
+          r=255; g=240; b=180; a=0.95;
+        } else if (p < 0.4) {
+          const t=(p-0.15)/0.25;
+          r=255; g=Math.round(200-t*100); b=Math.round(30-t*30); a=0.85-t*0.1;
+        } else if (p < 0.7) {
+          const t=(p-0.4)/0.3;
+          r=255; g=Math.round(100-t*80); b=0; a=0.7-t*0.2;
+        } else {
+          const t=(p-0.7)/0.3;
+          r=Math.round(220-t*120); g=Math.round(20-t*20); b=0; a=0.4*(1-t);
+        }
+
+        // Draw as glowing dot with radial gradient
+        const g2 = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.size * 2.5);
+        g2.addColorStop(0,   `rgba(${r},${g},${b},${a})`);
+        g2.addColorStop(0.4, `rgba(${r},${g},${b},${a*0.5})`);
+        g2.addColorStop(1,   `rgba(${r},${g},${b},0)`);
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size * 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = g2;
+        ctx.fill();
+      }
+    }
+
+    // ── Init ───────────────────────────────────────────────────────────────
+    const isMobile = window.innerWidth < 600;
+    const stars  = Array.from({ length: isMobile ? 120 : 220 }, () => new Star());
+    const embers = Array.from({ length: isMobile ? 60  : 120 }, () => new Ember(true));
+
+    // Planets — subtle, at edges
+    const planets = [
+      new Planet(canvas.width * 0.88, canvas.height * 0.15, 38, 'rgb(180,120,60)',  'rgba(200,150,80,0.25)'),
+      new Planet(canvas.width * 0.08, canvas.height * 0.22, 22, 'rgb(80,120,200)',  null),
+      new Planet(canvas.width * 0.92, canvas.height * 0.72, 16, 'rgb(140,80,180)',  null),
+    ];
+
     let frame = 0;
 
     const tick = () => {
       frame++;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+      // Deep space background gradient
+      const bg = ctx.createRadialGradient(
+        canvas.width*0.5, canvas.height*0.4, 0,
+        canvas.width*0.5, canvas.height*0.5, canvas.width*0.8
+      );
+      bg.addColorStop(0,   'rgba(12,8,30,0)');
+      bg.addColorStop(0.5, 'rgba(6,4,18,0.3)');
+      bg.addColorStop(1,   'rgba(2,1,8,0.6)');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
       // Stars
       stars.forEach(s => s.draw(frame));
 
-      // Bottom glow strip — full width
-      const gh = canvas.height;
-      const gw = canvas.width;
-      const groundGrad = ctx.createLinearGradient(0, gh * 0.78, 0, gh);
-      groundGrad.addColorStop(0,   'rgba(180,50,0,0)');
-      groundGrad.addColorStop(0.7, 'rgba(180,50,0,0.10)');
-      groundGrad.addColorStop(1,   'rgba(100,25,0,0.25)');
-      ctx.fillStyle = groundGrad;
-      ctx.fillRect(0, gh * 0.78, gw, gh * 0.22);
+      // Planets (behind embers)
+      planets.forEach(p => p.draw());
 
-      // Fire (screen blend = natural glow/light effect)
+      // Embers with screen blend for glow
       ctx.globalCompositeOperation = 'screen';
-      flames.forEach(f => { f.update(); f.draw(); });
       embers.forEach(e => { e.update(); e.draw(); });
       ctx.globalCompositeOperation = 'source-over';
 
@@ -201,18 +201,16 @@ function FireCanvas() {
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        position: 'fixed', inset: 0,
-        width: '100%', height: '100%',
-        pointerEvents: 'none', zIndex: 0,
-      }}
-    />
+    <canvas ref={canvasRef} style={{
+      position: 'fixed', inset: 0,
+      width: '100%', height: '100%',
+      pointerEvents: 'none', zIndex: 0,
+      background: 'radial-gradient(ellipse at 50% 60%, #120820 0%, #060410 40%, #020108 100%)',
+    }} />
   );
 }
 
-/* ── Login Page ──────────────────────────────────────────────────────────── */
+/* ── Login Page ────────────────────────────────────────────────────────────── */
 export default function LoginPage() {
   const { login }   = useAuth();
   const navigate    = useNavigate();
@@ -225,8 +223,7 @@ export default function LoginPage() {
   const [mounted,  setMounted]  = useState(false);
 
   useEffect(() => {
-    // Slight delay so the card animates in after canvas loads
-    const t = setTimeout(() => setMounted(true), 120);
+    const t = setTimeout(() => setMounted(true), 100);
     return () => clearTimeout(t);
   }, []);
 
@@ -236,11 +233,8 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const user = await login(email.trim(), password);
-      if (user?.role === 'CLIENT') {
-        navigate('/portal', { replace: true });
-      } else {
-        navigate('/app', { replace: true });
-      }
+      if (user?.role === 'CLIENT') navigate('/portal', { replace: true });
+      else navigate('/app', { replace: true });
     } catch (err) {
       setError(err.message || 'Invalid email or password');
       setPassword('');
@@ -252,82 +246,78 @@ export default function LoginPage() {
   return (
     <div style={{
       minHeight: '100vh',
-      background: 'radial-gradient(ellipse at 50% 110%, #1a0a00 0%, #08101f 40%, #040810 100%)',
+      background: 'radial-gradient(ellipse at 50% 60%, #120820 0%, #060410 40%, #020108 100%)',
       display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
-      justifyContent: 'flex-end',   /* card sits near the fire at the bottom */
-      padding: '0 16px 48px',
+      justifyContent: 'center',
+      padding: '80px 16px',
       fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
       position: 'relative',
       overflow: 'hidden',
-      boxSizing: 'border-box',
     }}>
+      <SpaceCanvas />
 
-      {/* Fire canvas */}
-      <FireCanvas />
-
-      {/* Seahawk brand — floats at the top of the page */}
-      <div className="shk-login-brand" style={{
-        textAlign: 'center', zIndex: 10,
+      {/* Brand */}
+      <div style={{
+        position: 'relative', zIndex: 10,
+        textAlign: 'center', marginBottom: 32,
         opacity: mounted ? 1 : 0,
-        transition: 'opacity 0.8s ease 0.2s',
+        transform: mounted ? 'translateY(0)' : 'translateY(-16px)',
+        transition: 'opacity 0.7s ease, transform 0.7s ease',
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, justifyContent: 'center' }}>
           <div style={{
-            width: 42, height: 42, borderRadius: 12,
+            width: 48, height: 48, borderRadius: 14,
             background: 'linear-gradient(135deg, #f97316, #c94d08)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 22,
-            boxShadow: '0 0 28px rgba(249,115,22,0.6)',
+            fontSize: 24,
+            boxShadow: '0 0 32px rgba(249,115,22,0.6), 0 0 80px rgba(249,115,22,0.2)',
           }}>🦅</div>
           <div style={{ textAlign: 'left' }}>
-            <div style={{ color: '#fff', fontSize: 16, fontWeight: 800, lineHeight: 1.2, letterSpacing: '-0.3px' }}>
+            <div style={{ color: '#f1f5f9', fontSize: 18, fontWeight: 800, lineHeight: 1.2, letterSpacing: '-0.3px' }}>
               Sea Hawk Courier
             </div>
-            <div style={{ color: 'rgba(249,115,22,0.7)', fontSize: 11, fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+            <div style={{ color: 'rgba(249,115,22,0.7)', fontSize: 11, fontWeight: 600, letterSpacing: '0.15em', textTransform: 'uppercase' }}>
               Management Portal
             </div>
           </div>
         </div>
       </div>
 
-      <div className="shk-login-wrap" style={{
+      {/* Card */}
+      <div style={{
         width: '100%', maxWidth: 400,
         position: 'relative', zIndex: 10,
         opacity:   mounted ? 1 : 0,
-        transform: mounted ? 'translateY(0)' : 'translateY(32px)',
-        transition: 'opacity 0.6s ease 0.3s, transform 0.6s cubic-bezier(0.34,1.56,0.64,1) 0.3s',
+        transform: mounted ? 'translateY(0) scale(1)' : 'translateY(24px) scale(0.97)',
+        transition: 'opacity 0.6s ease 0.15s, transform 0.6s cubic-bezier(0.34,1.4,0.64,1) 0.15s',
       }}>
-
-        {/* Glow behind card from fire below */}
+        {/* Card glow */}
         <div style={{
-          position: 'absolute', bottom: -40, left: '50%',
-          transform: 'translateX(-50%)',
-          width: 340, height: 80,
-          background: 'radial-gradient(ellipse, rgba(249,115,22,0.35) 0%, transparent 70%)',
-          pointerEvents: 'none',
-          filter: 'blur(8px)',
+          position: 'absolute', inset: -1,
+          borderRadius: 22,
+          background: 'linear-gradient(135deg, rgba(249,115,22,0.2), rgba(168,85,247,0.1), rgba(59,130,246,0.15))',
+          filter: 'blur(1px)',
+          zIndex: -1,
         }} />
 
-        <div className="shk-login-card" style={{
-          background: 'rgba(10, 15, 26, 0.82)',
-          border: '1px solid rgba(249,115,22,0.2)',
+        <div style={{
+          background: 'rgba(8, 6, 20, 0.85)',
+          border: '1px solid rgba(249,115,22,0.15)',
           borderRadius: 20,
-          padding: '32px',
-          boxShadow: '0 0 0 1px rgba(255,255,255,0.04), 0 24px 64px rgba(0,0,0,0.7), 0 0 40px rgba(249,115,22,0.08)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
+          padding: '32px 28px',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)',
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
         }}>
-
-          <h2 style={{ color: '#f1f5f9', fontSize: 20, fontWeight: 800, margin: '0 0 4px', letterSpacing: '-0.3px' }}>
+          <h2 style={{ color: '#f1f5f9', fontSize: 22, fontWeight: 800, margin: '0 0 4px', letterSpacing: '-0.3px' }}>
             Welcome back
           </h2>
           <p style={{ color: 'rgba(255,255,255,0.3)', fontSize: 13, margin: '0 0 24px' }}>
             Sign in to continue to your dashboard
           </p>
 
-          {/* Error */}
           {error && (
             <div style={{
               marginBottom: 18, padding: '10px 14px',
@@ -341,120 +331,68 @@ export default function LoginPage() {
           )}
 
           <form onSubmit={handleSubmit}>
-
             {/* Email */}
             <div style={{ marginBottom: 16 }}>
-              <label style={{
-                display: 'block', color: 'rgba(255,255,255,0.4)',
-                fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
-                letterSpacing: '0.08em', marginBottom: 8,
-              }}>Email Address</label>
+              <label style={{ display:'block', color:'rgba(255,255,255,0.4)', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>
+                Email Address
+              </label>
               <input
-                type="email"
-                autoComplete="email"
-                autoFocus
+                type="email" autoComplete="email" autoFocus
                 placeholder="admin@seahawk.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-                style={{
-                  width: '100%', padding: '11px 14px', borderRadius: 10,
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  color: '#f1f5f9', fontSize: 14, outline: 'none',
-                  boxSizing: 'border-box',
-                  transition: 'border-color 0.2s',
-                }}
-                onFocus={e => e.target.style.borderColor = 'rgba(249,115,22,0.5)'}
-                onBlur={e  => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
+                value={email} onChange={e => setEmail(e.target.value)} required
+                style={{ width:'100%', padding:'11px 14px', borderRadius:10, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.1)', color:'#f1f5f9', fontSize:14, outline:'none', boxSizing:'border-box', transition:'border-color 0.2s' }}
+                onFocus={e => e.target.style.borderColor='rgba(249,115,22,0.5)'}
+                onBlur={e  => e.target.style.borderColor='rgba(255,255,255,0.1)'}
               />
             </div>
 
             {/* Password */}
             <div style={{ marginBottom: 28 }}>
-              <label style={{
-                display: 'block', color: 'rgba(255,255,255,0.4)',
-                fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
-                letterSpacing: '0.08em', marginBottom: 8,
-              }}>Password</label>
-              <div style={{ position: 'relative' }}>
+              <label style={{ display:'block', color:'rgba(255,255,255,0.4)', fontSize:11, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', marginBottom:8 }}>
+                Password
+              </label>
+              <div style={{ position:'relative' }}>
                 <input
-                  type={showPass ? 'text' : 'password'}
-                  autoComplete="current-password"
+                  type={showPass ? 'text' : 'password'} autoComplete="current-password"
                   placeholder="••••••••"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                  style={{
-                    width: '100%', padding: '11px 44px 11px 14px', borderRadius: 10,
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    color: '#f1f5f9', fontSize: 14, outline: 'none',
-                    boxSizing: 'border-box',
-                    transition: 'border-color 0.2s',
-                  }}
-                  onFocus={e => e.target.style.borderColor = 'rgba(249,115,22,0.5)'}
-                  onBlur={e  => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
+                  value={password} onChange={e => setPassword(e.target.value)} required
+                  style={{ width:'100%', padding:'11px 44px 11px 14px', borderRadius:10, background:'rgba(255,255,255,0.05)', border:'1px solid rgba(255,255,255,0.1)', color:'#f1f5f9', fontSize:14, outline:'none', boxSizing:'border-box', transition:'border-color 0.2s' }}
+                  onFocus={e => e.target.style.borderColor='rgba(249,115,22,0.5)'}
+                  onBlur={e  => e.target.style.borderColor='rgba(255,255,255,0.1)'}
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPass(s => !s)}
-                  style={{
-                    position: 'absolute', right: 12, top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    color: 'rgba(255,255,255,0.3)', fontSize: 15, padding: 0,
-                    lineHeight: 1,
-                  }}
-                >{showPass ? '🙈' : '👁️'}</button>
+                <button type="button" onClick={() => setShowPass(s => !s)} style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', color:'rgba(255,255,255,0.3)', fontSize:15, padding:0, lineHeight:1 }}>
+                  {showPass ? '🙈' : '👁️'}
+                </button>
               </div>
             </div>
 
             {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                width: '100%', padding: '13px',
-                background: loading
-                  ? 'rgba(249,115,22,0.3)'
-                  : 'linear-gradient(135deg, #f97316, #c94d08)',
-                border: 'none', borderRadius: 11,
-                color: '#fff', fontSize: 14, fontWeight: 800,
-                cursor: loading ? 'not-allowed' : 'pointer',
-                display: 'flex', alignItems: 'center',
-                justifyContent: 'center', gap: 8,
-                letterSpacing: '0.02em',
-                boxShadow: loading ? 'none' : '0 0 32px rgba(249,115,22,0.45), 0 4px 14px rgba(0,0,0,0.4)',
-                transition: 'box-shadow 0.2s, transform 0.15s',
-              }}
-              onMouseEnter={e => { if (!loading) e.currentTarget.style.transform = 'translateY(-1px)'; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; }}
+            <button type="submit" disabled={loading} style={{
+              width:'100%', padding:'13px',
+              background: loading ? 'rgba(249,115,22,0.3)' : 'linear-gradient(135deg, #f97316, #c94d08)',
+              border:'none', borderRadius:11,
+              color:'#fff', fontSize:14, fontWeight:800,
+              cursor: loading ? 'not-allowed' : 'pointer',
+              display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+              letterSpacing:'0.02em',
+              boxShadow: loading ? 'none' : '0 0 40px rgba(249,115,22,0.5), 0 4px 14px rgba(0,0,0,0.4)',
+              transition:'box-shadow 0.2s, transform 0.15s',
+            }}
+              onMouseEnter={e => { if(!loading) e.currentTarget.style.transform='translateY(-1px)'; }}
+              onMouseLeave={e => { e.currentTarget.style.transform='translateY(0)'; }}
             >
               {loading ? (
                 <>
-                  <span style={{
-                    width: 15, height: 15,
-                    border: '2px solid rgba(255,255,255,0.25)',
-                    borderTopColor: '#fff', borderRadius: '50%',
-                    display: 'inline-block',
-                    animation: 'shkSpin 0.7s linear infinite',
-                  }} />
+                  <span style={{ width:15, height:15, border:'2px solid rgba(255,255,255,0.25)', borderTopColor:'#fff', borderRadius:'50%', display:'inline-block', animation:'shkSpin 0.7s linear infinite' }} />
                   Signing in…
                 </>
-              ) : (
-                <>🚀 Launch Dashboard</>
-              )}
+              ) : <>🚀 Launch Dashboard</>}
             </button>
           </form>
         </div>
 
-        {/* Back link */}
-        <p style={{ textAlign: 'center', marginTop: 18 }}>
-          <Link to="/" style={{
-            color: 'rgba(255,255,255,0.25)', fontSize: 12,
-            textDecoration: 'none', letterSpacing: '0.02em',
-          }}>
+        <p style={{ textAlign:'center', marginTop:18 }}>
+          <Link to="/" style={{ color:'rgba(255,255,255,0.2)', fontSize:12, textDecoration:'none', letterSpacing:'0.02em' }}>
             ← Back to website
           </Link>
         </p>
@@ -462,40 +400,18 @@ export default function LoginPage() {
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&display=swap');
-
         @keyframes shkSpin { to { transform: rotate(360deg); } }
-
         *, *::before, *::after { box-sizing: border-box; }
-
         input::placeholder { color: rgba(255,255,255,0.18) !important; }
-
         input:-webkit-autofill,
         input:-webkit-autofill:hover,
         input:-webkit-autofill:focus {
-          -webkit-box-shadow: 0 0 0 100px #0a0f1a inset !important;
+          -webkit-box-shadow: 0 0 0 100px rgba(8,6,20,0.9) inset !important;
           -webkit-text-fill-color: #f1f5f9 !important;
           caret-color: #f1f5f9;
         }
-
         @media (max-width: 480px) {
-          .shk-login-brand {
-            top: 16px !important;
-          }
-          .shk-login-brand-icon {
-            width: 32px !important;
-            height: 32px !important;
-            font-size: 16px !important;
-          }
-          .shk-login-brand-title {
-            font-size: 13px !important;
-          }
-          .shk-login-card {
-            padding: 22px 18px !important;
-            border-radius: 16px !important;
-          }
-          .shk-login-wrap {
-            padding-bottom: 32px !important;
-          }
+          input, select { font-size: 16px !important; }
         }
       `}</style>
     </div>
