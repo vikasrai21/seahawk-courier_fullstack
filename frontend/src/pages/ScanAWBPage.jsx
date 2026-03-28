@@ -1,8 +1,43 @@
 import { useState, useRef, useEffect } from 'react';
-import { Package, ScanLine, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Package, ScanLine, CheckCircle2, AlertCircle, RefreshCw, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import api from '../services/api';
 import { useToast } from '../hooks/useToast';
 import { useAuth } from '../context/AuthContext';
+
+const playSuccess = () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(800, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+  } catch(e){}
+};
+
+const playError = () => {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(150, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.3);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.3);
+  } catch(e){}
+};
 
 export default function ScanAWBPage() {
   const { toast } = useToast();
@@ -30,8 +65,10 @@ export default function ScanAWBPage() {
       setLoading(true);
       setAwb(''); // Clear input for next scan immediately
   
+  
       try {
         const res = await api.post('/shipments/scan', { awb: currentAwb, courier });
+        playSuccess();
         toast(`AWB scanned via ${courier} successfully`, 'success');
         
         setRecentScans(prev => [
@@ -40,6 +77,7 @@ export default function ScanAWBPage() {
         ].slice(0, 50));
   
       } catch (err) {
+        playError();
         toast(err.message, 'error');
         setRecentScans(prev => [
           { awb: currentAwb, courier, status: 'error', error: err.message, timestamp: new Date() },
@@ -58,6 +96,15 @@ export default function ScanAWBPage() {
   
       try {
         const res = await api.post('/shipments/scan-bulk', { awbs: awbList, courier });
+        // After backend refactor, res.data.jobId is returned instead.
+        if (res.data.jobId) {
+          toast(`Bulk scan queued in background (Job ID: ${res.data.jobId})`, 'success');
+          setRecentScans([{ awb: 'BULK BATCH', status: 'success', data: { status: 'Processing in Background', consignee: 'Queue', destination: 'Worker' }, timestamp: new Date() }, ...recentScans]);
+          return;
+        }
+
+        // Fallback for sync return
+        playSuccess();
         toast(`Bulk scan completed (${res.data.successful.length} success, ${res.data.failed.length} failed)`, 'success');
         
         const newScans = [];
@@ -67,6 +114,7 @@ export default function ScanAWBPage() {
         for (const f of res.data.failed) {
            newScans.push({ awb: f.awb, courier, status: 'error', error: f.error, timestamp: new Date() });
         }
+        if (res.data.failed.length > 0) playError();
         
         setRecentScans(prev => [...newScans, ...prev].slice(0, 100));
       } catch (err) {
@@ -167,8 +215,22 @@ export default function ScanAWBPage() {
 
       {recentScans.length > 0 && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-4 py-3 bg-gray-50/50 border-b border-gray-100 font-semibold text-sm text-gray-700">
-            Recent Scans
+          <div className="px-4 py-3 bg-gray-50/50 border-b border-gray-100 font-semibold text-sm text-gray-700 flex justify-between items-center">
+            <span>Recent Scans</span>
+            {recentScans.some(s => s.status === 'error') && (
+              <button 
+                onClick={() => {
+                  const failed = recentScans.filter(s => s.status === 'error').map(s => ({ AWB: s.awb, Courier: s.courier, Error: s.error, Time: s.timestamp.toLocaleString() }));
+                  const ws = XLSX.utils.json_to_sheet(failed);
+                  const wb = XLSX.utils.book_new();
+                  XLSX.utils.book_append_sheet(wb, ws, "Failed Scans");
+                  XLSX.writeFile(wb, "Failed_Scans_Report.xlsx");
+                }}
+                className="btn-secondary py-1 px-3 text-xs flex items-center gap-1 text-red-600 border-red-200 hover:bg-red-50"
+              >
+                <Download className="w-3 h-3" /> Export Failed
+              </button>
+            )}
           </div>
           <div className="divide-y divide-gray-50">
             {recentScans.map((scan, idx) => (

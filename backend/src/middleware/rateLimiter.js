@@ -29,4 +29,13 @@ const sensitiveActionLimiter = rateLimit({
   legacyHeaders:   false,
 });
 
-module.exports = { loginLimiter, apiLimiter, sensitiveActionLimiter };
+// Strict limit for public tracking endpoints to prevent scraping bots
+const publicTrackingLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max:      20,             // Max 20 tracks per hour per IP
+  message:  { success: false, message: 'Tracking request limit exceeded. Try again in 1 hour.' },
+  standardHeaders: true,
+  legacyHeaders:   false,
+});
+
+module.exports = { loginLimiter, apiLimiter, sensitiveActionLimiter, publicTrackingLimiter };

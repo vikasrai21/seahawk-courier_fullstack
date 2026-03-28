@@ -85,6 +85,7 @@ app.use('/api/analytics',      require('./routes/analytics.routes'));
 app.use('/api/delhivery',      require('./routes/delhivery.routes'));
 app.use('/api/couriers',       require('./routes/courier.routes'));
 app.use('/api/carrier',        require('./routes/carrier.routes'));
+app.use('/api/webhooks',       require('./routes/webhook.routes'));
 
 // ── Serve React (production) ───────────────────────────────────────────────
 const frontendBuild = path.join(__dirname, '../public');

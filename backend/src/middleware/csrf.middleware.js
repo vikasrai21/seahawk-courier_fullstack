@@ -33,8 +33,8 @@ function issueCsrfCookie(req, res, next) {
 function validateCsrf(req, res, next) {
   // Skip safe methods
   if (SAFE_METHODS.has(req.method)) return next();
-  // Skip public routes — no auth required
-  if (req.path.startsWith('/public/')) return next();
+  // Skip public routes and third-party webhooks
+  if (req.path.startsWith('/public/') || req.path.startsWith('/webhooks/')) return next();
   // Skip if using Bearer token auth (not cookie-based)
   if (req.headers.authorization?.startsWith('Bearer ')) return next();
   // Skip if no refresh token cookie (not a cookie-auth session)

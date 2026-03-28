@@ -28,7 +28,12 @@ try {
   logger.warn('BullMQ not installed — using in-memory job runner (no Redis needed in dev)');
 }
 
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const REDIS_URL = process.env.REDIS_URL;
+if (!REDIS_URL) {
+  bullMQAvailable = false;
+  logger.info('Redis not configured; BullMQ disabled and in-memory queue will be used');
+}
+
 const connection = bullMQAvailable ? {
   host: new URL(REDIS_URL).hostname,
   port: parseInt(new URL(REDIS_URL).port) || 6379,

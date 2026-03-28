@@ -5,6 +5,7 @@ const prisma = require('../config/prisma');
 const logger = require('../utils/logger');
 const { detectCourier, getCourierInfo } = require('../utils/awbDetect');
 const rateLimit = require('express-rate-limit');
+const { publicTrackingLimiter } = require('../middleware/rateLimiter');
 
 const publicLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, message: { success: false, message: 'Too many requests.' } });
 const bookingLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, message: { success: false, message: 'Too many booking requests. Try again later.' } });
@@ -108,7 +109,7 @@ async function trackWithCourier(courier, awb) {
 }
 
 // ── GET /api/public/track/:awb ─────────────────────────────────────────────
-router.get('/track/:awb', publicLimiter, async (req, res) => {
+router.get('/track/:awb', publicTrackingLimiter, async (req, res) => {
   const awb = req.params.awb?.trim().toUpperCase();
   if (!awb || awb.length < 4) return res.status(400).json({ success: false, message: 'Invalid AWB number.' });
   try {

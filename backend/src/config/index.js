@@ -37,7 +37,7 @@ module.exports = {
   },
 
   redis: {
-    url: optional('REDIS_URL', 'redis://localhost:6379'),
+    url: optional('REDIS_URL'),
   },
 
   cookie: {

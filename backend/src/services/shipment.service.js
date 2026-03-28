@@ -8,6 +8,13 @@ const logger       = require('../utils/logger');
 const delhiverySvc = require('./delhivery.service');
 const trackonSvc   = require('./trackon.service');
 const dtdcSvc      = require('./dtdc.service');
+const redis        = require('../config/redis');
+
+const clearCache = () => {
+  if (redis.status === 'ready') {
+    redis.del('stats:today', 'stats:monthly').catch(e => logger.warn(`[Redis] Clear cache failed: ${e.message}`));
+  }
+};
 
 const COURIERS = {
   'Delhivery': delhiverySvc,
@@ -60,6 +67,7 @@ async function create(data, userId) {
     try { await walletSvc.debit({ clientCode: shipment.clientCode, amount: shipment.amount, description: `Shipment — AWB ${shipment.awb}`, reference: shipment.awb }); }
     catch (e) { logger.warn(`[Wallet] Debit failed for ${shipment.awb}: ${e.message}`); }
   }
+  clearCache();
   return shipment;
 }
 
@@ -67,7 +75,9 @@ async function update(id, data, userId) {
   const u = { ...data, updatedById: userId };
   if (data.consignee)   u.consignee   = data.consignee.toUpperCase();
   if (data.destination) u.destination = data.destination.toUpperCase();
-  return prisma.shipment.update({ where: { id: parseInt(id) }, data: u, include: { client: { select: { company: true } } } });
+  const updated = await prisma.shipment.update({ where: { id: parseInt(id) }, data: u, include: { client: { select: { company: true } } } });
+  clearCache();
+  return updated;
 }
 
 async function updateStatus(id, newStatus, userId) {
@@ -103,10 +113,15 @@ async function updateStatus(id, newStatus, userId) {
     catch (e) { logger.warn(`[Notify] POD email failed: ${e.message}`); }
   }
 
+  clearCache();
   return updated;
 }
 
-async function remove(id) { return prisma.shipment.delete({ where: { id: parseInt(id) } }); }
+async function remove(id) { 
+  const res = await prisma.shipment.delete({ where: { id: parseInt(id) } }); 
+  clearCache();
+  return res;
+}
 
 async function bulkImport(shipments, userId) {
   const today = new Date().toISOString().split('T')[0];
@@ -124,11 +139,19 @@ async function bulkImport(shipments, userId) {
       imported++;
     } catch (err) { if (err.code === 'P2002') duplicates++; else errors.push({ awb, error: err.message }); }
   }
+  
+  if (imported > 0) clearCache();
   return { imported, duplicates, errors: errors.slice(0, 20) };
 }
 
 async function getTodayStats() {
   const today = new Date().toISOString().split('T')[0];
+  
+  if (redis.status === 'ready') {
+    const cached = await redis.get('stats:today').catch(() => null);
+    if (cached) return JSON.parse(cached);
+  }
+
   const [summary, byCourier, recentActivity] = await prisma.$transaction([
     prisma.shipment.groupBy({ by: ['status'], where: { date: today }, _count: { id: true }, _sum: { amount: true, weight: true } }),
     prisma.shipment.groupBy({ by: ['courier'], where: { date: today, courier: { not: '' } }, _count: { id: true }, orderBy: { _count: { id: 'desc' } } }),
@@ -140,13 +163,26 @@ async function getTodayStats() {
     if (['InTransit','Booked','OutForDelivery'].includes(row.status)) acc.inTransit++;
     return acc;
   }, { total: 0, delivered: 0, inTransit: 0, delayed: 0, amount: 0, weight: 0 });
-  return { date: today, ...totals, byCourier, recentActivity };
+  
+  const result = { date: today, ...totals, byCourier, recentActivity };
+  if (redis.status === 'ready') redis.setex('stats:today', 3600, JSON.stringify(result)).catch(() => {});
+  return result;
 }
 
 async function getMonthlyStats(year, month) {
+  const cacheKey = `stats:monthly:${year}:${month}`;
+  
+  if (redis.status === 'ready') {
+    const cached = await redis.get(cacheKey).catch(() => null);
+    if (cached) return JSON.parse(cached);
+  }
+
   const from = `${year}-${String(month).padStart(2,'0')}-01`;
   const to   = `${year}-${String(month).padStart(2,'0')}-${new Date(year,month,0).getDate()}`;
-  return prisma.shipment.findMany({ where: { date: { gte: from, lte: to } }, select: { date: true, clientCode: true, courier: true, status: true, amount: true, weight: true } });
+  const rows = await prisma.shipment.findMany({ where: { date: { gte: from, lte: to } }, select: { date: true, clientCode: true, courier: true, status: true, amount: true, weight: true } });
+  
+  if (redis.status === 'ready') redis.setex(cacheKey, 3600, JSON.stringify(rows)).catch(() => {});
+  return rows;
 }
 
 // Client-facing: shipments for a specific client (for portal)
@@ -197,6 +233,7 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery') {
     } catch (e) { logger.warn(`[Tracking] Event log failed: ${e.message}`); }
   }
 
+  clearCache();
   return { message: 'Tracking data updated successfully', shipment: updatedShipment };
 }
 

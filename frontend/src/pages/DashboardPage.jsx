@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 import api from '../services/api';
 import { PageLoader } from '../components/ui/Loading';
+import { Skeleton, SkeletonCard } from '../components/ui/Skeleton';
 import { useAuth } from '../context/AuthContext';
 
 /* ── Formatters ────────────────────────────────────────────────────────── */
@@ -537,7 +538,25 @@ export default function DashboardPage() {
     return () => window.removeEventListener('keydown', h);
   }, [navigate]);
 
-  if (loading) return <PageLoader />;
+  if (loading) return (
+    <>
+      <style>{GLOBAL_CSS}</style>
+      <div className="shk-dashboard" style={{ padding: '24px', maxWidth: 1440, margin: '0 auto', minHeight: '100vh', background: T.bg }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 28 }}>
+          <Skeleton className="h-12 w-64 bg-gray-800" />
+          <Skeleton className="h-10 w-48 bg-gray-800" />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(155px, 1fr))', gap: 14, marginBottom: 24 }}>
+          {[...Array(6)].map((_, i) => <SkeletonCard key={i} className="bg-gray-800 border-gray-700" />)}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20, marginBottom: 20 }}>
+          <SkeletonCard className="h-64 bg-gray-800 border-gray-700" />
+          <SkeletonCard className="h-64 bg-gray-800 border-gray-700" />
+          <SkeletonCard className="h-64 bg-gray-800 border-gray-700" />
+        </div>
+      </div>
+    </>
+  );
 
   const courierData = (stats?.byCourier || []).map(c => ({
     name: c.courier || 'Other',

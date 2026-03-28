@@ -563,8 +563,8 @@ export default function LandingPage() {
         {/* ── TRUST SIGNALS ── */}
         <section style={{ background: 'var(--bg-2)', borderTop: '1px solid var(--border-l)', borderBottom: '1px solid var(--border-l)', padding: '36px 0' }}>
           <div className="wrap">
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 20, marginBottom: 28 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 20, marginBottom: 28 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
                 {[{icon:'⭐',val:'4.8',lbl:'Google Rating',sub:'200+ reviews'},{icon:'🏆',val:'20+',lbl:'Years Active',sub:'Est. 2004, Gurugram'},{icon:'🛡️',val:'GST',lbl:'Registered',sub:'06AJDPR0914N2Z1'}].map(({icon,val,lbl,sub}) => (
                   <div key={lbl} style={{ background: '#fff', borderRadius: 'var(--r-lg)', padding: '14px 20px', boxShadow: 'var(--sh-sm)', border: '1.5px solid var(--border-l)', display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ fontSize: '1.8rem' }}>{icon}</div>
@@ -576,7 +576,7 @@ export default function LandingPage() {
                   </div>
                 ))}
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
                 {['✓ Free Doorstep Pickup','✓ Real-Time Tracking','✓ GST Invoicing','✓ 35,000+ PIN Codes','✓ 24×7 Emergency'].map(t => (
                   <div key={t} style={{ padding: '6px 14px', background: '#fff', border: '1.5px solid var(--border-l)', borderRadius: 40, fontSize: '.73rem', fontWeight: 700, color: 'var(--ink-2)' }}>{t}</div>
                 ))}

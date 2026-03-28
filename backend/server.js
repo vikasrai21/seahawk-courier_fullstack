@@ -9,6 +9,7 @@ const config = require('./src/config');
 const logger = require('./src/utils/logger');
 const prisma = require('./src/config/prisma');
 const { startScheduler } = require('./src/utils/scheduler');
+const { initWorkers } = require('./src/workers/scanner.worker');
 
 function getLANIP() {
   const nets = os.networkInterfaces();
@@ -48,8 +49,9 @@ async function startServer() {
     }
   });
 
-  // ── Start background jobs ────────────────────────────────────────────
+  // ── Start background jobs & workers ────────────────────────────────────────────
   startScheduler();
+  initWorkers();
 
   // ── Graceful shutdown ────────────────────────────────────────────────
   const shutdown = async (signal) => {

@@ -74,9 +74,20 @@ const scanAwb = asyncHandler(async (req, res) => {
 });
 
 const scanAwbBulk = asyncHandler(async (req, res) => {
-  const result = await svc.scanAwbBulkAndUpdate(req.body.awbs, req.user?.id, req.body.courier);
-  await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'SCAN_AWB_BULK', entity: 'SHIPMENT', newValue: { totalScanned: req.body.awbs.length, successes: result.successful.length }, ip: req.ip });
-  R.ok(res, result, 'Bulk AWB scan completed');
+  const { scanQueue } = require('../config/queue');
+  
+  if (!scanQueue) {
+    // Fallback to synchronous if Redis/Queue is not configured
+    const result = await svc.scanAwbBulkAndUpdate(req.body.awbs, req.user?.id, req.body.courier);
+    await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'SCAN_AWB_BULK', entity: 'SHIPMENT', newValue: { totalScanned: req.body.awbs.length, successes: result.successful.length }, ip: req.ip });
+    return R.ok(res, result, 'Bulk AWB scan completed synchronously');
+  }
+
+  // Add the job to BullMQ
+  const job = await scanQueue.add('bulk-scan', { awbs: req.body.awbs, userId: req.user?.id, courier: req.body.courier });
+  await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'ENQUEUE_SCAN_BULK', entity: 'JOB', entityId: job.id, newValue: { totalScanned: req.body.awbs.length }, ip: req.ip });
+  
+  R.ok(res, { jobId: job.id, message: 'Processing in background' }, 'Bulk scan queued successfully');
 });
 
 module.exports = { getAll, getOne, create, update, patchStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getValidStatuses, deleteShipment: remove,

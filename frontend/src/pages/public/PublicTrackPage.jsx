@@ -307,25 +307,45 @@ export default function PublicTrackPage() {
                 <div style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 20 }}>
                   Tracking History
                 </div>
-                <div>
-                  {data.trackingEvents.map((e, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 16, paddingBottom: i < data.trackingEvents.length - 1 ? 16 : 0 }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-                        <div style={{ width: 12, height: 12, borderRadius: '50%', background: i === 0 ? courierColor.bg : '#e2e8f0', marginTop: 2, flexShrink: 0 }} />
-                        {i < data.trackingEvents.length - 1 && (
-                          <div style={{ width: 2, flex: 1, background: '#f1f5f9', marginTop: 4 }} />
-                        )}
-                      </div>
-                      <div style={{ paddingBottom: i < data.trackingEvents.length - 1 ? 16 : 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 14, color: '#0b1f3a' }}>{e.status}</div>
-                        {e.location && <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>📍 {e.location}</div>}
-                        {e.description && <div style={{ fontSize: 12, color: '#64748b' }}>{e.description}</div>}
-                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, fontFamily: 'monospace' }}>
-                          {e.timestamp ? new Date(e.timestamp).toLocaleString('en-IN') : ''}
+                <div className="shk-timeline">
+                  {data.trackingEvents.map((e, i) => {
+                    const isFirst = i === 0;
+                    const c = e.status?.toLowerCase() || '';
+                    let icon = '📍';
+                    if (c.includes('deliver')) icon = '📦';
+                    if (c.includes('transit') || c.includes('hub')) icon = '🚚';
+                    if (c.includes('out for')) icon = '🛵';
+                    if (c.includes('book') || c.includes('pick')) icon = '📋';
+                    if (c.includes('rto') || c.includes('return')) icon = '↩️';
+
+                    return (
+                      <div key={i} className="timeline-item" style={{ display: 'flex', gap: 16, paddingBottom: i < data.trackingEvents.length - 1 ? 24 : 0, position: 'relative', animationDelay: `${i * 0.1}s` }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, position: 'relative', zIndex: 2 }}>
+                          <div className={isFirst ? "pulse-ring" : ""} style={{ 
+                            width: 32, height: 32, borderRadius: '50%', 
+                            background: isFirst ? courierColor.bg : '#f1f5f9', 
+                            color: isFirst ? '#fff' : '#64748b',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 14, border: `2px solid ${isFirst ? courierColor.bg : '#e2e8f0'}`,
+                            '--courier-bg': courierColor.bg
+                          }}>
+                            {icon}
+                          </div>
+                          {i < data.trackingEvents.length - 1 && (
+                            <div className="timeline-line" style={{ width: 2, flex: 1, background: '#e2e8f0', marginTop: 4, position: 'absolute', top: 32, bottom: -24, zIndex: 1 }} />
+                          )}
+                        </div>
+                        <div style={{ paddingBottom: i < data.trackingEvents.length - 1 ? 16 : 0, paddingTop: 4 }}>
+                          <div style={{ fontWeight: 800, fontSize: 15, color: isFirst ? '#0b1f3a' : '#475569' }}>{e.status}</div>
+                          {e.location && <div style={{ fontSize: 13, color: '#64748b', marginTop: 3 }}>{e.location}</div>}
+                          {e.description && <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>{e.description}</div>}
+                          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6, fontFamily: 'monospace', fontWeight: 600, background: '#f1f5f9', padding: '2px 8px', borderRadius: 4, display: 'inline-block' }}>
+                            {e.timestamp ? new Date(e.timestamp).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : ''}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -346,6 +366,23 @@ export default function PublicTrackPage() {
         @keyframes spin { to { transform: rotate(360deg); } }
         * { box-sizing: border-box; }
         input::placeholder { color: #94a3b8; }
+        
+        .pulse-ring {
+          box-shadow: 0 0 0 0 var(--courier-bg);
+          animation: pulse-ring 2s infinite cubic-bezier(0.66, 0, 0, 1);
+        }
+        @keyframes pulse-ring {
+          to { box-shadow: 0 0 0 10px rgba(0,0,0,0); }
+        }
+
+        .timeline-item {
+          opacity: 0;
+          transform: translateX(10px);
+          animation: slideInRight 0.5s forwards ease-out;
+        }
+        @keyframes slideInRight {
+          to { opacity: 1; transform: translateX(0); }
+        }
       `}</style>
     </div>
   );
