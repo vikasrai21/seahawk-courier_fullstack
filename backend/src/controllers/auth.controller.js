@@ -7,10 +7,10 @@ const config = require('../config');
 
 const refreshCookieOpts = {
   httpOnly: true,
-  secure:   config.cookie.secure,
+  secure: config.cookie.secure,
   sameSite: config.cookie.sameSite,
-  maxAge:   config.cookie.maxAge,
-  path:     '/api/auth/refresh',
+  maxAge: config.cookie.maxAge,
+  path: '/api/auth/refresh',
 };
 
 const login = asyncHandler(async (req, res) => {
@@ -44,8 +44,9 @@ const getMe = asyncHandler(async (req, res) => {
 });
 
 const createUser = asyncHandler(async (req, res) => {
-  const user = await authService.createUser(req.body);
-  await auditLog({ userId: req.user.id, userEmail: req.user.email, action: 'CREATE_USER', entity: 'USER', entityId: user.id, newValue: { email: user.email, role: user.role }, ip: req.ip });
+  const { name, email, password, role, branch, clientCode } = req.body;
+  const user = await authService.createUser({ name, email, password, role, branch, clientCode });
+  await auditLog({ userId: req.user.id, userEmail: req.user.email, action: 'CREATE_USER', entity: 'USER', entityId: user.id, newValue: { email: user.email, role: user.role, clientCode }, ip: req.ip });
   R.created(res, user, 'User created');
 });
 

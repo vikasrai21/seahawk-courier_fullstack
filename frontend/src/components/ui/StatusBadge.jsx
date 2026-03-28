@@ -1,26 +1,41 @@
 import React from 'react';
 
-const STATUS_COLORS = {
-  Delivered:      { bg: 'bg-green-100', text: 'text-green-800', dot: 'bg-green-500' },
-  InTransit:      { bg: 'bg-blue-100', text: 'text-blue-800', dot: 'bg-blue-500' },
-  Booked:         { bg: 'bg-gray-100', text: 'text-gray-800', dot: 'bg-gray-500' },
-  OutForDelivery: { bg: 'bg-yellow-100', text: 'text-yellow-800', dot: 'bg-yellow-500' },
-  Delayed:        { bg: 'bg-orange-100', text: 'text-orange-800', dot: 'bg-orange-500' },
-  RTO:            { bg: 'bg-red-100', text: 'text-red-800', dot: 'bg-red-500' },
-  Cancelled:      { bg: 'bg-red-50', text: 'text-red-600', dot: 'bg-red-400' },
+// Inline style-based pill badges — work in both light and dark contexts
+const STATUS_STYLES = {
+  Delivered: { bg: 'rgba(12,122,82,0.1)', color: '#0c7a52', dot: '#0c7a52', pulse: false },
+  InTransit: { bg: 'rgba(37,99,235,0.1)', color: '#1d4ed8', dot: '#3b82f6', pulse: true },
+  Booked: { bg: 'rgba(100,116,139,0.1)', color: '#475569', dot: '#64748b', pulse: false },
+  OutForDelivery: { bg: 'rgba(217,119,6,0.1)', color: '#b45309', dot: '#f59e0b', pulse: true },
+  Delayed: { bg: 'rgba(234,88,12,0.1)', color: '#c2410c', dot: '#f97316', pulse: false },
+  RTO: { bg: 'rgba(200,48,58,0.1)', color: '#c8303a', dot: '#ef4444', pulse: false },
+  Cancelled: { bg: 'rgba(239,68,68,0.07)', color: '#dc2626', dot: '#ef4444', pulse: false },
 };
 
-export const STATUSES = Object.keys(STATUS_COLORS);
+export const STATUSES = Object.keys(STATUS_STYLES);
 
 export function StatusBadge({ status, className = '' }) {
-  // Normalize status key handling standard ones vs random courier outputs
-  const normalizedKey = Object.keys(STATUS_COLORS).find(k => k.toLowerCase() === (status || '').toLowerCase());
-  const theme = STATUS_COLORS[normalizedKey] || { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-400' };
+  const key = Object.keys(STATUS_STYLES).find(k => k.toLowerCase() === (status || '').toLowerCase());
+  const s = STATUS_STYLES[key] || { bg: 'rgba(100,116,139,0.1)', color: '#475569', dot: '#94a3b8', pulse: false };
+  const label = key || status || 'Unknown';
 
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${theme.bg} ${theme.text} ${className}`}>
-      <span className={`w-1.5 h-1.5 rounded-full mr-1.5 ${theme.dot} ${status === 'OutForDelivery' || status === 'InTransit' ? 'animate-pulse' : ''}`}></span>
-      {status || 'Unknown'}
+    <span
+      className={className}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5,
+        padding: '3px 10px', borderRadius: 99,
+        fontSize: 11, fontWeight: 700, letterSpacing: '0.02em',
+        background: s.bg, color: s.color,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span style={{
+        width: 6, height: 6, borderRadius: '50%',
+        background: s.dot, flexShrink: 0,
+        animation: s.pulse ? 'shkPulse 1.6s ease-in-out infinite' : 'none',
+      }} />
+      {label}
+      <style>{`@keyframes shkPulse { 0%,100%{opacity:1} 50%{opacity:0.35} }`}</style>
     </span>
   );
 }

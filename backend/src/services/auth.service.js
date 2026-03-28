@@ -1,6 +1,6 @@
 'use strict';
 const bcrypt = require('bcryptjs');
-const jwt    = require('jsonwebtoken');
+const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const prisma = require('../config/prisma');
 const config = require('../config');
@@ -36,7 +36,7 @@ async function storeRefreshToken(userId, token, meta = {}) {
         token,
         userId,
         expiresAt,
-        ip:        meta.ip        || null,
+        ip: meta.ip || null,
         userAgent: meta.userAgent || null,
       },
     });
@@ -57,7 +57,7 @@ async function login(email, password, meta = {}) {
     throw new AppError('Invalid email or password.', 401);
   }
 
-  const accessToken  = signAccess(user);
+  const accessToken = signAccess(user);
   const refreshToken = generateRefreshToken();
   await storeRefreshToken(user.id, refreshToken, meta);
 
@@ -77,7 +77,7 @@ async function refreshAccessToken(token) {
         throw new AppError('Invalid or expired refresh token.', 401);
       }
       const user = await prisma.user.findUnique({
-        where:  { id: stored.userId },
+        where: { id: stored.userId },
         select: { id: true, email: true, role: true, active: true },
       });
       if (!user || !user.active) throw new AppError('User not found.', 401);
@@ -92,7 +92,7 @@ async function refreshAccessToken(token) {
   try {
     const payload = jwt.verify(token, config.jwt.refreshSecret);
     const user = await prisma.user.findUnique({
-      where:  { id: payload.id },
+      where: { id: payload.id },
       select: { id: true, email: true, role: true, active: true },
     });
     if (!user || !user.active) throw new AppError('User not found.', 401);
@@ -107,7 +107,7 @@ async function revokeRefreshToken(token) {
   try {
     await prisma.refreshToken.update({
       where: { token },
-      data:  { revokedAt: new Date() },
+      data: { revokedAt: new Date() },
     });
   } catch {
     // Token not found or table missing — ignore
@@ -118,9 +118,9 @@ async function revokeAllUserTokens(userId) {
   try {
     await prisma.refreshToken.updateMany({
       where: { userId, revokedAt: null },
-      data:  { revokedAt: new Date() },
+      data: { revokedAt: new Date() },
     });
-  } catch {}
+  } catch { }
 }
 
 async function cleanupExpiredTokens() {
@@ -129,39 +129,56 @@ async function cleanupExpiredTokens() {
       where: { OR: [{ expiresAt: { lt: new Date() } }, { revokedAt: { not: null } }] },
     });
     logger.info(`Cleaned up ${result.count} expired/revoked refresh tokens`);
-  } catch {}
+  } catch { }
 }
 
-async function createUser({ name, email, password, role, branch }) {
+async function createUser({ name, email, password, role, branch, clientCode }) {
   const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
   if (existing) throw new AppError('Email already registered.', 409);
   const validRoles = ['ADMIN', 'OPS_MANAGER', 'STAFF', 'CLIENT'];
   if (role && !validRoles.includes(role)) throw new AppError('Invalid role.', 400);
+
+  // CLIENT role must have a clientCode
+  if (role === 'CLIENT') {
+    if (!clientCode) throw new AppError('clientCode is required for CLIENT role.', 400);
+    const client = await prisma.client.findUnique({ where: { code: clientCode } });
+    if (!client) throw new AppError(`Client with code "${clientCode}" not found.`, 404);
+  }
+
   const hashed = await bcrypt.hash(password, SALT_ROUNDS);
   const user = await prisma.user.create({
     data: {
-      name:     sanitise(name),
-      email:    email.toLowerCase(),
+      name: sanitise(name),
+      email: email.toLowerCase(),
       password: hashed,
-      role:     role || 'STAFF',
-      branch:   sanitise(branch),
+      role: role || 'STAFF',
+      branch: sanitise(branch),
     },
     select: { id: true, name: true, email: true, role: true, branch: true, active: true, createdAt: true },
   });
+
+  // If CLIENT, create the ClientUser bridge record
+  if (role === 'CLIENT' && clientCode) {
+    await prisma.clientUser.create({
+      data: { userId: user.id, clientCode },
+    });
+    logger.info(`ClientUser link created: userId=${user.id} → clientCode=${clientCode}`);
+  }
+
   logger.info(`User created: ${user.email} [${user.role}]`);
-  return user;
+  return { ...user, clientCode: role === 'CLIENT' ? clientCode : undefined };
 }
 
 async function updateUser(id, data) {
   const update = { ...data };
   if (update.password) update.password = await bcrypt.hash(update.password, SALT_ROUNDS);
-  if (update.email)    update.email    = update.email.toLowerCase();
-  if (update.name)     update.name     = sanitise(update.name);
-  if (update.branch)   update.branch   = sanitise(update.branch);
+  if (update.email) update.email = update.email.toLowerCase();
+  if (update.name) update.name = sanitise(update.name);
+  if (update.branch) update.branch = sanitise(update.branch);
   if (update.active === false) await revokeAllUserTokens(parseInt(id));
   return prisma.user.update({
-    where:  { id: parseInt(id) },
-    data:   update,
+    where: { id: parseInt(id) },
+    data: update,
     select: { id: true, name: true, email: true, role: true, branch: true, active: true },
   });
 }
@@ -177,10 +194,20 @@ async function changePassword(userId, currentPassword, newPassword) {
 }
 
 async function getAllUsers() {
-  return prisma.user.findMany({
-    select: { id: true, name: true, email: true, role: true, branch: true, active: true, createdAt: true },
+  const users = await prisma.user.findMany({
+    select: {
+      id: true, name: true, email: true, role: true,
+      branch: true, active: true, createdAt: true,
+      clientProfile: { select: { clientCode: true } },
+    },
     orderBy: { createdAt: 'asc' },
   });
+  // Flatten clientCode to top level for convenience
+  return users.map(u => ({
+    ...u,
+    clientCode: u.clientProfile?.clientCode ?? null,
+    clientProfile: undefined,
+  }));
 }
 
 module.exports = {
