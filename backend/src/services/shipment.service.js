@@ -197,7 +197,36 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery') {
     } catch (e) { logger.warn(`[Tracking] Event log failed: ${e.message}`); }
   }
 
-  return { shipment: updatedShipment, trackingData };
+  return { message: 'Tracking data updated successfully', shipment: updatedShipment };
 }
 
-module.exports = { getAll, getById, create, update, updateStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getMyShipments, scanAwbAndUpdate };
+async function scanAwbBulkAndUpdate(awbs, userId, courier = 'Delhivery') {
+  const results = { successful: [], failed: [] };
+  
+  // Process sequentially to be kind to Courier API rate limits
+  for (const awb of awbs) {
+    try {
+      const data = await scanAwbAndUpdate(awb, userId, courier);
+      results.successful.push({ awb, data: data.shipment });
+    } catch (err) {
+      results.failed.push({ awb, error: err.message });
+    }
+  }
+  
+  return results;
+}
+
+module.exports = {
+  getAll,
+  getById,
+  create,
+  update,
+  updateStatus,
+  remove,
+  bulkImport,
+  getTodayStats,
+  getMonthlyStats,
+  getMyShipments,
+  scanAwbAndUpdate,
+  scanAwbBulkAndUpdate
+};

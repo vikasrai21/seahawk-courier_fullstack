@@ -73,4 +73,13 @@ const scanAwb = asyncHandler(async (req, res) => {
   R.ok(res, result, 'AWB scanned and updated successfully');
 });
 
-module.exports = { getAll, getOne, create, update, patchStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getValidStatuses, scanAwb };
+const scanAwbBulk = asyncHandler(async (req, res) => {
+  const result = await svc.scanAwbBulkAndUpdate(req.body.awbs, req.user?.id, req.body.courier);
+  await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'SCAN_AWB_BULK', entity: 'SHIPMENT', newValue: { totalScanned: req.body.awbs.length, successes: result.successful.length }, ip: req.ip });
+  R.ok(res, result, 'Bulk AWB scan completed');
+});
+
+module.exports = { getAll, getOne, create, update, patchStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getValidStatuses, deleteShipment: remove,
+  scanAwb,
+  scanAwbBulk
+};

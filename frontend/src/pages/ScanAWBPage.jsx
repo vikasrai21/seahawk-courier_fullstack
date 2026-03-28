@@ -9,6 +9,8 @@ export default function ScanAWBPage() {
   const { isAdmin, hasRole } = useAuth();
   const canScan = isAdmin || hasRole('OPS_MANAGER') || hasRole('STAFF');
   const [awb, setAwb] = useState('');
+  const [bulkText, setBulkText] = useState('');
+  const [scanMode, setScanMode] = useState('single');
   const [courier, setCourier] = useState('Delhivery');
   const [loading, setLoading] = useState(false);
   const [recentScans, setRecentScans] = useState([]);
@@ -21,32 +23,57 @@ export default function ScanAWBPage() {
 
   const handleScan = async (e) => {
     e.preventDefault();
-    const currentAwb = awb.trim();
-    if (!currentAwb) return;
-
-    setLoading(true);
-    setAwb(''); // Clear input for next scan immediately
-
-    try {
-      const res = await api.post('/shipments/scan', { awb: currentAwb, courier });
-      toast(`AWB scanned via ${courier} successfully`, 'success');
+    if (scanMode === 'single') {
+      const currentAwb = awb.trim();
+      if (!currentAwb) return;
+  
+      setLoading(true);
+      setAwb(''); // Clear input for next scan immediately
+  
+      try {
+        const res = await api.post('/shipments/scan', { awb: currentAwb, courier });
+        toast(`AWB scanned via ${courier} successfully`, 'success');
+        
+        setRecentScans(prev => [
+          { awb: currentAwb, courier, status: 'success', data: res.data.shipment, timestamp: new Date() },
+          ...prev
+        ].slice(0, 50));
+  
+      } catch (err) {
+        toast(err.message, 'error');
+        setRecentScans(prev => [
+          { awb: currentAwb, courier, status: 'error', error: err.message, timestamp: new Date() },
+          ...prev
+        ].slice(0, 50));
+      } finally {
+        setLoading(false);
+        inputRef.current?.focus();
+      }
+    } else {
+      const awbList = bulkText.split(/[\n,]+/).map(a => a.trim()).filter(Boolean);
+      if (!awbList.length) return;
       
-      // Add to recent scans list (keep last 10)
-      setRecentScans(prev => [
-        { awb: currentAwb, courier, status: 'success', data: res.data.shipment, timestamp: new Date() },
-        ...prev
-      ].slice(0, 10));
-
-    } catch (err) {
-      toast(err.message, 'error');
-      setRecentScans(prev => [
-        { awb: currentAwb, status: 'error', error: err.message, timestamp: new Date() },
-        ...prev
-      ].slice(0, 10));
-    } finally {
-      setLoading(false);
-      // Re-focus after scan
-      inputRef.current?.focus();
+      setLoading(true);
+      setBulkText(''); // Clear text area
+  
+      try {
+        const res = await api.post('/shipments/scan-bulk', { awbs: awbList, courier });
+        toast(`Bulk scan completed (${res.data.successful.length} success, ${res.data.failed.length} failed)`, 'success');
+        
+        const newScans = [];
+        for (const s of res.data.successful) {
+           newScans.push({ awb: s.awb, courier, status: 'success', data: s.data, timestamp: new Date() });
+        }
+        for (const f of res.data.failed) {
+           newScans.push({ awb: f.awb, courier, status: 'error', error: f.error, timestamp: new Date() });
+        }
+        
+        setRecentScans(prev => [...newScans, ...prev].slice(0, 100));
+      } catch (err) {
+        toast(err.message, 'error');
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -67,38 +94,74 @@ export default function ScanAWBPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
-        <form onSubmit={handleScan} className="flex flex-col md:flex-row gap-3">
-          <select 
-            className="input md:w-48 text-lg py-3 px-4 font-semibold text-gray-700 h-auto"
-            value={courier}
-            onChange={(e) => setCourier(e.target.value)}
-            disabled={loading}
+        
+        {/* Tabs for mode selection */}
+        <div className="flex border-b border-gray-200 mb-5">
+          <button 
+            type="button"
+            className={`px-4 py-2 font-semibold text-sm border-b-2 transition-colors ${scanMode === 'single' ? 'border-orange-500 text-orange-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+            onClick={() => { setScanMode('single'); setTimeout(() => inputRef.current?.focus(), 50); }}
           >
-            <option value="Delhivery">Delhivery</option>
-            <option value="Trackon">Trackon (Prime Track)</option>
-            <option value="DTDC">DTDC</option>
-          </select>
-          <input
-            ref={inputRef}
-            type="text"
-            className="input flex-1 text-lg py-3 px-4 font-mono h-auto"
-            placeholder={`Scan ${courier} AWB...`}
-            value={awb}
-            onChange={(e) => setAwb(e.target.value)}
-            disabled={loading}
-            autoFocus
-          />
+            Single Scan
+          </button>
+          <button 
+            type="button"
+            className={`px-4 py-2 font-semibold text-sm border-b-2 transition-colors ${scanMode === 'bulk' ? 'border-orange-500 text-orange-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+            onClick={() => setScanMode('bulk')}
+          >
+            Bulk Paste (Excel)
+          </button>
+        </div>
+
+        <form onSubmit={handleScan} className="flex flex-col gap-4">
+          <div className="flex flex-col md:flex-row gap-3">
+            <select 
+              className="input md:w-48 text-lg py-3 px-4 font-semibold text-gray-700 h-auto"
+              value={courier}
+              onChange={(e) => setCourier(e.target.value)}
+              disabled={loading}
+            >
+              <option value="Delhivery">Delhivery</option>
+              <option value="Trackon">Trackon (Prime Track)</option>
+              <option value="DTDC">DTDC</option>
+            </select>
+            
+            {scanMode === 'single' ? (
+              <input
+                ref={inputRef}
+                type="text"
+                className="input flex-1 text-lg py-3 px-4 font-mono h-auto"
+                placeholder={`Scan ${courier} AWB...`}
+                value={awb}
+                onChange={(e) => setAwb(e.target.value)}
+                disabled={loading}
+                autoFocus
+              />
+            ) : (
+              <textarea
+                className="input flex-1 text-sm py-3 px-4 font-mono min-h-[120px]"
+                placeholder={`Paste multiple ${courier} AWBs here (one per line or comma-separated)...`}
+                value={bulkText}
+                onChange={(e) => setBulkText(e.target.value)}
+                disabled={loading}
+              />
+            )}
+          </div>
+          
           <button 
             type="submit" 
-            className="btn-primary py-3 px-6 h-auto md:w-auto w-full flex items-center justify-center gap-2"
-            disabled={loading || !awb.trim()}
+            className="btn-primary py-3 px-6 h-auto w-full md:w-auto md:self-end flex items-center justify-center gap-2"
+            disabled={loading || (scanMode === 'single' ? !awb.trim() : !bulkText.trim())}
           >
             {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ScanLine className="w-5 h-5" />}
-            Scan
+            {scanMode === 'single' ? 'Scan AWB' : 'Process Bulk Scans'}
           </button>
         </form>
-        <p className="text-[10px] text-gray-400 mt-2">
-          Select the correct courier before scanning. Make sure your scanner sends an "Enter" suffix.
+        
+        <p className="text-[10px] text-gray-400 mt-3">
+          {scanMode === 'single' 
+            ? 'Make sure your barcode scanner is configured to send an "Enter" suffix.' 
+            : 'Copy and paste a column of AWBs directly from Excel. Up to 200 AWBs per request.'}
         </p>
       </div>
 
