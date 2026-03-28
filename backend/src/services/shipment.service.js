@@ -5,6 +5,15 @@ const stateMachine = require('./stateMachine');
 const walletSvc    = require('./wallet.service');
 const notify       = require('./notification.service');
 const logger       = require('../utils/logger');
+const delhiverySvc = require('./delhivery.service');
+const trackonSvc   = require('./trackon.service');
+const dtdcSvc      = require('./dtdc.service');
+
+const COURIERS = {
+  'Delhivery': delhiverySvc,
+  'Trackon': trackonSvc,
+  'DTDC': dtdcSvc
+};
 
 function buildFilters({ client, courier, status, dateFrom, dateTo, q }) {
   const where = {};
@@ -155,4 +164,40 @@ async function getMyShipments(clientCode, { page = 1, limit = 25, search, status
   return { shipments, pagination: { total, page: parseInt(page), limit: parseInt(limit) } };
 }
 
-module.exports = { getAll, getById, create, update, updateStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getMyShipments };
+async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery') {
+  let shipment = await prisma.shipment.findUnique({ where: { awb } });
+  
+  if (!shipment) {
+     throw new AppError(`Shipment with AWB ${awb} not found. Please ensure it is synced from Excel first.`, 404);
+  }
+
+  const tracker = COURIERS[courier] || COURIERS['Delhivery'];
+
+  const trackingData = await tracker.getTracking(awb);
+  if (!trackingData) {
+    throw new AppError(`Could not fetch tracking data for AWB ${awb} from ${courier} API. Please check your tracking number or API credentials.`, 400);
+  }
+
+  const updateData = { updatedById: userId };
+  
+  if (trackingData.recipient) updateData.consignee = trackingData.recipient.toUpperCase();
+  if (trackingData.destination) updateData.destination = trackingData.destination.toUpperCase();
+  if (trackingData.status && trackingData.status !== 'Booked') updateData.status = trackingData.status;
+  updateData.courier = courier;
+
+  const updatedShipment = await prisma.shipment.update({
+    where: { awb },
+    data: updateData,
+    include: { client: { select: { company: true } } }
+  });
+
+  if (trackingData.status && trackingData.status !== shipment.status) {
+    try {
+      await prisma.trackingEvent.create({ data: { shipmentId: updatedShipment.id, awb, status: trackingData.status, description: 'Scanned and updated from API', timestamp: new Date(), source: 'API' } });
+    } catch (e) { logger.warn(`[Tracking] Event log failed: ${e.message}`); }
+  }
+
+  return { shipment: updatedShipment, trackingData };
+}
+
+module.exports = { getAll, getById, create, update, updateStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getMyShipments, scanAwbAndUpdate };

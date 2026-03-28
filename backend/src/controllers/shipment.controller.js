@@ -67,4 +67,10 @@ const getMonthlyStats = asyncHandler(async (req, res) => {
   R.ok(res, rows);
 });
 
-module.exports = { getAll, getOne, create, update, patchStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getValidStatuses };
+const scanAwb = asyncHandler(async (req, res) => {
+  const result = await svc.scanAwbAndUpdate(req.body.awb, req.user?.id, req.body.courier);
+  await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'SCAN_AWB', entity: 'SHIPMENT', entityId: result.shipment?.id, newValue: result, ip: req.ip });
+  R.ok(res, result, 'AWB scanned and updated successfully');
+});
+
+module.exports = { getAll, getOne, create, update, patchStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getValidStatuses, scanAwb };

@@ -39,6 +39,7 @@ import ReconciliationPage  from './pages/ReconciliationPage';
 import RateManagementPage  from './pages/RateManagementPage';
 import WhatsAppPage        from './pages/WhatsAppPage';
 import ShipmentDashboardPage from './pages/ShipmentDashboardPage';
+import ScanAWBPage           from './pages/ScanAWBPage';
 import NDRPage             from './pages/NDRPage';
 import PickupSchedulerPage from './pages/PickupSchedulerPage';
 import WalletPage          from './pages/WalletPage';
@@ -121,6 +122,7 @@ function AppRoutes() {
                   <Route path="/quotes"    element={<QuoteHistoryPage      {...p} />} />
                   <Route path="/whatsapp"  element={<WhatsAppPage          {...p} />} />
                   <Route path="/sync"      element={<SyncPage              {...p} />} />
+                  <Route path="/scan"      element={<ScanAWBPage           {...p} />} />
                   <Route path="/profile"   element={<ProfilePage           {...p} />} />
                   <Route path="/shipments" element={<ShipmentDashboardPage {...p} />} />
                   <Route path="/wallet"    element={<PrivateRoute roles={['ADMIN','OPS_MANAGER']}><WalletPage {...p} /></PrivateRoute>} />

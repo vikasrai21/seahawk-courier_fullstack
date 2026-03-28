@@ -23,6 +23,7 @@ const shipmentSchema = z.object({
 
 const updateShipmentSchema = shipmentSchema.partial();
 const statusUpdateSchema   = z.object({ status: z.enum(STATUSES) });
+const scanAwbSchema        = z.object({ awb: z.string().min(1, 'AWB is required').trim(), courier: z.enum(['Delhivery','Trackon','DTDC']).default('Delhivery') });
 
 const importSchema = z.object({
   shipments: z.array(z.object({
@@ -79,4 +80,4 @@ const invoiceSchema = z.object({
   notes:      optStr.optional(),
 });
 
-module.exports = { shipmentSchema, updateShipmentSchema, statusUpdateSchema, importSchema, clientSchema, contractSchema, invoiceSchema };
+module.exports = { shipmentSchema, updateShipmentSchema, statusUpdateSchema, scanAwbSchema, importSchema, clientSchema, contractSchema, invoiceSchema };

@@ -9,7 +9,7 @@ import {
   LogOut, UserCircle, Menu, X, ChevronRight, FileText,
   Receipt, ScrollText, Calculator, Activity, Layers,
   CreditCard, GitCompare, Shield, Settings2, MessageCircle,
-  Sun, Moon
+  Sun, Moon, ScanLine
 } from 'lucide-react';
 import { useState } from 'react';
 import { usePWA } from '../../hooks/usePWA';
@@ -43,7 +43,8 @@ const navGroups = [
   {
     label: 'Shipments',
     items: [
-      { to: '/app/shipments', label: 'Shipment Dashboard',  icon: Layers, badge: 'NEW' },
+      { to: '/app/scan',      label: 'Scan AWB',            icon: ScanLine, badge: 'NEW', roles: ['ADMIN','OPS_MANAGER','STAFF'] },
+      { to: '/app/shipments', label: 'Shipment Dashboard',  icon: Layers },
       { to: '/app/all',       label: 'All Shipments',       icon: Package },
       { to: '/app/pending',   label: 'Pending',             icon: Clock },
       { to: '/app/track',     label: 'Track',               icon: Search },

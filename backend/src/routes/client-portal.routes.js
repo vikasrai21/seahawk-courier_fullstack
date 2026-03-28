@@ -19,10 +19,12 @@ router.get('/stats', protect, clientOnly, asyncHandler(async (req, res) => {
   const clientCode = req.user.role === 'ADMIN' ? req.query.clientCode : await getClientCode(req.user.id);
   if (!clientCode) return R.notFound(res, 'Client profile not linked to this account.');
 
+  const todayStr = new Date().toISOString().split('T')[0];
+
   const [total, transit, delivered, client] = await Promise.all([
-    prisma.shipment.count({ where: { clientCode } }),
-    prisma.shipment.count({ where: { clientCode, status: 'InTransit' } }),
-    prisma.shipment.count({ where: { clientCode, status: 'Delivered' } }),
+    prisma.shipment.count({ where: { clientCode, date: { lt: todayStr } } }),
+    prisma.shipment.count({ where: { clientCode, date: { lt: todayStr }, status: 'InTransit' } }),
+    prisma.shipment.count({ where: { clientCode, date: { lt: todayStr }, status: 'Delivered' } }),
     prisma.client.findUnique({ where: { code: clientCode }, select: { walletBalance: true } }),
   ]);
   R.ok(res, { total, transit, delivered, wallet: client?.walletBalance || 0 });
@@ -33,9 +35,10 @@ router.get('/shipments', protect, clientOnly, asyncHandler(async (req, res) => {
   const clientCode = req.user.role === 'ADMIN' ? req.query.clientCode : await getClientCode(req.user.id);
   if (!clientCode) return R.notFound(res, 'Client profile not found.');
 
+  const todayStr = new Date().toISOString().split('T')[0];
   const { page = 1, limit = 25, search, status } = req.query;
   const skip = (parseInt(page) - 1) * parseInt(limit);
-  const where = { clientCode, ...(status && { status }), ...(search && { OR: [
+  const where = { clientCode, date: { lt: todayStr }, ...(status && { status }), ...(search && { OR: [
     { awb:         { contains: search, mode: 'insensitive' } },
     { consignee:   { contains: search, mode: 'insensitive' } },
     { destination: { contains: search, mode: 'insensitive' } },
