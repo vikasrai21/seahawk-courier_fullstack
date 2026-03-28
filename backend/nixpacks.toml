@@ -1,8 +1,14 @@
-    [phases.install]
-cmds = ["npm install"]
+[phases.install]
+cmds = [
+  "npm install",
+  "cd ../frontend && npm ci"
+]
 
 [phases.build]
-cmds = ["npx prisma generate"]
+cmds = [
+  "cd ../frontend && npm run build",
+  "npx prisma generate"
+]
 
 [start]
-cmd = "node server.js"
+cmd = "npx prisma migrate deploy && node server.js"
