@@ -1,6 +1,6 @@
-// AllShipmentsPage.jsx — Enhanced with bulk status update + quick inline status
-import { useState, useEffect, useCallback } from 'react';
-import { Search, Filter, Edit2, Trash2, X, CheckSquare, Square, ChevronDown, RefreshCw, Clock } from 'lucide-react';
+// AllShipmentsPage.jsx — Enhanced with bulk status update + quick inline status + barcode scanner
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Search, Filter, Edit2, Trash2, X, CheckSquare, Square, ChevronDown, RefreshCw, Clock, Scan, Zap } from 'lucide-react';
 import api from '../services/api';
 import { StatusBadge, STATUSES } from '../components/ui/StatusBadge';
 import { PageLoader, EmptyState } from '../components/ui/Loading';
@@ -17,6 +17,84 @@ const STATUS_TRANSITIONS = {
   'Failed':           ['In Transit', 'RTO'],
   'RTO':              ['RTO Delivered', 'In Transit'],
 };
+
+// ── Barcode Scanner Bar ───────────────────────────────────────────────────
+function BarcodeScanner({ onScan, scanning, lastScanned }) {
+  const inputRef = useRef(null);
+  const [value, setValue] = useState('');
+  const [pulse, setPulse] = useState(false);
+
+  // Auto-focus the input when scanner bar is visible
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  // Hardware scanners type fast and hit Enter — this handles both
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && value.trim()) {
+      onScan(value.trim());
+      setPulse(true);
+      setValue('');
+      setTimeout(() => setPulse(false), 600);
+    }
+  };
+
+  return (
+    <div className={`mb-4 rounded-xl border-2 transition-all duration-300 ${
+      pulse ? 'border-green-400 bg-green-50' : 'border-blue-200 bg-blue-50'
+    }`}>
+      <div className="flex items-center gap-3 px-4 py-3">
+        {/* Animated scan icon */}
+        <div className={`flex-shrink-0 ${scanning ? 'text-green-500' : 'text-blue-400'}`}>
+          {scanning
+            ? <RefreshCw className="w-5 h-5 animate-spin" />
+            : <Scan className={`w-5 h-5 ${pulse ? 'text-green-500' : ''}`} />
+          }
+        </div>
+
+        {/* Input */}
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Scan barcode or type AWB number and press Enter…"
+          className="flex-1 bg-transparent outline-none text-sm font-mono text-gray-700 placeholder-blue-300"
+          autoComplete="off"
+          spellCheck={false}
+        />
+
+        {/* Submit button (for manual typing) */}
+        {value.trim() && (
+          <button
+            onClick={() => { onScan(value.trim()); setValue(''); }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Zap className="w-3 h-3" /> Search
+          </button>
+        )}
+
+        {/* Last scanned result */}
+        {lastScanned && !value && (
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-gray-400">Last:</span>
+            <span className="font-mono font-bold text-gray-600">{lastScanned.awb}</span>
+            <span className={`px-2 py-0.5 rounded-full font-semibold ${
+              lastScanned.found ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+            }`}>
+              {lastScanned.found ? '✓ Found' : '✗ Not found'}
+            </span>
+          </div>
+        )}
+
+        <div className="flex-shrink-0 text-xs text-blue-300 hidden sm:block">
+          Hardware scanner ready · Press Enter
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Inline quick status component ─────────────────────────────────────────
 function QuickStatus({ shipment, onUpdate }) {
@@ -85,7 +163,6 @@ function TimelineModal({ shipment, onClose }) {
   return (
     <Modal open onClose={onClose} title={`Timeline — ${shipment.awb}`}>
       <div className="space-y-4">
-        {/* Visual progress bar */}
         <div className="flex items-center justify-between relative">
           <div className="absolute top-4 left-0 right-0 h-0.5 bg-gray-200 z-0" />
           {STEPS.map((step, i) => (
@@ -102,7 +179,6 @@ function TimelineModal({ shipment, onClose }) {
           ))}
         </div>
 
-        {/* Event list */}
         {loading ? (
           <div className="text-center py-4 text-gray-400 text-sm">Loading events...</div>
         ) : events.length === 0 ? (
@@ -130,7 +206,6 @@ function TimelineModal({ shipment, onClose }) {
           </div>
         )}
 
-        {/* Shipment details */}
         <div className="bg-gray-50 rounded-lg p-3 text-xs grid grid-cols-2 gap-2">
           <div><span className="text-gray-400">Client:</span> <span className="font-semibold">{shipment.clientCode}</span></div>
           <div><span className="text-gray-400">Courier:</span> <span className="font-semibold">{shipment.courier || '—'}</span></div>
@@ -149,10 +224,6 @@ function BulkStatusModal({ selectedIds, selectedShipments, onDone, onClose, toas
   const [status, setStatus]   = useState('');
   const [saving, setSaving]   = useState(false);
   const [result, setResult]   = useState(null);
-
-  // Find common valid transitions
-  const uniqueStatuses = [...new Set(selectedShipments.map(s => s.status))];
-  const commonTransitions = STATUSES.filter(s => s !== 'Booked'); // allow any non-terminal for bulk
 
   const apply = async () => {
     if (!status) { toast?.('Select a status', 'error'); return; }
@@ -201,16 +272,96 @@ function BulkStatusModal({ selectedIds, selectedShipments, onDone, onClose, toas
   );
 }
 
+// ── Scanned Shipment Detail Modal ─────────────────────────────────────────
+function ScannedShipmentModal({ shipment, onClose, onStatusUpdate, toast }) {
+  const transitions = STATUS_TRANSITIONS[shipment.status] || [];
+  const [saving, setSaving] = useState(false);
+
+  const update = async (newStatus) => {
+    setSaving(true);
+    try {
+      await api.patch(`/shipments/${shipment.id}/status`, { status: newStatus });
+      onStatusUpdate(shipment.id, newStatus);
+      toast?.(`Status updated to ${newStatus}`, 'success');
+      onClose();
+    } catch (err) {
+      toast?.(err.message, 'error');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Modal open onClose={onClose} title={`📦 Scanned — ${shipment.awb}`}>
+      <div className="space-y-4">
+        {/* Big status display */}
+        <div className="text-center py-3 bg-gray-50 rounded-xl">
+          <div className="text-xs text-gray-400 mb-1">Current Status</div>
+          <StatusBadge status={shipment.status} />
+        </div>
+
+        {/* Shipment info */}
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="bg-white border border-gray-100 rounded-lg p-3">
+            <div className="text-xs text-gray-400">Client</div>
+            <div className="font-bold">{shipment.clientCode}</div>
+            <div className="text-xs text-gray-500">{shipment.client?.company}</div>
+          </div>
+          <div className="bg-white border border-gray-100 rounded-lg p-3">
+            <div className="text-xs text-gray-400">Courier</div>
+            <div className="font-bold">{shipment.courier || '—'}</div>
+            <div className="text-xs text-gray-500">{shipment.service}</div>
+          </div>
+          <div className="bg-white border border-gray-100 rounded-lg p-3">
+            <div className="text-xs text-gray-400">Consignee</div>
+            <div className="font-bold text-xs">{shipment.consignee}</div>
+            <div className="text-xs text-gray-500">{shipment.destination}</div>
+          </div>
+          <div className="bg-white border border-gray-100 rounded-lg p-3">
+            <div className="text-xs text-gray-400">Amount / Weight</div>
+            <div className="font-bold">{fmt(shipment.amount)}</div>
+            <div className="text-xs text-gray-500">{shipment.weight} kg</div>
+          </div>
+        </div>
+
+        {/* Quick status update buttons */}
+        {transitions.length > 0 && (
+          <div>
+            <div className="text-xs text-gray-400 mb-2 font-semibold">QUICK UPDATE STATUS</div>
+            <div className="flex flex-wrap gap-2">
+              {transitions.map(s => (
+                <button
+                  key={s}
+                  onClick={() => update(s)}
+                  disabled={saving}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                >
+                  → {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────
 export default function AllShipmentsPage({ toast }) {
-  const [shipments,    setShipments]    = useState([]);
-  const [loading,      setLoading]      = useState(true);
-  const [filters,      setFilters]      = useState({ q: '', status: '', courier: '', date_from: '', date_to: '' });
-  const [editShip,     setEditShip]     = useState(null);
-  const [timeline,     setTimeline]     = useState(null);
-  const [editLoading,  setEditLoading]  = useState(false);
-  const [total,        setTotal]        = useState(0);
-  const [selected,     setSelected]     = useState(new Set());
-  const [bulkModal,    setBulkModal]    = useState(false);
+  const [shipments,      setShipments]      = useState([]);
+  const [loading,        setLoading]        = useState(true);
+  const [filters,        setFilters]        = useState({ q: '', status: '', courier: '', date_from: '', date_to: '' });
+  const [editShip,       setEditShip]       = useState(null);
+  const [timeline,       setTimeline]       = useState(null);
+  const [editLoading,    setEditLoading]    = useState(false);
+  const [total,          setTotal]          = useState(0);
+  const [selected,       setSelected]       = useState(new Set());
+  const [bulkModal,      setBulkModal]      = useState(false);
+  const [showScanner,    setShowScanner]    = useState(false);
+  const [scanning,       setScanning]       = useState(false);
+  const [lastScanned,    setLastScanned]    = useState(null);   // { awb, found }
+  const [scannedShip,    setScannedShip]    = useState(null);   // shipment to show in modal
+  const [highlightId,    setHighlightId]    = useState(null);   // row to highlight
+  const rowRefs = useRef({});                                    // refs for auto-scroll
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -226,6 +377,47 @@ export default function AllShipmentsPage({ toast }) {
   }, [filters]);
 
   useEffect(() => { load(); }, [load]);
+
+  // ── Barcode scan handler ────────────────────────────────────────────────
+  const handleScan = useCallback(async (awb) => {
+    setScanning(true);
+    try {
+      // First check if it's already in the loaded list (instant)
+      const existing = shipments.find(s =>
+        s.awb?.toLowerCase() === awb.toLowerCase()
+      );
+
+      if (existing) {
+        // Found in current list — highlight and scroll to row
+        setHighlightId(existing.id);
+        setLastScanned({ awb, found: true });
+        setScannedShip(existing);
+        setTimeout(() => {
+          rowRefs.current[existing.id]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+        setTimeout(() => setHighlightId(null), 3000);
+      } else {
+        // Not in current filtered list — fetch from API
+        const res = await api.get(`/shipments?q=${encodeURIComponent(awb)}&limit=5`);
+        const results = res.data || res || [];
+        const match = results.find(s => s.awb?.toLowerCase() === awb.toLowerCase()) || results[0];
+
+        if (match) {
+          setLastScanned({ awb, found: true });
+          setScannedShip(match);
+          toast?.(`Found: ${match.awb}`, 'success');
+        } else {
+          setLastScanned({ awb, found: false });
+          toast?.(`AWB "${awb}" not found in your system`, 'error');
+        }
+      }
+    } catch (err) {
+      setLastScanned({ awb, found: false });
+      toast?.(err.message, 'error');
+    } finally {
+      setScanning(false);
+    }
+  }, [shipments, toast]);
 
   const handleDelete = async (s) => {
     if (!confirm(`Delete AWB ${s.awb}?`)) return;
@@ -255,7 +447,6 @@ export default function AllShipmentsPage({ toast }) {
   const clearFilters = () => setFilters({ q: '', status: '', courier: '', date_from: '', date_to: '' });
   const hasFilters = Object.values(filters).some(Boolean);
 
-  // ── Selection ────────────────────────────────────────────────────────────
   const toggleSelect = (id) => {
     setSelected(prev => {
       const next = new Set(prev);
@@ -279,18 +470,42 @@ export default function AllShipmentsPage({ toast }) {
           <h1 className="text-2xl font-bold text-gray-900">All Shipments</h1>
           <p className="text-sm text-gray-500 mt-0.5">{total} records</p>
         </div>
-        {selected.size > 0 && (
-          <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">
-            <span className="text-sm font-bold text-blue-700">{selected.size} selected</span>
-            <button onClick={() => setBulkModal(true)} className="btn-primary btn-sm">
-              🔄 Bulk Update Status
-            </button>
-            <button onClick={() => setSelected(new Set())} className="text-blue-400 hover:text-blue-600">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Scanner toggle button */}
+          <button
+            onClick={() => setShowScanner(s => !s)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold border transition-all ${
+              showScanner
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'
+            }`}
+          >
+            <Scan className="w-4 h-4" />
+            {showScanner ? 'Scanner On' : 'Scan AWB'}
+          </button>
+
+          {selected.size > 0 && (
+            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">
+              <span className="text-sm font-bold text-blue-700">{selected.size} selected</span>
+              <button onClick={() => setBulkModal(true)} className="btn-primary btn-sm">
+                🔄 Bulk Update Status
+              </button>
+              <button onClick={() => setSelected(new Set())} className="text-blue-400 hover:text-blue-600">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Barcode Scanner Bar — shown when toggled */}
+      {showScanner && (
+        <BarcodeScanner
+          onScan={handleScan}
+          scanning={scanning}
+          lastScanned={lastScanned}
+        />
+      )}
 
       {/* Filters */}
       <div className="card mb-4">
@@ -317,7 +532,7 @@ export default function AllShipmentsPage({ toast }) {
         </div>
       </div>
 
-      {/* Totals + selection info */}
+      {/* Totals */}
       {shipments.length > 0 && (
         <div className="flex gap-4 mb-3 text-sm text-gray-600 flex-wrap">
           <span>📦 <strong>{shipments.length}</strong> shown</span>
@@ -349,8 +564,13 @@ export default function AllShipmentsPage({ toast }) {
             </thead>
             <tbody>
               {shipments.map(s => (
-                <tr key={s.id}
-                  className={`hover:bg-gray-50 transition-colors cursor-pointer ${selected.has(s.id) ? 'bg-blue-50' : ''}`}
+                <tr
+                  key={s.id}
+                  ref={el => rowRefs.current[s.id] = el}
+                  className={`hover:bg-gray-50 transition-colors cursor-pointer ${
+                    selected.has(s.id) ? 'bg-blue-50' :
+                    highlightId === s.id ? 'bg-yellow-50 ring-2 ring-yellow-400 ring-inset' : ''
+                  }`}
                   onClick={() => toggleSelect(s.id)}
                 >
                   <td onClick={e => e.stopPropagation()}>
@@ -361,7 +581,10 @@ export default function AllShipmentsPage({ toast }) {
                     </button>
                   </td>
                   <td className="text-xs text-gray-500">{s.date}</td>
-                  <td className="font-mono font-bold text-xs text-navy-700">{s.awb}</td>
+                  <td className={`font-mono font-bold text-xs ${highlightId === s.id ? 'text-yellow-700' : 'text-navy-700'}`}>
+                    {s.awb}
+                    {highlightId === s.id && <span className="ml-1 text-yellow-500">◀</span>}
+                  </td>
                   <td className="text-xs font-semibold">{s.clientCode}<br /><span className="font-normal text-gray-400">{s.client?.company}</span></td>
                   <td className="text-xs max-w-[100px] truncate">{s.consignee}</td>
                   <td className="text-xs">{s.destination}</td>
@@ -389,6 +612,19 @@ export default function AllShipmentsPage({ toast }) {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Scanned shipment detail modal */}
+      {scannedShip && (
+        <ScannedShipmentModal
+          shipment={scannedShip}
+          onClose={() => setScannedShip(null)}
+          onStatusUpdate={(id, status) => {
+            handleQuickStatusUpdate(id, status);
+            setScannedShip(null);
+          }}
+          toast={toast}
+        />
       )}
 
       {/* Bulk status modal */}

@@ -20,9 +20,9 @@ function issueCsrfCookie(req, res, next) {
     const token = generateToken();
     res.cookie(CSRF_COOKIE, token, {
       httpOnly: false,    // Must be readable by JS to send in header
-      secure:   process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
-      maxAge:   24 * 60 * 60 * 1000, // 24h
+      maxAge: 24 * 60 * 60 * 1000, // 24h
     });
   }
   next();
@@ -33,13 +33,15 @@ function issueCsrfCookie(req, res, next) {
 function validateCsrf(req, res, next) {
   // Skip safe methods
   if (SAFE_METHODS.has(req.method)) return next();
+  // Skip public routes — no auth required
+  if (req.path.startsWith('/public/')) return next();
   // Skip if using Bearer token auth (not cookie-based)
   if (req.headers.authorization?.startsWith('Bearer ')) return next();
   // Skip if no refresh token cookie (not a cookie-auth session)
   if (!req.cookies?.refreshToken) return next();
 
-  const cookieToken  = req.cookies?.[CSRF_COOKIE];
-  const headerToken  = req.headers[CSRF_HEADER];
+  const cookieToken = req.cookies?.[CSRF_COOKIE];
+  const headerToken = req.headers[CSRF_HEADER];
 
   if (!cookieToken || !headerToken || cookieToken !== headerToken) {
     logger.warn('CSRF validation failed', { ip: req.ip, path: req.path, method: req.method });

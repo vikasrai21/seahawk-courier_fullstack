@@ -3,7 +3,32 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import PublicLayout from './PublicLayout';
 
+const STEPS = ['Your Details', 'Pickup Address', 'Delivery', 'Package', 'Schedule'];
+
+const inputStyle = {
+  width: '100%', padding: '10px 14px', borderRadius: 8,
+  border: '1.5px solid #e2e8f0', fontSize: 14, color: '#0f172a',
+  background: '#fff', outline: 'none', fontFamily: 'inherit',
+  transition: 'border-color 0.2s', boxSizing: 'border-box',
+};
+const labelStyle = {
+  display: 'block', fontSize: 11, fontWeight: 700,
+  color: '#64748b', textTransform: 'uppercase',
+  letterSpacing: '0.07em', marginBottom: 6,
+};
+const sectionStyle = {
+  padding: '18px 24px',
+  borderBottom: '1px solid #f1f5f9',
+  background: '#f8fafc',
+  display: 'flex', alignItems: 'center', gap: 10,
+};
+
 export default function BookPage() {
+  const [step, setStep] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [submitted, setSubmitted] = useState(null); // null | { requestNo, whatsappUrl }
+  const [error, setError] = useState('');
+
   const [form, setForm] = useState({
     name: '', company: '', phone: '', email: '',
     pickupAddress: '', pickupCity: '', pickupPin: '',
@@ -13,235 +38,321 @@ export default function BookPage() {
     preferredDate: '', preferredTime: 'Morning (9am–12pm)',
     notes: '',
   });
-  const [submitted, setSubmitted] = useState(false);
 
-  function handleChange(e) {
-    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  function set(field, val) { setForm(p => ({ ...p, [field]: val })); }
+  function handle(e) { set(e.target.name, e.target.value); }
+
+  function inp(id, label, opts = {}) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <label style={labelStyle}>{label}</label>
+        <input
+          id={id} name={id}
+          value={form[id]} onChange={handle}
+          style={inputStyle}
+          onFocus={e => e.target.style.borderColor = '#f97316'}
+          onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+          {...opts}
+        />
+      </div>
+    );
   }
 
-  function handleSubmit(e) {
+  function sel(id, label, options) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <label style={labelStyle}>{label}</label>
+        <select
+          id={id} name={id} value={form[id]} onChange={handle}
+          style={{ ...inputStyle, cursor: 'pointer' }}
+          onFocus={e => e.target.style.borderColor = '#f97316'}
+          onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+        >
+          {options.map(o => <option key={o}>{o}</option>)}
+        </select>
+      </div>
+    );
+  }
+
+  // Validate current step before proceeding
+  function validateStep() {
+    if (step === 0 && (!form.name || !form.phone)) return 'Name and phone are required.';
+    if (step === 1 && (!form.pickupAddress || !form.pickupCity || !form.pickupPin)) return 'All pickup fields are required.';
+    if (step === 2 && (!form.destination || !form.destCity)) return 'Delivery destination is required.';
+    if (step === 3 && !form.weight) return 'Please enter the package weight.';
+    if (step === 4 && !form.preferredDate) return 'Please select a preferred date.';
+    return '';
+  }
+
+  function next() {
+    const err = validateStep();
+    if (err) { setError(err); return; }
+    setError('');
+    setStep(s => s + 1);
+  }
+
+  function back() { setError(''); setStep(s => s - 1); }
+
+  async function handleSubmit(e) {
     e.preventDefault();
-    const msg = `📦 PICKUP REQUEST — Sea Hawk
-
-Name: ${form.name}${form.company ? `\nCompany: ${form.company}` : ''}
-Phone: ${form.phone}${form.email ? `\nEmail: ${form.email}` : ''}
-
-PICKUP:
-Address: ${form.pickupAddress}
-City: ${form.pickupCity} — PIN: ${form.pickupPin}
-
-DELIVERY:
-Destination: ${form.destination}
-City: ${form.destCity}, ${form.destCountry}
-
-PACKAGE:
-Type: ${form.packageType}
-Weight: ${form.weight} kg · Pieces: ${form.pieces}
-Service: ${form.service}${form.declaredValue ? `\nDeclared Value: ₹${form.declaredValue}` : ''}
-
-DATE: ${form.preferredDate} · ${form.preferredTime}
-${form.notes ? `Notes: ${form.notes}` : ''}`;
-    window.open(`https://wa.me/919911565523?text=${encodeURIComponent(msg)}`, '_blank');
-    setSubmitted(true);
+    const err = validateStep();
+    if (err) { setError(err); return; }
+    setLoading(true); setError('');
+    try {
+      const res = await fetch('/api/public/pickup-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message || 'Submission failed.');
+      setSubmitted(json.data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   }
 
+  // ── Success screen ─────────────────────────────────────────────────────
   if (submitted) {
     return (
       <PublicLayout>
-        <section style={{ minHeight: '60vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-2)' }}>
-          <div style={{ textAlign: 'center', maxWidth: 480, padding: '40px 24px' }}>
-            <div style={{ fontSize: '4rem', marginBottom: 16 }}>✅</div>
-            <h2 style={{ fontFamily: 'var(--font-head)', fontSize: '1.6rem', fontWeight: 900, color: 'var(--ink)', marginBottom: 12 }}>
-              Pickup Request Sent!
-            </h2>
-            <p style={{ color: 'var(--ink-2)', lineHeight: 1.6, marginBottom: 24 }}>
-              Your booking details have been sent via WhatsApp. Our team will confirm within 30 minutes during business hours.
+        <section style={{ minHeight: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', padding: '40px 20px' }}>
+          <div style={{ textAlign: 'center', maxWidth: 520, width: '100%' }}>
+            <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, margin: '0 auto 20px' }}>✅</div>
+            <h2 style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', marginBottom: 8 }}>Pickup Request Submitted!</h2>
+            <p style={{ color: '#64748b', lineHeight: 1.6, marginBottom: 8 }}>
+              Your request has been saved. Our team will confirm within 30 minutes.
             </p>
-            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-              <Link to="/track" style={{ padding: '11px 22px', background: 'var(--navy)', color: '#fff', borderRadius: 'var(--r)', fontWeight: 700, textDecoration: 'none', fontSize: '.875rem' }}>
+            <div style={{ display: 'inline-block', padding: '8px 20px', background: '#f1f5f9', borderRadius: 8, marginBottom: 28 }}>
+              <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Reference Number: </span>
+              <span style={{ fontFamily: 'monospace', fontWeight: 800, color: '#0b1f3a', fontSize: 15 }}>{submitted.requestNo}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
+              <a
+                href={submitted.whatsappUrl} target="_blank" rel="noreferrer"
+                style={{ padding: '12px 22px', background: '#16a34a', color: '#fff', borderRadius: 10, fontWeight: 700, textDecoration: 'none', fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}
+              >
+                💬 Also notify via WhatsApp
+              </a>
+              <Link to="/track" style={{ padding: '12px 22px', background: '#0b1f3a', color: '#fff', borderRadius: 10, fontWeight: 700, textDecoration: 'none', fontSize: 14 }}>
                 🔍 Track a Shipment
               </Link>
-              <button onClick={() => setSubmitted(false)} style={{ padding: '11px 22px', background: '#fff', color: 'var(--ink)', border: '1.5px solid var(--border-l)', borderRadius: 'var(--r)', fontWeight: 700, cursor: 'pointer', fontSize: '.875rem' }}>
-                📦 Book Another
-              </button>
             </div>
+            <button
+              onClick={() => { setSubmitted(null); setStep(0); setForm({ name: '', company: '', phone: '', email: '', pickupAddress: '', pickupCity: '', pickupPin: '', destination: '', destCity: '', destCountry: 'India', packageType: 'Parcel', weight: '', pieces: '1', service: 'Standard', declaredValue: '', preferredDate: '', preferredTime: 'Morning (9am–12pm)', notes: '' }); }}
+              style={{ background: 'none', border: '1.5px solid #e2e8f0', borderRadius: 10, padding: '10px 20px', cursor: 'pointer', fontWeight: 700, color: '#475569', fontSize: 13 }}
+            >
+              📦 Book Another Pickup
+            </button>
           </div>
         </section>
       </PublicLayout>
     );
   }
 
-  const sectionHead = (icon, title) => (
-    <div style={{ padding: '20px 28px', borderBottom: '1px solid var(--border-l)', background: 'var(--navy-faint)' }}>
-      <h3 style={{ fontFamily: 'var(--font-head)', fontWeight: 800, color: 'var(--navy)', margin: 0, fontSize: '1rem' }}>
-        {icon} {title}
-      </h3>
-    </div>
-  );
-
+  // ── Page ───────────────────────────────────────────────────────────────
   return (
     <PublicLayout>
-
       {/* Hero */}
-      <section style={{ background: 'var(--navy)', padding: '60px 0 48px', borderBottom: '3px solid var(--orange)' }}>
+      <section style={{ background: 'var(--navy)', padding: '48px 0 36px', borderBottom: '3px solid var(--orange)' }}>
         <div className="wrap" style={{ textAlign: 'center' }}>
-          <div className="pill pill-orange" style={{ display: 'inline-block', marginBottom: 14 }}>Free Pickup</div>
-          <h1 className="h-display" style={{ color: '#fff', margin: '0 0 12px' }}>
-            Book a <span>Free Pickup</span>
-          </h1>
-          <p style={{ color: 'rgba(255,255,255,.7)', fontSize: '1rem', maxWidth: 480, margin: '0 auto' }}>
-            Fill in the details and we'll confirm your pickup within 30 minutes via WhatsApp.
+          <div className="pill pill-orange" style={{ display: 'inline-block', marginBottom: 12 }}>Free Pickup</div>
+          <h1 className="h-display" style={{ color: '#fff', margin: '0 0 10px' }}>Book a <span>Free Pickup</span></h1>
+          <p style={{ color: 'rgba(255,255,255,.65)', fontSize: '0.95rem', maxWidth: 440, margin: '0 auto' }}>
+            Fill in the details and we'll confirm your pickup within 30 minutes.
           </p>
         </div>
       </section>
 
-      <section className="sec">
-        <div className="wrap" style={{ maxWidth: 760 }}>
-          <form
-            onSubmit={handleSubmit}
-            style={{ background: '#fff', borderRadius: 'var(--r-xl)', border: '1.5px solid var(--border-l)', boxShadow: 'var(--sh-md)', overflow: 'hidden' }}
-          >
+      <section className="sec" style={{ background: '#f8fafc' }}>
+        <div className="wrap" style={{ maxWidth: 680 }}>
 
-            {/* Your Details */}
-            {sectionHead('👤', 'Your Details')}
-            <div style={{ padding: '20px 28px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, borderBottom: '1px solid var(--border-l)' }}>
-              <div className="fg">
-                <label htmlFor="name">Full Name *</label>
-                <input id="name" name="name" value={form.name} onChange={handleChange} placeholder="Your name" required />
+          {/* Step indicators */}
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 28 }}>
+            {STEPS.map((s, i) => (
+              <div key={s} style={{ display: 'flex', alignItems: 'center', flex: i < STEPS.length - 1 ? 1 : 'none' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                  <div style={{
+                    width: 32, height: 32, borderRadius: '50%',
+                    background: i < step ? '#16a34a' : i === step ? '#f97316' : '#e2e8f0',
+                    color: i <= step ? '#fff' : '#94a3b8',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 13, fontWeight: 800,
+                    boxShadow: i === step ? '0 0 0 4px rgba(249,115,22,0.2)' : 'none',
+                    transition: 'all 0.3s',
+                  }}>
+                    {i < step ? '✓' : i + 1}
+                  </div>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: i === step ? '#f97316' : '#94a3b8', whiteSpace: 'nowrap', display: window.innerWidth < 500 ? 'none' : 'block' }}>
+                    {s}
+                  </span>
+                </div>
+                {i < STEPS.length - 1 && (
+                  <div style={{ flex: 1, height: 2, background: i < step ? '#16a34a' : '#e2e8f0', margin: '0 6px 16px', transition: 'background 0.3s' }} />
+                )}
               </div>
-              <div className="fg">
-                <label htmlFor="company">Company (optional)</label>
-                <input id="company" name="company" value={form.company} onChange={handleChange} placeholder="Company name" />
-              </div>
-              <div className="fg">
-                <label htmlFor="phone">Phone *</label>
-                <input id="phone" name="phone" value={form.phone} onChange={handleChange} placeholder="+91 XXXXX XXXXX" required />
-              </div>
-              <div className="fg">
-                <label htmlFor="email">Email (optional)</label>
-                <input id="email" name="email" type="email" value={form.email} onChange={handleChange} placeholder="For invoice" />
-              </div>
-            </div>
+            ))}
+          </div>
 
-            {/* Pickup Address */}
-            {sectionHead('📍', 'Pickup Address')}
-            <div style={{ padding: '20px 28px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, borderBottom: '1px solid var(--border-l)' }}>
-              <div className="fg" style={{ gridColumn: '1/-1' }}>
-                <label htmlFor="pickupAddress">Full Address *</label>
-                <input id="pickupAddress" name="pickupAddress" value={form.pickupAddress} onChange={handleChange} placeholder="Street, area, landmark" required />
-              </div>
-              <div className="fg">
-                <label htmlFor="pickupCity">City *</label>
-                <input id="pickupCity" name="pickupCity" value={form.pickupCity} onChange={handleChange} placeholder="City" required />
-              </div>
-              <div className="fg">
-                <label htmlFor="pickupPin">PIN Code *</label>
-                <input id="pickupPin" name="pickupPin" value={form.pickupPin} onChange={handleChange} placeholder="6-digit PIN" maxLength={6} required />
-              </div>
-            </div>
+          {/* Card */}
+          <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e2e8f0', boxShadow: '0 4px 24px rgba(11,31,58,0.07)', overflow: 'hidden' }}>
 
-            {/* Delivery Details */}
-            {sectionHead('🚚', 'Delivery Details')}
-            <div style={{ padding: '20px 28px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, borderBottom: '1px solid var(--border-l)' }}>
-              <div className="fg" style={{ gridColumn: '1/-1' }}>
-                <label htmlFor="destination">Delivery Address / City *</label>
-                <input id="destination" name="destination" value={form.destination} onChange={handleChange} placeholder="Delivery address or city" required />
-              </div>
-              <div className="fg">
-                <label htmlFor="destCity">Destination City *</label>
-                <input id="destCity" name="destCity" value={form.destCity} onChange={handleChange} placeholder="City" required />
-              </div>
-              <div className="fg">
-                <label htmlFor="destCountry">Country</label>
-                <select id="destCountry" name="destCountry" value={form.destCountry} onChange={handleChange}>
-                  <option>India</option>
-                  <option>UAE</option>
-                  <option>USA</option>
-                  <option>UK</option>
-                  <option>Australia</option>
-                  <option>Canada</option>
-                  <option>Singapore</option>
-                  <option>Other</option>
-                </select>
-              </div>
-            </div>
+            {/* Step 0 — Your Details */}
+            {step === 0 && (
+              <>
+                <div style={sectionStyle}>
+                  <span style={{ fontSize: 20 }}>👤</span>
+                  <div>
+                    <div style={{ fontWeight: 800, color: '#0b1f3a', fontSize: 15 }}>Your Details</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8' }}>Who should we contact for pickup?</div>
+                  </div>
+                </div>
+                <div style={{ padding: '24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  {inp('name', 'Full Name *', { placeholder: 'Your name', required: true })}
+                  {inp('company', 'Company (optional)', { placeholder: 'Company name' })}
+                  {inp('phone', 'Phone *', { placeholder: '+91 XXXXX XXXXX', required: true })}
+                  {inp('email', 'Email (optional)', { placeholder: 'For confirmation', type: 'email' })}
+                </div>
+              </>
+            )}
 
-            {/* Package Details */}
-            {sectionHead('📦', 'Package Details')}
-            <div style={{ padding: '20px 28px', display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, borderBottom: '1px solid var(--border-l)' }}>
-              <div className="fg">
-                <label htmlFor="packageType">Package Type</label>
-                <select id="packageType" name="packageType" value={form.packageType} onChange={handleChange}>
-                  <option>Document</option>
-                  <option>Parcel</option>
-                  <option>Box</option>
-                  <option>Cargo / Heavy</option>
-                </select>
-              </div>
-              <div className="fg">
-                <label htmlFor="weight">Approx Weight (kg) *</label>
-                <input id="weight" name="weight" type="number" value={form.weight} onChange={handleChange} placeholder="e.g. 1.5" min="0.01" step="0.01" required />
-              </div>
-              <div className="fg">
-                <label htmlFor="pieces">No. of Pieces</label>
-                <input id="pieces" name="pieces" type="number" value={form.pieces} onChange={handleChange} min="1" />
-              </div>
-              <div className="fg">
-                <label htmlFor="service">Service Level</label>
-                <select id="service" name="service" value={form.service} onChange={handleChange}>
-                  <option>Standard</option>
-                  <option>Priority Express</option>
-                  <option>Same Day (NCR)</option>
-                  <option>Economy</option>
-                </select>
-              </div>
-              <div className="fg">
-                <label htmlFor="declaredValue">Declared Value (₹)</label>
-                <input id="declaredValue" name="declaredValue" type="number" value={form.declaredValue} onChange={handleChange} placeholder="For insurance" />
-              </div>
-            </div>
+            {/* Step 1 — Pickup Address */}
+            {step === 1 && (
+              <>
+                <div style={sectionStyle}>
+                  <span style={{ fontSize: 20 }}>📍</span>
+                  <div>
+                    <div style={{ fontWeight: 800, color: '#0b1f3a', fontSize: 15 }}>Pickup Address</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8' }}>Where should we collect the package?</div>
+                  </div>
+                </div>
+                <div style={{ padding: '24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div style={{ gridColumn: '1/-1' }}>
+                    {inp('pickupAddress', 'Full Address *', { placeholder: 'Street, area, landmark', required: true })}
+                  </div>
+                  {inp('pickupCity', 'City *', { placeholder: 'City', required: true })}
+                  {inp('pickupPin', 'PIN Code *', { placeholder: '6-digit PIN', maxLength: 6, required: true })}
+                </div>
+              </>
+            )}
 
-            {/* Schedule */}
-            {sectionHead('📅', 'Preferred Schedule')}
-            <div style={{ padding: '20px 28px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, borderBottom: '1px solid var(--border-l)' }}>
-              <div className="fg">
-                <label htmlFor="preferredDate">Preferred Date *</label>
-                <input id="preferredDate" name="preferredDate" type="date" value={form.preferredDate} onChange={handleChange} required />
-              </div>
-              <div className="fg">
-                <label htmlFor="preferredTime">Time Slot</label>
-                <select id="preferredTime" name="preferredTime" value={form.preferredTime} onChange={handleChange}>
-                  <option>Morning (9am–12pm)</option>
-                  <option>Afternoon (12pm–4pm)</option>
-                  <option>Evening (4pm–7pm)</option>
-                </select>
-              </div>
-              <div className="fg" style={{ gridColumn: '1/-1' }}>
-                <label htmlFor="notes">Special Instructions (optional)</label>
-                <textarea
-                  id="notes" name="notes" value={form.notes} onChange={handleChange} rows={3}
-                  placeholder="Fragile items, access instructions, contact at location..."
-                  style={{ resize: 'vertical' }}
-                />
-              </div>
-            </div>
+            {/* Step 2 — Delivery */}
+            {step === 2 && (
+              <>
+                <div style={sectionStyle}>
+                  <span style={{ fontSize: 20 }}>🚚</span>
+                  <div>
+                    <div style={{ fontWeight: 800, color: '#0b1f3a', fontSize: 15 }}>Delivery Details</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8' }}>Where is this shipment going?</div>
+                  </div>
+                </div>
+                <div style={{ padding: '24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div style={{ gridColumn: '1/-1' }}>
+                    {inp('destination', 'Delivery Address / City *', { placeholder: 'Full address or city name', required: true })}
+                  </div>
+                  {inp('destCity', 'Destination City *', { placeholder: 'City', required: true })}
+                  {sel('destCountry', 'Country', ['India', 'UAE', 'USA', 'UK', 'Australia', 'Canada', 'Singapore', 'Other'])}
+                </div>
+              </>
+            )}
 
-            {/* Submit */}
-            <div style={{ padding: '24px 28px' }}>
+            {/* Step 3 — Package */}
+            {step === 3 && (
+              <>
+                <div style={sectionStyle}>
+                  <span style={{ fontSize: 20 }}>📦</span>
+                  <div>
+                    <div style={{ fontWeight: 800, color: '#0b1f3a', fontSize: 15 }}>Package Details</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8' }}>Tell us about your shipment</div>
+                  </div>
+                </div>
+                <div style={{ padding: '24px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+                  {sel('packageType', 'Package Type', ['Document', 'Parcel', 'Box', 'Cargo / Heavy'])}
+                  {inp('weight', 'Weight (kg) *', { type: 'number', placeholder: 'e.g. 1.5', min: '0.01', step: '0.01', required: true })}
+                  {inp('pieces', 'No. of Pieces', { type: 'number', min: '1' })}
+                  {sel('service', 'Service Level', ['Standard', 'Priority Express', 'Same Day (NCR)', 'Economy'])}
+                  {inp('declaredValue', 'Declared Value (₹)', { type: 'number', placeholder: 'For insurance' })}
+                </div>
+              </>
+            )}
+
+            {/* Step 4 — Schedule */}
+            {step === 4 && (
+              <>
+                <div style={sectionStyle}>
+                  <span style={{ fontSize: 20 }}>📅</span>
+                  <div>
+                    <div style={{ fontWeight: 800, color: '#0b1f3a', fontSize: 15 }}>Preferred Schedule</div>
+                    <div style={{ fontSize: 12, color: '#94a3b8' }}>When should we pick it up?</div>
+                  </div>
+                </div>
+                <div style={{ padding: '24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  {inp('preferredDate', 'Preferred Date *', { type: 'date', required: true })}
+                  {sel('preferredTime', 'Time Slot', ['Morning (9am–12pm)', 'Afternoon (12pm–4pm)', 'Evening (4pm–7pm)'])}
+                  <div style={{ gridColumn: '1/-1', display: 'flex', flexDirection: 'column' }}>
+                    <label style={labelStyle}>Special Instructions (optional)</label>
+                    <textarea
+                      name="notes" value={form.notes} onChange={handle} rows={4}
+                      placeholder="Fragile items, gate code, contact at location..."
+                      style={{ ...inputStyle, resize: 'none', lineHeight: 1.6 }}
+                      onFocus={e => e.target.style.borderColor = '#f97316'}
+                      onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Error */}
+            {error && (
+              <div style={{ margin: '0 24px', padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#dc2626', fontSize: 13, fontWeight: 600 }}>
+                ⚠️ {error}
+              </div>
+            )}
+
+            {/* Navigation */}
+            <div style={{ padding: '20px 24px', display: 'flex', gap: 12, borderTop: '1px solid #f1f5f9' }}>
+              {step > 0 && (
+                <button type="button" onClick={back} style={{ padding: '11px 20px', background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 10, fontWeight: 700, cursor: 'pointer', color: '#475569', fontSize: 14 }}>
+                  ← Back
+                </button>
+              )}
               <button
-                type="submit"
-                style={{ width: '100%', padding: '14px', background: 'var(--orange)', color: '#fff', border: 'none', borderRadius: 'var(--r)', fontSize: '1rem', fontWeight: 800, cursor: 'pointer' }}
+                type="button"
+                onClick={step < STEPS.length - 1 ? next : handleSubmit}
+                disabled={loading}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: 10, border: 'none',
+                  background: loading ? '#fed7aa' : 'linear-gradient(135deg,#f97316,#c94d08)',
+                  color: '#fff', fontWeight: 800, fontSize: 15, cursor: loading ? 'not-allowed' : 'pointer',
+                  boxShadow: loading ? 'none' : '0 4px 14px rgba(249,115,22,0.35)',
+                  transition: 'all 0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                }}
               >
-                📦 Confirm Pickup Request via WhatsApp
+                {loading ? (
+                  <>
+                    <span style={{ width: 16, height: 16, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', display: 'inline-block', animation: 'spin 0.7s linear infinite' }} />
+                    Submitting...
+                  </>
+                ) : step < STEPS.length - 1 ? `Continue → ${STEPS[step + 1]}` : '📦 Submit Pickup Request'}
               </button>
-              <p style={{ fontSize: '.73rem', color: 'var(--ink-4)', textAlign: 'center', marginTop: 10 }}>
-                Clicking confirm opens WhatsApp with your booking details pre-filled. Our team will confirm within 30 minutes.
-              </p>
             </div>
 
-          </form>
+          </div>
+
+          <p style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: '#94a3b8' }}>
+            Your request is saved securely. Need help?{' '}
+            <a href="tel:+919911565523" style={{ color: '#f97316', fontWeight: 700 }}>+91 99115 65523</a>
+          </p>
         </div>
       </section>
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        input::placeholder, textarea::placeholder { color: #c0ccda; }
+      `}</style>
     </PublicLayout>
   );
 }

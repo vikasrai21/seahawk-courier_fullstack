@@ -1,53 +1,220 @@
 'use strict';
-// src/routes/public.routes.js — No auth required
-const router    = require('express').Router();
-const prisma    = require('../config/prisma');
-const R         = require('../utils/response');
+const express = require('express');
+const router = express.Router();
+const prisma = require('../config/prisma');
+const logger = require('../utils/logger');
+const { detectCourier, getCourierInfo } = require('../utils/awbDetect');
 const rateLimit = require('express-rate-limit');
-const { getValidTransitions } = require('../services/stateMachine');
 
-const publicLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 60,
-  message: { success: false, message: 'Too many requests. Please slow down.' },
+const publicLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, message: { success: false, message: 'Too many requests.' } });
+const bookingLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, message: { success: false, message: 'Too many booking requests. Try again later.' } });
+
+// ── GET /api/public/health ─────────────────────────────────────────────────
+router.get('/health', (_req, res) => {
+  res.json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// GET /api/public/track/:awb — public shipment tracking (no auth)
-router.get('/track/:awb', publicLimiter, async (req, res) => {
+// ── In-house tracking ──────────────────────────────────────────────────────
+async function trackInHouse(awb) {
   try {
-    const { awb } = req.params;
-    if (!awb || awb.trim().length < 4) return R.error(res, 'Invalid AWB number.', 400);
-
-    const shipment = await prisma.shipment.findUnique({
-      where: { awb: awb.trim().toUpperCase() },
-      select: {
-        awb:         true,
-        consignee:   true,
-        destination: true,
-        status:      true,
-        courier:     true,
-        date:        true,
-        weight:      true,
-        updatedAt:   true,
-        trackingEvents: {
-          orderBy: { timestamp: 'desc' },
-          select:  { status: true, location: true, description: true, timestamp: true },
-        },
-      },
+    return await prisma.shipment.findFirst({
+      where: { OR: [{ awb: { equals: awb, mode: 'insensitive' } }, { awb }] },
+      select: { awb: true, status: true, consignee: true, destination: true, courier: true, date: true, weight: true, amount: true, trackingEvents: true },
     });
+  } catch { return null; }
+}
 
-    if (!shipment) return R.error(res, 'Shipment not found. Please check your AWB number.', 404);
+// ── Courier API stubs ──────────────────────────────────────────────────────
+async function trackDTDC(awb) {
+  const key = process.env.DTDC_API_KEY, customerCode = process.env.DTDC_CUSTOMER_CODE;
+  if (!key || !customerCode) return null;
+  try {
+    const res = await fetch('https://blktracksvc.dtdc.com/dtdc-api/rest/JSONCnTrk/getShpCnTrk', { method: 'POST', headers: { 'Content-Type': 'application/json', 'API_KEY': key }, body: JSON.stringify({ custCode: customerCode, trackFor: awb }), signal: AbortSignal.timeout(8000) });
+    const json = await res.json();
+    if (!json || json.errorMessage) return null;
+    const data = json.scans?.[0] || json;
+    return { courier: 'DTDC', status: data.status || data.scanStatus || 'In Transit', consignee: data.consigneeName || '', destination: data.destination || '', events: (json.scans || []).map(s => ({ status: s.scanStatus || s.status, location: s.scanLocation || s.location, timestamp: s.scanDateTime || s.date, description: s.remarks || '' })) };
+  } catch (e) { logger.warn('DTDC tracking failed', { awb, error: e.message }); return null; }
+}
 
-    // Don't expose financial data publicly
-    R.ok(res, shipment);
-  } catch (e) {
-    R.error(res, 'Something went wrong. Please try again later.', 500);
+async function trackBluedart(awb) {
+  const key = process.env.BLUEDART_LICENSE_KEY, loginId = process.env.BLUEDART_LOGIN_ID;
+  if (!key || !loginId) return null;
+  try {
+    const res = await fetch('https://netconnect.bluedart.com/ver1.9/ShippingAPI/Track/ShipmentTracking.svc/json/GetShipmentDetails', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ handler: { AWBNo: awb, LicenceKey: key, LoginID: loginId } }), signal: AbortSignal.timeout(8000) });
+    const json = await res.json();
+    if (!json?.ShipmentData) return null;
+    const d = json.ShipmentData;
+    return { courier: 'BLUEDART', status: d.Status || 'In Transit', consignee: d.Consignee || '', destination: d.Destination || '', events: (d.Scans || []).map(s => ({ status: s.ScanDetail?.Scan, location: s.ScanDetail?.ScannedLocation, timestamp: s.ScanDetail?.ScanDate, description: s.ScanDetail?.Instructions })) };
+  } catch (e) { logger.warn('Bluedart tracking failed', { awb, error: e.message }); return null; }
+}
+
+async function trackDelhivery(awb) {
+  const key = process.env.DELHIVERY_API_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch(`https://track.delhivery.com/api/v1/packages/json/?waybill=${awb}&verbose=1`, { headers: { Authorization: `Token ${key}` }, signal: AbortSignal.timeout(8000) });
+    const json = await res.json();
+    const pkg = json?.ShipmentData?.[0]?.Shipment;
+    if (!pkg) return null;
+    return { courier: 'DELHIVERY', status: pkg.Status?.Status || 'In Transit', consignee: pkg.Consignee || '', destination: pkg.To || '', events: (pkg.Scans || []).map(s => ({ status: s.ScanDetail?.Scan, location: s.ScanDetail?.ScannedLocation, timestamp: s.ScanDetail?.ScanDate, description: s.ScanDetail?.Instructions })) };
+  } catch (e) { logger.warn('Delhivery tracking failed', { awb, error: e.message }); return null; }
+}
+
+async function trackTrackon(awb) {
+  const key = process.env.TRACKON_API_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch(`https://trackonweb.com/track-api/?awb=${awb}&apikey=${key}`, { signal: AbortSignal.timeout(8000) });
+    const json = await res.json();
+    if (!json || json.error) return null;
+    return { courier: 'TRACKON', status: json.status || 'In Transit', consignee: json.consignee || '', destination: json.destination || '', events: (json.events || json.scans || []).map(s => ({ status: s.status || s.scan, location: s.location || s.city, timestamp: s.time || s.date, description: s.remarks || '' })) };
+  } catch (e) { logger.warn('Trackon tracking failed', { awb, error: e.message }); return null; }
+}
+
+async function trackPrimetrack(awb) {
+  const key = process.env.PRIMETRACK_API_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch(`https://www.primetrack.in/api/track?awb=${awb}&apikey=${key}`, { signal: AbortSignal.timeout(8000) });
+    const json = await res.json();
+    if (!json || json.error) return null;
+    return { courier: 'PRIMETRACK', status: json.status || 'In Transit', consignee: json.consignee || '', destination: json.destination || '', events: (json.events || []).map(s => ({ status: s.status, location: s.location, timestamp: s.time, description: s.remarks || '' })) };
+  } catch (e) { logger.warn('Primetrack tracking failed', { awb, error: e.message }); return null; }
+}
+
+async function trackDHL(awb) {
+  const key = process.env.DHL_API_KEY;
+  if (!key) return null;
+  try {
+    const res = await fetch(`https://api-eu.dhl.com/track/shipments?trackingNumber=${awb}`, { headers: { 'DHL-API-Key': key }, signal: AbortSignal.timeout(8000) });
+    const json = await res.json();
+    const ship = json?.shipments?.[0];
+    if (!ship) return null;
+    return { courier: 'DHL', status: ship.status?.description || 'In Transit', consignee: ship.receiver?.name || '', destination: ship.destination?.address?.addressLocality || '', events: (ship.events || []).map(e => ({ status: e.description, location: e.location?.address?.addressLocality, timestamp: e.timestamp, description: '' })) };
+  } catch (e) { logger.warn('DHL tracking failed', { awb, error: e.message }); return null; }
+}
+
+async function trackWithCourier(courier, awb) {
+  switch (courier) {
+    case 'DTDC': return trackDTDC(awb);
+    case 'BLUEDART': return trackBluedart(awb);
+    case 'DELHIVERY': return trackDelhivery(awb);
+    case 'TRACKON': return trackTrackon(awb);
+    case 'PRIMETRACK': return trackPrimetrack(awb);
+    case 'DHL': return trackDHL(awb);
+    default: return null;
+  }
+}
+
+// ── GET /api/public/track/:awb ─────────────────────────────────────────────
+router.get('/track/:awb', publicLimiter, async (req, res) => {
+  const awb = req.params.awb?.trim().toUpperCase();
+  if (!awb || awb.length < 4) return res.status(400).json({ success: false, message: 'Invalid AWB number.' });
+  try {
+    const inHouse = await trackInHouse(awb);
+    if (inHouse) {
+      const detection = detectCourier(awb);
+      const courierInfo = getCourierInfo(detection?.courier || inHouse.courier?.toUpperCase());
+      return res.json({ success: true, data: { ...inHouse, courierInfo, detectedCourier: detection?.courier, source: 'internal' } });
+    }
+    const detection = detectCourier(awb);
+    if (!detection || detection.courier === 'UNKNOWN') return res.status(404).json({ success: false, message: 'Shipment not found. Please check the AWB number.' });
+    let result = detection.tryBoth
+      ? (await trackPrimetrack(awb) || await trackTrackon(awb))
+      : await trackWithCourier(detection.courier, awb);
+    const courierInfo = getCourierInfo(detection.courier);
+    if (!result) {
+      return res.json({ success: true, data: { awb, status: 'Check Courier Website', consignee: '', destination: '', courier: courierInfo.name, courierInfo, detectedCourier: detection.courier, trackingEvents: [], source: 'detected', noApiKey: true, externalUrl: courierInfo.trackUrl ? courierInfo.trackUrl + awb : null } });
+    }
+    return res.json({ success: true, data: { awb, status: result.status, consignee: result.consignee, destination: result.destination, courier: courierInfo.name, courierInfo, detectedCourier: detection.courier, trackingEvents: result.events || [], source: 'courier_api' } });
+  } catch (err) {
+    logger.error('Public tracking error', { awb, error: err.message });
+    return res.status(500).json({ success: false, message: 'Tracking service unavailable.' });
   }
 });
 
-// GET /api/public/health
-router.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+// ── GET /api/public/detect/:awb ────────────────────────────────────────────
+router.get('/detect/:awb', (req, res) => {
+  const awb = req.params.awb?.trim().toUpperCase();
+  const detection = detectCourier(awb);
+  const info = detection ? getCourierInfo(detection.courier) : null;
+  res.json({ success: true, data: { ...detection, courierInfo: info } });
+});
+
+// ── POST /api/public/pickup-request ───────────────────────────────────────
+router.post('/pickup-request', bookingLimiter, async (req, res) => {
+  try {
+    const { name, company, phone, email, pickupAddress, pickupCity, pickupPin, destination, destCity, destCountry, packageType, weight, pieces, service, declaredValue, preferredDate, preferredTime, notes } = req.body;
+
+    if (!name || !phone || !pickupAddress || !pickupCity || !pickupPin || !destination || !preferredDate)
+      return res.status(400).json({ success: false, message: 'Please fill in all required fields.' });
+
+    const datePart = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const rand = Math.floor(10000 + Math.random() * 90000);
+    const requestNo = `PKR-${datePart}-${rand}`;
+
+    const pickup = await prisma.pickupRequest.create({
+      data: {
+        requestNo,
+        contactName: name.trim(),
+        contactPhone: phone.trim(),
+        contactEmail: email?.trim() || null,
+        pickupAddress: pickupAddress.trim(),
+        pickupCity: pickupCity.trim(),
+        pickupPin: pickupPin.trim(),
+        deliveryAddress: destination?.trim() || null,
+        deliveryCity: destCity?.trim() || null,
+        deliveryCountry: destCountry || 'India',
+        packageType: packageType || 'Parcel',
+        weightGrams: parseFloat(weight) || 0,
+        pieces: parseInt(pieces) || 1,
+        service: service || 'Standard',
+        declaredValue: declaredValue ? parseFloat(declaredValue) : null,
+        scheduledDate: preferredDate,
+        timeSlot: preferredTime || 'Morning (9am–12pm)',
+        notes: notes?.trim() || null,
+        source: 'WEBSITE',
+        status: 'PENDING',
+      },
+    });
+
+    // WhatsApp message to admin
+    const adminPhone = (process.env.ADMIN_WHATSAPP || '919911565523').replace(/\D/g, '');
+    const waMsg = `🚨 *NEW PICKUP REQUEST* — Sea Hawk\n\n` +
+      `📋 *Ref:* ${requestNo}\n` +
+      `👤 *${name}*${company ? ` (${company})` : ''}\n` +
+      `📞 ${phone}${email ? `  📧 ${email}` : ''}\n\n` +
+      `📍 *PICKUP:*\n${pickupAddress}, ${pickupCity} — ${pickupPin}\n\n` +
+      `🚚 *DELIVERY:*\n${destination}, ${destCity || ''} ${destCountry || 'India'}\n\n` +
+      `📦 ${packageType} · ${weight}kg · ${pieces} pc · ${service}${declaredValue ? ` · ₹${declaredValue}` : ''}\n` +
+      `📅 ${preferredDate} · ${preferredTime}` +
+      `${notes ? `\n📝 ${notes}` : ''}`;
+
+    const whatsappUrl = `https://wa.me/${adminPhone}?text=${encodeURIComponent(waMsg)}`;
+
+    return res.json({
+      success: true,
+      data: { requestNo: pickup.requestNo, id: pickup.id, whatsappUrl, message: 'Pickup request submitted successfully!' }
+    });
+  } catch (err) {
+    logger.error('Pickup request error', { error: err.message });
+    return res.status(500).json({ success: false, message: 'Failed to submit pickup request. Please try again.' });
+  }
+});
+
+// ── GET /api/public/pickup-request/:requestNo ──────────────────────────────
+router.get('/pickup-request/:requestNo', publicLimiter, async (req, res) => {
+  try {
+    const pickup = await prisma.pickupRequest.findUnique({
+      where: { requestNo: req.params.requestNo.toUpperCase() },
+      select: { requestNo: true, contactName: true, pickupCity: true, deliveryCity: true, packageType: true, service: true, scheduledDate: true, timeSlot: true, status: true, createdAt: true },
+    });
+    if (!pickup) return res.status(404).json({ success: false, message: 'Booking not found.' });
+    res.json({ success: true, data: pickup });
+  } catch (e) {
+    res.status(500).json({ success: false, message: 'Something went wrong.' });
+  }
 });
 
 module.exports = router;
