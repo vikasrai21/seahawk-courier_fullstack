@@ -1,4 +1,4 @@
-import{j as e}from"./page-landing-N4UVSJL-.js";import{r as m}from"./vendor-helmet-BlaZzcmj.js";import{a as $}from"./page-import-RuNcw4zM.js";import{D as k,U,q as F,T as D,p as A}from"./vendor-icons-DgKssDXW.js";const d=l=>`₹${Number(l||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})}`,y=l=>`${Number(l||0).toFixed(1)}%`,S=l=>l>30?"text-green-700":l>15?"text-amber-600":l>0?"text-orange-500":"text-red-600",R=`ref,destination_city,state,weight_kg,ship_type
+import{j as e}from"./page-landing-tAOPrn_o.js";import{r as m}from"./vendor-helmet-BlaZzcmj.js";import{a as $}from"./page-import-y0XjVFhz.js";import{D as k,U,q as F,T as D,p as A}from"./vendor-icons-B6RrMEAO.js";const d=l=>`₹${Number(l||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})}`,y=l=>`${Number(l||0).toFixed(1)}%`,S=l=>l>30?"text-green-700":l>15?"text-amber-600":l>0?"text-orange-500":"text-red-600",R=`ref,destination_city,state,weight_kg,ship_type
 SH-001,Mumbai,Maharashtra,2.5,surface
 SH-002,Chennai,Tamil Nadu,0.5,doc
 SH-003,Delhi,Delhi,10,surface
