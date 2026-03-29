@@ -238,7 +238,7 @@ function proposalSell(zone, w, shipType, level='economy') {
     const tbl=level==='premium'?SELL_DOC_PREM:SELL_DOC_ECO;
     const r=tbl[szKey]||tbl['Rest of India'];
     const cw=ceil05(w);
-    let b=cw<=0.25?r.w250:cw<=0.5?r.w500:r.w500+Math.ceil((cw-0.5)/0.5)*r.addl;
+    const b=cw<=0.25?r.w250:cw<=0.5?r.w500:r.w500+Math.ceil((cw-0.5)/0.5)*r.addl;
     const fsc=rnd(b*FSC),sub=b+fsc;
     return {base:rnd(b),fsc:fsc,fscPct:'25%',gst:rnd(sub*GST),total:rnd(sub*(1+GST)),source:src};
   }

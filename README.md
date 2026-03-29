@@ -61,6 +61,11 @@ DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/seahawk_v6"
 JWT_SECRET="put-any-long-random-string-here-minimum-32-chars"
 NODE_ENV=production
 PORT=3001
+GLOBAL_JSON_LIMIT=1mb
+IMPORT_JSON_LIMIT=10mb
+DELHIVERY_WEBHOOK_SECRET=""
+DTDC_WEBHOOK_SECRET=""
+WEBHOOK_REPLAY_WINDOW_SECONDS=300
 ```
 
 ### Step 3 — Start
@@ -127,6 +132,16 @@ All API responses follow:
 { "success": false, "message": "...", "errors": [...] }
 ```
 
+Interactive OpenAPI docs:
+- `GET /api/docs` (Swagger UI)
+- `GET /api/docs/openapi.json` (raw OpenAPI spec)
+
+Production docs access can be controlled with:
+```env
+API_DOCS_ENABLED=true
+API_DOCS_PUBLIC=false
+```
+
 ### Auth
 - `POST /api/auth/login` — Login
 - `POST /api/auth/logout` — Logout
@@ -145,6 +160,10 @@ All API responses follow:
 - `POST /api/shipments/import` — Bulk import
 - `GET  /api/shipments/stats/today` — Today's stats
 - `GET  /api/shipments/stats/monthly?year=2025&month=3` — Monthly data
+
+Body-size policy:
+- Global JSON body limit is `1mb`
+- `/api/shipments/import` has a route-specific higher limit (`IMPORT_JSON_LIMIT`, default `10mb`)
 
 ### Clients
 - `GET  /api/clients` — All clients

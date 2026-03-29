@@ -44,7 +44,7 @@ const connection = bullMQAvailable ? {
 /* ════════════════════════════════════════════════════════════
    QUEUE DEFINITIONS
    ════════════════════════════════════════════════════════════ */
-let queues = {};
+const queues = {};
 
 function getQueue(name) {
   if (!bullMQAvailable) return null;

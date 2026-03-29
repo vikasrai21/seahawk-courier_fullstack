@@ -13,6 +13,7 @@ const { apiLimiter }         = require('./middleware/rateLimiter');
 const { initSentry, sentryErrorHandler } = require('./config/sentry');
 const { sanitiseBody } = require('./middleware/sanitise.middleware');
 const { issueCsrfCookie, validateCsrf } = require('./middleware/csrf.middleware');
+const { metricsMiddleware, getMetricsSnapshot } = require('./middleware/metrics.middleware');
 const R = require('./utils/response');
 
 const app = express();
@@ -57,9 +58,24 @@ app.use(morgan(config.isProd ? 'combined' : 'dev', {
   skip:   (req) => req.path === '/api/health',
 }));
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true }));
+const baseJsonParser = express.json({
+  limit: config.bodyLimits.globalJson,
+  verify: (req, _res, buf) => {
+    if (req.originalUrl.startsWith('/api/webhooks/')) {
+      req.rawBody = buf.toString('utf8');
+    }
+  },
+});
+
+app.use((req, res, next) => {
+  // Import route gets a bigger route-specific parser inside shipment.routes.
+  if (req.method === 'POST' && req.originalUrl.startsWith('/api/shipments/import')) return next();
+  return baseJsonParser(req, res, next);
+});
+
+app.use(express.urlencoded({ extended: true, limit: config.bodyLimits.globalJson }));
 app.use(cookieParser());
+app.use(metricsMiddleware);
 
 // ── Global XSS sanitisation ────────────────────────────────────────────────
 app.use(sanitiseBody);
@@ -80,6 +96,10 @@ app.get('/api/health', async (req, res) => {
   } catch {
     res.status(503).json({ success: false, status: 'unhealthy' });
   }
+});
+
+app.get('/api/health/metrics', (_req, res) => {
+  R.ok(res, getMetricsSnapshot());
 });
 
 // ── Routes ─────────────────────────────────────────────────────────────────
@@ -104,6 +124,7 @@ app.use('/api/delhivery',      require('./routes/delhivery.routes'));
 app.use('/api/couriers',       require('./routes/courier.routes'));
 app.use('/api/carrier',        require('./routes/carrier.routes'));
 app.use('/api/webhooks',       require('./routes/webhook.routes'));
+app.use('/api/docs',           require('./routes/docs.routes'));
 
 // ── Serve React (production) ───────────────────────────────────────────────
 const frontendBuild = path.join(__dirname, '../public');

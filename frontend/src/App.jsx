@@ -1,4 +1,4 @@
-// App.jsx
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -7,44 +7,43 @@ import { Toast } from './components/ui/Toast';
 import { AppLayout } from './components/layout/AppLayout';
 import { Spinner } from './components/ui/Loading';
 
+const ClientPortalPage = lazy(() => import('./pages/client/ClientPortalPage'));
+const LandingPage = lazy(() => import('./pages/public/LandingPage'));
+const PublicTrackPage = lazy(() => import('./pages/public/PublicTrackPage'));
+const ServicesPage = lazy(() => import('./pages/public/ServicesPage'));
+const ContactPage = lazy(() => import('./pages/public/ContactPage'));
+const BookPage = lazy(() => import('./pages/public/BookPage'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
 
-import ClientPortalPage from './pages/client/ClientPortalPage';
-import LandingPage from './pages/public/LandingPage';
-import PublicTrackPage from './pages/public/PublicTrackPage';
-import ServicesPage from './pages/public/ServicesPage';
-import ContactPage from './pages/public/ContactPage';
-import BookPage from './pages/public/BookPage';
-import LoginPage from './pages/LoginPage';
-
-import DashboardPage from './pages/DashboardPage';
-import NewEntryPage from './pages/NewEntryPage';
-import ImportPage from './pages/ImportPage';
-import AllShipmentsPage from './pages/AllShipmentsPage';
-import DailySheetPage from './pages/DailySheetPage';
-import MonthlyReportPage from './pages/MonthlyReportPage';
-import ClientsPage from './pages/ClientsPage';
-import ContractsPage from './pages/ContractsPage';
-import InvoicesPage from './pages/InvoicesPage';
-import PendingPage from './pages/PendingPage';
-import TrackPage from './pages/TrackPage';
-import SyncPage from './pages/SyncPage';
-import UsersPage from './pages/UsersPage';
-import AuditPage from './pages/AuditPage';
-import RateCalculatorPage from './pages/RateCalculatorPage';
-import ProfilePage from './pages/ProfilePage';
-import OperationsDashboard from './pages/OperationsDashboard';
-import BulkComparePage from './pages/BulkComparePage';
-import RateCardPage from './pages/RateCardPage';
-import QuoteHistoryPage from './pages/QuoteHistoryPage';
-import ReconciliationPage from './pages/ReconciliationPage';
-import RateManagementPage from './pages/RateManagementPage';
-import WhatsAppPage from './pages/WhatsAppPage';
-import ShipmentDashboardPage from './pages/ShipmentDashboardPage';
-import ScanAWBPage from './pages/ScanAWBPage';
-import NDRPage from './pages/NDRPage';
-import PickupSchedulerPage from './pages/PickupSchedulerPage';
-import WalletPage from './pages/WalletPage';
-import AnalyticsPage from './pages/AnalyticsPage';
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const NewEntryPage = lazy(() => import('./pages/NewEntryPage'));
+const ImportPage = lazy(() => import('./pages/ImportPage'));
+const AllShipmentsPage = lazy(() => import('./pages/AllShipmentsPage'));
+const DailySheetPage = lazy(() => import('./pages/DailySheetPage'));
+const MonthlyReportPage = lazy(() => import('./pages/MonthlyReportPage'));
+const ClientsPage = lazy(() => import('./pages/ClientsPage'));
+const ContractsPage = lazy(() => import('./pages/ContractsPage'));
+const InvoicesPage = lazy(() => import('./pages/InvoicesPage'));
+const PendingPage = lazy(() => import('./pages/PendingPage'));
+const TrackPage = lazy(() => import('./pages/TrackPage'));
+const SyncPage = lazy(() => import('./pages/SyncPage'));
+const UsersPage = lazy(() => import('./pages/UsersPage'));
+const AuditPage = lazy(() => import('./pages/AuditPage'));
+const RateCalculatorPage = lazy(() => import('./pages/RateCalculatorPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const OperationsDashboard = lazy(() => import('./pages/OperationsDashboard'));
+const BulkComparePage = lazy(() => import('./pages/BulkComparePage'));
+const RateCardPage = lazy(() => import('./pages/RateCardPage'));
+const QuoteHistoryPage = lazy(() => import('./pages/QuoteHistoryPage'));
+const ReconciliationPage = lazy(() => import('./pages/ReconciliationPage'));
+const RateManagementPage = lazy(() => import('./pages/RateManagementPage'));
+const WhatsAppPage = lazy(() => import('./pages/WhatsAppPage'));
+const ShipmentDashboardPage = lazy(() => import('./pages/ShipmentDashboardPage'));
+const ScanAWBPage = lazy(() => import('./pages/ScanAWBPage'));
+const NDRPage = lazy(() => import('./pages/NDRPage'));
+const PickupSchedulerPage = lazy(() => import('./pages/PickupSchedulerPage'));
+const WalletPage = lazy(() => import('./pages/WalletPage'));
+const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 
 function AuthLoadingScreen() {
   return (
@@ -60,13 +59,21 @@ function AuthLoadingScreen() {
               objectFit: 'contain',
               background: '#fff',
               borderRadius: 8,
-              padding: 4
+              padding: 4,
             }}
           />
         </div>
         <Spinner size="lg" />
-        <p style={{ color: '#475569', fontSize: 12, marginTop: 12, fontFamily: 'monospace' }}>Authenticating...</p>
+        <p style={{ color: '#475569', fontSize: 12, marginTop: 12, fontFamily: 'Outfit, sans-serif' }}>Authenticating...</p>
       </div>
+    </div>
+  );
+}
+
+function RouteLoadingScreen() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+      <Spinner size="lg" />
     </div>
   );
 }
@@ -79,7 +86,6 @@ function PrivateRoute({ children, adminOnly = false, roles = null }) {
   return children;
 }
 
-// CLIENT users should never reach /app — redirect them to /portal
 function StaffRoute({ children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
@@ -87,7 +93,6 @@ function StaffRoute({ children }) {
   return children;
 }
 
-// CLIENT-only guard
 function ClientRoute({ children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
@@ -104,62 +109,68 @@ function AuthGate({ children }) {
 function AppRoutes() {
   const { toasts, toast, removeToast } = useToast();
   const p = { toast };
+
   return (
     <>
       <Toast toasts={toasts} removeToast={removeToast} />
       <AuthGate>
-        <Routes>
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/services" element={<ServicesPage />} />
-          <Route path="/contact" element={<ContactPage />} />
-          <Route path="/book" element={<BookPage />} />
-          <Route path="/track" element={<PublicTrackPage />} />
-          <Route path="/track/:awb" element={<PublicTrackPage />} />
-          <Route path="/login" element={<LoginPage />} />
+        <Suspense fallback={<RouteLoadingScreen />}>
+          <Routes>
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/services" element={<ServicesPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/book" element={<BookPage />} />
+            <Route path="/track" element={<PublicTrackPage />} />
+            <Route path="/track/:awb" element={<PublicTrackPage />} />
+            <Route path="/login" element={<LoginPage />} />
 
-          {/* ── CLIENT PORTAL ── */}
-          <Route path="/portal" element={<ClientRoute><ClientPortalPage {...p} /></ClientRoute>} />
-          <Route path="/portal/*" element={<ClientRoute><ClientPortalPage {...p} /></ClientRoute>} />
+            <Route path="/portal" element={<ClientRoute><ClientPortalPage {...p} /></ClientRoute>} />
+            <Route path="/portal/*" element={<ClientRoute><ClientPortalPage {...p} /></ClientRoute>} />
 
-          <Route path="/app/*" element={
-            <StaffRoute>
-              <AppLayout>
-                <Routes>
-                  <Route path="/" element={<DashboardPage         {...p} />} />
-                  <Route path="/ops" element={<OperationsDashboard   {...p} />} />
-                  <Route path="/entry" element={<NewEntryPage          {...p} />} />
-                  <Route path="/import" element={<ImportPage            {...p} />} />
-                  <Route path="/all" element={<AllShipmentsPage      {...p} />} />
-                  <Route path="/pending" element={<PendingPage           {...p} />} />
-                  <Route path="/track" element={<TrackPage             {...p} />} />
-                  <Route path="/daily" element={<DailySheetPage        {...p} />} />
-                  <Route path="/monthly" element={<MonthlyReportPage     {...p} />} />
-                  <Route path="/clients" element={<ClientsPage      {...p} />} />
-                  <Route path="/contracts" element={<ContractsPage    {...p} />} />
-                  <Route path="/invoices" element={<InvoicesPage     {...p} />} />
-                  <Route path="/reconciliation" element={<ReconciliationPage {...p} />} />
-                  <Route path="/rates" element={<RateCalculatorPage />} />
-                  <Route path="/bulk" element={<BulkComparePage       {...p} />} />
-                  <Route path="/rate-card" element={<RateCardPage          {...p} />} />
-                  <Route path="/quotes" element={<QuoteHistoryPage      {...p} />} />
-                  <Route path="/whatsapp" element={<WhatsAppPage          {...p} />} />
-                  <Route path="/sync" element={<SyncPage              {...p} />} />
-                  <Route path="/scan" element={<ScanAWBPage           {...p} />} />
-                  <Route path="/profile" element={<ProfilePage           {...p} />} />
-                  <Route path="/shipments" element={<ShipmentDashboardPage {...p} />} />
-                  <Route path="/wallet" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}><WalletPage {...p} /></PrivateRoute>} />
-                  <Route path="/analytics" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}><AnalyticsPage {...p} /></PrivateRoute>} />
-                  <Route path="/ndr" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}><NDRPage {...p} /></PrivateRoute>} />
-                  <Route path="/pickups" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}><PickupSchedulerPage {...p} /></PrivateRoute>} />
-                  <Route path="/users" element={<PrivateRoute adminOnly><UsersPage {...p} /></PrivateRoute>} />
-                  <Route path="/audit" element={<PrivateRoute adminOnly><AuditPage /></PrivateRoute>} />
-                  <Route path="/rate-mgmt" element={<PrivateRoute adminOnly><RateManagementPage {...p} /></PrivateRoute>} />
-                </Routes>
-              </AppLayout>
-            </StaffRoute>
-          } />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+            <Route
+              path="/app/*"
+              element={
+                <StaffRoute>
+                  <AppLayout>
+                    <Routes>
+                      <Route path="/" element={<DashboardPage {...p} />} />
+                      <Route path="/ops" element={<OperationsDashboard {...p} />} />
+                      <Route path="/entry" element={<NewEntryPage {...p} />} />
+                      <Route path="/import" element={<ImportPage {...p} />} />
+                      <Route path="/all" element={<AllShipmentsPage {...p} />} />
+                      <Route path="/pending" element={<PendingPage {...p} />} />
+                      <Route path="/track" element={<TrackPage {...p} />} />
+                      <Route path="/daily" element={<DailySheetPage {...p} />} />
+                      <Route path="/monthly" element={<MonthlyReportPage {...p} />} />
+                      <Route path="/clients" element={<ClientsPage {...p} />} />
+                      <Route path="/contracts" element={<ContractsPage {...p} />} />
+                      <Route path="/invoices" element={<InvoicesPage {...p} />} />
+                      <Route path="/reconciliation" element={<ReconciliationPage {...p} />} />
+                      <Route path="/rates" element={<RateCalculatorPage />} />
+                      <Route path="/bulk" element={<BulkComparePage {...p} />} />
+                      <Route path="/rate-card" element={<RateCardPage {...p} />} />
+                      <Route path="/quotes" element={<QuoteHistoryPage {...p} />} />
+                      <Route path="/whatsapp" element={<WhatsAppPage {...p} />} />
+                      <Route path="/sync" element={<SyncPage {...p} />} />
+                      <Route path="/scan" element={<ScanAWBPage {...p} />} />
+                      <Route path="/profile" element={<ProfilePage {...p} />} />
+                      <Route path="/shipments" element={<ShipmentDashboardPage {...p} />} />
+                      <Route path="/wallet" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}><WalletPage {...p} /></PrivateRoute>} />
+                      <Route path="/analytics" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}><AnalyticsPage {...p} /></PrivateRoute>} />
+                      <Route path="/ndr" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}><NDRPage {...p} /></PrivateRoute>} />
+                      <Route path="/pickups" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}><PickupSchedulerPage {...p} /></PrivateRoute>} />
+                      <Route path="/users" element={<PrivateRoute adminOnly><UsersPage {...p} /></PrivateRoute>} />
+                      <Route path="/audit" element={<PrivateRoute adminOnly><AuditPage /></PrivateRoute>} />
+                      <Route path="/rate-mgmt" element={<PrivateRoute adminOnly><RateManagementPage {...p} /></PrivateRoute>} />
+                    </Routes>
+                  </AppLayout>
+                </StaffRoute>
+              }
+            />
+
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </AuthGate>
     </>
   );

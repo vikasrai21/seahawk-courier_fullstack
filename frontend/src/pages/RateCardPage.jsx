@@ -31,7 +31,7 @@ function calcDocRate(zone, wkg, level = 'economy') {
   const r = (level === 'premium' ? SELL_DOC_PREM : SELL_DOC_ECO)[zone];
   if (!r) return 0;
   const w = parseFloat(wkg);
-  let b = w <= 0.25 ? r.w250 : w <= 0.5 ? r.w500 : r.w500 + Math.ceil((w - 0.5) / 0.5) * r.addl;
+  const b = w <= 0.25 ? r.w250 : w <= 0.5 ? r.w500 : r.w500 + Math.ceil((w - 0.5) / 0.5) * r.addl;
   const fsc = b * FSC;
   return Math.round((b + fsc) * (1 + GST) * 100) / 100;
 }

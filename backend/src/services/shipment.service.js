@@ -230,7 +230,7 @@ async function getMyShipments(clientCode, { page = 1, limit = 25, search, status
 }
 
 async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery') {
-  let shipment = await prisma.shipment.findUnique({ where: { awb } });
+  const shipment = await prisma.shipment.findUnique({ where: { awb } });
   
   if (!shipment) {
      throw new AppError(`Shipment with AWB ${awb} not found. Please ensure it is synced from Excel first.`, 404);

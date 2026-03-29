@@ -31,4 +31,10 @@
   .tbl tr:hover td      { @apply bg-blue-50/50; }
   /* Excel-like entry cell */
   .cell-input { @apply w-full px-3 pb-2.5 pt-1 text-sm bg-transparent border-0 outline-none focus:bg-blue-50/50 focus:ring-0 transition-colors; }
+
+  /* Portal consistency primitives */
+  .portal-page { @apply p-4 md:p-6 lg:p-8; }
+  .portal-section { @apply bg-white rounded-2xl border border-gray-100 shadow-sm; }
+  .portal-section-head { @apply px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3; }
+  .portal-section-body { @apply p-5; }
 }

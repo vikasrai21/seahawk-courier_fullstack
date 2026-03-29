@@ -82,4 +82,21 @@ module.exports = {
     s3Key:    optional('AWS_ACCESS_KEY_ID'),
     s3Secret: optional('AWS_SECRET_ACCESS_KEY'),
   },
+
+  bodyLimits: {
+    globalJson: optional('GLOBAL_JSON_LIMIT', '1mb'),
+    importJson: optional('IMPORT_JSON_LIMIT', '10mb'),
+  },
+
+  docs: {
+    enabled: optional('API_DOCS_ENABLED', 'true') !== 'false',
+    public: optional('API_DOCS_PUBLIC', env !== 'production' ? 'true' : 'false') === 'true',
+  },
+
+  webhooks: {
+    delhiverySecret: optional('DELHIVERY_WEBHOOK_SECRET'),
+    dtdcSecret: optional('DTDC_WEBHOOK_SECRET'),
+    replayWindowSeconds: parseInt(optional('WEBHOOK_REPLAY_WINDOW_SECONDS', '300'), 10),
+    idempotencyTtlSeconds: parseInt(optional('WEBHOOK_IDEMPOTENCY_TTL_SECONDS', '86400'), 10),
+  },
 };

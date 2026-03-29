@@ -8,7 +8,7 @@ on:
 
 jobs:
   test:
-    name: Test & Lint
+    name: Lint, Test & Build
     runs-on: ubuntu-latest
 
     steps:
@@ -30,17 +30,25 @@ jobs:
         working-directory: backend
         run: npx prisma generate
 
+      - name: Lint backend
+        working-directory: backend
+        run: npm run lint
+
       - name: Run backend tests
         working-directory: backend
-        run: npm test
+        run: npm run test:ci
 
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
 
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
       - name: Build frontend
         working-directory: frontend
-        run: npm run build
+        run: npm run build:ci
 
   deploy:
     name: Deploy to Railway

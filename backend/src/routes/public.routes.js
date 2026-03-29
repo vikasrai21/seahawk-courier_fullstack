@@ -17,6 +17,29 @@ router.get('/health', (_req, res) => {
   res.json({ success: true, status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// ── POST /api/public/rum ──────────────────────────────────────────────────
+// Lightweight Real User Monitoring intake for Web Vitals.
+router.post('/rum', publicLimiter, (req, res) => {
+  const metric = String(req.body?.metric || '').trim().toUpperCase();
+  const value = Number(req.body?.value);
+  const page = String(req.body?.page || '').slice(0, 200);
+  const rating = String(req.body?.rating || '').trim().toLowerCase();
+
+  if (!metric || !Number.isFinite(value)) {
+    return res.status(400).json({ success: false, message: 'Invalid metric payload.' });
+  }
+
+  logger.info('[RUM]', {
+    metric,
+    value: Number(value.toFixed(2)),
+    rating,
+    page,
+    userAgent: req.get('user-agent'),
+  });
+
+  return res.status(202).json({ success: true });
+});
+
 // ── In-house tracking ──────────────────────────────────────────────────────
 async function trackInHouse(awb) {
   try {
@@ -135,7 +158,7 @@ router.get('/track/:awb', publicTrackingLimiter, async (req, res) => {
     }
     const detection = detectCourier(awb);
     if (!detection || detection.courier === 'UNKNOWN') return res.status(404).json({ success: false, message: 'Shipment not found. Please check the AWB number.' });
-    let result = detection.tryBoth
+    const result = detection.tryBoth
       ? (await trackPrimetrack(awb) || await trackTrackon(awb))
       : await trackWithCourier(detection.courier, awb);
     const courierInfo = getCourierInfo(detection.courier);
