@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { SocketProvider } from './context/SocketContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { useToast } from './hooks/useToast';
 import { Toast } from './components/ui/Toast';
@@ -41,10 +42,12 @@ const InvoicesPage = lazy(() => import('./pages/InvoicesPage'));
 const PendingPage = lazy(() => import('./pages/PendingPage'));
 const TrackPage = lazy(() => import('./pages/TrackPage'));
 const SyncPage = lazy(() => import('./pages/SyncPage'));
+const BookingsPage = lazy(() => import('./pages/BookingsPage'));
 const UsersPage = lazy(() => import('./pages/UsersPage'));
 const AuditPage = lazy(() => import('./pages/AuditPage'));
 const RateCalculatorPage = lazy(() => import('./pages/RateCalculatorPage'));
 const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const ChangePasswordPage = lazy(() => import('./pages/ChangePasswordPage'));
 const OperationsDashboard = lazy(() => import('./pages/OperationsDashboard'));
 const BulkComparePage = lazy(() => import('./pages/BulkComparePage'));
 const RateCardPage = lazy(() => import('./pages/RateCardPage'));
@@ -123,7 +126,7 @@ function AuthGate({ children }) {
 
 function AppRoutes() {
   const { toasts, toast, removeToast } = useToast();
-  const p = { toast };
+  const withToast = (Component, extraProps = {}) => <Component toast={toast} {...extraProps} />;
 
   return (
     <>
@@ -139,22 +142,22 @@ function AppRoutes() {
             <Route path="/track/:awb" element={<PublicTrackPage />} />
             <Route path="/login" element={<LoginPage />} />
 
-            <Route path="/portal" element={<ClientRoute><ClientPortalPage {...p} /></ClientRoute>} />
-            <Route path="/portal/invoices" element={<ClientRoute><ClientInvoicesPage {...p} /></ClientRoute>} />
-            <Route path="/portal/wallet" element={<ClientRoute><ClientWalletPage {...p} /></ClientRoute>} />
-            <Route path="/portal/shipments" element={<ClientRoute><ClientShipmentsPage {...p} /></ClientRoute>} />
-            <Route path="/portal/bulk-track" element={<ClientRoute><ClientBulkTrackPage {...p} /></ClientRoute>} />
-            <Route path="/portal/ndr" element={<ClientRoute><ClientNDRPage {...p} /></ClientRoute>} />
-            <Route path="/portal/pickups" element={<ClientRoute><ClientPickupPage {...p} /></ClientRoute>} />
-            <Route path="/portal/rates" element={<ClientRoute><ClientRateCalculatorPage {...p} /></ClientRoute>} />
-            <Route path="/portal/import" element={<ClientRoute><ClientImportPage {...p} /></ClientRoute>} />
-            <Route path="/portal/support" element={<ClientRoute><ClientSupportTicketsPage {...p} /></ClientRoute>} />
-            <Route path="/portal/map" element={<ClientRoute><ClientLiveMapPage {...p} /></ClientRoute>} />
-            <Route path="/portal/notifications" element={<ClientRoute><ClientNotificationsPage {...p} /></ClientRoute>} />
-            <Route path="/portal/rto-intelligence" element={<ClientRoute><ClientRTOIntelligencePage {...p} /></ClientRoute>} />
-            <Route path="/portal/pod" element={<ClientRoute><ClientPODPage {...p} /></ClientRoute>} />
-            <Route path="/portal/branding" element={<ClientRoute><ClientBrandTrackingPage {...p} /></ClientRoute>} />
-            <Route path="/portal/*" element={<ClientRoute><ClientPortalPage {...p} /></ClientRoute>} />
+            <Route path="/portal" element={<ClientRoute>{withToast(ClientPortalPage)}</ClientRoute>} />
+            <Route path="/portal/invoices" element={<ClientRoute>{withToast(ClientInvoicesPage)}</ClientRoute>} />
+            <Route path="/portal/wallet" element={<ClientRoute>{withToast(ClientWalletPage)}</ClientRoute>} />
+            <Route path="/portal/shipments" element={<ClientRoute>{withToast(ClientShipmentsPage)}</ClientRoute>} />
+            <Route path="/portal/bulk-track" element={<ClientRoute>{withToast(ClientBulkTrackPage)}</ClientRoute>} />
+            <Route path="/portal/ndr" element={<ClientRoute>{withToast(ClientNDRPage)}</ClientRoute>} />
+            <Route path="/portal/pickups" element={<ClientRoute>{withToast(ClientPickupPage)}</ClientRoute>} />
+            <Route path="/portal/rates" element={<ClientRoute>{withToast(ClientRateCalculatorPage)}</ClientRoute>} />
+            <Route path="/portal/import" element={<ClientRoute>{withToast(ClientImportPage)}</ClientRoute>} />
+            <Route path="/portal/support" element={<ClientRoute>{withToast(ClientSupportTicketsPage)}</ClientRoute>} />
+            <Route path="/portal/map" element={<ClientRoute>{withToast(ClientLiveMapPage)}</ClientRoute>} />
+            <Route path="/portal/notifications" element={<ClientRoute>{withToast(ClientNotificationsPage)}</ClientRoute>} />
+            <Route path="/portal/rto-intelligence" element={<ClientRoute>{withToast(ClientRTOIntelligencePage)}</ClientRoute>} />
+            <Route path="/portal/pod" element={<ClientRoute>{withToast(ClientPODPage)}</ClientRoute>} />
+            <Route path="/portal/branding" element={<ClientRoute>{withToast(ClientBrandTrackingPage)}</ClientRoute>} />
+            <Route path="/portal/*" element={<ClientRoute>{withToast(ClientPortalPage)}</ClientRoute>} />
 
             <Route
               path="/app/*"
@@ -162,36 +165,38 @@ function AppRoutes() {
                 <StaffRoute>
                   <AppLayout>
                     <Routes>
-                      <Route path="/" element={<DashboardPage {...p} />} />
-                      <Route path="/ops" element={<OperationsDashboard {...p} />} />
-                      <Route path="/entry" element={<NewEntryPage {...p} />} />
-                      <Route path="/import" element={<ImportPage {...p} />} />
-                      <Route path="/all" element={<AllShipmentsPage {...p} />} />
-                      <Route path="/pending" element={<PendingPage {...p} />} />
-                      <Route path="/track" element={<TrackPage {...p} />} />
-                      <Route path="/daily" element={<DailySheetPage {...p} />} />
-                      <Route path="/monthly" element={<MonthlyReportPage {...p} />} />
-                      <Route path="/clients" element={<ClientsPage {...p} />} />
-                      <Route path="/contracts" element={<ContractsPage {...p} />} />
-                      <Route path="/invoices" element={<InvoicesPage {...p} />} />
-                      <Route path="/support" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}><SupportTicketsPage {...p} /></PrivateRoute>} />
-                      <Route path="/reconciliation" element={<ReconciliationPage {...p} />} />
+                      <Route path="/" element={withToast(DashboardPage)} />
+                      <Route path="/ops" element={withToast(OperationsDashboard)} />
+                      <Route path="/entry" element={withToast(NewEntryPage)} />
+                      <Route path="/import" element={withToast(ImportPage)} />
+                      <Route path="/all" element={withToast(AllShipmentsPage)} />
+                      <Route path="/pending" element={withToast(PendingPage)} />
+                      <Route path="/track" element={withToast(TrackPage)} />
+                      <Route path="/daily" element={withToast(DailySheetPage)} />
+                      <Route path="/monthly" element={withToast(MonthlyReportPage)} />
+                      <Route path="/bookings" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}><BookingsPage /></PrivateRoute>} />
+                      <Route path="/clients" element={withToast(ClientsPage)} />
+                      <Route path="/contracts" element={withToast(ContractsPage)} />
+                      <Route path="/invoices" element={withToast(InvoicesPage)} />
+                      <Route path="/support" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(SupportTicketsPage)}</PrivateRoute>} />
+                      <Route path="/reconciliation" element={withToast(ReconciliationPage)} />
                       <Route path="/rates" element={<RateCalculatorPage />} />
-                      <Route path="/bulk" element={<BulkComparePage {...p} />} />
-                      <Route path="/rate-card" element={<RateCardPage {...p} />} />
-                      <Route path="/quotes" element={<QuoteHistoryPage {...p} />} />
-                      <Route path="/whatsapp" element={<WhatsAppPage {...p} />} />
-                      <Route path="/sync" element={<SyncPage {...p} />} />
-                      <Route path="/scan" element={<ScanAWBPage {...p} />} />
-                      <Route path="/profile" element={<ProfilePage {...p} />} />
-                      <Route path="/shipments" element={<ShipmentDashboardPage {...p} />} />
-                      <Route path="/wallet" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}><WalletPage {...p} /></PrivateRoute>} />
-                      <Route path="/analytics" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}><AnalyticsPage {...p} /></PrivateRoute>} />
-                      <Route path="/ndr" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}><NDRPage {...p} /></PrivateRoute>} />
-                      <Route path="/pickups" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}><PickupSchedulerPage {...p} /></PrivateRoute>} />
-                      <Route path="/users" element={<PrivateRoute adminOnly><UsersPage {...p} /></PrivateRoute>} />
+                      <Route path="/bulk" element={withToast(BulkComparePage)} />
+                      <Route path="/rate-card" element={withToast(RateCardPage)} />
+                      <Route path="/quotes" element={withToast(QuoteHistoryPage)} />
+                      <Route path="/whatsapp" element={withToast(WhatsAppPage)} />
+                      <Route path="/sync" element={withToast(SyncPage)} />
+                      <Route path="/scan" element={withToast(ScanAWBPage)} />
+                      <Route path="/change-password" element={<ChangePasswordPage />} />
+                      <Route path="/profile" element={withToast(ProfilePage)} />
+                      <Route path="/shipments" element={withToast(ShipmentDashboardPage)} />
+                      <Route path="/wallet" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}>{withToast(WalletPage)}</PrivateRoute>} />
+                      <Route path="/analytics" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}>{withToast(AnalyticsPage)}</PrivateRoute>} />
+                      <Route path="/ndr" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(NDRPage)}</PrivateRoute>} />
+                      <Route path="/pickups" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(PickupSchedulerPage)}</PrivateRoute>} />
+                      <Route path="/users" element={<PrivateRoute adminOnly>{withToast(UsersPage)}</PrivateRoute>} />
                       <Route path="/audit" element={<PrivateRoute adminOnly><AuditPage /></PrivateRoute>} />
-                      <Route path="/rate-mgmt" element={<PrivateRoute adminOnly><RateManagementPage {...p} /></PrivateRoute>} />
+                      <Route path="/rate-mgmt" element={<PrivateRoute adminOnly>{withToast(RateManagementPage)}</PrivateRoute>} />
                     </Routes>
                   </AppLayout>
                 </StaffRoute>
@@ -211,7 +216,9 @@ export default function App() {
     <BrowserRouter>
       <ThemeProvider>
         <AuthProvider>
-          <AppRoutes />
+          <SocketProvider>
+            <AppRoutes />
+          </SocketProvider>
         </AuthProvider>
       </ThemeProvider>
     </BrowserRouter>

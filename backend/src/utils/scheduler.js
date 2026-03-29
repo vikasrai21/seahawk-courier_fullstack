@@ -5,6 +5,7 @@ const prisma = require('../config/prisma');
 const logger = require('./logger');
 const config = require('../config');
 const { cleanupExpiredTokens } = require('../services/auth.service');
+const { syncTrackingEvents } = require('../services/carrier.service');
 
 // ── Tracking sync ──────────────────────────────────────────────────────────
 async function syncTracking() {
@@ -16,7 +17,28 @@ async function syncTracking() {
       take: 200,
     });
     logger.info(`Scheduler: ${pending.length} shipments to sync`);
-    // Actual sync is handled by carrier service when called
+
+    let synced = 0;
+    let failed = 0;
+
+    for (const shipment of pending) {
+      if (!shipment.awb || !shipment.courier) continue;
+
+      try {
+        await syncTrackingEvents(shipment.id, shipment.awb, shipment.courier);
+        synced += 1;
+      } catch (err) {
+        failed += 1;
+        logger.warn('Scheduler: shipment sync failed', {
+          shipmentId: shipment.id,
+          awb: shipment.awb,
+          courier: shipment.courier,
+          error: err.message,
+        });
+      }
+    }
+
+    logger.info(`Scheduler: tracking sync finished (${synced} synced, ${failed} failed)`);
   } catch (err) {
     logger.error('Scheduler: tracking sync failed', { error: err.message });
   }

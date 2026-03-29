@@ -27,7 +27,7 @@ export default function BookingsPage() {
             if (filter !== 'ALL') params.set('status', filter);
             if (search) params.set('search', search);
             const res = await api.get(`/pickups?${params}`);
-            setBookings(res.data?.data || res.data || []);
+            setBookings(res.data?.pickups || []);
         } catch (e) {
             console.error(e);
         } finally {

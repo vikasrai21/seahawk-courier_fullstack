@@ -44,7 +44,18 @@ function validateCsrf(req, res, next) {
   const cookieToken = req.cookies?.[CSRF_COOKIE];
   const headerToken = req.headers[CSRF_HEADER];
 
-  if (!cookieToken || !headerToken || cookieToken !== headerToken) {
+  let valid = false;
+  if (cookieToken && headerToken) {
+    try {
+      const cookieBuf = Buffer.from(String(cookieToken), 'utf8');
+      const headerBuf = Buffer.from(String(headerToken), 'utf8');
+      valid = cookieBuf.length === headerBuf.length && crypto.timingSafeEqual(cookieBuf, headerBuf);
+    } catch {
+      valid = false;
+    }
+  }
+
+  if (!valid) {
     logger.warn('CSRF validation failed', { ip: req.ip, path: req.path, method: req.method });
     return res.status(403).json({ success: false, message: 'CSRF validation failed.' });
   }

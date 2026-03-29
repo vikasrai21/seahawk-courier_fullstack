@@ -7,7 +7,10 @@ const logger       = require('../utils/logger');
 const delhiverySvc = require('./delhivery.service');
 const trackonSvc   = require('./trackon.service');
 const dtdcSvc      = require('./dtdc.service');
+const walletSvc    = require('./wallet.service');
 const redis        = require('../config/redis');
+const { normalizeStatus } = require('./stateMachine');
+const { emitShipmentCreated, emitShipmentStatusUpdated } = require('../realtime/socket');
 
 const clearCache = () => {
   if (redis.status === 'ready') {
@@ -87,7 +90,7 @@ async function getById(id) {
 
 async function create(data, userId) {
   const today = new Date().toISOString().split('T')[0];
-  return prisma.$transaction(async (tx) => {
+  const shipment = await prisma.$transaction(async (tx) => {
     const payload = {
       ...data,
       date: data.date || today,
@@ -135,6 +138,9 @@ async function create(data, userId) {
     clearCache();
     return shipment;
   });
+
+  emitShipmentCreated(shipment);
+  return shipment;
 }
 
 async function update(id, data, userId) {
@@ -148,38 +154,40 @@ async function update(id, data, userId) {
 
 async function updateStatus(id, newStatus, userId) {
   const shipment = await getById(id);
-  if (stateMachine.assertValidTransition) stateMachine.assertValidTransition(shipment.status, newStatus);
+  const canonicalStatus = normalizeStatus(newStatus);
+  if (stateMachine.assertValidTransition) stateMachine.assertValidTransition(shipment.status, canonicalStatus);
 
   const updated = await prisma.shipment.update({
     where: { id: parseInt(id) },
-    data:  { status: newStatus, updatedById: userId },
+    data:  { status: canonicalStatus, updatedById: userId },
     include: { client: { select: { company: true, phone: true, email: true } } },
   });
 
   // Log tracking event
   try {
-    await prisma.trackingEvent.create({ data: { shipmentId: parseInt(id), awb: updated.awb, status: newStatus, description: `Status updated to ${newStatus}`, timestamp: new Date(), source: 'MANUAL' } });
+    await prisma.trackingEvent.create({ data: { shipmentId: parseInt(id), awb: updated.awb, status: canonicalStatus, description: `Status updated to ${canonicalStatus}`, timestamp: new Date(), source: 'MANUAL' } });
   } catch (e) { logger.warn(`[Tracking] Event log failed: ${e.message}`); }
 
   // Auto-refund on cancel/RTO
-  if (stateMachine.shouldRefund && stateMachine.shouldRefund(newStatus) && shipment.amount > 0) {
+  if (stateMachine.shouldRefund && stateMachine.shouldRefund(canonicalStatus) && shipment.amount > 0) {
     try {
-      await walletSvc.credit({ clientCode: shipment.clientCode, amount: shipment.amount, description: `Refund — AWB ${shipment.awb} (${newStatus})`, reference: shipment.awb });
+      await walletSvc.credit({ clientCode: shipment.clientCode, amount: shipment.amount, description: `Refund — AWB ${shipment.awb} (${canonicalStatus})`, reference: shipment.awb });
       logger.info(`[Wallet] Refunded ₹${shipment.amount} for ${shipment.awb}`);
     } catch (e) { logger.warn(`[Wallet] Refund failed: ${e.message}`); }
   }
 
   // ── Fire WhatsApp + email notifications ────────────────────────────────
-  try { await notify.notifyStatusChange({ ...updated, status: newStatus }); }
+  try { await notify.notifyStatusChange({ ...updated, status: canonicalStatus }); }
   catch (e) { logger.warn(`[Notify] Status notification failed: ${e.message}`); }
 
   // POD email on delivery
-  if (newStatus === 'Delivered') {
+  if (canonicalStatus === 'Delivered') {
     try { await notify.sendPODEmail(updated, updated.labelUrl); }
     catch (e) { logger.warn(`[Notify] POD email failed: ${e.message}`); }
   }
 
   clearCache();
+  emitShipmentStatusUpdated(updated);
   return updated;
 }
 
@@ -201,7 +209,8 @@ async function bulkImport(shipments, userId) {
     try {
       const existing = await prisma.shipment.findUnique({ where: { awb } });
       if (existing) { duplicates++; continue; }
-      await prisma.shipment.create({ data: { awb, clientCode: (s.clientCode || 'MISC').toUpperCase(), date: s.date || today, consignee: String(s.consignee || '').toUpperCase(), destination: String(s.destination || '').toUpperCase(), weight: parseFloat(s.weight) || 0, amount: parseFloat(s.amount) || 0, courier: String(s.courier || ''), department: String(s.department || ''), service: String(s.service || 'Standard'), status: String(s.status || 'Delivered'), remarks: String(s.remarks || ''), createdById: userId || null, updatedById: userId || null } });
+      const created = await prisma.shipment.create({ data: { awb, clientCode: (s.clientCode || 'MISC').toUpperCase(), date: s.date || today, consignee: String(s.consignee || '').toUpperCase(), destination: String(s.destination || '').toUpperCase(), weight: parseFloat(s.weight) || 0, amount: parseFloat(s.amount) || 0, courier: String(s.courier || ''), department: String(s.department || ''), service: String(s.service || 'Standard'), status: normalizeStatus(String(s.status || 'Delivered')), remarks: String(s.remarks || ''), createdById: userId || null, updatedById: userId || null } });
+      emitShipmentCreated(created);
       imported++;
     } catch (err) { if (err.code === 'P2002') duplicates++; else errors.push({ awb, error: err.message }); }
   }
@@ -284,7 +293,7 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery') {
   
   if (trackingData.recipient) updateData.consignee = trackingData.recipient.toUpperCase();
   if (trackingData.destination) updateData.destination = trackingData.destination.toUpperCase();
-  if (trackingData.status && trackingData.status !== 'Booked') updateData.status = trackingData.status;
+  if (trackingData.status && trackingData.status !== 'Booked') updateData.status = normalizeStatus(trackingData.status);
   updateData.courier = courier;
 
   const updatedShipment = await prisma.shipment.update({
@@ -300,6 +309,7 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery') {
   }
 
   clearCache();
+  emitShipmentStatusUpdated(updatedShipment);
   return { message: 'Tracking data updated successfully', shipment: updatedShipment };
 }
 

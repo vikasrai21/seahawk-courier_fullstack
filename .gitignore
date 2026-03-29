@@ -21,6 +21,8 @@ frontend/.env.local
 logs/
 *.log
 backend/logs/
+frontend/build_error.txt
+frontend/build-log.txt
 
 # Database
 *.db

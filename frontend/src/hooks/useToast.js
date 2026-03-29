@@ -1,12 +1,8 @@
-import { useState, useCallback } from 'react';
-let toastId = 0;
+import { useUIStore } from '../stores/uiStore';
+
 export function useToast() {
-  const [toasts, setToasts] = useState([]);
-  const toast = useCallback((message, type = 'info', duration = 4000) => {
-    const id = ++toastId;
-    setToasts((p) => [...p, { id, message, type }]);
-    setTimeout(() => setToasts((p) => p.filter((t) => t.id !== id)), duration);
-  }, []);
-  const removeToast = useCallback((id) => setToasts((p) => p.filter((t) => t.id !== id)), []);
+  const toasts = useUIStore((state) => state.toasts);
+  const toast = useUIStore((state) => state.toast);
+  const removeToast = useUIStore((state) => state.removeToast);
   return { toasts, toast, removeToast };
 }

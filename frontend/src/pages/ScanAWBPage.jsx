@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { Package, ScanLine, CheckCircle2, AlertCircle, RefreshCw, Download } from 'lucide-react';
+import { BrowserMultiFormatReader } from '@zxing/browser';
 import * as XLSX from 'xlsx';
 import api from '../services/api';
-import { useToast } from '../hooks/useToast';
 import { useAuth } from '../context/AuthContext';
 
 const playSuccess = () => {
@@ -39,8 +39,7 @@ const playError = () => {
   } catch(e){}
 };
 
-export default function ScanAWBPage() {
-  const { toast } = useToast();
+export default function ScanAWBPage({ toast }) {
   const { isAdmin, hasRole } = useAuth();
   const canScan = isAdmin || hasRole('OPS_MANAGER') || hasRole('STAFF');
   const [awb, setAwb] = useState('');
@@ -48,34 +47,45 @@ export default function ScanAWBPage() {
   const [scanMode, setScanMode] = useState('single');
   const [courier, setCourier] = useState('Delhivery');
   const [loading, setLoading] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraError, setCameraError] = useState('');
   const [recentScans, setRecentScans] = useState([]);
   const inputRef = useRef(null);
+  const videoRef = useRef(null);
+  const scannerRef = useRef(null);
 
   // Auto-focus input on mount
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  const handleScan = async (e) => {
-    e.preventDefault();
-    if (scanMode === 'single') {
-      const currentAwb = awb.trim();
+  const stopCamera = async () => {
+    try {
+      await scannerRef.current?.reset();
+    } catch {}
+
+    scannerRef.current = null;
+    setCameraActive(false);
+  };
+
+  useEffect(() => () => { stopCamera(); }, []);
+
+  const processSingleScan = async (rawAwb) => {
+      const currentAwb = String(rawAwb || '').trim();
       if (!currentAwb) return;
-  
+
       setLoading(true);
-      setAwb(''); // Clear input for next scan immediately
-  
-  
+      setAwb('');
+
       try {
         const res = await api.post('/shipments/scan', { awb: currentAwb, courier });
         playSuccess();
         toast(`AWB scanned via ${courier} successfully`, 'success');
-        
+
         setRecentScans(prev => [
           { awb: currentAwb, courier, status: 'success', data: res.data.shipment, timestamp: new Date() },
           ...prev
         ].slice(0, 50));
-  
       } catch (err) {
         playError();
         toast(err.message, 'error');
@@ -87,6 +97,38 @@ export default function ScanAWBPage() {
         setLoading(false);
         inputRef.current?.focus();
       }
+  };
+
+  const startCamera = async () => {
+    setCameraError('');
+
+    try {
+      await stopCamera();
+      const reader = new BrowserMultiFormatReader();
+      scannerRef.current = reader;
+
+      await reader.decodeFromVideoDevice(undefined, videoRef.current, async (result, error) => {
+        if (result) {
+          const scannedAwb = result.getText();
+          await stopCamera();
+          setAwb(scannedAwb);
+          await processSingleScan(scannedAwb);
+        } else if (error && error.name !== 'NotFoundException') {
+          setCameraError(error.message || 'Unable to scan barcode');
+        }
+      });
+
+      setCameraActive(true);
+    } catch (err) {
+      setCameraError(err.message || 'Camera access failed');
+      await stopCamera();
+    }
+  };
+
+  const handleScan = async (e) => {
+    e.preventDefault();
+    if (scanMode === 'single') {
+      await processSingleScan(awb);
     } else {
       const awbList = bulkText.split(/[\n,]+/).map(a => a.trim()).filter(Boolean);
       if (!awbList.length) return;
@@ -175,16 +217,34 @@ export default function ScanAWBPage() {
             </select>
             
             {scanMode === 'single' ? (
-              <input
-                ref={inputRef}
-                type="text"
-                className="input flex-1 text-lg py-3 px-4 font-mono h-auto"
-                placeholder={`Scan ${courier} AWB...`}
-                value={awb}
-                onChange={(e) => setAwb(e.target.value)}
-                disabled={loading}
-                autoFocus
-              />
+              <div className="flex-1 flex flex-col gap-3">
+                <input
+                  ref={inputRef}
+                  type="text"
+                  className="input flex-1 text-lg py-3 px-4 font-mono h-auto"
+                  placeholder={`Scan ${courier} AWB...`}
+                  value={awb}
+                  onChange={(e) => setAwb(e.target.value)}
+                  disabled={loading}
+                  autoFocus
+                />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={cameraActive ? stopCamera : startCamera}
+                    className="btn-secondary"
+                    disabled={loading}
+                  >
+                    {cameraActive ? 'Stop Camera' : 'Scan With Camera'}
+                  </button>
+                  {cameraError && <span className="text-xs text-red-500">{cameraError}</span>}
+                </div>
+                {cameraActive && (
+                  <div className="rounded-xl overflow-hidden border border-gray-200 bg-black">
+                    <video ref={videoRef} className="w-full max-h-72 object-cover" muted playsInline />
+                  </div>
+                )}
+              </div>
             ) : (
               <textarea
                 className="input flex-1 text-sm py-3 px-4 font-mono min-h-[120px]"

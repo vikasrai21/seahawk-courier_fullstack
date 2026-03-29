@@ -62,7 +62,7 @@ async function trackDTDC(awb) {
     }, { attempts: 3, timeoutMs: 8000 });
     if (!json || json.errorMessage) return null;
     const data = json.scans?.[0] || json;
-    return { courier: 'DTDC', status: data.status || data.scanStatus || 'In Transit', consignee: data.consigneeName || '', destination: data.destination || '', events: (json.scans || []).map(s => ({ status: s.scanStatus || s.status, location: s.scanLocation || s.location, timestamp: s.scanDateTime || s.date, description: s.remarks || '' })) };
+    return { courier: 'DTDC', status: data.status || data.scanStatus || 'InTransit', consignee: data.consigneeName || '', destination: data.destination || '', events: (json.scans || []).map(s => ({ status: s.scanStatus || s.status, location: s.scanLocation || s.location, timestamp: s.scanDateTime || s.date, description: s.remarks || '' })) };
   } catch (e) { logger.warn('DTDC tracking failed', { awb, error: e.message }); return null; }
 }
 
@@ -77,7 +77,7 @@ async function trackBluedart(awb) {
     }, { attempts: 3, timeoutMs: 8000 });
     if (!json?.ShipmentData) return null;
     const d = json.ShipmentData;
-    return { courier: 'BLUEDART', status: d.Status || 'In Transit', consignee: d.Consignee || '', destination: d.Destination || '', events: (d.Scans || []).map(s => ({ status: s.ScanDetail?.Scan, location: s.ScanDetail?.ScannedLocation, timestamp: s.ScanDetail?.ScanDate, description: s.ScanDetail?.Instructions })) };
+    return { courier: 'BLUEDART', status: d.Status || 'InTransit', consignee: d.Consignee || '', destination: d.Destination || '', events: (d.Scans || []).map(s => ({ status: s.ScanDetail?.Scan, location: s.ScanDetail?.ScannedLocation, timestamp: s.ScanDetail?.ScanDate, description: s.ScanDetail?.Instructions })) };
   } catch (e) { logger.warn('Bluedart tracking failed', { awb, error: e.message }); return null; }
 }
 
@@ -90,7 +90,7 @@ async function trackDelhivery(awb) {
     }, { attempts: 3, timeoutMs: 8000 });
     const pkg = json?.ShipmentData?.[0]?.Shipment;
     if (!pkg) return null;
-    return { courier: 'DELHIVERY', status: pkg.Status?.Status || 'In Transit', consignee: pkg.Consignee || '', destination: pkg.To || '', events: (pkg.Scans || []).map(s => ({ status: s.ScanDetail?.Scan, location: s.ScanDetail?.ScannedLocation, timestamp: s.ScanDetail?.ScanDate, description: s.ScanDetail?.Instructions })) };
+    return { courier: 'DELHIVERY', status: pkg.Status?.Status || 'InTransit', consignee: pkg.Consignee || '', destination: pkg.To || '', events: (pkg.Scans || []).map(s => ({ status: s.ScanDetail?.Scan, location: s.ScanDetail?.ScannedLocation, timestamp: s.ScanDetail?.ScanDate, description: s.ScanDetail?.Instructions })) };
   } catch (e) { logger.warn('Delhivery tracking failed', { awb, error: e.message }); return null; }
 }
 
@@ -100,7 +100,7 @@ async function trackTrackon(awb) {
   try {
     const json = await fetchJsonWithRetry(`https://trackonweb.com/track-api/?awb=${awb}&apikey=${key}`, {}, { attempts: 3, timeoutMs: 8000 });
     if (!json || json.error) return null;
-    return { courier: 'TRACKON', status: json.status || 'In Transit', consignee: json.consignee || '', destination: json.destination || '', events: (json.events || json.scans || []).map(s => ({ status: s.status || s.scan, location: s.location || s.city, timestamp: s.time || s.date, description: s.remarks || '' })) };
+    return { courier: 'TRACKON', status: json.status || 'InTransit', consignee: json.consignee || '', destination: json.destination || '', events: (json.events || json.scans || []).map(s => ({ status: s.status || s.scan, location: s.location || s.city, timestamp: s.time || s.date, description: s.remarks || '' })) };
   } catch (e) { logger.warn('Trackon tracking failed', { awb, error: e.message }); return null; }
 }
 
@@ -110,7 +110,7 @@ async function trackPrimetrack(awb) {
   try {
     const json = await fetchJsonWithRetry(`https://www.primetrack.in/api/track?awb=${awb}&apikey=${key}`, {}, { attempts: 3, timeoutMs: 8000 });
     if (!json || json.error) return null;
-    return { courier: 'PRIMETRACK', status: json.status || 'In Transit', consignee: json.consignee || '', destination: json.destination || '', events: (json.events || []).map(s => ({ status: s.status, location: s.location, timestamp: s.time, description: s.remarks || '' })) };
+    return { courier: 'PRIMETRACK', status: json.status || 'InTransit', consignee: json.consignee || '', destination: json.destination || '', events: (json.events || []).map(s => ({ status: s.status, location: s.location, timestamp: s.time, description: s.remarks || '' })) };
   } catch (e) { logger.warn('Primetrack tracking failed', { awb, error: e.message }); return null; }
 }
 
@@ -123,7 +123,7 @@ async function trackDHL(awb) {
     }, { attempts: 3, timeoutMs: 8000 });
     const ship = json?.shipments?.[0];
     if (!ship) return null;
-    return { courier: 'DHL', status: ship.status?.description || 'In Transit', consignee: ship.receiver?.name || '', destination: ship.destination?.address?.addressLocality || '', events: (ship.events || []).map(e => ({ status: e.description, location: e.location?.address?.addressLocality, timestamp: e.timestamp, description: '' })) };
+    return { courier: 'DHL', status: ship.status?.description || 'InTransit', consignee: ship.receiver?.name || '', destination: ship.destination?.address?.addressLocality || '', events: (ship.events || []).map(e => ({ status: e.description, location: e.location?.address?.addressLocality, timestamp: e.timestamp, description: '' })) };
   } catch (e) { logger.warn('DHL tracking failed', { awb, error: e.message }); return null; }
 }
 

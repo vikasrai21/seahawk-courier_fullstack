@@ -22,16 +22,16 @@ describe('Shipment validation', () => {
 
   it('status transitions — valid', () => {
     const VALID_TRANSITIONS = {
-      'Booked':           ['Picked Up', 'Cancelled'],
-      'Picked Up':        ['In Transit', 'RTO', 'Cancelled'],
-      'In Transit':       ['Out for Delivery', 'RTO', 'Failed'],
-      'Out for Delivery': ['Delivered', 'Failed', 'RTO'],
+      'Booked':           ['PickedUp', 'Cancelled'],
+      'PickedUp':         ['InTransit', 'RTO', 'Cancelled'],
+      'InTransit':        ['OutForDelivery', 'RTO', 'Failed'],
+      'OutForDelivery':   ['Delivered', 'Failed', 'RTO'],
       'Delivered':        [],
-      'RTO':              ['RTO Delivered'],
+      'RTO':              ['RTODelivered'],
       'Cancelled':        [],
     };
 
-    expect(VALID_TRANSITIONS['Booked']).toContain('Picked Up');
+    expect(VALID_TRANSITIONS['Booked']).toContain('PickedUp');
     expect(VALID_TRANSITIONS['Booked']).not.toContain('Delivered');
     expect(VALID_TRANSITIONS['Delivered']).toHaveLength(0);
   });

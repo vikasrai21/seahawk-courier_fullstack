@@ -20,7 +20,9 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
 
       - name: Install backend dependencies
         working-directory: backend
@@ -46,12 +48,43 @@ jobs:
         working-directory: frontend
         run: npm run lint
 
+      - name: Frontend smoke test
+        working-directory: frontend
+        run: npm run smoke
+
       - name: Build frontend
         working-directory: frontend
         run: npm run build:ci
 
-  deploy:
-    name: Deploy to Railway
+      - name: Validate frontend build artifacts
+        working-directory: frontend
+        run: |
+          test -d dist
+          test -n "$(find dist -type f -print -quit)"
+          test ! -f build_error.txt
+
+  deploy-staging:
+    name: Deploy to Railway Staging
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Notify staging deployment
+        run: echo "✅ Tests passed — Railway staging auto-deploy should be triggered from develop"
+
+      - name: Verify staging health endpoint
+        env:
+          HEALTHCHECK_URL: ${{ vars.STAGING_HEALTHCHECK_URL }}
+        run: |
+          test -n "$HEALTHCHECK_URL"
+          curl --fail --silent --show-error "$HEALTHCHECK_URL/api/health"
+
+  deploy-production:
+    name: Deploy to Railway Production
     needs: test
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -60,5 +93,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Notify deployment
-        run: echo "✅ Tests passed — Railway will auto-deploy from main branch"
+      - name: Notify production deployment
+        run: echo "✅ Tests passed — Railway production auto-deploy should be triggered from main"
+
+      - name: Verify production health endpoint
+        env:
+          HEALTHCHECK_URL: ${{ vars.PRODUCTION_HEALTHCHECK_URL }}
+        run: |
+          test -n "$HEALTHCHECK_URL"
+          curl --fail --silent --show-error "$HEALTHCHECK_URL/api/health"

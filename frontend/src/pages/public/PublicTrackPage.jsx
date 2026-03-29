@@ -1,8 +1,9 @@
 // src/pages/public/PublicTrackPage.jsx
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
+import { formatStatusLabel, normalizeStatus } from '../../components/ui/StatusBadge';
 
-const STATUS_STEPS = ['Booked', 'Picked Up', 'In Transit', 'Out for Delivery', 'Delivered'];
+const STATUS_STEPS = ['Booked', 'PickedUp', 'InTransit', 'OutForDelivery', 'Delivered'];
 
 const COURIER_COLORS = {
   DTDC:       { bg: '#7c3aed', light: '#ede9fe', text: '#5b21b6' },
@@ -15,13 +16,13 @@ const COURIER_COLORS = {
 };
 
 const STATUS_STYLE = {
-  'Delivered':        { color: '#15803d', bg: 'rgba(22,163,74,0.1)',  border: 'rgba(22,163,74,0.3)'  },
-  'Out for Delivery': { color: '#1d4ed8', bg: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.3)' },
-  'In Transit':       { color: '#c2410c', bg: 'rgba(249,115,22,0.1)', border: 'rgba(249,115,22,0.3)' },
-  'Picked Up':        { color: '#7c3aed', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.3)' },
-  'Booked':           { color: '#475569', bg: 'rgba(71,85,105,0.08)', border: 'rgba(71,85,105,0.2)'  },
-  'RTO':              { color: '#dc2626', bg: 'rgba(239,68,68,0.1)',   border: 'rgba(239,68,68,0.3)'  },
-  'default':          { color: '#475569', bg: 'rgba(71,85,105,0.08)', border: 'rgba(71,85,105,0.2)'  },
+  Delivered: { color: '#15803d', bg: 'rgba(22,163,74,0.1)', border: 'rgba(22,163,74,0.3)' },
+  OutForDelivery: { color: '#1d4ed8', bg: 'rgba(59,130,246,0.1)', border: 'rgba(59,130,246,0.3)' },
+  InTransit: { color: '#c2410c', bg: 'rgba(249,115,22,0.1)', border: 'rgba(249,115,22,0.3)' },
+  PickedUp: { color: '#7c3aed', bg: 'rgba(139,92,246,0.1)', border: 'rgba(139,92,246,0.3)' },
+  Booked: { color: '#475569', bg: 'rgba(71,85,105,0.08)', border: 'rgba(71,85,105,0.2)' },
+  RTO: { color: '#dc2626', bg: 'rgba(239,68,68,0.1)', border: 'rgba(239,68,68,0.3)' },
+  default: { color: '#475569', bg: 'rgba(71,85,105,0.08)', border: 'rgba(71,85,105,0.2)' },
 };
 
 // ── Client-side courier detection (mirrors backend logic) ──────────────────
@@ -85,8 +86,9 @@ export default function PublicTrackPage() {
     if (query.trim()) navigate(`/track/${query.trim()}`);
   }
 
-  const statusStyle = data ? (STATUS_STYLE[data.status] || STATUS_STYLE.default) : null;
-  const currentStep = data ? STATUS_STEPS.findIndex(s => s.toLowerCase() === data.status?.toLowerCase()) : -1;
+  const canonicalStatus = data ? normalizeStatus(data.status) : '';
+  const statusStyle = data ? (STATUS_STYLE[canonicalStatus] || STATUS_STYLE.default) : null;
+  const currentStep = data ? STATUS_STEPS.indexOf(canonicalStatus) : -1;
   const courierColor = data?.detectedCourier ? (COURIER_COLORS[data.detectedCourier] || COURIER_COLORS.UNKNOWN) : COURIER_COLORS.UNKNOWN;
   const brandName = searchParams.get('brand') || 'Sea Hawk Courier';
 
@@ -248,7 +250,7 @@ export default function PublicTrackPage() {
                   color: statusStyle?.color || '#fff',
                   border: `1px solid ${statusStyle?.border || 'rgba(255,255,255,0.3)'}`,
                 }}>
-                  {data.status}
+                  {formatStatusLabel(data.status)}
                 </span>
               </div>
 
@@ -291,7 +293,7 @@ export default function PublicTrackPage() {
                           {i < currentStep ? '✓' : i + 1}
                         </div>
                         <div style={{ fontSize: 10, fontWeight: 600, color: i <= currentStep ? '#0b1f3a' : '#94a3b8', textAlign: 'center', width: 60, lineHeight: 1.3 }}>
-                          {step}
+                          {formatStatusLabel(step)}
                         </div>
                       </div>
                       {i < STATUS_STEPS.length - 1 && (

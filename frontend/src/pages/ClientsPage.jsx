@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { useDebounce } from '../hooks/useDebounce';
-import { Plus, Edit2, Trash2, MessageCircle, Phone, Mail, MapPin, Package, Building2, Search } from 'lucide-react';
+import { Plus, Edit2, Trash2, MessageCircle, Phone, Mail, MapPin, Building2, Search } from 'lucide-react';
 import api from '../services/api';
 import { useFetch } from '../hooks/useFetch';
 import { PageLoader, EmptyState } from '../components/ui/Loading';
 import { Modal } from '../components/ui/Modal';
+import { useDataStore } from '../stores/dataStore';
 
 export default function ClientsPage({ toast }) {
   const { data: rawClients, loading, refetch } = useFetch('/clients');
+  const invalidateClients = useDataStore((state) => state.invalidateClients);
   const [editClient, setEdit] = useState(null);
   const [saving, setSaving]   = useState(false);
   const [search, setSearch]   = useState('');
@@ -28,6 +30,7 @@ export default function ClientsPage({ toast }) {
     setSaving(true);
     try {
       await api.post('/clients', form);
+      invalidateClients();
       await refetch();
       setEdit(null);
       toast?.('Client saved ✓', 'success');
@@ -39,6 +42,7 @@ export default function ClientsPage({ toast }) {
     if (!confirm(`Delete client ${code}? This cannot be undone.`)) return;
     try {
       await api.delete(`/clients/${code}`);
+      invalidateClients();
       await refetch();
       toast?.('Client deleted', 'success');
     } catch (err) { toast?.(err.message, 'error'); }

@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Filter, Edit2, Trash2, X, CheckSquare, Square, ChevronDown, RefreshCw, Clock, Scan, Zap } from 'lucide-react';
 import api from '../services/api';
-import { StatusBadge, STATUSES } from '../components/ui/StatusBadge';
+import { StatusBadge, STATUSES, formatStatusLabel, normalizeStatus } from '../components/ui/StatusBadge';
 import { PageLoader, EmptyState } from '../components/ui/Loading';
 import { Modal } from '../components/ui/Modal';
 import ShipmentForm from '../components/ShipmentForm';
@@ -10,12 +10,12 @@ import ShipmentForm from '../components/ShipmentForm';
 const fmt = n => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 const STATUS_TRANSITIONS = {
-  'Booked':           ['Picked Up', 'Cancelled'],
-  'Picked Up':        ['In Transit', 'RTO', 'Cancelled'],
-  'In Transit':       ['Out for Delivery', 'RTO', 'Failed'],
-  'Out for Delivery': ['Delivered', 'Failed', 'RTO'],
-  'Failed':           ['In Transit', 'RTO'],
-  'RTO':              ['RTO Delivered', 'In Transit'],
+  Booked: ['PickedUp', 'Cancelled'],
+  PickedUp: ['InTransit', 'RTO', 'Cancelled'],
+  InTransit: ['OutForDelivery', 'RTO', 'Failed'],
+  OutForDelivery: ['Delivered', 'Failed', 'RTO'],
+  Failed: ['InTransit', 'RTO'],
+  RTO: ['RTODelivered', 'InTransit'],
 };
 
 // ── Barcode Scanner Bar ───────────────────────────────────────────────────
@@ -100,7 +100,7 @@ function BarcodeScanner({ onScan, scanning, lastScanned }) {
 function QuickStatus({ shipment, onUpdate }) {
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const transitions = STATUS_TRANSITIONS[shipment.status] || [];
+  const transitions = STATUS_TRANSITIONS[normalizeStatus(shipment.status)] || [];
 
   if (transitions.length === 0) return <StatusBadge status={shipment.status} />;
 
@@ -135,7 +135,7 @@ function QuickStatus({ shipment, onUpdate }) {
               <button key={s} onClick={() => update(s)}
                 className="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-                {s}
+                {formatStatusLabel(s)}
               </button>
             ))}
           </div>
@@ -157,8 +157,8 @@ function TimelineModal({ shipment, onClose }) {
       .finally(() => setLoading(false));
   }, [shipment.id]);
 
-  const STEPS = ['Booked','Picked Up','In Transit','Out for Delivery','Delivered'];
-  const currentIdx = STEPS.indexOf(shipment.status);
+  const STEPS = ['Booked', 'PickedUp', 'InTransit', 'OutForDelivery', 'Delivered'];
+  const currentIdx = STEPS.indexOf(normalizeStatus(shipment.status));
 
   return (
     <Modal open onClose={onClose} title={`Timeline — ${shipment.awb}`}>
@@ -173,7 +173,7 @@ function TimelineModal({ shipment, onClose }) {
               </div>
               <span className={`text-[9px] mt-1 text-center max-w-[60px] leading-tight
                 ${i === currentIdx ? 'font-bold text-green-600' : 'text-gray-400'}`}>
-                {step}
+                {formatStatusLabel(step)}
               </span>
             </div>
           ))}
@@ -254,8 +254,8 @@ function BulkStatusModal({ selectedIds, selectedShipments, onDone, onClose, toas
             <label className="label">New Status *</label>
             <select className="input" value={status} onChange={e => setStatus(e.target.value)}>
               <option value="">— Select new status —</option>
-              {['Picked Up','In Transit','Out for Delivery','Delivered','Failed','RTO','Cancelled'].map(s => (
-                <option key={s} value={s}>{s}</option>
+              {['PickedUp','InTransit','OutForDelivery','Delivered','Failed','RTO','Cancelled'].map(s => (
+                <option key={s} value={s}>{formatStatusLabel(s)}</option>
               ))}
             </select>
           </div>

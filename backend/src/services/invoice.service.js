@@ -1,6 +1,12 @@
 const prisma = require('../config/prisma');
 const { AppError } = require('../middleware/errorHandler');
 
+const COMPANY = {
+  name: 'Sea Hawk Courier & Cargo',
+  gstin: '06AJDPR0914N2Z1',
+  hsnCode: '996812',
+};
+
 // Auto-generate invoice number: INV-YYYY-NNN
 async function generateInvoiceNo() {
   const year  = new Date().getFullYear();
@@ -96,4 +102,176 @@ async function remove(id) {
   return prisma.invoice.delete({ where: { id: parseInt(id) } });
 }
 
-module.exports = { create, getAll, getById, updateStatus, remove };
+function getTaxBreakdown(invoice, client) {
+  const gstAmount = Number(invoice?.gstAmount || 0);
+  const gstPercent = Number(invoice?.gstPercent || 18);
+  const companyStateCode = String(COMPANY.gstin || '').slice(0, 2);
+  const clientStateCode = String(client?.gst || '').slice(0, 2);
+  const intraState = clientStateCode ? clientStateCode === companyStateCode : /haryana/i.test(String(client?.address || ''));
+
+  if (intraState) {
+    return {
+      type: 'INTRA_STATE',
+      components: [
+        { label: `CGST @ ${(gstPercent / 2).toFixed(1)}%`, amount: gstAmount / 2 },
+        { label: `SGST @ ${(gstPercent / 2).toFixed(1)}%`, amount: gstAmount / 2 },
+      ],
+    };
+  }
+
+  return {
+    type: 'INTER_STATE',
+    components: [
+      { label: `IGST @ ${gstPercent}%`, amount: gstAmount },
+    ],
+  };
+}
+
+function buildExportRows(invoice) {
+  const items = invoice?.items || [];
+  return items.map((item, index) => ({
+    srNo: index + 1,
+    invoiceNo: invoice.invoiceNo,
+    invoiceDate: new Date(invoice.createdAt || Date.now()).toLocaleDateString('en-IN'),
+    clientCode: invoice.clientCode,
+    clientName: invoice.client?.company || invoice.clientCode,
+    date: item.date,
+    awb: item.awb,
+    consignee: item.consignee || '',
+    destination: item.destination || '',
+    courier: item.courier || '',
+    weightKg: Number(((item.weight || 0) / 1000).toFixed(3)),
+    taxableAmount: Number(item.baseAmount || item.amount || 0),
+    fuelSurcharge: Number(item.fuelSurcharge || 0),
+    lineAmount: Number(item.amount || 0),
+    hsnCode: COMPANY.hsnCode,
+  }));
+}
+
+function generateInvoiceCsv(invoice) {
+  const tax = getTaxBreakdown(invoice, invoice.client);
+  const rows = buildExportRows(invoice);
+  const csvRows = [
+    ['Invoice No', invoice.invoiceNo],
+    ['Invoice Date', new Date(invoice.createdAt || Date.now()).toLocaleDateString('en-IN')],
+    ['Client', invoice.client?.company || invoice.clientCode],
+    ['Client Code', invoice.clientCode],
+    ['Client GSTIN', invoice.client?.gst || ''],
+    ['Company GSTIN', COMPANY.gstin],
+    ['HSN/SAC', COMPANY.hsnCode],
+    ['Taxable Amount', Number(invoice.subtotal || 0).toFixed(2)],
+    ...tax.components.map((item) => [item.label, Number(item.amount || 0).toFixed(2)]),
+    ['Total', Number(invoice.total || 0).toFixed(2)],
+    [],
+    ['Sr No', 'Date', 'AWB', 'Consignee', 'Destination', 'Courier', 'Weight (kg)', 'Taxable Amount', 'Fuel Surcharge', 'Line Amount', 'HSN/SAC'],
+    ...rows.map((row) => [
+      row.srNo,
+      row.date,
+      row.awb,
+      row.consignee,
+      row.destination,
+      row.courier,
+      row.weightKg,
+      row.taxableAmount.toFixed(2),
+      row.fuelSurcharge.toFixed(2),
+      row.lineAmount.toFixed(2),
+      row.hsnCode,
+    ]),
+  ];
+
+  return csvRows
+    .map((row) => row.map((value) => {
+      const text = String(value ?? '');
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    }).join(','))
+    .join('\n');
+}
+
+function generateInvoiceExcelHtml(invoice) {
+  const tax = getTaxBreakdown(invoice, invoice.client);
+  const rows = buildExportRows(invoice);
+  const escape = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+  const summaryRows = [
+    ['Invoice No', invoice.invoiceNo],
+    ['Invoice Date', new Date(invoice.createdAt || Date.now()).toLocaleDateString('en-IN')],
+    ['Client', invoice.client?.company || invoice.clientCode],
+    ['Client Code', invoice.clientCode],
+    ['Client GSTIN', invoice.client?.gst || ''],
+    ['Company GSTIN', COMPANY.gstin],
+    ['HSN/SAC', COMPANY.hsnCode],
+    ['Taxable Amount', Number(invoice.subtotal || 0).toFixed(2)],
+    ...tax.components.map((item) => [item.label, Number(item.amount || 0).toFixed(2)]),
+    ['Total', Number(invoice.total || 0).toFixed(2)],
+  ];
+
+  return `<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: Arial, sans-serif; padding: 16px; }
+      h1 { color: #0b1f3a; }
+      table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+      th, td { border: 1px solid #d1d5db; padding: 8px; font-size: 12px; text-align: left; }
+      th { background: #0b1f3a; color: #fff; }
+      .summary td:first-child { width: 220px; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <h1>Sea Hawk Courier & Cargo - Invoice Export</h1>
+    <table class="summary">
+      <tbody>
+        ${summaryRows.map(([label, value]) => `<tr><td>${escape(label)}</td><td>${escape(value)}</td></tr>`).join('')}
+      </tbody>
+    </table>
+    <table>
+      <thead>
+        <tr>
+          <th>Sr No</th>
+          <th>Date</th>
+          <th>AWB</th>
+          <th>Consignee</th>
+          <th>Destination</th>
+          <th>Courier</th>
+          <th>Weight (kg)</th>
+          <th>Taxable Amount</th>
+          <th>Fuel Surcharge</th>
+          <th>Line Amount</th>
+          <th>HSN/SAC</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.map((row) => `<tr>
+          <td>${escape(row.srNo)}</td>
+          <td>${escape(row.date)}</td>
+          <td>${escape(row.awb)}</td>
+          <td>${escape(row.consignee)}</td>
+          <td>${escape(row.destination)}</td>
+          <td>${escape(row.courier)}</td>
+          <td>${escape(row.weightKg)}</td>
+          <td>${escape(row.taxableAmount.toFixed(2))}</td>
+          <td>${escape(row.fuelSurcharge.toFixed(2))}</td>
+          <td>${escape(row.lineAmount.toFixed(2))}</td>
+          <td>${escape(row.hsnCode)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </body>
+</html>`;
+}
+
+module.exports = {
+  create,
+  getAll,
+  getById,
+  updateStatus,
+  remove,
+  buildExportRows,
+  generateInvoiceCsv,
+  generateInvoiceExcelHtml,
+};

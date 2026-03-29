@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Plus, Eye, Trash2, Download, MessageCircle, FileText, Mail } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import api from '../services/api';
 import { useFetch } from '../hooks/useFetch';
 import { PageLoader, EmptyState } from '../components/ui/Loading';
@@ -117,9 +116,24 @@ export default function InvoicesPage({ toast }) {
   };
 
   // ── Download PDF ──────────────────────────────────────────────────────────
-  const downloadPdf = (inv) => {
-    // Open in new tab — browser handles download via Content-Disposition header
-    window.open(`/api/invoices/${inv.id}/pdf`, '_blank');
+  const triggerBlobDownload = (blob, filename) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const downloadPdf = async (inv) => {
+    try {
+      const blob = await api.get(`/invoices/${inv.id}/pdf`, { responseType: 'blob' });
+      triggerBlobDownload(blob, `invoice-${inv.invoiceNo}.pdf`);
+    } catch (err) {
+      toast?.(err.message || 'Failed to download invoice PDF', 'error');
+    }
   };
 
   // ── Send email ────────────────────────────────────────────────────────────
@@ -143,28 +157,14 @@ export default function InvoicesPage({ toast }) {
   };
 
   // ── Export Excel ──────────────────────────────────────────────────────────
-  const exportExcel = (inv) => {
-    const rows = (inv.items || []).map((item, i) => ({
-      'Sr.': i + 1, 'Date': item.date, 'AWB No': item.awb,
-      'Consignee': item.consignee, 'Destination': item.destination,
-      'Courier': item.courier, 'Weight (kg)': item.weight, 'Amount (₹)': item.amount,
-    }));
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, 'Invoice');
-    // Summary sheet
-    const summary = [
-      ['Invoice No', inv.invoiceNo],
-      ['Client', inv.clientCode],
-      ['Period', `${inv.fromDate} to ${inv.toDate}`],
-      ['Subtotal', inv.subtotal],
-      [`GST (${inv.gstPercent}%)`, inv.gstAmount],
-      ['Total', inv.total],
-      ['Status', inv.status],
-    ];
-    const ws2 = XLSX.utils.aoa_to_sheet(summary);
-    XLSX.utils.book_append_sheet(wb, ws2, 'Summary');
-    XLSX.writeFile(wb, `invoice-${inv.invoiceNo}.xlsx`);
+  const downloadExport = async (inv, format) => {
+    try {
+      const endpoint = format === 'csv' ? `/invoices/${inv.id}/export.csv` : `/invoices/${inv.id}/export.xls`;
+      const blob = await api.get(endpoint, { responseType: 'blob' });
+      triggerBlobDownload(blob, `invoice-${inv.invoiceNo}.${format === 'csv' ? 'csv' : 'xls'}`);
+    } catch (err) {
+      toast?.(err.message || `Failed to export ${format.toUpperCase()}`, 'error');
+    }
   };
 
   // ── WhatsApp ──────────────────────────────────────────────────────────────
@@ -424,8 +424,11 @@ export default function InvoicesPage({ toast }) {
                 <button onClick={() => downloadPdf(viewing)} className="btn-secondary btn-sm gap-1.5">
                   <FileText className="w-3.5 h-3.5" /> Download PDF
                 </button>
-                <button onClick={() => exportExcel(viewing)} className="btn-secondary btn-sm gap-1.5">
+                <button onClick={() => downloadExport(viewing, 'xls')} className="btn-secondary btn-sm gap-1.5">
                   <Download className="w-3.5 h-3.5" /> Excel
+                </button>
+                <button onClick={() => downloadExport(viewing, 'csv')} className="btn-secondary btn-sm gap-1.5">
+                  <Download className="w-3.5 h-3.5" /> CSV
                 </button>
                 <button onClick={() => del(viewing.id)} className="btn-danger btn-sm gap-1.5">
                   <Trash2 className="w-3.5 h-3.5" /> Delete

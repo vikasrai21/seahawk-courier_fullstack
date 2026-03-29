@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { BarChart, Bar, ResponsiveContainer, CartesianGrid, Tooltip, XAxis, YAxis, LineChart, Line, Legend } from 'recharts';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { useSocket } from '../../context/SocketContext';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Modal } from '../../components/ui/Modal';
 
@@ -61,6 +62,7 @@ const RANGE_OPTIONS = [
 
 export default function ClientPortalPage({ toast }) {
   const { user, logout } = useAuth();
+  const { socket } = useSocket();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -177,6 +179,23 @@ export default function ClientPortalPage({ toast }) {
   useEffect(() => {
     fetchPerformance();
   }, [perfDays]);
+
+  useEffect(() => {
+    if (!socket) return undefined;
+
+    const refresh = () => {
+      fetchPortalData();
+      fetchPerformance();
+    };
+
+    socket.on('shipment:created', refresh);
+    socket.on('shipment:status-updated', refresh);
+
+    return () => {
+      socket.off('shipment:created', refresh);
+      socket.off('shipment:status-updated', refresh);
+    };
+  }, [socket, range, dateFrom, dateTo, statusFilter, courierFilter, perfDays, search]);
 
   useEffect(() => {
     if (!ticketSuccess) return undefined;

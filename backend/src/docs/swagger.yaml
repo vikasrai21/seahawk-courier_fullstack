@@ -1,0 +1,379 @@
+openapi: 3.0.3
+info:
+  title: Sea Hawk Courier API
+  version: 1.0.0
+  description: Core operational and client portal endpoints for Sea Hawk Courier.
+servers:
+  - url: http://localhost:3001
+    description: Local
+tags:
+  - name: Auth
+  - name: Shipments
+  - name: Tracking
+  - name: Wallet
+  - name: Portal
+  - name: Analytics
+  - name: Pickups
+  - name: Invoices
+  - name: Support
+  - name: Ops
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          example: admin@seahawk.com
+        password:
+          type: string
+          example: StrongPassword123!
+    ShipmentCreateRequest:
+      type: object
+      required:
+        - clientCode
+        - awb
+      properties:
+        clientCode:
+          type: string
+          example: CLIENT001
+        awb:
+          type: string
+          example: 1234567890
+        consignee:
+          type: string
+        destination:
+          type: string
+        weight:
+          type: number
+        amount:
+          type: number
+        courier:
+          type: string
+        service:
+          type: string
+    WalletRechargeRequest:
+      type: object
+      required:
+        - clientCode
+        - amount
+      properties:
+        clientCode:
+          type: string
+          example: CLIENT001
+        amount:
+          type: number
+          example: 1000
+    PickupCreateRequest:
+      type: object
+      required:
+        - clientCode
+        - contactName
+        - contactPhone
+        - pickupAddress
+        - pickupCity
+      properties:
+        clientCode:
+          type: string
+          example: CLIENT001
+        contactName:
+          type: string
+          example: Rahul Sharma
+        contactPhone:
+          type: string
+          example: "919911565523"
+        pickupAddress:
+          type: string
+        pickupCity:
+          type: string
+        pickupPin:
+          type: string
+    SupportTicketRequest:
+      type: object
+      required:
+        - subject
+        - message
+      properties:
+        subject:
+          type: string
+          example: Shipment delayed
+        message:
+          type: string
+          example: Please help us check AWB 1234567890.
+        priority:
+          type: string
+          example: HIGH
+        awb:
+          type: string
+          example: 1234567890
+paths:
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+        '401':
+          description: Invalid credentials
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh access token
+      responses:
+        '200':
+          description: Token refreshed
+        '401':
+          description: Invalid refresh token
+  /api/shipments:
+    get:
+      tags: [Shipments]
+      summary: List shipments
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Shipment list
+    post:
+      tags: [Shipments]
+      summary: Create shipment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShipmentCreateRequest'
+      responses:
+        '201':
+          description: Shipment created
+  /api/shipments/{id}:
+    get:
+      tags: [Shipments]
+      summary: Get shipment by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Shipment details
+        '404':
+          description: Shipment not found
+  /api/shipments/{id}/status:
+    patch:
+      tags: [Shipments]
+      summary: Update shipment status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  example: InTransit
+      responses:
+        '200':
+          description: Status updated
+  /api/public/track/{awb}:
+    get:
+      tags: [Tracking]
+      summary: Public AWB tracking
+      parameters:
+        - name: awb
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Tracking result
+        '404':
+          description: Shipment not found
+  /api/wallet/me:
+    get:
+      tags: [Wallet]
+      summary: Get current client wallet
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Wallet details
+  /api/wallet/recharge/order:
+    post:
+      tags: [Wallet]
+      summary: Create wallet recharge order
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WalletRechargeRequest'
+      responses:
+        '200':
+          description: Recharge order created
+  /api/portal/stats:
+    get:
+      tags: [Portal]
+      summary: Client portal stats
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Portal metrics
+  /api/portal/shipments:
+    get:
+      tags: [Portal]
+      summary: Client portal shipments
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Portal shipment list
+  /api/portal/map:
+    get:
+      tags: [Portal]
+      summary: Client portal live map data
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Live shipment map payload
+  /api/analytics/overview:
+    get:
+      tags: [Analytics]
+      summary: Analytics overview KPIs
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: KPI totals and trends
+  /api/analytics/couriers:
+    get:
+      tags: [Analytics]
+      summary: Courier performance analytics
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Courier performance comparison
+  /api/ops/recent-activity:
+    get:
+      tags: [Ops]
+      summary: Recent operational activity
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Latest ops events
+  /api/pickups:
+    get:
+      tags: [Pickups]
+      summary: List pickup requests
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Pickup request list
+    post:
+      tags: [Pickups]
+      summary: Create pickup request
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PickupCreateRequest'
+      responses:
+        '201':
+          description: Pickup created
+  /api/invoices:
+    get:
+      tags: [Invoices]
+      summary: List invoices
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Invoice list
+    post:
+      tags: [Invoices]
+      summary: Create invoice
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Invoice created
+  /api/invoices/{id}/pdf:
+    get:
+      tags: [Invoices]
+      summary: Download invoice PDF
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: PDF file
+  /api/support/tickets:
+    get:
+      tags: [Support]
+      summary: List support tickets
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Support ticket list
+    post:
+      tags: [Support]
+      summary: Create support ticket
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SupportTicketRequest'
+      responses:
+        '201':
+          description: Support ticket created

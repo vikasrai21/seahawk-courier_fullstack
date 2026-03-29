@@ -21,9 +21,10 @@ const paginated = (res, data, total, page, limit, message = 'Success') =>
 const error = (res, message, status = 400, errors = null) =>
   res.status(status).json({ success: false, message, ...(errors && { errors }) });
 
+const badRequest = (res, msg = 'Bad request', errors = null) => error(res, msg, 400, errors);
 const notFound  = (res, entity = 'Resource') => error(res, `${entity} not found`, 404);
 const forbidden = (res, msg = 'Access denied') => error(res, msg, 403);
 const unauthorized = (res, msg = 'Unauthorized') => error(res, msg, 401);
 const conflict  = (res, msg) => error(res, msg, 409);
 
-module.exports = { ok, created, paginated, error, notFound, forbidden, unauthorized, conflict };
+module.exports = { ok, created, paginated, error, badRequest, notFound, forbidden, unauthorized, conflict };

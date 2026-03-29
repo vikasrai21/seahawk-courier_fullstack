@@ -2,24 +2,24 @@ import { describe, it, expect } from 'vitest';
 import { assertValidTransition, getValidTransitions, shouldRefund, shouldNotify, isTerminal } from '../../services/stateMachine.js';
 
 describe('State Machine', () => {
-  it('allows valid transition: Booked → Picked Up', () => {
-    expect(() => assertValidTransition('Booked', 'Picked Up')).not.toThrow();
+  it('allows valid transition: Booked → PickedUp', () => {
+    expect(() => assertValidTransition('Booked', 'PickedUp')).not.toThrow();
   });
 
-  it('allows valid transition: In Transit → Out for Delivery', () => {
-    expect(() => assertValidTransition('In Transit', 'Out for Delivery')).not.toThrow();
+  it('allows valid transition: InTransit → OutForDelivery', () => {
+    expect(() => assertValidTransition('InTransit', 'OutForDelivery')).not.toThrow();
   });
 
   it('blocks invalid transition: Booked → Delivered', () => {
     expect(() => assertValidTransition('Booked', 'Delivered')).toThrow();
   });
 
-  it('blocks invalid transition: Delivered → In Transit', () => {
-    expect(() => assertValidTransition('Delivered', 'In Transit')).toThrow();
+  it('blocks invalid transition: Delivered → InTransit', () => {
+    expect(() => assertValidTransition('Delivered', 'InTransit')).toThrow();
   });
 
   it('allows same status (idempotent)', () => {
-    expect(() => assertValidTransition('In Transit', 'In Transit')).not.toThrow();
+    expect(() => assertValidTransition('InTransit', 'InTransit')).not.toThrow();
   });
 
   it('Delivered is terminal', () => {
@@ -47,8 +47,8 @@ describe('State Machine', () => {
     expect(shouldRefund('Delivered')).toBe(false);
   });
 
-  it('triggers notification on Out for Delivery', () => {
-    expect(shouldNotify('Out for Delivery')).toBe(true);
+  it('triggers notification on OutForDelivery', () => {
+    expect(shouldNotify('OutForDelivery')).toBe(true);
   });
 
   it('triggers notification on Delivered', () => {

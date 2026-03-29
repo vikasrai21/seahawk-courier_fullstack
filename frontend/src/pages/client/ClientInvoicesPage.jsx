@@ -13,6 +13,17 @@ export default function ClientInvoicesPage({ toast }) {
   const [loading, setLoading]   = useState(true);
   const [downloadingId, setDownloadingId] = useState(null);
 
+  const triggerBlobDownload = (blob, filename) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
   useEffect(() => {
     api.get('/portal/invoices')
       .then(r => setInvoices(r.data?.invoices || r.data || []))
@@ -24,16 +35,24 @@ export default function ClientInvoicesPage({ toast }) {
     setDownloadingId(invoice.id);
     try {
       const blob = await api.get(`/portal/invoices/${invoice.id}/pdf`, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `invoice-${invoice.invoiceNo}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      triggerBlobDownload(blob, `invoice-${invoice.invoiceNo}.pdf`);
     } catch (e) {
       toast?.(e.message || 'Failed to download invoice PDF', 'error');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
+
+  const downloadExport = async (invoice, format) => {
+    setDownloadingId(invoice.id);
+    try {
+      const endpoint = format === 'csv'
+        ? `/portal/invoices/${invoice.id}/export.csv`
+        : `/portal/invoices/${invoice.id}/export.xls`;
+      const blob = await api.get(endpoint, { responseType: 'blob' });
+      triggerBlobDownload(blob, `invoice-${invoice.invoiceNo}.${format === 'csv' ? 'csv' : 'xls'}`);
+    } catch (e) {
+      toast?.(e.message || `Failed to export ${format.toUpperCase()}`, 'error');
     } finally {
       setDownloadingId(null);
     }
@@ -55,7 +74,7 @@ export default function ClientInvoicesPage({ toast }) {
             <table className="w-full text-sm">
               <thead className="bg-gray-50 border-b">
                 <tr>
-                  {['Invoice No','Period','Total','Status','Download'].map(h =>
+                  {['Invoice No','Period','Total','Status','Downloads'].map(h =>
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">{h}</th>
                   )}
                 </tr>
@@ -70,9 +89,17 @@ export default function ClientInvoicesPage({ toast }) {
                       <span className={`badge badge-${STATUS_COLORS[inv.status]||'gray'}`}>{inv.status}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <button className="text-blue-600 hover:underline text-xs font-semibold" onClick={() => downloadInvoice(inv)}>
-                        {downloadingId === inv.id ? 'Preparing…' : 'Download PDF'}
-                      </button>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <button className="text-blue-600 hover:underline text-xs font-semibold" onClick={() => downloadInvoice(inv)}>
+                          {downloadingId === inv.id ? 'Preparing…' : 'PDF'}
+                        </button>
+                        <button className="text-orange-600 hover:underline text-xs font-semibold" onClick={() => downloadExport(inv, 'xls')}>
+                          Excel
+                        </button>
+                        <button className="text-gray-700 hover:underline text-xs font-semibold" onClick={() => downloadExport(inv, 'csv')}>
+                          CSV
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

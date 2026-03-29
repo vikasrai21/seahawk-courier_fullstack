@@ -14,6 +14,17 @@ export default function ClientWalletPage({ toast }) {
   const [amount, setAmount] = useState(1000);
   const [toppingUp, setToppingUp] = useState(false);
 
+  const triggerBlobDownload = (blob, filename) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  };
+
   const load = () => {
     api.get('/portal/wallet')
       .then(r => { setWallet(r.data?.wallet); setTxns(r.data?.txns || []); })
@@ -91,6 +102,15 @@ export default function ClientWalletPage({ toast }) {
     }
   };
 
+  const downloadReceipt = async (txn) => {
+    try {
+      const blob = await api.get(`/portal/wallet/transactions/${txn.id}/receipt`, { responseType: 'blob' });
+      triggerBlobDownload(blob, `wallet-receipt-${txn.receiptNo || txn.id}.pdf`);
+    } catch (e) {
+      toast?.(e.message || 'Failed to download receipt', 'error');
+    }
+  };
+
   if (loading) return <PageLoader />;
 
   return (
@@ -128,7 +148,7 @@ export default function ClientWalletPage({ toast }) {
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b">
                     <tr>
-                      {['Date','Type','Description','Amount','Balance'].map(h =>
+                      {['Date','Type','Description','Amount','Balance','Receipt'].map(h =>
                         <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase">{h}</th>
                       )}
                     </tr>
@@ -145,6 +165,15 @@ export default function ClientWalletPage({ toast }) {
                           {t.type==='CREDIT'?'+':'-'}{fmt(t.amount)}
                         </td>
                         <td className="px-4 py-3 text-gray-700">{fmt(t.balance)}</td>
+                        <td className="px-4 py-3 text-xs">
+                          {t.type === 'CREDIT' ? (
+                            <button className="text-blue-600 hover:underline font-semibold" onClick={() => downloadReceipt(t)}>
+                              GST Receipt
+                            </button>
+                          ) : (
+                            <span className="text-gray-400">-</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -209,7 +209,7 @@ export default function PickupSchedulerPage({ toast }) {
   );
 }
 
-function PickupDetailPanel({ pickup: p, agents, canAssign, onUpdateStatus, onAssignAgent, toast }) {
+function PickupDetailPanel({ pickup: p, agents, canAssign, onUpdateStatus, onAssignAgent }) {
   const [agentId, setAgentId] = useState('');
   const sc = STATUS_COLORS[p.status] || STATUS_COLORS.PENDING;
 

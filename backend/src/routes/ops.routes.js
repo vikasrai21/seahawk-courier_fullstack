@@ -82,7 +82,7 @@ router.get('/pending-actions', async (req, res) => {
       // RTO shipments needing attention (older than 3 days)
       prisma.shipment.count({ where: { status: 'RTO', updatedAt: { lt: new Date(Date.now() - 3 * 86400000) } } }),
       // Shipments in transit for more than 7 days
-      prisma.shipment.count({ where: { status: 'In Transit', date: { lte: sevenDaysAgo } } }),
+      prisma.shipment.count({ where: { status: 'InTransit', date: { lte: sevenDaysAgo } } }),
     ]);
 
     R.ok(res, { pendingNDRs, draftInvoices, todayPickups, rtoShipments, overdueShipments,

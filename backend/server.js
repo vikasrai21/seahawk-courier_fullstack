@@ -4,12 +4,14 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 const os     = require('os');
+const { createServer } = require('http');
 const app    = require('./src/app');
 const config = require('./src/config');
 const logger = require('./src/utils/logger');
 const prisma = require('./src/config/prisma');
 const { startScheduler } = require('./src/utils/scheduler');
 const { initWorkers } = require('./src/workers/scanner.worker');
+const { initSocket } = require('./src/realtime/socket');
 
 function getLANIP() {
   const nets = os.networkInterfaces();
@@ -31,7 +33,10 @@ async function startServer() {
     process.exit(1);
   }
 
-  const server = app.listen(config.port, '0.0.0.0', () => {
+  const httpServer = createServer(app);
+  await initSocket(httpServer);
+
+  const server = httpServer.listen(config.port, '0.0.0.0', () => {
     const lanIP = getLANIP();
 
     if (config.isDev) {

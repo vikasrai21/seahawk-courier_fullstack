@@ -99,7 +99,7 @@ class DelhiveryProvider extends ICourierProvider {
   }
 
   _mapStatus(s) {
-    const map = { 'In Transit': 'In Transit', 'Delivered': 'Delivered', 'Pending Pickup': 'Booked', 'Picked Up': 'Picked Up', 'Out for Delivery': 'Out for Delivery', 'RTO': 'RTO', 'RTO Initiated': 'RTO' };
+    const map = { 'In Transit': 'InTransit', 'Delivered': 'Delivered', 'Pending Pickup': 'Booked', 'Picked Up': 'PickedUp', 'Out for Delivery': 'OutForDelivery', 'RTO': 'RTO', 'RTO Initiated': 'RTO' };
     return map[s] || s;
   }
 }

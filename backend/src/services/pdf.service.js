@@ -9,18 +9,29 @@
 
 'use strict';
 
-const path   = require('path');
-const logger = require('../utils/logger');
-
 const COMPANY = {
   name:    'Sea Hawk Courier & Cargo',
   address: 'Shop 6 & 7, Rao Lal Singh Market, Sector-18',
   city:    'Gurugram – 122015, Haryana',
   phone:   '+91 99115 65523 / +91 83682 01122',
   gstin:   '06AJDPR0914N2Z1',
+  hsnCode: '996812',
   email:   'info@seahawkcourier.in',
   website: 'seahawkcourier.in',
 };
+
+function fmtMoney(value) {
+  return `₹${Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function fmtDate(value) {
+  if (!value) return '';
+  try {
+    return new Date(value).toLocaleDateString('en-IN');
+  } catch {
+    return String(value);
+  }
+}
 
 function getTaxBreakdown(invoice, client) {
   const gstAmount = Number(invoice?.gstAmount || 0);
@@ -208,12 +219,15 @@ async function generateInvoicePDF(invoice, items, client) {
 
     doc.fontSize(8).fillColor('#888').text('INVOICE DATE', W - 200, cY);
     doc.fontSize(11).fillColor('#0b1f3a').font('Helvetica-Bold')
-       .text(new Date().toLocaleDateString('en-IN'), W - 200, cY + 14);
+       .text(fmtDate(invoice.createdAt || new Date()), W - 200, cY + 14);
     doc.fontSize(8).fillColor('#888').text('TAX TYPE', W - 200, cY + 34);
     doc.fontSize(10).fillColor('#0b1f3a').font('Helvetica-Bold')
        .text(tax.label, W - 200, cY + 47);
     doc.fontSize(8).fillColor('#64748b').font('Helvetica')
        .text(`Place of supply: ${tax.placeOfSupply}`, W - 200, cY + 60, { width: 160 });
+    doc.fontSize(8).fillColor('#888').text('HSN / SAC', W - 200, cY + 86);
+    doc.fontSize(10).fillColor('#0b1f3a').font('Helvetica-Bold')
+       .text(COMPANY.hsnCode, W - 200, cY + 98);
 
     // ── Table header ──
     const tY = 200;
@@ -225,7 +239,8 @@ async function generateInvoicePDF(invoice, items, client) {
       { lbl: 'Consignee',  x: pageM + 172,  w: 100 },
       { lbl: 'Dest.',      x: pageM + 272,  w: 72 },
       { lbl: 'Wt(kg)',     x: pageM + 344,  w: 46 },
-      { lbl: 'Amount(₹)',  x: pageM + 390,  w: 75 },
+      { lbl: 'HSN',        x: pageM + 390,  w: 46 },
+      { lbl: 'Amount(₹)',  x: pageM + 436,  w: 61 },
     ];
     cols.forEach(c => {
       doc.fontSize(7.5).fillColor('#fff').font('Helvetica-Bold')
@@ -245,7 +260,8 @@ async function generateInvoicePDF(invoice, items, client) {
         (item.consignee || '').slice(0, 16),
         (item.destination || '').slice(0, 12),
         ((item.weight || 0) / 1000).toFixed(3),
-        `₹${Number(item.amount || 0).toLocaleString('en-IN')}`,
+        COMPANY.hsnCode,
+        fmtMoney(item.amount || 0),
       ];
       cols.forEach((c, ci) => {
         doc.fontSize(7.5).fillColor('#333').font('Helvetica')
@@ -264,7 +280,8 @@ async function generateInvoicePDF(invoice, items, client) {
     rowY += 8;
 
     const totRows = [
-      ['Subtotal', `₹${invoice.subtotal.toLocaleString('en-IN')}`],
+      ['Taxable amount', fmtMoney(invoice.subtotal)],
+      ['HSN / SAC', COMPANY.hsnCode],
       ...tax.components.map((item) => [item.label, `₹${Number(item.amount || 0).toLocaleString('en-IN')}`]),
     ];
     if (invoice.notes) totRows.push(['Notes', invoice.notes]);
@@ -278,7 +295,7 @@ async function generateInvoicePDF(invoice, items, client) {
     doc.rect(W - 180, rowY, 140, 28).fill('#0b1f3a');
     doc.fontSize(10).fillColor('#fff').font('Helvetica').text('TOTAL DUE', W - 176, rowY + 9, { width: 80 });
     doc.fontSize(12).fillColor('#ff8c45').font('Helvetica-Bold')
-       .text(`₹${invoice.total.toLocaleString('en-IN')}`, W - 96, rowY + 7, { width: 56, align: 'right' });
+       .text(fmtMoney(invoice.total), W - 116, rowY + 7, { width: 76, align: 'right' });
 
     // ── Footer ──
     const fY = doc.page.height - 48;
@@ -289,6 +306,98 @@ async function generateInvoicePDF(invoice, items, client) {
     doc.fontSize(7).fillColor('#bbb')
        .text('Sea Hawk Courier & Cargo | Shop 6 & 7, Rao Lal Singh Market, Sector-18, Gurugram – 122015',
              pageM, fY + 22, { width: W - pageM*2, align: 'center' });
+
+    doc.end();
+  });
+}
+
+async function generateWalletReceiptPDF(txn, client) {
+  const PDFDocument = await getPDF();
+  const pseudoInvoice = {
+    gstAmount: Number(txn.gstAmount || 0),
+    gstPercent: Number(txn.gstPercent || 18),
+  };
+  const tax = getTaxBreakdown(pseudoInvoice, client);
+
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
+
+    doc.on('data', c => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const W = doc.page.width;
+    const pageM = 40;
+
+    doc.rect(0, 0, W, 72).fill('#0b1f3a');
+    doc.fontSize(18).fillColor('#ffffff').font('Helvetica-Bold')
+      .text(COMPANY.name, pageM, 18, { width: W - pageM * 2, align: 'left' });
+    doc.fontSize(8).fillColor('rgba(255,255,255,0.65)').font('Helvetica')
+      .text(`${COMPANY.address}, ${COMPANY.city}  |  ${COMPANY.phone}  |  GSTIN: ${COMPANY.gstin}`,
+        pageM, 40, { width: W - pageM * 2 });
+
+    doc.rect(0, 72, W, 36).fill('#e8580a');
+    doc.fontSize(14).fillColor('#ffffff').font('Helvetica-Bold')
+      .text(`WALLET TOP-UP RECEIPT — ${txn.receiptNo || txn.reference || txn.paymentId || txn.id}`, pageM, 84, { width: W - pageM * 2 });
+
+    const cY = 130;
+    doc.fontSize(8).fillColor('#888').font('Helvetica').text('RECEIVED FROM', pageM, cY);
+    doc.fontSize(11).fillColor('#0b1f3a').font('Helvetica-Bold')
+      .text(client?.company || txn.clientCode, pageM, cY + 14);
+    doc.fontSize(8.5).fillColor('#333').font('Helvetica')
+      .text([client?.address, client?.gst ? `GSTIN: ${client.gst}` : '', client?.phone ? `Ph: ${client.phone}` : ''].filter(Boolean).join('\n'),
+        pageM, cY + 28);
+
+    doc.fontSize(8).fillColor('#888').text('RECEIPT DATE', W - 200, cY);
+    doc.fontSize(11).fillColor('#0b1f3a').font('Helvetica-Bold')
+      .text(fmtDate(txn.createdAt || new Date()), W - 200, cY + 14);
+    doc.fontSize(8).fillColor('#888').text('PAYMENT MODE', W - 200, cY + 34);
+    doc.fontSize(10).fillColor('#0b1f3a').font('Helvetica-Bold')
+      .text(txn.paymentMode || 'ONLINE', W - 200, cY + 47);
+    doc.fontSize(8).fillColor('#888').text('HSN / SAC', W - 200, cY + 67);
+    doc.fontSize(10).fillColor('#0b1f3a').font('Helvetica-Bold')
+      .text(COMPANY.hsnCode, W - 200, cY + 80);
+
+    const tableY = 230;
+    doc.rect(pageM - 4, tableY, W - pageM * 2 + 8, 22).fill('#0b1f3a');
+    [
+      ['Description', pageM, 240],
+      ['Reference', pageM + 220, 240],
+      ['Taxable Amount', pageM + 340, 240],
+      ['Total', pageM + 455, 240],
+    ].forEach(([label, x, y]) => {
+      doc.fontSize(7.5).fillColor('#fff').font('Helvetica-Bold').text(label, x, y);
+    });
+
+    doc.rect(pageM - 4, tableY + 22, W - pageM * 2 + 8, 24).fill('#f9fafb');
+    doc.fontSize(8).fillColor('#111').font('Helvetica')
+      .text(txn.description || 'Wallet recharge receipt', pageM, tableY + 30, { width: 210 });
+    doc.text(txn.paymentId || txn.reference || '-', pageM + 220, tableY + 30, { width: 100 });
+    doc.text(fmtMoney(txn.taxableAmount), pageM + 340, tableY + 30, { width: 90, align: 'right' });
+    doc.text(fmtMoney(txn.amount), pageM + 455, tableY + 30, { width: 60, align: 'right' });
+
+    let rowY = tableY + 70;
+    [
+      ['Taxable amount', fmtMoney(txn.taxableAmount)],
+      ['HSN / SAC', COMPANY.hsnCode],
+      ...tax.components.map((item) => [item.label, fmtMoney(item.amount)]),
+      ['Total received', fmtMoney(txn.amount)],
+      ['Wallet balance after credit', fmtMoney(txn.balance)],
+    ].forEach(([label, value]) => {
+      doc.fontSize(9).fillColor('#555').font('Helvetica').text(label, W - 220, rowY, { width: 120 });
+      doc.fontSize(9).fillColor('#000').font('Helvetica-Bold').text(value, W - 100, rowY, { width: 60, align: 'right' });
+      rowY += 18;
+    });
+
+    doc.fontSize(8).fillColor('#64748b').font('Helvetica')
+      .text(`Tax type: ${tax.label} | Place of supply: ${tax.placeOfSupply}`, pageM, rowY + 16, { width: W - pageM * 2 });
+
+    const fY = doc.page.height - 48;
+    doc.moveTo(pageM, fY).lineTo(W - pageM, fY).stroke('#eee');
+    doc.fontSize(8).fillColor('#aaa').font('Helvetica')
+      .text(`This is a computer-generated wallet receipt. GSTIN: ${COMPANY.gstin} | ${COMPANY.website}`,
+        pageM, fY + 10, { width: W - pageM * 2, align: 'center' });
 
     doc.end();
   });
@@ -346,4 +455,4 @@ function _drawMiniLabel(doc, s, ox, oy) {
             ox + 4, oy + 83, { width: W - 8 });
 }
 
-module.exports = { generateShippingLabel, generateInvoicePDF, generateBulkLabels };
+module.exports = { generateShippingLabel, generateInvoicePDF, generateWalletReceiptPDF, generateBulkLabels };

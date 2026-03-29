@@ -18,6 +18,8 @@ router.get('/:id',          staffOnly, ctrl.getOne);
 router.post('/',            staffOnly, validate(invoiceSchema), ctrl.create);
 router.patch('/:id/status', staffOnly, ctrl.setStatus);
 router.delete('/:id',       adminOnly, ctrl.remove);
+router.get('/:id/export.csv', staffOnly, ctrl.exportCsv);
+router.get('/:id/export.xls', staffOnly, ctrl.exportExcel);
 
 // ── PDF download ──────────────────────────────────────────────────────────
 router.get('/:id/pdf', async (req, res) => {

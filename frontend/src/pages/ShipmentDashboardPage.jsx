@@ -1,16 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Search, Filter, X, Download, RefreshCw, ChevronLeft, ChevronRight,
-  Eye, Edit2, Trash2, Plus, Package, TrendingUp, AlertTriangle, CheckCircle2,
-  ExternalLink, MoreVertical, Clock
+  Eye, Edit2, Trash2, Plus, Package, TrendingUp, CheckCircle2,
+  ExternalLink, Clock
 } from 'lucide-react';
 import api from '../services/api';
-import { StatusBadge } from '../components/ui/StatusBadge';
+import { StatusBadge, formatStatusLabel } from '../components/ui/StatusBadge';
 import { Modal } from '../components/ui/Modal';
 import ShipmentForm from '../components/ShipmentForm';
 import { useAuth } from '../context/AuthContext';
 import { EmptyState } from '../components/ui/EmptyState';
 import { useDebounce } from '../hooks/useDebounce';
+import { useDataStore } from '../stores/dataStore';
 
 const fmt     = n => `₹${Number(n||0).toLocaleString('en-IN')}`;
 const fmtWt   = n => `${Number(n||0).toFixed(3)} kg`;
@@ -29,7 +30,7 @@ const TRACKING_LINKS = {
 };
 
 export default function ShipmentDashboardPage({ toast }) {
-  const { user, isAdmin, hasRole } = useAuth();
+  const { isAdmin, hasRole } = useAuth();
   const [rows,       setRows]       = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [total,      setTotal]      = useState(0);
@@ -45,7 +46,11 @@ export default function ShipmentDashboardPage({ toast }) {
   const [editShip,   setEditShip]   = useState(null);
   const [viewShip,   setViewShip]   = useState(null);
   const [editLoading,setEditLoading]= useState(false);
-  const [clients,    setClients]    = useState([]);
+  const clients = useDataStore((state) => state.clients);
+  const fetchClients = useDataStore((state) => state.fetchClients);
+  const fetchShipments = useDataStore((state) => state.fetchShipments);
+  const setStoreShipments = useDataStore((state) => state.setShipments);
+  const invalidateShipments = useDataStore((state) => state.invalidateShipments);
   const searchRef = useRef();
 
   const canEdit   = isAdmin || hasRole('OPS_MANAGER') || hasRole('STAFF');
@@ -66,19 +71,19 @@ export default function ShipmentDashboardPage({ toast }) {
         ...(filters.dateFrom   && { dateFrom:    filters.dateFrom }),
         ...(filters.dateTo     && { dateTo:      filters.dateTo }),
       });
-      const res = await api.get(`/tracking?${p}`);
-      setRows(res.data?.shipments   || res.data || []);
-      setTotal(res.data?.pagination?.total || res.pagination?.total || 0);
-      setStats(res.data?.stats || null);
+      const { shipments, meta } = await fetchShipments(Object.fromEntries(p.entries()), true);
+      setRows(shipments || []);
+      setTotal(meta?.pagination?.total || 0);
+      setStats(meta?.stats || null);
     } catch (err) {
       toast?.(err.message, 'error');
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, debouncedSearch, filters.courier, filters.status, filters.clientCode, filters.dateFrom, filters.dateTo, sortBy, sortDir]);
+  }, [page, pageSize, debouncedSearch, filters.courier, filters.status, filters.clientCode, filters.dateFrom, filters.dateTo, sortBy, sortDir, fetchShipments, toast]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { api.get('/clients?limit=200').then(r => setClients(r.data||[])).catch(()=>{}); }, []);
+  useEffect(() => { fetchClients({ limit: 200 }).catch(() => {}); }, [fetchClients]);
 
   const setFilter = (k, v) => { setFilters(f => ({ ...f, [k]: v })); setPage(1); };
   const clearFilters = () => { setFilters({ search:'',courier:'',status:'',clientCode:'',dateFrom:'',dateTo:'' }); setPage(1); };
@@ -94,8 +99,11 @@ export default function ShipmentDashboardPage({ toast }) {
     if (!confirm(`Delete AWB ${s.awb}? This cannot be undone.`)) return;
     try {
       await api.delete(`/shipments/${s.id}`);
-      setRows(r => r.filter(x => x.id !== s.id));
+      const nextRows = rows.filter((x) => x.id !== s.id);
+      setRows(nextRows);
+      setStoreShipments(nextRows, { pagination: { total: Math.max(total - 1, 0) }, stats });
       setTotal(t => t - 1);
+      invalidateShipments();
       toast?.('Deleted', 'success');
     } catch (err) { toast?.(err.message, 'error'); }
   };
@@ -104,7 +112,10 @@ export default function ShipmentDashboardPage({ toast }) {
     setEditLoading(true);
     try {
       const res = await api.put(`/shipments/${editShip.id}`, form);
-      setRows(r => r.map(x => x.id === editShip.id ? res.data : x));
+      const nextRows = rows.map((x) => x.id === editShip.id ? res.data : x);
+      setRows(nextRows);
+      setStoreShipments(nextRows, { pagination: { total }, stats });
+      invalidateShipments();
       setEditShip(null);
       toast?.('Saved', 'success');
     } catch (err) { toast?.(err.message, 'error'); }
@@ -387,11 +398,11 @@ function TrackingTimelineModal({ shipment, onClose, toast }) {
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
   const [adding,  setAdding]  = useState(false);
-  const [form,    setForm]    = useState({ status:'In Transit', location:'', description:'' });
+  const [form,    setForm]    = useState({ status:'InTransit', location:'', description:'' });
   const { isAdmin, hasRole }  = useAuth();
   const canAdd = isAdmin || hasRole('OPS_MANAGER') || hasRole('STAFF');
 
-  const STATUSES_TL = ['Booked','Picked Up','In Transit','Reached Hub','Out for Delivery','Delivered','Failed Delivery','RTO Initiated','RTO Delivered'];
+  const STATUSES_TL = ['Booked','PickedUp','InTransit','Reached Hub','OutForDelivery','Delivered','Failed Delivery','RTO Initiated','RTODelivered'];
 
   useEffect(() => {
     api.get(`/tracking/${shipment.awb}`)
@@ -407,7 +418,7 @@ function TrackingTimelineModal({ shipment, onClose, toast }) {
       await api.post(`/tracking/${shipment.awb}/event`, form);
       const r = await api.get(`/tracking/${shipment.awb}`);
       setData(r.data);
-      setForm({ status:'In Transit', location:'', description:'' });
+      setForm({ status:'InTransit', location:'', description:'' });
       toast?.('Event added','success');
     } catch(e) { toast?.(e.message,'error'); }
     finally { setAdding(false); }
@@ -438,7 +449,7 @@ function TrackingTimelineModal({ shipment, onClose, toast }) {
             ].map(([l,v]) => v ? (
               <div key={l}>
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{l}</p>
-                <p className="text-sm font-semibold text-gray-800">{v}</p>
+                <p className="text-sm font-semibold text-gray-800">{l === 'Status' ? formatStatusLabel(v) : v}</p>
               </div>
             ) : null)}
           </div>
@@ -467,7 +478,7 @@ function TrackingTimelineModal({ shipment, onClose, toast }) {
                   }`}/>
                   <div className="bg-white border border-gray-100 rounded-lg p-3 shadow-sm">
                     <div className="flex items-start justify-between gap-2">
-                      <span className={`text-xs font-bold ${i===0?'text-orange-600':'text-gray-700'}`}>{e.status}</span>
+                    <span className={`text-xs font-bold ${i===0?'text-orange-600':'text-gray-700'}`}>{formatStatusLabel(e.status)}</span>
                       <span className="text-[10px] text-gray-400 whitespace-nowrap">
                         {new Date(e.createdAt).toLocaleString('en-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}
                       </span>
@@ -489,7 +500,7 @@ function TrackingTimelineModal({ shipment, onClose, toast }) {
               <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Add Manual Event</p>
               <div className="grid grid-cols-2 gap-2 mb-2">
                 <select className="input text-xs" value={form.status} onChange={e=>setForm(f=>({...f,status:e.target.value}))}>
-                  {STATUSES_TL.map(s=><option key={s}>{s}</option>)}
+                  {STATUSES_TL.map(s => <option key={s} value={s}>{formatStatusLabel(s)}</option>)}
                 </select>
                 <input className="input text-xs" placeholder="Location (optional)" value={form.location} onChange={e=>setForm(f=>({...f,location:e.target.value}))}/>
               </div>

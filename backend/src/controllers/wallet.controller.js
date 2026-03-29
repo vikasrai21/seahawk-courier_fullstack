@@ -4,9 +4,23 @@
 const prisma                = require('../config/prisma');
 const R                     = require('../utils/response');
 const notify                = require('../services/notification.service');
+const pdf                   = require('../services/pdf.service');
 const { auditLog }          = require('../utils/audit');
-const logger                = require('../utils/logger');
 const { asyncHandler }      = require('../middleware/errorHandler');
+
+function withReceiptMeta(txn) {
+  const amount = Number(txn.amount || 0);
+  const gstPercent = Number(txn.gstPercent || 18);
+  const taxableAmount = Number((amount / (1 + (gstPercent / 100))).toFixed(2));
+  const gstAmount = Number((amount - taxableAmount).toFixed(2));
+  return {
+    ...txn,
+    gstPercent,
+    taxableAmount,
+    gstAmount,
+    receiptNo: `RCPT-${new Date(txn.createdAt || Date.now()).toISOString().slice(0, 10).replace(/-/g, '')}-${txn.id}`,
+  };
+}
 
 /* ── GET /api/wallet  — all wallets (admin) ── */
 const listWallets = asyncHandler(async (req, res) => {
@@ -36,7 +50,7 @@ const getMyWallet = asyncHandler(async (req, res) => {
     orderBy: { createdAt: 'desc' },
     take:    50,
   });
-  R.ok(res, { ...client, balance: client.walletBalance, transactions: txns });
+  R.ok(res, { ...client, balance: client.walletBalance, transactions: txns.map(withReceiptMeta) });
 });
 
 /* ── GET /api/wallet/:clientCode ── */
@@ -55,7 +69,7 @@ const getWallet = asyncHandler(async (req, res) => {
     orderBy: { createdAt: 'desc' },
     take:    50,
   });
-  R.ok(res, { ...client, balance: client.walletBalance, transactions: txns });
+  R.ok(res, { ...client, balance: client.walletBalance, transactions: txns.map(withReceiptMeta) });
 });
 
 /* ── GET /api/wallet/:clientCode/transactions ── */
@@ -81,7 +95,36 @@ const getTransactions = asyncHandler(async (req, res) => {
     prisma.walletTransaction.count({ where }),
   ]);
 
-  R.ok(res, { transactions: txns, total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) });
+  R.ok(res, { transactions: txns.map(withReceiptMeta), total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) });
+});
+
+/* ── GET /api/wallet/:clientCode/transactions/:id/receipt ── */
+const downloadReceipt = asyncHandler(async (req, res) => {
+  const clientCode = String(req.params.clientCode || '').trim().toUpperCase();
+  const txnId = parseInt(req.params.id, 10);
+
+  const [client, txn] = await Promise.all([
+    prisma.client.findUnique({
+      where: { code: clientCode },
+      select: { code: true, company: true, address: true, gst: true, phone: true },
+    }),
+    prisma.walletTransaction.findFirst({
+      where: { id: txnId, clientCode },
+    }),
+  ]);
+
+  if (!client) return R.error(res, 'Client not found', 404);
+  if (!txn) return R.error(res, 'Wallet transaction not found', 404);
+  if (txn.type !== 'CREDIT') return R.error(res, 'Only credit transactions have GST receipts', 400);
+
+  const enrichedTxn = withReceiptMeta(txn);
+  const buf = await pdf.generateWalletReceiptPDF(enrichedTxn, client);
+  res.set({
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="wallet-receipt-${enrichedTxn.receiptNo}.pdf"`,
+    'Content-Length': buf.length,
+  });
+  res.send(buf);
 });
 
 /* ── POST /api/wallet/recharge/order  — create Razorpay order ── */
@@ -287,6 +330,7 @@ module.exports = {
   getMyWallet,
   getWallet,
   getTransactions,
+  downloadReceipt,
   createRechargeOrder,
   verifyRecharge,
   debitWallet,
