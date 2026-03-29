@@ -1,10 +1,18 @@
 import { createContext, useContext, useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 
 const ThemeContext = createContext({ dark: true, toggle: () => {} });
 
 export function ThemeProvider({ children }) {
+  const location = useLocation();
   const [dark, setDark] = useState(() => {
-    try { return localStorage.getItem('shk-theme') !== 'light'; } catch { return true; }
+    try {
+      const saved = localStorage.getItem('shk-theme');
+      if (!saved) return false;
+      return saved === 'dark';
+    } catch {
+      return false;
+    }
   });
 
   const toggle = () => setDark(d => {
@@ -15,6 +23,15 @@ export function ThemeProvider({ children }) {
 
   useEffect(() => {
     const root = document.documentElement;
+    const isThemedRoute = location.pathname.startsWith('/app') || location.pathname.startsWith('/portal');
+
+    if (!isThemedRoute) {
+      root.removeAttribute('data-theme');
+      root.style.removeProperty('background');
+      root.style.removeProperty('color');
+      return;
+    }
+
     if (dark) {
       // Dark mode — matches the preview HTML exactly
       root.style.setProperty('--shk-bg',         '#0a0f1a');
@@ -59,7 +76,7 @@ export function ThemeProvider({ children }) {
       root.style.background = '#f0f4fb';
       root.style.color = '#0f172a';
     }
-  }, [dark]);
+  }, [dark, location.pathname]);
 
   return (
     <ThemeContext.Provider value={{ dark, toggle }}>

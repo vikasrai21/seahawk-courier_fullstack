@@ -202,7 +202,7 @@
 /* Inputs — ONLY inside dark theme app pages */
 [data-theme="dark"] input:not(.tw-input):not([class*="tw-"]),
 [data-theme="dark"] select:not(.tw-select):not([class*="tw-"]),
-[data-theme="dark"] textarea {
+[data-theme="dark"] textarea:not(.tw-input):not([class*="tw-"]) {
   background-color: #1a2236 !important;
   color: #f1f5f9 !important;
   border-color: #1f2d45 !important;
@@ -390,13 +390,14 @@
 /* Inputs light */
 [data-theme="light"] input:not(.tw-input):not([class*="tw-"]),
 [data-theme="light"] select:not(.tw-select):not([class*="tw-"]),
-[data-theme="light"] textarea {
+[data-theme="light"] textarea:not(.tw-input):not([class*="tw-"]) {
   background-color: #f7faff !important;
   color: #0f172a !important;
   border-color: #dde4f0 !important;
 }
 
-[data-theme="light"] input::placeholder {
+[data-theme="light"] input::placeholder,
+[data-theme="light"] textarea::placeholder {
   color: #94a3b8 !important;
   opacity: 1;
 }

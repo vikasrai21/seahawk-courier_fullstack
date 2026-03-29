@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Eye, Trash2, Download, MessageCircle, FileText, Send, Mail } from 'lucide-react';
+import { Plus, Eye, Trash2, Download, MessageCircle, FileText, Mail } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import api from '../services/api';
 import { useFetch } from '../hooks/useFetch';
@@ -25,14 +25,27 @@ export default function InvoicesPage({ toast }) {
   const [emailModal,  setEmailModal]  = useState(false);
   const [emailAddr,   setEmailAddr]   = useState('');
   const [sendingEmail, setSendingEmail] = useState(false);
+  const [createError, setCreateError] = useState('');
   const [form, setForm] = useState({ clientCode:'', fromDate: firstOfMonth(), toDate: today(), gstPercent:'18', notes:'' });
+  const canGenerate = Boolean(form.clientCode && form.fromDate && form.toDate) && form.fromDate <= form.toDate;
 
   const set = (k,v) => setForm(f => ({...f, [k]:v}));
 
   const create = async () => {
     if (!form.clientCode || !form.fromDate || !form.toDate) {
-      toast?.('Client and date range are required', 'error'); return;
+      const msg = 'Client and date range are required';
+      setCreateError(msg);
+      toast?.(msg, 'error');
+      return;
     }
+    if (form.fromDate > form.toDate) {
+      const msg = '"From Date" cannot be after "To Date".';
+      setCreateError(msg);
+      toast?.(msg, 'error');
+      return;
+    }
+
+    setCreateError('');
     setSaving(true);
     try {
       const res = await api.post('/invoices', form);
@@ -40,7 +53,14 @@ export default function InvoicesPage({ toast }) {
       setCreating(false);
       toast?.(`Invoice ${res.data.invoiceNo} created ✓`, 'success');
       loadView(res.data.id);
-    } catch (err) { toast?.(err.message, 'error'); }
+    } catch (err) {
+      let msg = err.message || 'Failed to generate invoice';
+      if (msg.toLowerCase().includes('no unbilled shipments')) {
+        msg = 'No unbilled shipments were found for this client/date range. Try a wider date range or another client.';
+      }
+      setCreateError(msg);
+      toast?.(msg, 'error');
+    }
     finally { setSaving(false); }
   };
 
@@ -133,7 +153,7 @@ export default function InvoicesPage({ toast }) {
           <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
           <p className="text-xs text-gray-500 mt-0.5">Generate, download and email invoices to clients</p>
         </div>
-        <button onClick={() => setCreating(true)} className="btn-primary btn-sm gap-1.5">
+        <button onClick={() => { setCreateError(''); setCreating(true); }} className="btn-primary btn-sm gap-1.5">
           <Plus className="w-3.5 h-3.5" /> Generate Invoice
         </button>
       </div>
@@ -196,10 +216,10 @@ export default function InvoicesPage({ toast }) {
       )}
 
       {/* ── Generate Invoice Modal ── */}
-      <Modal open={creating} onClose={() => setCreating(false)} title="Generate Invoice"
+      <Modal open={creating} onClose={() => { if (!saving) { setCreateError(''); setCreating(false); } }} title="Generate Invoice"
         footer={<>
-          <button onClick={() => setCreating(false)} className="btn-secondary">Cancel</button>
-          <button onClick={create} disabled={saving} className="btn-primary">{saving ? 'Generating…' : 'Generate Invoice'}</button>
+          <button onClick={() => { setCreateError(''); setCreating(false); }} disabled={saving} className="btn-secondary">Cancel</button>
+          <button onClick={create} disabled={saving || !canGenerate} className="btn-primary">{saving ? 'Generating…' : 'Generate Invoice'}</button>
         </>}
       >
         <div className="space-y-3">
@@ -231,6 +251,11 @@ export default function InvoicesPage({ toast }) {
             <label className="label">Notes (optional)</label>
             <textarea className="input" rows={2} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="e.g. Payment due within 30 days" />
           </div>
+          {!!createError && (
+            <div className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg p-3">
+              {createError}
+            </div>
+          )}
         </div>
       </Modal>
 

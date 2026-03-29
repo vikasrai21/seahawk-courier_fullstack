@@ -60,6 +60,7 @@ const navGroups = [
       { to: '/app/clients',        label: 'Clients',          icon: Users },
       { to: '/app/contracts',      label: 'Contracts',        icon: ScrollText },
       { to: '/app/invoices',       label: 'Invoices',         icon: Receipt },
+      { to: '/app/support',        label: 'Support Tickets',  icon: MessageCircle, roles: ['ADMIN','OPS_MANAGER','STAFF'] },
       { to: '/app/wallet',         label: 'Wallet',           icon: CreditCard, roles: ['ADMIN','OPS_MANAGER'] },
       { to: '/app/reconciliation', label: 'Reconciliation',   icon: Shield },
     ],

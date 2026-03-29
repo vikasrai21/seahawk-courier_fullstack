@@ -8,6 +8,9 @@ import { AppLayout } from './components/layout/AppLayout';
 import { Spinner } from './components/ui/Loading';
 
 const ClientPortalPage = lazy(() => import('./pages/client/ClientPortalPage'));
+const ClientInvoicesPage = lazy(() => import('./pages/client/ClientInvoicesPage'));
+const ClientWalletPage = lazy(() => import('./pages/client/ClientWalletPage'));
+const ClientShipmentsPage = lazy(() => import('./pages/client/ClientShipmentsPage'));
 const LandingPage = lazy(() => import('./pages/public/LandingPage'));
 const PublicTrackPage = lazy(() => import('./pages/public/PublicTrackPage'));
 const ServicesPage = lazy(() => import('./pages/public/ServicesPage'));
@@ -44,6 +47,7 @@ const NDRPage = lazy(() => import('./pages/NDRPage'));
 const PickupSchedulerPage = lazy(() => import('./pages/PickupSchedulerPage'));
 const WalletPage = lazy(() => import('./pages/WalletPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
+const SupportTicketsPage = lazy(() => import('./pages/SupportTicketsPage'));
 
 function AuthLoadingScreen() {
   return (
@@ -125,6 +129,9 @@ function AppRoutes() {
             <Route path="/login" element={<LoginPage />} />
 
             <Route path="/portal" element={<ClientRoute><ClientPortalPage {...p} /></ClientRoute>} />
+            <Route path="/portal/invoices" element={<ClientRoute><ClientInvoicesPage {...p} /></ClientRoute>} />
+            <Route path="/portal/wallet" element={<ClientRoute><ClientWalletPage {...p} /></ClientRoute>} />
+            <Route path="/portal/shipments" element={<ClientRoute><ClientShipmentsPage {...p} /></ClientRoute>} />
             <Route path="/portal/*" element={<ClientRoute><ClientPortalPage {...p} /></ClientRoute>} />
 
             <Route
@@ -145,6 +152,7 @@ function AppRoutes() {
                       <Route path="/clients" element={<ClientsPage {...p} />} />
                       <Route path="/contracts" element={<ContractsPage {...p} />} />
                       <Route path="/invoices" element={<InvoicesPage {...p} />} />
+                      <Route path="/support" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}><SupportTicketsPage {...p} /></PrivateRoute>} />
                       <Route path="/reconciliation" element={<ReconciliationPage {...p} />} />
                       <Route path="/rates" element={<RateCalculatorPage />} />
                       <Route path="/bulk" element={<BulkComparePage {...p} />} />
