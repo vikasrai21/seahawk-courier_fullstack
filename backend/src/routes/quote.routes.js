@@ -1,10 +1,10 @@
 // src/routes/quote.routes.js
 const router = require('express').Router();
-const { protect } = require('../middleware/auth.middleware');
+const { protect, staffOnly } = require('../middleware/auth.middleware');
 const Q = require('../services/quote.service');
 const R = require('../utils/response');
 
-router.use(protect);
+router.use(protect, staffOnly);
 
 router.get('/',      async (req, res, next) => { try { const r = await Q.listQuotes(req.query); R.paginated(res, r.data, r.total, r.page, r.limit); } catch(e){next(e);} });
 router.get('/stats', async (req, res, next) => { try { R.ok(res, await Q.getQuoteStats()); } catch(e){next(e);} });

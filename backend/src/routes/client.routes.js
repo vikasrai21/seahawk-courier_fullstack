@@ -1,10 +1,10 @@
 const router = require('express').Router();
 const ctrl   = require('../controllers/client.controller');
-const { protect, adminOnly } = require('../middleware/auth.middleware');
+const { protect, adminOnly, staffOnly } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validate.middleware');
 const { clientSchema } = require('../validators/shipment.validator');
 
-router.use(protect);
+router.use(protect, staffOnly);
 router.get('/',            ctrl.getAll);
 router.get('/:code',       ctrl.getOne);
 router.get('/:code/stats', ctrl.getStats);

@@ -15,8 +15,8 @@ router.get( '/me',              protect,      ctrl.getMe);
 // Change password — rate limited
 router.put('/change-password', protect, sensitiveActionLimiter, validate(changePasswordSchema), ctrl.changePassword);
 
-// Admin-only user management
-router.get( '/users',     protect, require('../middleware/auth.middleware').requireRole('ADMIN','OPS_MANAGER','STAFF'), ctrl.getAllUsers);
+// Management user management
+router.get( '/users',     protect, require('../middleware/auth.middleware').requireRole('ADMIN','OPS_MANAGER'), ctrl.getAllUsers);
 router.post('/users',     protect, adminOnly, validate(createUserSchema), ctrl.createUser);
 router.put( '/users/:id', protect, adminOnly, validate(updateUserSchema), ctrl.updateUser);
 

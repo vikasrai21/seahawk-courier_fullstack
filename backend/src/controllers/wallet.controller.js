@@ -21,8 +21,12 @@ const listWallets = asyncHandler(async (req, res) => {
 
 /* ── GET /api/wallet/me  — current user's wallet (CLIENT role) ── */
 const getMyWallet = asyncHandler(async (req, res) => {
-  const client = await prisma.client.findFirst({
-    where:  { email: req.user.email },
+  if (!req.user.clientCode) {
+    return R.error(res, 'No client account linked to this user', 404);
+  }
+
+  const client = await prisma.client.findUnique({
+    where:  { code: req.user.clientCode },
     select: { code: true, company: true, walletBalance: true },
   });
   if (!client) return R.error(res, 'No client account linked to this user', 404);
@@ -82,8 +86,9 @@ const getTransactions = asyncHandler(async (req, res) => {
 
 /* ── POST /api/wallet/recharge/order  — create Razorpay order ── */
 const createRechargeOrder = asyncHandler(async (req, res) => {
-  const { clientCode, amount } = req.body;
-  if (!clientCode || !amount || amount < 100) {
+  const clientCode = String(req.body.clientCode || '').trim().toUpperCase();
+  const amount = Number(req.body.amount);
+  if (!clientCode || !Number.isFinite(amount) || amount < 100) {
     return R.error(res, 'clientCode and amount (min ₹100) required', 400);
   }
 
@@ -118,7 +123,15 @@ const createRechargeOrder = asyncHandler(async (req, res) => {
 
 /* ── POST /api/wallet/recharge/verify  — verify payment & credit wallet ── */
 const verifyRecharge = asyncHandler(async (req, res) => {
-  const { razorpay_order_id, razorpay_payment_id, razorpay_signature, clientCode, amount } = req.body;
+  const razorpay_order_id = String(req.body.razorpay_order_id || '').trim();
+  const razorpay_payment_id = String(req.body.razorpay_payment_id || '').trim();
+  const razorpay_signature = String(req.body.razorpay_signature || '').trim();
+  const clientCode = String(req.body.clientCode || '').trim().toUpperCase();
+  const amount = Number(req.body.amount);
+
+  if (!clientCode || !Number.isFinite(amount) || amount <= 0) {
+    return R.error(res, 'Valid clientCode and amount are required', 400);
+  }
 
   const razorpaySecret = process.env.RAZORPAY_KEY_SECRET;
   if (razorpaySecret && razorpay_signature) {
@@ -132,32 +145,47 @@ const verifyRecharge = asyncHandler(async (req, res) => {
     }
   }
 
-  const [txn] = await prisma.$transaction([
-    prisma.walletTransaction.create({
+  const existing = await prisma.walletTransaction.findFirst({
+    where: {
+      clientCode,
+      ...((razorpay_payment_id || razorpay_order_id) ? {
+        OR: [
+          ...(razorpay_payment_id ? [{ paymentId: razorpay_payment_id }] : []),
+          [{ reference: razorpay_payment_id || razorpay_order_id }],
+        ].flat(),
+      } : {}),
+    },
+    select: { id: true },
+  });
+  if (existing) {
+    return R.error(res, 'This payment has already been processed', 409);
+  }
+
+  const { wallet, txn } = await prisma.$transaction(async (tx) => {
+    const updatedClient = await tx.client.update({
+      where: { code: clientCode },
+      data:  { walletBalance: { increment: amount } },
+      select: { walletBalance: true },
+    });
+
+    const createdTxn = await tx.walletTransaction.create({
       data: {
         clientCode,
         type:        'CREDIT',
-        amount:      parseFloat(amount),
-        balance:     0,
+        amount,
+        balance:     updatedClient.walletBalance,
         description: 'Wallet recharge via Razorpay',
         reference:   razorpay_payment_id || razorpay_order_id,
         paymentMode: 'RAZORPAY',
-        paymentId:   razorpay_payment_id,
+        paymentId:   razorpay_payment_id || null,
         status:      'SUCCESS',
       },
-    }),
-    prisma.client.update({
-      where: { code: clientCode },
-      data:  { walletBalance: { increment: parseFloat(amount) } },
-    }),
-  ]);
+    });
 
-  const client = await prisma.client.findUnique({
-    where:  { code: clientCode },
-    select: { walletBalance: true },
+    return { wallet: updatedClient, txn: createdTxn };
   });
 
-  await notify.paymentReceived({ ...txn, balance: client.walletBalance }, clientCode).catch(() => {});
+  await notify.paymentReceived({ ...txn, balance: wallet.walletBalance }, clientCode).catch(() => {});
   await auditLog({
     userId:    req.user?.id,
     userEmail: req.user?.email,
@@ -170,8 +198,8 @@ const verifyRecharge = asyncHandler(async (req, res) => {
 
   R.ok(res, {
     message:    'Wallet recharged successfully',
-    amount:     parseFloat(amount),
-    newBalance: client.walletBalance,
+    amount,
+    newBalance: wallet.walletBalance,
   });
 });
 

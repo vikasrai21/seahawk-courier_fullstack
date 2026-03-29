@@ -5,12 +5,12 @@
 const router = require('express').Router();
 const prisma  = require('../config/prisma');
 const R       = require('../utils/response');
-const { protect, requireRole } = require('../middleware/auth.middleware');
+const { protect, requireRole, staffOnly } = require('../middleware/auth.middleware');
 const stateMachine = require('../services/stateMachine');
 const { auditLog } = require('../utils/audit');
 const logger = require('../utils/logger');
 
-router.use(protect);
+router.use(protect, staffOnly);
 
 // ── POST /api/ops/bulk-status — bulk update shipment statuses ─────────────
 router.post('/bulk-status', async (req, res) => {

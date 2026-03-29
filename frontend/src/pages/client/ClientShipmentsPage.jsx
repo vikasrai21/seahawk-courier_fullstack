@@ -29,8 +29,8 @@ export default function ClientShipmentsPage({ toast }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const p = new URLSearchParams({ page, limit: 25, ...(dSearch && { search: dSearch }), ...(status && { status }) });
-      const r = await api.get(`/shipments/my?${p}`);
+      const p = new URLSearchParams({ page, limit: 25, range: '90d', ...(dSearch && { search: dSearch }), ...(status && { status }) });
+      const r = await api.get(`/portal/shipments?${p}`);
       setRows(r.data?.shipments || r.data || []);
       setTotal(r.data?.pagination?.total || 0);
     } catch(e) { toast?.(e.message, 'error'); }
@@ -64,6 +64,7 @@ export default function ClientShipmentsPage({ toast }) {
               <option key={s} value={s}>{s}</option>
             )}
           </select>
+          <Link to="/portal/bulk-track" className="btn-secondary">Bulk Track</Link>
         </div>
 
         {rows.length === 0 && !loading ? (

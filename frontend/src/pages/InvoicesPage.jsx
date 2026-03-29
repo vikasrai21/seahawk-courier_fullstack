@@ -15,6 +15,32 @@ const STATUS_COLORS = {
 const fmt = n => `₹${Number(n||0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 const today = () => new Date().toISOString().split('T')[0];
 const firstOfMonth = () => { const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]; };
+const COMPANY_GST = '06AJDPR0914N2Z1';
+
+function getTaxBreakdown(inv, client) {
+  const gstPercent = Number(inv?.gstPercent || 18);
+  const gstAmount = Number(inv?.gstAmount || 0);
+  const companyState = COMPANY_GST.slice(0, 2);
+  const clientState = String(client?.gst || '').slice(0, 2);
+  const intraState = clientState ? clientState === companyState : /haryana/i.test(String(client?.address || ''));
+
+  if (intraState) {
+    return {
+      type: 'Intra-state',
+      placeOfSupply: 'Haryana',
+      lines: [
+        { label: `CGST (${(gstPercent / 2).toFixed(1)}%)`, amount: gstAmount / 2 },
+        { label: `SGST (${(gstPercent / 2).toFixed(1)}%)`, amount: gstAmount / 2 },
+      ],
+    };
+  }
+
+  return {
+    type: 'Inter-state',
+    placeOfSupply: client?.address || 'Outside Haryana',
+    lines: [{ label: `IGST (${gstPercent}%)`, amount: gstAmount }],
+  };
+}
 
 export default function InvoicesPage({ toast }) {
   const { data: invoices, loading, refetch } = useFetch('/invoices');
@@ -28,6 +54,10 @@ export default function InvoicesPage({ toast }) {
   const [createError, setCreateError] = useState('');
   const [form, setForm] = useState({ clientCode:'', fromDate: firstOfMonth(), toDate: today(), gstPercent:'18', notes:'' });
   const canGenerate = Boolean(form.clientCode && form.fromDate && form.toDate) && form.fromDate <= form.toDate;
+  const selectedClient = (clients || []).find(c => c.code === form.clientCode);
+  const gstPreviewBase = 1000;
+  const gstPreviewAmount = gstPreviewBase * ((Number(form.gstPercent || 18)) / 100);
+  const gstPreview = getTaxBreakdown({ gstPercent: Number(form.gstPercent || 18), gstAmount: gstPreviewAmount }, selectedClient);
 
   const set = (k,v) => setForm(f => ({...f, [k]:v}));
 
@@ -247,6 +277,24 @@ export default function InvoicesPage({ toast }) {
             <label className="label">GST %</label>
             <input type="number" className="input" value={form.gstPercent} onChange={e => set('gstPercent', e.target.value)} />
           </div>
+          <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <div className="text-xs text-gray-400 uppercase font-bold">GST Invoice Preview</div>
+                <div className="text-sm font-semibold text-gray-900 mt-1">{gstPreview.type} supply</div>
+                <div className="text-xs text-gray-500 mt-1">Place of supply: {gstPreview.placeOfSupply}</div>
+              </div>
+              <div className="text-xs text-gray-500">Previewing split on sample taxable value {fmt(gstPreviewBase)}</div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+              {gstPreview.lines.map((line) => (
+                <div key={line.label} className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                  <div className="text-xs text-gray-400">{line.label}</div>
+                  <div className="font-semibold text-gray-900 mt-1">{fmt(line.amount)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
           <div>
             <label className="label">Notes (optional)</label>
             <textarea className="input" rows={2} value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="e.g. Payment due within 30 days" />
@@ -285,6 +333,9 @@ export default function InvoicesPage({ toast }) {
 
       {/* ── View Invoice Modal ── */}
       {viewing && (
+        (() => {
+          const tax = getTaxBreakdown(viewing, viewing.client);
+          return (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl my-8">
             <div className="p-6 border-b border-gray-100">
@@ -312,10 +363,12 @@ export default function InvoicesPage({ toast }) {
                   <p className="font-bold text-sm">{viewing.client?.company}</p>
                   <p className="text-xs text-gray-600">{viewing.client?.address}</p>
                   {viewing.client?.gst && <p className="text-xs text-gray-500 font-mono">GST: {viewing.client.gst}</p>}
+                  <p className="text-xs text-gray-500 mt-1">Tax Type: {tax.type}</p>
                 </div>
                 <div>
                   <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">Period</p>
                   <p className="text-sm font-medium">{viewing.fromDate} to {viewing.toDate}</p>
+                  <p className="text-xs text-gray-500 mt-1">Place of supply: {tax.placeOfSupply}</p>
                 </div>
               </div>
             </div>
@@ -349,7 +402,9 @@ export default function InvoicesPage({ toast }) {
               <div className="flex justify-end">
                 <div className="w-64 space-y-1.5">
                   <div className="flex justify-between text-sm text-gray-600"><span>Subtotal</span><span>{fmt(viewing.subtotal)}</span></div>
-                  <div className="flex justify-between text-sm text-gray-600"><span>GST ({viewing.gstPercent}%)</span><span>{fmt(viewing.gstAmount)}</span></div>
+                  {tax.lines.map((line) => (
+                    <div key={line.label} className="flex justify-between text-sm text-gray-600"><span>{line.label}</span><span>{fmt(line.amount)}</span></div>
+                  ))}
                   <div className="border-t border-gray-200 pt-2 mt-2 flex justify-between text-sm font-bold text-gray-900">
                     <span>Total</span><span>{fmt(viewing.total)}</span>
                   </div>
@@ -379,6 +434,8 @@ export default function InvoicesPage({ toast }) {
             </div>
           </div>
         </div>
+          );
+        })()
       )}
     </div>
   );

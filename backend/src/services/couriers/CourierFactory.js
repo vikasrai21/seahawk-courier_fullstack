@@ -429,14 +429,18 @@ class CourierFactory {
 
   static async compareRates(payload) {
     const configured = Object.values(PROVIDERS).filter(p => p.enabled);
-    if (configured.length === 0) return CourierFactory._internalRates(payload);
+    if (configured.length === 0) {
+      return CourierFactory._internalRates(payload)
+        .sort((a, b) => (a.rate?.total || a.rate?.Total || Number.MAX_SAFE_INTEGER) - (b.rate?.total || b.rate?.Total || Number.MAX_SAFE_INTEGER));
+    }
     const results = await Promise.allSettled(configured.map(async p => {
       const rate = await p.calculateRate(payload);
       return { courier: p.name, rate };
     }));
     const apiRates = results.filter(r => r.status === 'fulfilled').map(r => r.value);
     const internal = CourierFactory._internalRates(payload);
-    return [...apiRates, ...internal.filter(r => !apiRates.find(a => a.courier === r.courier))];
+    return [...apiRates, ...internal.filter(r => !apiRates.find(a => a.courier === r.courier))]
+      .sort((a, b) => (a.rate?.total || a.rate?.Total || Number.MAX_SAFE_INTEGER) - (b.rate?.total || b.rate?.Total || Number.MAX_SAFE_INTEGER));
   }
 
   static _internalRates({ weight = 0.5, cod = 0 }) {

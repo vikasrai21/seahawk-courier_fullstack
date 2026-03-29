@@ -11,13 +11,85 @@ export default function ClientWalletPage({ toast }) {
   const [wallet, setWallet]   = useState(null);
   const [txns,   setTxns]     = useState([]);
   const [loading, setLoading] = useState(true);
+  const [amount, setAmount] = useState(1000);
+  const [toppingUp, setToppingUp] = useState(false);
 
-  useEffect(() => {
-    api.get('/wallet/my')
+  const load = () => {
+    api.get('/portal/wallet')
       .then(r => { setWallet(r.data?.wallet); setTxns(r.data?.txns || []); })
       .catch(e => toast?.(e.message, 'error'))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
   }, []);
+
+  const loadRazorpayScript = () => new Promise((resolve) => {
+    if (window.Razorpay) return resolve(true);
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+
+  const startTopup = async () => {
+    if (!wallet?.code || !Number.isFinite(Number(amount)) || Number(amount) < 100) {
+      toast?.('Enter an amount of at least ₹100', 'error');
+      return;
+    }
+
+    setToppingUp(true);
+    try {
+      const orderRes = await api.post('/wallet/recharge/order', {
+        clientCode: wallet.code,
+        amount: Number(amount),
+      });
+      const payload = orderRes.data || {};
+
+      if (payload.devMode) {
+        await api.post('/wallet/recharge/verify', {
+          clientCode: wallet.code,
+          amount: Number(amount),
+          razorpay_order_id: payload.order?.id,
+          razorpay_payment_id: `devpay_${Date.now()}`,
+        });
+        toast?.('Wallet topped up in dev mode', 'success');
+        load();
+        return;
+      }
+
+      const ok = await loadRazorpayScript();
+      if (!ok || !window.Razorpay) {
+        throw new Error('Unable to load Razorpay checkout');
+      }
+
+      const razorpay = new window.Razorpay({
+        key: payload.key,
+        amount: payload.order?.amount,
+        currency: payload.order?.currency || 'INR',
+        name: 'Sea Hawk Courier',
+        description: 'Wallet top-up',
+        order_id: payload.order?.id,
+        handler: async (response) => {
+          await api.post('/wallet/recharge/verify', {
+            clientCode: wallet.code,
+            amount: Number(amount),
+            ...response,
+          });
+          toast?.('Wallet topped up successfully', 'success');
+          load();
+        },
+        theme: { color: '#0b1f3a' },
+      });
+      razorpay.open();
+    } catch (e) {
+      toast?.(e.message || 'Wallet top-up failed', 'error');
+    } finally {
+      setToppingUp(false);
+    }
+  };
 
   if (loading) return <PageLoader />;
 
@@ -32,6 +104,19 @@ export default function ClientWalletPage({ toast }) {
           <div className="text-sm opacity-70 mb-1">Current Balance</div>
           <div className="text-4xl font-bold">{fmt(wallet?.walletBalance)}</div>
           <div className="text-sm opacity-60 mt-1">{wallet?.company}</div>
+        </div>
+
+        <div className="card">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[180px]">
+              <div className="label">Top-up Amount</div>
+              <input className="input" type="number" min="100" step="100" value={amount} onChange={(e) => setAmount(e.target.value)} />
+            </div>
+            <button className="btn-primary" onClick={startTopup} disabled={toppingUp}>
+              {toppingUp ? 'Processing…' : 'Add Funds'}
+            </button>
+          </div>
+          <p className="text-xs text-gray-500 mt-3">Use Razorpay to add funds online and keep shipments moving without manual payment follow-up.</p>
         </div>
 
         <div>

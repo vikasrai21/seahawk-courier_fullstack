@@ -18,11 +18,24 @@ const protect = async (req, res, next) => {
     const decoded = jwt.verify(token, config.jwt.secret);
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
-      select: { id: true, name: true, email: true, role: true, branch: true, phone: true, active: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        branch: true,
+        phone: true,
+        active: true,
+        clientProfile: { select: { clientCode: true } },
+      },
     });
     if (!user)        return R.unauthorized(res, 'User no longer exists.');
     if (!user.active) return R.unauthorized(res, 'Account is deactivated. Contact admin.');
-    req.user = user;
+    req.user = {
+      ...user,
+      clientCode: user.clientProfile?.clientCode || null,
+      clientProfile: undefined,
+    };
     next();
   } catch (err) {
     next(err);
@@ -41,6 +54,38 @@ const requireRole = (...args) => (req, res, next) => {
 
 const adminOnly    = requireRole('ADMIN');
 const staffOrAdmin = requireRole('STAFF', 'ADMIN');
+const managementOnly = requireRole('ADMIN', 'OPS_MANAGER');
+const staffOnly = requireRole('ADMIN', 'OPS_MANAGER', 'STAFF');
+
+const requireClientAccountAccess = ({ param = 'clientCode', body = null, allowManagement = true } = {}) => (req, res, next) => {
+  if (!req.user) return R.unauthorized(res);
+
+  const requested = String(
+    (param && req.params?.[param]) ||
+    (body && req.body?.[body]) ||
+    req.query?.clientCode ||
+    ''
+  ).trim().toUpperCase();
+
+  if (allowManagement && ['ADMIN', 'OPS_MANAGER', 'STAFF'].includes(req.user.role)) {
+    if (requested && param && req.params?.[param]) req.params[param] = requested;
+    if (requested && body && req.body?.[body]) req.body[body] = requested;
+    return next();
+  }
+
+  if (req.user.role !== 'CLIENT' || !req.user.clientCode) {
+    return R.forbidden(res, 'Access denied.');
+  }
+
+  const ownClientCode = String(req.user.clientCode).toUpperCase();
+  if (requested && requested !== ownClientCode) {
+    return R.forbidden(res, 'Access denied.');
+  }
+
+  if (param && req.params?.[param] !== undefined) req.params[param] = ownClientCode;
+  if (body && req.body) req.body[body] = ownClientCode;
+  return next();
+};
 
 // Alias used by new v7 routes
 module.exports = {
@@ -49,4 +94,7 @@ module.exports = {
   requireRole,
   adminOnly,
   staffOrAdmin,
+  managementOnly,
+  staffOnly,
+  requireClientAccountAccess,
 };

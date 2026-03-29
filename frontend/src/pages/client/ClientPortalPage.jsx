@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { BarChart, Bar, ResponsiveContainer, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
+import { BarChart, Bar, ResponsiveContainer, CartesianGrid, Tooltip, XAxis, YAxis, LineChart, Line, Legend } from 'recharts';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -80,6 +80,8 @@ export default function ClientPortalPage({ toast }) {
   const [range, setRange] = useState('30d');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [performance, setPerformance] = useState(null);
+  const [perfDays, setPerfDays] = useState(30);
 
   const fetchPortalData = async () => {
     setLoading(true);
@@ -109,6 +111,15 @@ export default function ClientPortalPage({ toast }) {
       toast?.(e.message || 'Failed to load portal data', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchPerformance = async () => {
+    try {
+      const res = await api.get(`/portal/performance?days=${perfDays}`);
+      setPerformance(res.data || null);
+    } catch (e) {
+      toast?.(e.message || 'Failed to load performance dashboard', 'error');
     }
   };
 
@@ -164,6 +175,10 @@ export default function ClientPortalPage({ toast }) {
   }, [range, dateFrom, dateTo, statusFilter, courierFilter]);
 
   useEffect(() => {
+    fetchPerformance();
+  }, [perfDays]);
+
+  useEffect(() => {
     if (!ticketSuccess) return undefined;
 
     setTicketCopied(false);
@@ -211,6 +226,13 @@ export default function ClientPortalPage({ toast }) {
       day: String(t.date).slice(5),
     }))
   ), [stats]);
+
+  const performanceData = useMemo(() => (
+    (performance?.series || []).map((row) => ({
+      ...row,
+      day: String(row.date).slice(5),
+    }))
+  ), [performance]);
 
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg,#f7faff 0%,#eef4fd 100%)', fontFamily: "'DM Sans',-apple-system,sans-serif" }}>
@@ -329,9 +351,19 @@ export default function ClientPortalPage({ toast }) {
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#0f172a' }}>Quick Actions</h3>
             <p style={{ margin: '6px 0 14px', fontSize: 12, color: '#64748b' }}>Move fast with one-click tools.</p>
             <div style={{ display: 'grid', gap: 8 }}>
-              <Link to="/track" target="_blank" style={{ textDecoration: 'none', background: '#f8fbff', border: '1px solid #dce9fa', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#1e3a8a', fontSize: 13 }}>🔍 Track Any AWB</Link>
+              <Link to="/portal/bulk-track" style={{ textDecoration: 'none', background: '#f8fbff', border: '1px solid #dce9fa', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#1e3a8a', fontSize: 13 }}>🔍 Bulk AWB Tracking</Link>
+              <Link to="/portal/map" style={{ textDecoration: 'none', background: '#eff6ff', border: '1px solid #cfe0ff', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#1d4ed8', fontSize: 13 }}>🗺️ Live Shipment Map</Link>
               <Link to="/portal/invoices" style={{ textDecoration: 'none', background: '#fff8f2', border: '1px solid #ffe1cb', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#c2410c', fontSize: 13 }}>🧾 Download Invoices</Link>
               <Link to="/portal/wallet" style={{ textDecoration: 'none', background: '#f9f5ff', border: '1px solid #e8ddff', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#6d28d9', fontSize: 13 }}>💳 Wallet & Payments</Link>
+              <Link to="/portal/pickups" style={{ textDecoration: 'none', background: '#eefbf4', border: '1px solid #d3f1dd', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#166534', fontSize: 13 }}>📦 Raise Pickup Request</Link>
+              <Link to="/portal/ndr" style={{ textDecoration: 'none', background: '#fff5f5', border: '1px solid #ffd6d6', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#b42318', fontSize: 13 }}>⚠️ NDR Self-Service</Link>
+              <Link to="/portal/rates" style={{ textDecoration: 'none', background: '#f8f5ff', border: '1px solid #e6ddff', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#6d28d9', fontSize: 13 }}>💸 Rate Calculator</Link>
+              <Link to="/portal/import" style={{ textDecoration: 'none', background: '#fff9ec', border: '1px solid #ffe3a3', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#a16207', fontSize: 13 }}>📤 Order Import</Link>
+              <Link to="/portal/pod" style={{ textDecoration: 'none', background: '#eef7ff', border: '1px solid #d2e6ff', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#1d4ed8', fontSize: 13 }}>📸 Digital PODs</Link>
+              <Link to="/portal/rto-intelligence" style={{ textDecoration: 'none', background: '#fff3f2', border: '1px solid #ffd2cc', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#c2410c', fontSize: 13 }}>📊 RTO Intelligence</Link>
+              <Link to="/portal/notifications" style={{ textDecoration: 'none', background: '#f8fafc', border: '1px solid #dbe6f4', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#334155', fontSize: 13 }}>🔔 Notification Preferences</Link>
+              <Link to="/portal/support" style={{ textDecoration: 'none', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#374151', fontSize: 13 }}>🎫 Support Tickets</Link>
+              <Link to="/portal/branding" style={{ textDecoration: 'none', background: '#ecfeff', border: '1px solid #bae6fd', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#0f766e', fontSize: 13 }}>🌐 Branded Tracking</Link>
               <button type="button" onClick={() => setTicketOpen(v => !v)} style={{ textAlign: 'left', border: '1px solid #dbe6f4', background: '#fff', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#334155', fontSize: 13, cursor: 'pointer' }}>🎫 Raise Support Ticket</button>
             </div>
             {ticketOpen && (
@@ -357,6 +389,57 @@ export default function ClientPortalPage({ toast }) {
                 </div>
               </div>
             )}
+          </div>
+        </section>
+
+        <section style={{ background: '#fff', border: '1px solid #e5edf8', borderRadius: 18, padding: 16, boxShadow: '0 8px 24px -14px rgba(11,31,58,0.2)', marginBottom: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#0f172a' }}>Delivery Performance Dashboard</h3>
+              <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: 12 }}>Delivered vs RTO vs failed delivery behavior for your shipments.</p>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[30, 60, 90].map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setPerfDays(d)}
+                  style={{
+                    border: perfDays === d ? '1px solid #f97316' : '1px solid #dbe6f4',
+                    background: perfDays === d ? '#fff4ec' : '#fff',
+                    color: perfDays === d ? '#c2410c' : '#334155',
+                    borderRadius: 999,
+                    padding: '7px 12px',
+                    fontSize: 12,
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {d} Days
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 12, marginBottom: 14 }}>
+            <MetricCard icon="✅" label="Delivered" value={performance?.summary?.delivered || 0} hint="Success" color="#0c7a52" />
+            <MetricCard icon="↩️" label="RTO" value={performance?.summary?.rto || 0} hint="Returns" color="#b42318" />
+            <MetricCard icon="⚠️" label="Failed / NDR" value={performance?.summary?.failed || 0} hint="Attention" color="#c2410c" />
+            <MetricCard icon="📈" label="Success Rate" value={`${performance?.summary?.successRate || 0}%`} hint={`${performance?.days || 30} Days`} color="#2563eb" />
+          </div>
+
+          <div style={{ height: 260 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={performanceData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf2fa" />
+                <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#64748b' }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748b' }} />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="delivered" stroke="#16a34a" strokeWidth={2} dot={false} name="Delivered" />
+                <Line type="monotone" dataKey="rto" stroke="#dc2626" strokeWidth={2} dot={false} name="RTO" />
+                <Line type="monotone" dataKey="failed" stroke="#ea580c" strokeWidth={2} dot={false} name="Failed / NDR" />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </section>
 

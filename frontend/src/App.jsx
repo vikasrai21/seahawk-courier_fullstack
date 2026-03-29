@@ -11,6 +11,17 @@ const ClientPortalPage = lazy(() => import('./pages/client/ClientPortalPage'));
 const ClientInvoicesPage = lazy(() => import('./pages/client/ClientInvoicesPage'));
 const ClientWalletPage = lazy(() => import('./pages/client/ClientWalletPage'));
 const ClientShipmentsPage = lazy(() => import('./pages/client/ClientShipmentsPage'));
+const ClientBulkTrackPage = lazy(() => import('./pages/client/ClientBulkTrackPage'));
+const ClientNDRPage = lazy(() => import('./pages/client/ClientNDRPage'));
+const ClientPickupPage = lazy(() => import('./pages/client/ClientPickupPage'));
+const ClientRateCalculatorPage = lazy(() => import('./pages/client/ClientRateCalculatorPage'));
+const ClientImportPage = lazy(() => import('./pages/client/ClientImportPage'));
+const ClientSupportTicketsPage = lazy(() => import('./pages/client/ClientSupportTicketsPage'));
+const ClientLiveMapPage = lazy(() => import('./pages/client/ClientLiveMapPage'));
+const ClientNotificationsPage = lazy(() => import('./pages/client/ClientNotificationsPage'));
+const ClientRTOIntelligencePage = lazy(() => import('./pages/client/ClientRTOIntelligencePage'));
+const ClientPODPage = lazy(() => import('./pages/client/ClientPODPage'));
+const ClientBrandTrackingPage = lazy(() => import('./pages/client/ClientBrandTrackingPage'));
 const LandingPage = lazy(() => import('./pages/public/LandingPage'));
 const PublicTrackPage = lazy(() => import('./pages/public/PublicTrackPage'));
 const ServicesPage = lazy(() => import('./pages/public/ServicesPage'));
@@ -132,6 +143,17 @@ function AppRoutes() {
             <Route path="/portal/invoices" element={<ClientRoute><ClientInvoicesPage {...p} /></ClientRoute>} />
             <Route path="/portal/wallet" element={<ClientRoute><ClientWalletPage {...p} /></ClientRoute>} />
             <Route path="/portal/shipments" element={<ClientRoute><ClientShipmentsPage {...p} /></ClientRoute>} />
+            <Route path="/portal/bulk-track" element={<ClientRoute><ClientBulkTrackPage {...p} /></ClientRoute>} />
+            <Route path="/portal/ndr" element={<ClientRoute><ClientNDRPage {...p} /></ClientRoute>} />
+            <Route path="/portal/pickups" element={<ClientRoute><ClientPickupPage {...p} /></ClientRoute>} />
+            <Route path="/portal/rates" element={<ClientRoute><ClientRateCalculatorPage {...p} /></ClientRoute>} />
+            <Route path="/portal/import" element={<ClientRoute><ClientImportPage {...p} /></ClientRoute>} />
+            <Route path="/portal/support" element={<ClientRoute><ClientSupportTicketsPage {...p} /></ClientRoute>} />
+            <Route path="/portal/map" element={<ClientRoute><ClientLiveMapPage {...p} /></ClientRoute>} />
+            <Route path="/portal/notifications" element={<ClientRoute><ClientNotificationsPage {...p} /></ClientRoute>} />
+            <Route path="/portal/rto-intelligence" element={<ClientRoute><ClientRTOIntelligencePage {...p} /></ClientRoute>} />
+            <Route path="/portal/pod" element={<ClientRoute><ClientPODPage {...p} /></ClientRoute>} />
+            <Route path="/portal/branding" element={<ClientRoute><ClientBrandTrackingPage {...p} /></ClientRoute>} />
             <Route path="/portal/*" element={<ClientRoute><ClientPortalPage {...p} /></ClientRoute>} />
 
             <Route

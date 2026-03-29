@@ -1,6 +1,6 @@
 // src/pages/public/PublicTrackPage.jsx
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 
 const STATUS_STEPS = ['Booked', 'Picked Up', 'In Transit', 'Out for Delivery', 'Delivered'];
 
@@ -49,6 +49,7 @@ function detectCourierClient(awb) {
 export default function PublicTrackPage() {
   const { awb: paramAwb } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [query,    setQuery]   = useState(paramAwb || '');
   const [detected, setDetected] = useState(null);
   const [data,     setData]    = useState(null);
@@ -87,6 +88,7 @@ export default function PublicTrackPage() {
   const statusStyle = data ? (STATUS_STYLE[data.status] || STATUS_STYLE.default) : null;
   const currentStep = data ? STATUS_STEPS.findIndex(s => s.toLowerCase() === data.status?.toLowerCase()) : -1;
   const courierColor = data?.detectedCourier ? (COURIER_COLORS[data.detectedCourier] || COURIER_COLORS.UNKNOWN) : COURIER_COLORS.UNKNOWN;
+  const brandName = searchParams.get('brand') || 'Sea Hawk Courier';
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: "'Outfit', -apple-system, sans-serif" }}>
@@ -97,7 +99,7 @@ export default function PublicTrackPage() {
           <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
             <img src="/images/logo.png" alt="Sea Hawk" style={{ height: 36, width: 'auto' }} onError={e => e.target.style.display='none'} />
             <div>
-              <div style={{ color: '#fff', fontWeight: 800, fontSize: 15, lineHeight: 1.2 }}>Sea Hawk Courier</div>
+              <div style={{ color: '#fff', fontWeight: 800, fontSize: 15, lineHeight: 1.2 }}>{brandName}</div>
               <div style={{ color: 'rgba(249,115,22,0.8)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase' }}>Track Your Shipment</div>
             </div>
           </Link>

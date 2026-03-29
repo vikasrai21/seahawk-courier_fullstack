@@ -1,12 +1,12 @@
 'use strict';
 // src/routes/courier.routes.js — Courier API & rate comparison
 const router = require('express').Router();
-const { protect } = require('../middleware/auth.middleware');
+const { protect, staffOnly } = require('../middleware/auth.middleware');
 const { CourierFactory } = require('../services/couriers/CourierFactory');
 const R = require('../utils/response');
 const { asyncHandler } = require('../middleware/errorHandler');
 
-router.use(protect);
+router.use(protect, staffOnly);
 
 // GET /api/couriers — list all couriers and which ones are configured
 router.get('/', asyncHandler(async (req, res) => {

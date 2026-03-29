@@ -4,6 +4,33 @@ const prisma  = require('../config/prisma');
 const logger  = require('../utils/logger');
 const config  = require('../config');
 
+const DEFAULT_PREFS = {
+  whatsapp: { outForDelivery: true, delivered: true },
+  email: { ndr: true, rto: true, pod: true },
+};
+
+async function getClientNotificationPreferences(clientCode) {
+  if (!clientCode) return DEFAULT_PREFS;
+  try {
+    const latest = await prisma.auditLog.findFirst({
+      where: {
+        entity: 'NOTIFICATION_PREFS',
+        entityId: String(clientCode).toUpperCase(),
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { newValue: true },
+    });
+    const prefs = latest?.newValue && typeof latest.newValue === 'object' ? latest.newValue : null;
+    return {
+      whatsapp: { ...DEFAULT_PREFS.whatsapp, ...(prefs?.whatsapp || {}) },
+      email: { ...DEFAULT_PREFS.email, ...(prefs?.email || {}) },
+    };
+  } catch (err) {
+    logger.warn(`Notification preferences fallback for ${clientCode}: ${err.message}`);
+    return DEFAULT_PREFS;
+  }
+}
+
 // ── Email via nodemailer ───────────────────────────────────────────────────
 let transporter = null;
 function getTransporter() {
@@ -66,9 +93,16 @@ async function sendWhatsApp(phone, message) {
 // ── Shipment status change notifications ───────────────────────────────────
 async function notifyStatusChange(shipment) {
   const { awb, status, consignee, phone, courier, clientCode } = shipment;
+  const prefs = await getClientNotificationPreferences(clientCode);
 
   // Notify consignee via WhatsApp when out for delivery or delivered
-  if (phone && ['OutForDelivery', 'Delivered'].includes(status)) {
+  if (
+    phone &&
+    (
+      (status === 'OutForDelivery' && prefs.whatsapp?.outForDelivery) ||
+      (status === 'Delivered' && prefs.whatsapp?.delivered)
+    )
+  ) {
     let msg;
     if (status === 'OutForDelivery') {
       msg = `🚚 Your shipment (AWB: ${awb}) is out for delivery today. Please be available to receive it.\n\nTrack: https://seahawk-courierfullstack-production.up.railway.app/track/${awb}\n\n— Sea Hawk Courier`;
@@ -79,7 +113,7 @@ async function notifyStatusChange(shipment) {
   }
 
   // Notify RTO to client via email
-  if (status === 'RTO' && clientCode) {
+  if (status === 'RTO' && clientCode && prefs.email?.rto) {
     const client = await prisma.client.findUnique({ where: { code: clientCode }, select: { email: true, company: true } });
     if (client?.email) {
       await sendEmail({
@@ -92,7 +126,7 @@ async function notifyStatusChange(shipment) {
   }
 
   // Notify on NDR
-  if (status === 'NDR' && clientCode) {
+  if (status === 'NDR' && clientCode && prefs.email?.ndr) {
     const client = await prisma.client.findUnique({ where: { code: clientCode }, select: { email: true, company: true } });
     if (client?.email) {
       await sendEmail({
@@ -108,6 +142,8 @@ async function notifyStatusChange(shipment) {
 // ── POD email to client ────────────────────────────────────────────────────
 async function sendPODEmail(shipment, pdfUrl) {
   if (!shipment.clientCode) return;
+  const prefs = await getClientNotificationPreferences(shipment.clientCode);
+  if (!prefs.email?.pod) return;
   const client = await prisma.client.findUnique({ where: { code: shipment.clientCode }, select: { email: true, company: true } });
   if (!client?.email) return;
   await sendEmail({
@@ -129,4 +165,11 @@ async function sendWelcomeEmail(user, tempPassword) {
   });
 }
 
-module.exports = { sendEmail, sendWhatsApp, notifyStatusChange, sendPODEmail, sendWelcomeEmail };
+module.exports = {
+  sendEmail,
+  sendWhatsApp,
+  notifyStatusChange,
+  sendPODEmail,
+  sendWelcomeEmail,
+  getClientNotificationPreferences,
+};

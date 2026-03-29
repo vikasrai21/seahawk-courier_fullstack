@@ -11,13 +11,33 @@ const STATUS_COLORS = { DRAFT:'gray', SENT:'blue', PAID:'green', OVERDUE:'red' }
 export default function ClientInvoicesPage({ toast }) {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading]   = useState(true);
+  const [downloadingId, setDownloadingId] = useState(null);
 
   useEffect(() => {
-    api.get('/invoices/my')
+    api.get('/portal/invoices')
       .then(r => setInvoices(r.data?.invoices || r.data || []))
       .catch(e => toast?.(e.message, 'error'))
       .finally(() => setLoading(false));
   }, []);
+
+  const downloadInvoice = async (invoice) => {
+    setDownloadingId(invoice.id);
+    try {
+      const blob = await api.get(`/portal/invoices/${invoice.id}/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `invoice-${invoice.invoiceNo}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      toast?.(e.message || 'Failed to download invoice PDF', 'error');
+    } finally {
+      setDownloadingId(null);
+    }
+  };
 
   if (loading) return <PageLoader />;
 
@@ -50,9 +70,9 @@ export default function ClientInvoicesPage({ toast }) {
                       <span className={`badge badge-${STATUS_COLORS[inv.status]||'gray'}`}>{inv.status}</span>
                     </td>
                     <td className="px-4 py-3">
-                      {inv.pdfUrl
-                        ? <a href={inv.pdfUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-xs">Download PDF</a>
-                        : <span className="text-gray-400 text-xs">Not available</span>}
+                      <button className="text-blue-600 hover:underline text-xs font-semibold" onClick={() => downloadInvoice(inv)}>
+                        {downloadingId === inv.id ? 'Preparing…' : 'Download PDF'}
+                      </button>
                     </td>
                   </tr>
                 ))}

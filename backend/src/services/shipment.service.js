@@ -2,7 +2,6 @@
 const prisma       = require('../config/prisma');
 const { AppError } = require('../middleware/errorHandler');
 const stateMachine = require('./stateMachine');
-const walletSvc    = require('./wallet.service');
 const notify       = require('./notification.service');
 const logger       = require('../utils/logger');
 const delhiverySvc = require('./delhivery.service');
@@ -88,16 +87,54 @@ async function getById(id) {
 
 async function create(data, userId) {
   const today = new Date().toISOString().split('T')[0];
-  const shipment = await prisma.shipment.create({
-    data: { ...data, date: data.date || today, consignee: (data.consignee || '').toUpperCase(), destination: (data.destination || '').toUpperCase(), status: 'Booked', createdById: userId || null, updatedById: userId || null },
-    include: { client: { select: { company: true, phone: true } } },
+  return prisma.$transaction(async (tx) => {
+    const payload = {
+      ...data,
+      date: data.date || today,
+      consignee: (data.consignee || '').toUpperCase(),
+      destination: (data.destination || '').toUpperCase(),
+      status: 'Booked',
+      createdById: userId || null,
+      updatedById: userId || null,
+    };
+
+    if ((payload.amount || 0) > 0) {
+      const client = await tx.client.findUnique({
+        where: { code: payload.clientCode },
+        select: { walletBalance: true },
+      });
+      if (!client) throw new AppError(`Client not found: ${payload.clientCode}`, 404);
+      if (client.walletBalance < payload.amount) {
+        throw new AppError(`Insufficient wallet balance (available: ₹${client.walletBalance.toFixed(2)}, required: ₹${Number(payload.amount).toFixed(2)})`, 400);
+      }
+
+      const newBalance = client.walletBalance - payload.amount;
+      await tx.client.update({
+        where: { code: payload.clientCode },
+        data: { walletBalance: { decrement: payload.amount } },
+      });
+      await tx.walletTransaction.create({
+        data: {
+          clientCode: payload.clientCode,
+          type: 'DEBIT',
+          amount: payload.amount,
+          balance: newBalance,
+          description: `Shipment — AWB ${payload.awb}`,
+          reference: payload.awb,
+          paymentMode: 'WALLET',
+          status: 'SUCCESS',
+        },
+      });
+    }
+
+    const shipment = await tx.shipment.create({
+      data: payload,
+      include: { client: { select: { company: true, phone: true } } },
+    });
+
+    clearCache();
+    return shipment;
   });
-  if (shipment.amount > 0) {
-    try { await walletSvc.debit({ clientCode: shipment.clientCode, amount: shipment.amount, description: `Shipment — AWB ${shipment.awb}`, reference: shipment.awb }); }
-    catch (e) { logger.warn(`[Wallet] Debit failed for ${shipment.awb}: ${e.message}`); }
-  }
-  clearCache();
-  return shipment;
 }
 
 async function update(id, data, userId) {

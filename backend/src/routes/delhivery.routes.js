@@ -1,11 +1,13 @@
 'use strict';
 const router = require('express').Router();
 const dl     = require('../services/delhivery.service');
-const { authenticate } = require('../middleware/auth.middleware');
+const { authenticate, staffOnly } = require('../middleware/auth.middleware');
 const R      = require('../utils/response');
 
+router.use(authenticate, staffOnly);
+
 /* GET /api/delhivery/status — is API key configured? */
-router.get('/status', authenticate, (req, res) => {
+router.get('/status', (req, res) => {
   R.ok(res, {
     configured: dl.isConfigured(),
     message: dl.isConfigured()
@@ -24,7 +26,7 @@ router.get('/track/:awb', async (req, res) => {
 });
 
 /* POST /api/delhivery/book — create shipment, get AWB */
-router.post('/book', authenticate, async (req, res) => {
+router.post('/book', async (req, res) => {
   try {
     const result = await dl.createShipment(req.body);
     // Auto-update shipment in DB if shipmentId provided
@@ -40,7 +42,7 @@ router.post('/book', authenticate, async (req, res) => {
 });
 
 /* GET /api/delhivery/label/:awb — download label PDF */
-router.get('/label/:awb', authenticate, async (req, res) => {
+router.get('/label/:awb', async (req, res) => {
   try {
     const buf = await dl.getLabel(req.params.awb);
     res.set({
@@ -52,7 +54,7 @@ router.get('/label/:awb', authenticate, async (req, res) => {
 });
 
 /* POST /api/delhivery/cancel/:awb */
-router.post('/cancel/:awb', authenticate, async (req, res) => {
+router.post('/cancel/:awb', async (req, res) => {
   try { R.ok(res, await dl.cancelShipment(req.params.awb)); }
   catch (err) { R.error(res, err.message); }
 });

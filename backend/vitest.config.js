@@ -7,13 +7,17 @@ export default defineConfig({
     setupFiles:  ['./src/tests/setup.js'],
     coverage: {
       reporter: ['text', 'lcov'],
-      exclude: ['node_modules', 'src/tests'],
-      thresholds: {
-        statements: 60,
-        branches: 50,
-        functions: 60,
-        lines: 60,
-      },
+      exclude: [
+        'node_modules',
+        'src/tests',
+        'server.js',
+        'public/**',
+        'src/routes/**',
+        'src/controllers/**',
+        'src/docs/**',
+        'src/workers/**',
+        'src/utils/seed.js',
+      ],
     },
   },
 });

@@ -22,6 +22,33 @@ const COMPANY = {
   website: 'seahawkcourier.in',
 };
 
+function getTaxBreakdown(invoice, client) {
+  const gstAmount = Number(invoice?.gstAmount || 0);
+  const gstPercent = Number(invoice?.gstPercent || 18);
+  const companyStateCode = String(COMPANY.gstin || '').slice(0, 2);
+  const clientStateCode = String(client?.gst || '').slice(0, 2);
+  const intraState = clientStateCode ? clientStateCode === companyStateCode : /haryana/i.test(String(client?.address || ''));
+
+  if (intraState) {
+    return {
+      label: 'CGST + SGST',
+      placeOfSupply: 'Haryana',
+      components: [
+        { label: `CGST @ ${(gstPercent / 2).toFixed(1)}%`, amount: gstAmount / 2 },
+        { label: `SGST @ ${(gstPercent / 2).toFixed(1)}%`, amount: gstAmount / 2 },
+      ],
+    };
+  }
+
+  return {
+    label: 'IGST',
+    placeOfSupply: client?.address || 'Inter-state supply',
+    components: [
+      { label: `IGST @ ${gstPercent}%`, amount: gstAmount },
+    ],
+  };
+}
+
 /* ── Lazy load PDFKit ── */
 async function getPDF() {
   try { return require('pdfkit'); }
@@ -139,6 +166,7 @@ async function generateShippingLabel(shipment) {
    ════════════════════════════════════════════════════════════ */
 async function generateInvoicePDF(invoice, items, client) {
   const PDFDocument = await getPDF();
+  const tax = getTaxBreakdown(invoice, client);
 
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -181,6 +209,11 @@ async function generateInvoicePDF(invoice, items, client) {
     doc.fontSize(8).fillColor('#888').text('INVOICE DATE', W - 200, cY);
     doc.fontSize(11).fillColor('#0b1f3a').font('Helvetica-Bold')
        .text(new Date().toLocaleDateString('en-IN'), W - 200, cY + 14);
+    doc.fontSize(8).fillColor('#888').text('TAX TYPE', W - 200, cY + 34);
+    doc.fontSize(10).fillColor('#0b1f3a').font('Helvetica-Bold')
+       .text(tax.label, W - 200, cY + 47);
+    doc.fontSize(8).fillColor('#64748b').font('Helvetica')
+       .text(`Place of supply: ${tax.placeOfSupply}`, W - 200, cY + 60, { width: 160 });
 
     // ── Table header ──
     const tY = 200;
@@ -231,8 +264,8 @@ async function generateInvoicePDF(invoice, items, client) {
     rowY += 8;
 
     const totRows = [
-      ['Subtotal',       `₹${invoice.subtotal.toLocaleString('en-IN')}`],
-      [`GST @ ${invoice.gstPercent}%`, `₹${invoice.gstAmount.toLocaleString('en-IN')}`],
+      ['Subtotal', `₹${invoice.subtotal.toLocaleString('en-IN')}`],
+      ...tax.components.map((item) => [item.label, `₹${Number(item.amount || 0).toLocaleString('en-IN')}`]),
     ];
     if (invoice.notes) totRows.push(['Notes', invoice.notes]);
     totRows.forEach(([l, v]) => {

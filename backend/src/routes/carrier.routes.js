@@ -35,7 +35,7 @@ router.post('/book', authenticate, requireRole(STAFF), async (req, res) => {
 });
 
 // ── Compare rates across carriers ─────────────────────────────────────────
-router.post('/compare', authenticate, async (req, res) => {
+router.post('/compare', authenticate, requireRole(STAFF), async (req, res) => {
   try {
     const result = await compare.compareRates(req.body);
     return R.ok(res, result);
@@ -51,7 +51,7 @@ router.post('/sync-all', authenticate, requireRole(MGMT), async (req, res) => {
 });
 
 // ── Generate shipping label PDF ───────────────────────────────────────────
-router.get('/label/:awb', authenticate, async (req, res) => {
+router.get('/label/:awb', authenticate, requireRole(STAFF), async (req, res) => {
   try {
     const shipment = await prisma.shipment.findUnique({ where: { awb: req.params.awb } });
     if (!shipment) return R.error(res, 'Shipment not found', 404);
@@ -65,7 +65,7 @@ router.get('/label/:awb', authenticate, async (req, res) => {
 });
 
 // ── Bulk labels ───────────────────────────────────────────────────────────
-router.post('/labels/bulk', authenticate, async (req, res) => {
+router.post('/labels/bulk', authenticate, requireRole(STAFF), async (req, res) => {
   try {
     const { awbs } = req.body;
     if (!Array.isArray(awbs) || awbs.length === 0) return R.error(res, 'awbs array required', 400);
