@@ -53,27 +53,44 @@ export default function ClientNDRPage({ toast }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b px-6 py-4 flex items-center gap-3">
-        <Link to="/portal" className="text-gray-400 hover:text-gray-600">← Portal</Link>
-        <span className="font-bold text-gray-900">NDR Self-Service</span>
+    <div className="min-h-screen bg-[linear-gradient(180deg,#f7faff_0%,#eef4fd_100%)]">
+      <header className="border-b border-slate-200/70 bg-white/90 px-6 py-4 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <Link to="/portal" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-500 transition hover:text-slate-700">← Portal</Link>
+            <div>
+              <div className="text-sm font-black text-slate-900">NDR Self-Service</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.12em] text-orange-500">Exception Handling</div>
+            </div>
+          </div>
+        </div>
       </header>
 
-      <div className="max-w-5xl mx-auto p-6 space-y-5">
-        <div className="card">
-          <h1 className="text-xl font-black text-gray-900">Delivery Exception Actions</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Review failed deliveries and send reattempt or correction instructions directly to the operations team.
-          </p>
-        </div>
+      <div className="mx-auto max-w-7xl p-6 space-y-6">
+        <section className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_320px]">
+          <div className="overflow-hidden rounded-[28px] border border-slate-200/60 bg-[linear-gradient(145deg,#fff7f5_0%,#ffffff_70%)] p-6 shadow-[0_22px_44px_-30px_rgba(220,38,38,0.25)]">
+            <div className="inline-flex rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-600">
+              Delivery Exceptions
+            </div>
+            <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight text-slate-900">Failed-delivery recovery now feels clearer and more action-oriented.</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+              Review exception cases, open the shipment, and send the next instruction directly to operations from one cleaner queue.
+            </p>
+          </div>
+          <div className="rounded-[26px] border border-amber-200 bg-[linear-gradient(180deg,#fffbea_0%,#ffffff_100%)] p-5 shadow-[0_18px_40px_-28px_rgba(202,138,4,0.35)]">
+            <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-amber-600">Open Cases</div>
+            <div className="mt-2 text-4xl font-black text-slate-900">{items.length}</div>
+            <p className="mt-2 text-sm text-slate-500">Every case here needs a client-side decision or confirmation.</p>
+          </div>
+        </section>
 
         {loading ? (
-          <div className="card text-gray-500">Loading NDRs…</div>
+          <div className="rounded-[26px] border border-slate-200 bg-white p-6 text-slate-500 shadow-sm">Loading NDRs…</div>
         ) : items.length === 0 ? (
-          <div className="card text-center text-gray-500 py-12">
-            <div className="text-4xl mb-3">✅</div>
-            <div className="font-semibold text-gray-800">No active NDR cases</div>
-            <div className="text-sm mt-1">Failed deliveries will appear here if they need your action.</div>
+          <div className="rounded-[26px] border border-slate-200 bg-white py-12 text-center shadow-sm">
+            <div className="text-4xl">✅</div>
+            <div className="mt-3 font-semibold text-slate-800">No active NDR cases</div>
+            <div className="mt-1 text-sm text-slate-500">Failed deliveries will appear here if they need your action.</div>
           </div>
         ) : (
           <div className="grid gap-3">
@@ -82,19 +99,19 @@ export default function ClientNDRPage({ toast }) {
                 key={item.id}
                 type="button"
                 onClick={() => open(item)}
-                className="card text-left hover:border-orange-200 transition-colors"
+                className="rounded-[24px] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:border-orange-200 hover:bg-orange-50/30"
               >
                 <div className="flex flex-wrap justify-between gap-3">
                   <div>
-                    <div className="font-mono text-xs font-bold text-navy-700">{item.awb}</div>
-                    <div className="text-sm font-semibold text-gray-900 mt-1">{item.reason}</div>
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="font-mono text-xs font-black text-sky-700">{item.awb}</div>
+                    <div className="mt-2 text-base font-black text-slate-900">{item.reason}</div>
+                    <div className="mt-1 text-xs text-slate-500">
                       {item.shipment?.consignee || 'Consignee'} · {item.shipment?.destination || 'Destination'}
                     </div>
                   </div>
                   <div className="text-right">
                     <span className="badge badge-yellow">{item.action}</span>
-                    <div className="text-xs text-gray-400 mt-2">{new Date(item.createdAt).toLocaleDateString('en-IN')}</div>
+                    <div className="mt-2 text-xs text-slate-400">{new Date(item.createdAt).toLocaleDateString('en-IN')}</div>
                   </div>
                 </div>
               </button>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { BarChart, Bar, ResponsiveContainer, CartesianGrid, Tooltip, XAxis, YAxis, LineChart, Line, Legend } from 'recharts';
+import { Area, AreaChart, BarChart, Bar, ResponsiveContainer, CartesianGrid, Tooltip, XAxis, YAxis, LineChart, Line, Legend } from 'recharts';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
@@ -52,12 +52,124 @@ function MetricCard({ icon, label, value, hint, color }) {
   );
 }
 
+function PortalPanel({ title, eyebrow, subtitle, action, children, tone = 'light', style = {} }) {
+  const backgrounds = {
+    light: '#fff',
+    dark: 'linear-gradient(145deg,#0f2748 0%,#102d57 60%,#173d70 100%)',
+    accent: 'linear-gradient(180deg,#fffaf5 0%,#ffffff 100%)',
+  };
+  const borders = {
+    light: '1px solid #e5edf8',
+    dark: '1px solid rgba(147,197,253,0.2)',
+    accent: '1px solid #fde2cc',
+  };
+
+  return (
+    <section
+      style={{
+        background: backgrounds[tone] || backgrounds.light,
+        border: borders[tone] || borders.light,
+        borderRadius: 22,
+        padding: 18,
+        boxShadow: tone === 'dark'
+          ? '0 22px 42px -28px rgba(15,39,72,0.9)'
+          : '0 14px 34px -24px rgba(11,31,58,0.35)',
+        ...style,
+      }}
+    >
+      {(title || subtitle || action || eyebrow) && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
+          <div>
+            {eyebrow && (
+              <div style={{ marginBottom: 6, fontSize: 11, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: tone === 'dark' ? '#93c5fd' : '#f97316' }}>
+                {eyebrow}
+              </div>
+            )}
+            {title && <h3 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: tone === 'dark' ? '#f8fbff' : '#0f172a' }}>{title}</h3>}
+            {subtitle && <p style={{ margin: '6px 0 0', color: tone === 'dark' ? '#c9d9f2' : '#64748b', fontSize: 13, lineHeight: 1.55 }}>{subtitle}</p>}
+          </div>
+          {action}
+        </div>
+      )}
+      {children}
+    </section>
+  );
+}
+
+function ActionTile({ to, icon, title, description, tone = 'blue', featured = false, onClick }) {
+  const palette = {
+    blue: { bg: 'linear-gradient(180deg,#f7fbff 0%,#eef5ff 100%)', border: '#d7e6ff', iconBg: '#dbeafe', iconColor: '#1d4ed8', title: '#173b72' },
+    orange: { bg: 'linear-gradient(180deg,#fff8f2 0%,#fff1e6 100%)', border: '#ffd8bd', iconBg: '#ffedd5', iconColor: '#c2410c', title: '#9a3412' },
+    purple: { bg: 'linear-gradient(180deg,#fbf8ff 0%,#f4efff 100%)', border: '#e8dbff', iconBg: '#ede9fe', iconColor: '#7c3aed', title: '#5b21b6' },
+    green: { bg: 'linear-gradient(180deg,#f4fdf7 0%,#ecfaf0 100%)', border: '#ccefd6', iconBg: '#dcfce7', iconColor: '#15803d', title: '#166534' },
+    rose: { bg: 'linear-gradient(180deg,#fff6f6 0%,#fff0f0 100%)', border: '#ffd7d7', iconBg: '#ffe4e6', iconColor: '#be123c', title: '#9f1239' },
+    slate: { bg: 'linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%)', border: '#dbe4ee', iconBg: '#e2e8f0', iconColor: '#475569', title: '#334155' },
+    teal: { bg: 'linear-gradient(180deg,#f0fdff 0%,#e6fafb 100%)', border: '#bfe9ef', iconBg: '#ccfbf1', iconColor: '#0f766e', title: '#115e59' },
+    amber: { bg: 'linear-gradient(180deg,#fffbea 0%,#fff5cf 100%)', border: '#ffe48c', iconBg: '#fef3c7', iconColor: '#b45309', title: '#92400e' },
+  };
+  const colors = palette[tone] || palette.blue;
+  const cardStyle = {
+    textDecoration: 'none',
+    display: 'block',
+    minHeight: featured ? 132 : 108,
+    background: colors.bg,
+    border: `1px solid ${colors.border}`,
+    borderRadius: 18,
+    padding: featured ? '16px 16px 14px' : '14px',
+    position: 'relative',
+    overflow: 'hidden',
+    boxShadow: '0 18px 28px -24px rgba(15,23,42,0.45)',
+    transition: 'transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease',
+  };
+
+  const content = (
+    <div style={cardStyle} className="portal-action-tile">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: featured ? 18 : 14 }}>
+        <div style={{ width: featured ? 44 : 38, height: featured ? 44 : 38, borderRadius: 13, display: 'grid', placeItems: 'center', background: colors.iconBg, color: colors.iconColor, fontSize: featured ? 20 : 17, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7)' }}>
+          {icon}
+        </div>
+        <div style={{ fontSize: 18, color: colors.iconColor, fontWeight: 700, opacity: 0.7 }}>→</div>
+      </div>
+      <div style={{ fontSize: featured ? 16 : 14, fontWeight: 900, color: colors.title, marginBottom: 5 }}>{title}</div>
+      <div style={{ fontSize: 11.5, lineHeight: 1.45, color: '#58677b', maxWidth: featured ? '90%' : '100%' }}>{description}</div>
+      {featured && (
+        <div style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 999, padding: '5px 9px', background: 'rgba(255,255,255,0.75)', border: `1px solid ${colors.border}`, fontSize: 10.5, fontWeight: 800, color: colors.title }}>
+          Open workspace
+        </div>
+      )}
+    </div>
+  );
+
+  if (to) return <Link to={to} style={{ textDecoration: 'none' }}>{content}</Link>;
+  return (
+    <button type="button" onClick={onClick} style={{ border: 0, padding: 0, background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>
+      {content}
+    </button>
+  );
+}
+
 const RANGE_OPTIONS = [
   { key: 'today', label: 'Today' },
   { key: '7d', label: 'Last 7 days' },
   { key: '30d', label: 'Last 30 days' },
   { key: 'this_month', label: 'This month' },
   { key: 'custom', label: 'Custom' },
+];
+
+const ACTIONS = [
+  { to: '/portal/bulk-track', icon: '🔍', title: 'Bulk AWB Tracking', description: 'Search many shipments together and spot stuck parcels in one pass.', tone: 'blue', featured: true },
+  { to: '/portal/map', icon: '🗺️', title: 'Live Shipment Map', description: 'Watch active shipments move in real time across your service lanes.', tone: 'teal', featured: true },
+  { to: '/portal/invoices', icon: '🧾', title: 'Download Invoices', description: 'Open GST invoices, exports, and receipt history for finance teams.', tone: 'orange' },
+  { to: '/portal/wallet', icon: '💳', title: 'Wallet & Payments', description: 'Review balance, top-ups, and recharge receipts without leaving the portal.', tone: 'purple' },
+  { to: '/portal/pickups', icon: '📦', title: 'Raise Pickup Request', description: 'Schedule a pickup quickly when your dispatch team needs same-day action.', tone: 'green' },
+  { to: '/portal/ndr', icon: '⚠️', title: 'NDR Self-Service', description: 'Resolve failed attempts, update remarks, and recover at-risk orders.', tone: 'rose' },
+  { to: '/portal/rates', icon: '💸', title: 'Rate Calculator', description: 'Quote shipments faster with courier and pricing comparisons.', tone: 'purple' },
+  { to: '/portal/import', icon: '📤', title: 'Order Import', description: 'Upload bulk orders and get them into the shipment pipeline faster.', tone: 'amber' },
+  { to: '/portal/pod', icon: '📸', title: 'Digital PODs', description: 'Access proof-of-delivery records without bouncing between screens.', tone: 'blue' },
+  { to: '/portal/rto-intelligence', icon: '📊', title: 'RTO Intelligence', description: 'Understand return patterns and spot the lanes driving cost leakage.', tone: 'orange' },
+  { to: '/portal/notifications', icon: '🔔', title: 'Notification Preferences', description: 'Tune alerts so teams only get the updates that matter.', tone: 'slate' },
+  { to: '/portal/support', icon: '🎫', title: 'Support Tickets', description: 'Check open issues, ticket history, and response status in one place.', tone: 'slate' },
+  { to: '/portal/branding', icon: '🌐', title: 'Branded Tracking', description: 'Manage the customer-facing tracking experience under your own brand.', tone: 'teal' },
 ];
 
 export default function ClientPortalPage({ toast }) {
@@ -300,42 +412,103 @@ export default function ClientPortalPage({ toast }) {
         </div>
       </header>
 
-      <main style={{ maxWidth: 1180, margin: '0 auto', padding: '24px 20px 36px' }}>
-        <section style={{ marginBottom: 18 }}>
-          <h1 style={{ margin: 0, color: '#0b1f3a', fontSize: 30, lineHeight: 1.1, fontWeight: 900 }}>
-            Shipment Intelligence Dashboard
-          </h1>
-          <p style={{ margin: '8px 0 0', color: '#5a6b80', fontSize: 14 }}>
-            Track weekly performance, delivery success, and active shipments in one place.
-          </p>
-        </section>
+      <main style={{ maxWidth: 1240, margin: '0 auto', padding: '28px 20px 40px' }}>
+        <section className="portal-hero-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.35fr) minmax(280px,.75fr)', gap: 16, marginBottom: 18 }}>
+          <PortalPanel
+            tone="dark"
+            style={{ position: 'relative', overflow: 'hidden' }}
+          >
+            <div style={{ position: 'absolute', inset: 'auto -60px -80px auto', width: 220, height: 220, borderRadius: '50%', background: 'radial-gradient(circle,rgba(56,189,248,0.22) 0%,rgba(56,189,248,0) 72%)' }} />
+            <div style={{ position: 'absolute', inset: '-60px auto auto -30px', width: 200, height: 200, borderRadius: '50%', background: 'radial-gradient(circle,rgba(251,146,60,0.16) 0%,rgba(251,146,60,0) 72%)' }} />
+            <div style={{ position: 'relative', zIndex: 1 }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 999, padding: '7px 12px', background: 'rgba(148,197,253,0.14)', border: '1px solid rgba(148,197,253,0.24)', color: '#dbeafe', fontSize: 11, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 16 }}>
+                Live Client Command Center
+              </div>
+              <div className="portal-hero-inner" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 170px', gap: 18, alignItems: 'start' }}>
+                <div>
+                  <h1 style={{ margin: 0, color: '#f8fbff', fontSize: 34, lineHeight: 1.02, fontWeight: 900, maxWidth: 520 }}>
+                    Your shipments, cash flow, and delivery signals in one sharp workspace.
+                  </h1>
+                  <p style={{ margin: '12px 0 0', color: '#c9d9f2', fontSize: 14, lineHeight: 1.7, maxWidth: 560 }}>
+                    Move faster on dispatch, spot delivery friction early, and keep finance, support, and operations aligned without jumping between tools.
+                  </p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 20 }}>
+                    <button
+                      onClick={syncLiveStatuses}
+                      style={{ border: '1px solid rgba(255,255,255,0.16)', borderRadius: 14, padding: '11px 14px', background: 'linear-gradient(180deg,#fb923c 0%,#ea580c 100%)', color: '#fff7ed', fontSize: 13, fontWeight: 900, cursor: 'pointer', boxShadow: '0 16px 28px -22px rgba(251,146,60,0.9)' }}
+                    >
+                      Sync Live Statuses
+                    </button>
+                    <Link
+                      to="/portal/shipments"
+                      style={{ textDecoration: 'none', border: '1px solid rgba(201,217,242,0.22)', borderRadius: 14, padding: '11px 14px', background: 'rgba(255,255,255,0.06)', color: '#e2e8f0', fontSize: 13, fontWeight: 800 }}
+                    >
+                      Open Shipment Desk
+                    </Link>
+                    <button
+                      onClick={fetchPortalData}
+                      style={{ border: '1px solid rgba(201,217,242,0.22)', borderRadius: 14, padding: '11px 14px', background: 'rgba(255,255,255,0.02)', color: '#dbeafe', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}
+                    >
+                      Refresh Snapshot
+                    </button>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {[
+                    { label: 'Active Shipments', value: stats?.totals?.inTransit || 0, tone: '#38bdf8' },
+                    { label: 'Delivered Success', value: `${stats?.totals?.deliveredPct || 0}%`, tone: '#4ade80' },
+                    { label: 'Wallet Ready', value: fmt(stats?.wallet), tone: '#f9a8d4' },
+                  ].map((item) => (
+                    <div key={item.label} style={{ borderRadius: 18, padding: '14px 14px 13px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(201,217,242,0.14)' }}>
+                      <div style={{ fontSize: 11, color: '#a9bddc', fontWeight: 700, marginBottom: 6 }}>{item.label}</div>
+                      <div style={{ fontSize: 22, fontWeight: 900, color: '#f8fbff' }}>{item.value}</div>
+                      <div style={{ marginTop: 8, height: 4, borderRadius: 999, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                        <div style={{ width: '70%', height: '100%', borderRadius: 999, background: item.tone }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </PortalPanel>
 
-        <section style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {RANGE_OPTIONS.map((r) => (
-              <RangeChip key={r.key} label={r.label} active={range === r.key} onClick={() => setRange(r.key)} />
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <PortalPanel
+            eyebrow="Focus Window"
+            title="This view is tuned for action."
+            subtitle="The current date range drives every KPI, chart, and shipment list below."
+            style={{ display: 'grid', alignContent: 'start', gap: 14 }}
+          >
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {RANGE_OPTIONS.map((r) => (
+                <RangeChip key={r.key} label={r.label} active={range === r.key} onClick={() => setRange(r.key)} />
+              ))}
+            </div>
             {range === 'custom' && (
-              <>
-                <input className="tw-input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ border: '1px solid #dbe6f4', borderRadius: 10, padding: '7px 10px', fontSize: 12 }} />
-                <input className="tw-input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ border: '1px solid #dbe6f4', borderRadius: 10, padding: '7px 10px', fontSize: 12 }} />
-              </>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <input className="tw-input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ border: '1px solid #dbe6f4', borderRadius: 12, padding: '10px 12px', fontSize: 12, background: '#fff' }} />
+                <input className="tw-input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ border: '1px solid #dbe6f4', borderRadius: 12, padding: '10px 12px', fontSize: 12, background: '#fff' }} />
+              </div>
             )}
-            <button
-              onClick={fetchPortalData}
-              style={{ border: '1px solid #cddcf0', borderRadius: 10, padding: '8px 12px', background: '#fff', fontSize: 12, fontWeight: 700, color: '#334155', cursor: 'pointer' }}
-            >
-              Refresh
-            </button>
-            <button
-              onClick={syncLiveStatuses}
-              style={{ border: '1px solid #f7c9aa', borderRadius: 10, padding: '8px 12px', background: '#fff3ec', fontSize: 12, fontWeight: 800, color: '#c2410c', cursor: 'pointer' }}
-            >
-              Sync Live Statuses
-            </button>
-          </div>
+            <div style={{ borderRadius: 18, padding: 16, background: 'linear-gradient(180deg,#f8fbff 0%,#ffffff 100%)', border: '1px solid #e5edf8' }}>
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', color: '#f97316', marginBottom: 8 }}>Selected Window</div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: '#0f172a' }}>{stats?.range?.from || '—'} to {stats?.range?.to || '—'}</div>
+              <p style={{ margin: '8px 0 0', color: '#64748b', fontSize: 12.5, lineHeight: 1.6 }}>
+                Focus on the most recent movement, compare shipping health, and refresh live statuses when the team needs a fresh view.
+              </p>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <div style={{ borderRadius: 16, padding: 14, background: '#fff7ed', border: '1px solid #fed7aa' }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#c2410c', textTransform: 'uppercase', letterSpacing: '.08em' }}>Insight</div>
+                <div style={{ marginTop: 8, fontSize: 15, fontWeight: 800, color: '#9a3412' }}>Delivered today looks stable.</div>
+                <div style={{ marginTop: 6, fontSize: 12, color: '#9a3412' }}>Keep an eye on NDR and out-for-delivery counts for quick interventions.</div>
+              </div>
+              <div style={{ borderRadius: 16, padding: 14, background: '#eff6ff', border: '1px solid #bfdbfe' }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#2563eb', textTransform: 'uppercase', letterSpacing: '.08em' }}>Coverage</div>
+                <div style={{ marginTop: 8, fontSize: 15, fontWeight: 800, color: '#1d4ed8' }}>{courierOptions.length || 0} courier lanes active</div>
+                <div style={{ marginTop: 6, fontSize: 12, color: '#1d4ed8' }}>The shipment list below is already filtered to this same date window.</div>
+              </div>
+            </div>
+          </PortalPanel>
         </section>
 
         <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 12, marginBottom: 18 }}>
@@ -347,68 +520,95 @@ export default function ClientPortalPage({ toast }) {
           <MetricCard icon="💰" label="Wallet Balance" value={fmt(stats?.wallet)} hint="Live" color="#9333ea" />
         </section>
 
-        <section style={{ display: 'grid', gridTemplateColumns: '1.1fr .9fr', gap: 14, marginBottom: 18 }}>
-          <div style={{ background: '#fff', border: '1px solid #e5edf8', borderRadius: 18, padding: 16, boxShadow: '0 8px 24px -14px rgba(11,31,58,0.2)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#0f172a' }}>Shipment Trend</h3>
-              <span style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>{stats?.range?.from} to {stats?.range?.to}</span>
+        <section className="portal-top-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.08fr) minmax(0,.92fr)', gap: 16, marginBottom: 18 }}>
+          <PortalPanel
+            eyebrow="Shipment Pulse"
+            title="Movement Trend"
+            subtitle="See order volume over the selected period with a smoother growth-style view."
+            action={<span style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>{stats?.range?.from} to {stats?.range?.to}</span>}
+          >
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 10, marginBottom: 14 }}>
+              {[
+                { label: 'Total', value: stats?.totals?.total || 0, color: '#1d4ed8' },
+                { label: 'Delivered', value: stats?.totals?.delivered || 0, color: '#16a34a' },
+                { label: 'Attention Needed', value: (stats?.totals?.ndr || 0) + (stats?.totals?.rto || 0), color: '#ea580c' },
+              ].map((item) => (
+                <div key={item.label} style={{ borderRadius: 16, padding: 14, background: '#f8fbff', border: '1px solid #e5edf8' }}>
+                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>{item.label}</div>
+                  <div style={{ marginTop: 6, fontSize: 22, fontWeight: 900, color: '#0f172a' }}>{item.value}</div>
+                  <div style={{ marginTop: 10, height: 4, borderRadius: 999, background: '#e6eef8', overflow: 'hidden' }}>
+                    <div style={{ width: '72%', height: '100%', background: item.color, borderRadius: 999 }} />
+                  </div>
+                </div>
+              ))}
             </div>
-            <div style={{ height: 200 }}>
+            <div style={{ height: 240 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={trendData}>
+                <AreaChart data={trendData}>
+                  <defs>
+                    <linearGradient id="portalTrendFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.38} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#edf2fa" />
                   <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#64748b' }} />
                   <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#64748b' }} />
                   <Tooltip />
-                  <Bar dataKey="shipments" fill="#1d4ed8" radius={[6, 6, 0, 0]} />
-                </BarChart>
+                  <Area type="monotone" dataKey="shipments" stroke="#2563eb" strokeWidth={3} fill="url(#portalTrendFill)" />
+                </AreaChart>
               </ResponsiveContainer>
             </div>
-          </div>
+          </PortalPanel>
 
-          <div style={{ background: '#fff', border: '1px solid #e5edf8', borderRadius: 18, padding: 16, boxShadow: '0 8px 24px -14px rgba(11,31,58,0.2)' }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#0f172a' }}>Quick Actions</h3>
-            <p style={{ margin: '6px 0 14px', fontSize: 12, color: '#64748b' }}>Move fast with one-click tools.</p>
-            <div style={{ display: 'grid', gap: 8 }}>
-              <Link to="/portal/bulk-track" style={{ textDecoration: 'none', background: '#f8fbff', border: '1px solid #dce9fa', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#1e3a8a', fontSize: 13 }}>🔍 Bulk AWB Tracking</Link>
-              <Link to="/portal/map" style={{ textDecoration: 'none', background: '#eff6ff', border: '1px solid #cfe0ff', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#1d4ed8', fontSize: 13 }}>🗺️ Live Shipment Map</Link>
-              <Link to="/portal/invoices" style={{ textDecoration: 'none', background: '#fff8f2', border: '1px solid #ffe1cb', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#c2410c', fontSize: 13 }}>🧾 Download Invoices</Link>
-              <Link to="/portal/wallet" style={{ textDecoration: 'none', background: '#f9f5ff', border: '1px solid #e8ddff', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#6d28d9', fontSize: 13 }}>💳 Wallet & Payments</Link>
-              <Link to="/portal/pickups" style={{ textDecoration: 'none', background: '#eefbf4', border: '1px solid #d3f1dd', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#166534', fontSize: 13 }}>📦 Raise Pickup Request</Link>
-              <Link to="/portal/ndr" style={{ textDecoration: 'none', background: '#fff5f5', border: '1px solid #ffd6d6', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#b42318', fontSize: 13 }}>⚠️ NDR Self-Service</Link>
-              <Link to="/portal/rates" style={{ textDecoration: 'none', background: '#f8f5ff', border: '1px solid #e6ddff', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#6d28d9', fontSize: 13 }}>💸 Rate Calculator</Link>
-              <Link to="/portal/import" style={{ textDecoration: 'none', background: '#fff9ec', border: '1px solid #ffe3a3', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#a16207', fontSize: 13 }}>📤 Order Import</Link>
-              <Link to="/portal/pod" style={{ textDecoration: 'none', background: '#eef7ff', border: '1px solid #d2e6ff', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#1d4ed8', fontSize: 13 }}>📸 Digital PODs</Link>
-              <Link to="/portal/rto-intelligence" style={{ textDecoration: 'none', background: '#fff3f2', border: '1px solid #ffd2cc', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#c2410c', fontSize: 13 }}>📊 RTO Intelligence</Link>
-              <Link to="/portal/notifications" style={{ textDecoration: 'none', background: '#f8fafc', border: '1px solid #dbe6f4', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#334155', fontSize: 13 }}>🔔 Notification Preferences</Link>
-              <Link to="/portal/support" style={{ textDecoration: 'none', background: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#374151', fontSize: 13 }}>🎫 Support Tickets</Link>
-              <Link to="/portal/branding" style={{ textDecoration: 'none', background: '#ecfeff', border: '1px solid #bae6fd', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#0f766e', fontSize: 13 }}>🌐 Branded Tracking</Link>
-              <button type="button" onClick={() => setTicketOpen(v => !v)} style={{ textAlign: 'left', border: '1px solid #dbe6f4', background: '#fff', borderRadius: 12, padding: '10px 12px', fontWeight: 700, color: '#334155', fontSize: 13, cursor: 'pointer' }}>🎫 Raise Support Ticket</button>
+          <PortalPanel
+            eyebrow="Quick Actions"
+            title="Move Fast"
+            subtitle="The most-used client tools now live in a single action deck with clearer hierarchy."
+          >
+            <div className="portal-actions-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 12 }}>
+              {ACTIONS.map((action) => (
+                <ActionTile key={action.title} {...action} />
+              ))}
+              <ActionTile
+                icon="🎫"
+                title={ticketOpen ? 'Close Ticket Composer' : 'Raise Support Ticket'}
+                description="Open a quick issue form right here when a shipment needs immediate help."
+                tone="slate"
+                onClick={() => setTicketOpen((v) => !v)}
+              />
             </div>
             {ticketOpen && (
-              <div style={{ marginTop: 10, border: '1px solid #e2eaf5', borderRadius: 12, padding: 10, background: '#fcfdff' }}>
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <input className="tw-input" value={ticketSubject} onChange={(e) => setTicketSubject(e.target.value)} placeholder="Subject (e.g. Shipment delayed)" style={{ border: '1px solid #dbe6f4', borderRadius: 10, padding: '8px 10px', fontSize: 12, color: '#334155', background: '#fff' }} />
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px', gap: 8 }}>
-                    <input className="tw-input" value={ticketAwb} onChange={(e) => setTicketAwb(e.target.value)} placeholder="AWB (optional)" style={{ border: '1px solid #dbe6f4', borderRadius: 10, padding: '8px 10px', fontSize: 12, color: '#334155', background: '#fff' }} />
-                    <select className="tw-select" value={ticketPriority} onChange={(e) => setTicketPriority(e.target.value)} style={{ border: '1px solid #dbe6f4', borderRadius: 10, padding: '8px 10px', fontSize: 12, color: '#334155', background: '#fff' }}>
+              <div style={{ marginTop: 14, border: '1px solid #e2eaf5', borderRadius: 18, padding: 14, background: 'linear-gradient(180deg,#fcfdff 0%,#f8fbff 100%)' }}>
+                <div style={{ display: 'grid', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#f97316', marginBottom: 6 }}>Support Desk</div>
+                    <div style={{ fontSize: 17, fontWeight: 900, color: '#0f172a' }}>Create a ticket without leaving the dashboard</div>
+                  </div>
+                  <input className="tw-input" value={ticketSubject} onChange={(e) => setTicketSubject(e.target.value)} placeholder="Subject (e.g. Shipment delayed)" style={{ border: '1px solid #dbe6f4', borderRadius: 12, padding: '10px 12px', fontSize: 12, color: '#334155', background: '#fff' }} />
+                  <div className="portal-ticket-meta" style={{ display: 'grid', gridTemplateColumns: '1fr 150px', gap: 8 }}>
+                    <input className="tw-input" value={ticketAwb} onChange={(e) => setTicketAwb(e.target.value)} placeholder="AWB (optional)" style={{ border: '1px solid #dbe6f4', borderRadius: 12, padding: '10px 12px', fontSize: 12, color: '#334155', background: '#fff' }} />
+                    <select className="tw-select" value={ticketPriority} onChange={(e) => setTicketPriority(e.target.value)} style={{ border: '1px solid #dbe6f4', borderRadius: 12, padding: '10px 12px', fontSize: 12, color: '#334155', background: '#fff' }}>
                       <option value="low">Low</option>
                       <option value="normal">Normal</option>
                       <option value="high">High</option>
                       <option value="urgent">Urgent</option>
                     </select>
                   </div>
-                  <textarea className="tw-input" value={ticketMessage} onChange={(e) => setTicketMessage(e.target.value)} placeholder="Describe the issue..." rows={4} style={{ border: '1px solid #dbe6f4', borderRadius: 10, padding: '8px 10px', fontSize: 12, resize: 'vertical', color: '#334155', background: '#fff' }} />
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                    <button type="button" onClick={() => setTicketOpen(false)} style={{ border: '1px solid #dbe6f4', background: '#fff', borderRadius: 10, padding: '7px 10px', fontSize: 12, fontWeight: 700, color: '#475569', cursor: 'pointer' }}>Cancel</button>
-                    <button type="button" onClick={submitSupportTicket} disabled={submittingTicket} style={{ border: '1px solid #f7c9aa', background: submittingTicket ? '#fff7f2' : '#fff3ec', borderRadius: 10, padding: '7px 10px', fontSize: 12, fontWeight: 800, color: '#c2410c', cursor: submittingTicket ? 'not-allowed' : 'pointer', opacity: submittingTicket ? 0.75 : 1 }}>
-                      {submittingTicket ? 'Submitting...' : 'Submit Ticket'}
-                    </button>
+                  <textarea className="tw-input" value={ticketMessage} onChange={(e) => setTicketMessage(e.target.value)} placeholder="Describe the issue..." rows={4} style={{ border: '1px solid #dbe6f4', borderRadius: 12, padding: '10px 12px', fontSize: 12, resize: 'vertical', color: '#334155', background: '#fff' }} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>Use this for delays, delivery issues, POD mismatches, or account questions.</div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                      <button type="button" onClick={() => setTicketOpen(false)} style={{ border: '1px solid #dbe6f4', background: '#fff', borderRadius: 12, padding: '9px 12px', fontSize: 12, fontWeight: 700, color: '#475569', cursor: 'pointer' }}>Cancel</button>
+                      <button type="button" onClick={submitSupportTicket} disabled={submittingTicket} style={{ border: '1px solid #f7c9aa', background: submittingTicket ? '#fff7f2' : '#fff3ec', borderRadius: 12, padding: '9px 12px', fontSize: 12, fontWeight: 800, color: '#c2410c', cursor: submittingTicket ? 'not-allowed' : 'pointer', opacity: submittingTicket ? 0.75 : 1 }}>
+                        {submittingTicket ? 'Submitting...' : 'Submit Ticket'}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             )}
-          </div>
+          </PortalPanel>
         </section>
 
         <section style={{ background: '#fff', border: '1px solid #e5edf8', borderRadius: 18, padding: 16, boxShadow: '0 8px 24px -14px rgba(11,31,58,0.2)', marginBottom: 18 }}>
@@ -579,6 +779,28 @@ export default function ClientPortalPage({ toast }) {
           0% { transform: scale(0.9); }
           65% { transform: scale(1.08); }
           100% { transform: scale(1); }
+        }
+        .portal-action-tile:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 22px 36px -24px rgba(15,23,42,0.48);
+        }
+        @media (max-width: 1080px) {
+          .portal-hero-grid,
+          .portal-top-grid,
+          .portal-hero-inner {
+            grid-template-columns: 1fr !important;
+          }
+        }
+        @media (max-width: 1024px) {
+          .portal-actions-grid {
+            grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+          }
+        }
+        @media (max-width: 820px) {
+          .portal-actions-grid,
+          .portal-ticket-meta {
+            grid-template-columns: 1fr !important;
+          }
         }
       `}</style>
     </div>
