@@ -15,7 +15,7 @@ function getLANIP() {
   const nets = os.networkInterfaces();
   for (const name of Object.keys(nets)) {
     for (const net of nets[name]) {
-      if (net.family === 'aIPv4' && !net.internal) return net.address;
+      if (net.family === 'IPv4' && !net.internal) return net.address;
     }
   }
   return 'YOUR_IP';
