@@ -11,6 +11,15 @@
    Public pages use their own CSS variables
 ───────────────────────────────────────── */
 [data-theme="dark"] {
+  --shk-bg: #0a0f1a;
+  --shk-sidebar: #0d1424;
+  --shk-surface: #111827;
+  --shk-border: #1f2d45;
+  --shk-border-hi: #2d4060;
+  --shk-text: #f1f5f9;
+  --shk-text-mid: #94a3b8;
+  --shk-text-dim: #475569;
+  --shk-orange: #f97316;
   background: #0a0f1a;
   color: #f1f5f9;
 }
@@ -248,6 +257,15 @@
    LIGHT MODE
 ───────────────────────────────────────── */
 [data-theme="light"] {
+  --shk-bg: #f3f6fc;
+  --shk-sidebar: #ffffff;
+  --shk-surface: #ffffff;
+  --shk-border: #dde6f2;
+  --shk-border-hi: #c9d8eb;
+  --shk-text: #0f172a;
+  --shk-text-mid: #475569;
+  --shk-text-dim: #64748b;
+  --shk-orange: #f97316;
   background: #f4f7fd;
   color: #0f172a;
 }
@@ -311,6 +329,17 @@
 [data-theme="light"] .bg-white.rounded-2xl {
   box-shadow: 0 4px 24px -4px rgba(11, 31, 58, 0.07), 0 1px 4px rgba(11, 31, 58, 0.04) !important;
   border-color: #e8f0fb !important;
+}
+
+[data-theme="light"] .btn-primary {
+  background: linear-gradient(135deg, #f97316 0%, #fb923c 100%) !important;
+  border: 1px solid rgba(249, 115, 22, 0.22) !important;
+  box-shadow: 0 8px 20px rgba(249, 115, 22, 0.2) !important;
+}
+
+[data-theme="light"] .btn-secondary {
+  border-color: #dbe6f4 !important;
+  background: #ffffff !important;
 }
 
 /* Status badge overrides for light */
@@ -401,6 +430,18 @@
   outline: none !important;
   border-color: #f97316 !important;
   box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.15) !important;
+}
+
+[data-theme] .card,
+[data-theme] .bg-white.rounded-xl,
+[data-theme] .bg-white.rounded-2xl {
+  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+}
+
+[data-theme] .card:hover,
+[data-theme] .bg-white.rounded-xl:hover,
+[data-theme] .bg-white.rounded-2xl:hover {
+  transform: translateY(-1px);
 }
 
 ::-webkit-scrollbar {

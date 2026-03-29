@@ -1,5 +1,6 @@
 'use strict';
 const logger = require('../utils/logger');
+const { fetchJsonWithRetry } = require('../utils/httpRetry');
 
 const API_KEY = process.env.TRACKON_API_KEY;
 
@@ -16,17 +17,9 @@ async function getTracking(awb) {
 
   try {
     // Example: Actual URL and headers will depend on the Trackon API documentation
-    const res = await fetch(`https://some-trackon-api.com/track?awb=${awb}&key=${API_KEY}`, {
+    const data = await fetchJsonWithRetry(`https://some-trackon-api.com/track?awb=${awb}&key=${API_KEY}`, {
       headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(8000)
-    });
-
-    if (!res.ok) {
-        logger.warn(`[Trackon] track ${res.status}`);
-        return null; 
-    }
-
-    const data = await res.json();
+    }, { attempts: 3, timeoutMs: 8000 });
     
     // Placeholder response mapping. You will need to map this exactly like Delhivery
     // after reading their API docs.

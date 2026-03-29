@@ -685,32 +685,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ── TESTIMONIALS ── */}
-        <section id="testimonials" className="sec">
-          <div className="wrap">
-            <div className="sec-head">
-              <div className="pill pill-navy rev">Client Stories</div>
-              <h2 className="h-display rev d1">Trusted by <span>Businesses Across India</span></h2>
-            </div>
-            <div className="testi-grid">
-              {[
-                {stars:'★★★★★',text:'We\'ve shipped internationally with Sea Hawk for 7 years. Their rates are consistently competitive and service impeccable. Documents reach Dubai in 2 days, every single time.',av:'RK',name:'Rajan Kapoor',role:'MD, Kapoor Exports · Delhi',bg:''},
-                {stars:'★★★★★',text:'The client portal is outstanding. Real-time tracking, instant invoice downloads and our account manager is always reachable. This is what proper B2B logistics looks like.',av:'AS',name:'Anita Sharma',role:'Procurement Head, TechGrow India',bg:'var(--orange)'},
-                {stars:'★★★★★',text:'Switched from a large courier company to Sea Hawk 2 years ago — best decision. Better pricing, personalised service, and they actually pick up the phone when you call.',av:'PG',name:'Priya Gupta',role:'Founder, Crafted Collections · Noida',bg:'var(--green)'},
-              ].map(({stars,text,av,name,role,bg},i) => (
-                <div key={name} className={`testi rev${i > 0 ? ` d${i}` : ''}`}>
-                  <div className="testi-stars">{stars}</div>
-                  <p className="testi-text">"{text}"</p>
-                  <div className="testi-author">
-                    <div className="testi-av" style={bg ? {background:bg} : {}}>{av}</div>
-                    <div><div className="testi-name">{name}</div><div className="testi-role">{role}</div></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
         {/* ── CTA BAND ── */}
         <section id="cta-band">
           <div className="wrap">

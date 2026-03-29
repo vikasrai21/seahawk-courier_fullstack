@@ -11,6 +11,8 @@
 
 const prisma  = require('../config/prisma');
 const logger  = require('../utils/logger');
+const cache   = require('../utils/cache');
+const { fetchJsonWithRetry } = require('../utils/httpRetry');
 
 /* ── helpers ── */
 const fmt = (n) => `₹${Number(n||0).toLocaleString('en-IN')}`;
@@ -404,14 +406,27 @@ async function createShipment(carrier, data) {
   return impl.createShipment(data, cfg);
 }
 
-async function fetchTracking(carrier, awb) {
+async function fetchTracking(carrier, awb, options = {}) {
   const impl = CARRIERS[carrier];
   if (!impl) throw new Error(`Unknown carrier: ${carrier}`);
   try {
+    const upperAwb = String(awb || '').toUpperCase();
+    const useCache = !options.bypassCache;
+    const cacheKey = `carrier:track:${carrier}:${upperAwb}`;
+
+    if (useCache) {
+      const cached = await cache.get(cacheKey);
+      if (cached) return cached;
+    }
+
     const cfg = await getCarrierConfig(carrier).catch(() => ({
       apiUrl: '', apiKey: '', enabled: true, config: {},
     }));
-    return impl.fetchTracking(awb, cfg);
+    const tracking = await impl.fetchTracking(awb, cfg);
+    if (tracking && useCache) {
+      await cache.set(cacheKey, tracking, 300); // 5 minutes
+    }
+    return tracking;
   } catch (err) {
     logger.warn(`Tracking fetch failed for ${carrier}/${awb}: ${err.message}`);
     return null;
@@ -427,7 +442,7 @@ async function cancelShipment(carrier, awb) {
 
 /* ── Persist tracking events to DB ── */
 async function syncTrackingEvents(shipmentId, awb, carrier) {
-  const tracking = await fetchTracking(carrier, awb);
+  const tracking = await fetchTracking(carrier, awb, { bypassCache: true });
   if (!tracking?.events?.length) return 0;
 
   // Get existing events to avoid duplicates
@@ -510,14 +525,10 @@ function mapDHLStatus(raw) {
    HTTP HELPERS
    ════════════════════════════════════════════════════════════ */
 async function _get(url, headers = {}) {
-  const { default: fetch } = await import('node-fetch');
-  const res = await fetch(url, { headers });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-  return res.json();
+  return fetchJsonWithRetry(url, { headers }, { attempts: 3, timeoutMs: 10000 });
 }
 
 async function _post(url, body, headers = {}, bodyType = 'json') {
-  const { default: fetch } = await import('node-fetch');
   let reqBody, contentType;
   if (bodyType === 'form') {
     reqBody = Object.entries(body).map(([k,v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
@@ -526,13 +537,11 @@ async function _post(url, body, headers = {}, bodyType = 'json') {
     reqBody = JSON.stringify(body);
     contentType = 'application/json';
   }
-  const res = await fetch(url, {
+  return fetchJsonWithRetry(url, {
     method:  'POST',
     headers: { 'Content-Type': contentType, ...headers },
     body:    reqBody,
-  });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
-  return res.json();
+  }, { attempts: 3, timeoutMs: 12000 });
 }
 
 module.exports = {

@@ -13,6 +13,7 @@
 'use strict';
 
 const logger = require('../utils/logger');
+const { fetchJsonWithRetry, fetchBufferWithRetry } = require('../utils/httpRetry');
 
 const BASE_URL  = process.env.DELHIVERY_API_URL || 'https://track.delhivery.com';
 const API_KEY   = process.env.DELHIVERY_API_KEY;
@@ -39,12 +40,11 @@ async function getTracking(awb) {
     return null;
   }
   try {
-    const res = await fetch(
+    const data = await fetchJsonWithRetry(
       `${BASE_URL}/api/v1/packages/json/?waybill=${awb}`,
-      { headers: authHeaders(), signal: AbortSignal.timeout(8000) }
+      { headers: authHeaders() },
+      { attempts: 3, timeoutMs: 8000 }
     );
-    if (!res.ok) { logger.warn(`[Delhivery] track ${res.status}`); return null; }
-    const data = await res.json();
     const s    = data?.ShipmentData?.[0]?.Shipment;
     if (!s) return null;
 
@@ -118,16 +118,11 @@ async function createShipment({
     }),
   });
 
-  const res = await fetch(`${BASE_URL}/api/cmu/create.json`, {
+  const data = await fetchJsonWithRetry(`${BASE_URL}/api/cmu/create.json`, {
     method: 'POST',
     headers: { 'Authorization': `Token ${API_KEY}` },
     body,
-    signal: AbortSignal.timeout(15000),
-  });
-
-  if (!res.ok) throw new Error(`Delhivery booking failed (${res.status}): ${await res.text()}`);
-
-  const data = await res.json();
+  }, { attempts: 3, timeoutMs: 15000 });
   const pkg  = data?.packages?.[0];
   if (!pkg?.waybill) throw new Error(pkg?.remarks || 'Delhivery did not return AWB');
 
@@ -143,36 +138,31 @@ async function createShipment({
 /* ── 3. DOWNLOAD LABEL PDF ─────────────────────────────────── */
 async function getLabel(awb) {
   if (!isConfigured()) throw new Error('DELHIVERY_API_KEY not set');
-  const res = await fetch(
+  return fetchBufferWithRetry(
     `${BASE_URL}/api/p/packing_slip?wbns=${awb}&pdf=true`,
-    { headers: authHeaders(), signal: AbortSignal.timeout(15000) }
+    { headers: authHeaders() },
+    { attempts: 3, timeoutMs: 15000 }
   );
-  if (!res.ok) throw new Error(`Delhivery label error (${res.status})`);
-  return Buffer.from(await res.arrayBuffer());
 }
 
 /* ── 4. CANCEL SHIPMENT ────────────────────────────────────── */
 async function cancelShipment(awb) {
   if (!isConfigured()) throw new Error('DELHIVERY_API_KEY not set');
-  const res = await fetch(`${BASE_URL}/api/p/edit`, {
+  return fetchJsonWithRetry(`${BASE_URL}/api/p/edit`, {
     method: 'POST', headers: authHeaders(),
     body: JSON.stringify({ waybill: awb, cancellation: true }),
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!res.ok) throw new Error(`Cancel failed: ${await res.text()}`);
-  return res.json();
+  }, { attempts: 3, timeoutMs: 8000 });
 }
 
 /* ── 5. PIN SERVICEABILITY ─────────────────────────────────── */
 async function checkServiceability(pin) {
   if (!isConfigured()) return { serviceable: true, note: 'API key not set' };
   try {
-    const res = await fetch(
+    const data = await fetchJsonWithRetry(
       `${BASE_URL}/c/api/pin-codes/json/?filter_codes=${pin}`,
-      { headers: authHeaders(), signal: AbortSignal.timeout(5000) }
+      { headers: authHeaders() },
+      { attempts: 3, timeoutMs: 5000 }
     );
-    if (!res.ok) return { serviceable: true };
-    const data = await res.json();
     const info = data?.delivery_codes?.[0]?.postal_code;
     return {
       serviceable: !!info,

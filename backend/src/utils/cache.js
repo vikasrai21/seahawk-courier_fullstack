@@ -2,22 +2,29 @@
 'use strict';
 const logger = require('./logger');
 const config = require('../config');
+const Redis = require('ioredis');
 
 let redisClient = null;
 const memCache  = new Map(); // fallback when Redis unavailable
 
 async function getRedis() {
   if (redisClient) return redisClient;
+  if (!config.redis.url) return null;
+
   try {
-    const { createClient } = require('redis');
-    const client = createClient({ url: config.redis.url });
-    client.on('error', err => logger.warn('Redis error (cache disabled):', err.message));
+    const client = new Redis(config.redis.url, {
+      maxRetriesPerRequest: 2,
+      enableReadyCheck: true,
+      lazyConnect: true,
+    });
+    client.on('error', (err) => logger.warn('Redis error (cache disabled):', err.message));
     await client.connect();
     redisClient = client;
     logger.info('Cache: Redis connected');
     return redisClient;
-  } catch {
+  } catch (err) {
     logger.warn('Cache: Redis unavailable — using in-memory fallback');
+    logger.warn(`Cache: Redis init error: ${err.message}`);
     return null;
   }
 }
@@ -46,7 +53,7 @@ async function set(key, value, ttlSeconds = 300) {
   try {
     const redis = await getRedis();
     if (redis) {
-      await redis.setEx(key, ttlSeconds, JSON.stringify(value));
+      await redis.set(key, JSON.stringify(value), 'EX', ttlSeconds);
       return;
     }
     // in-memory fallback
@@ -60,9 +67,14 @@ async function set(key, value, ttlSeconds = 300) {
 async function del(key) {
   try {
     const redis = await getRedis();
-    if (redis) { await redis.del(key); return; }
+    if (redis) {
+      await redis.del(key);
+      return;
+    }
     memCache.delete(key);
-  } catch {}
+  } catch (err) {
+    logger.warn(`Cache del failed for ${key}:`, err.message);
+  }
 }
 
 // ── wrap — cache-aside helper ─────────────────────────────────────────────

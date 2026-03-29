@@ -18,15 +18,15 @@ import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 
 // ── Design tokens (must match DashboardPage) ───────────────────────────────
 const C = {
-  bg:        'var(--shk-bg, #0a0f1a)',
-  sidebar:   'var(--shk-surface, #0d1424)',
-  surface:   'var(--shk-surface, #111827)',
-  border:    'var(--shk-border, #1f2d45)',
-  borderHi:  'var(--shk-border-hi, #2d4060)',
+  bg:        'var(--shk-bg, #f3f6fc)',
+  sidebar:   'var(--shk-sidebar, #ffffff)',
+  surface:   'var(--shk-surface, #ffffff)',
+  border:    'var(--shk-border, #dde6f2)',
+  borderHi:  'var(--shk-border-hi, #c9d8eb)',
   orange:    'var(--shk-orange, #f97316)',
-  text:      'var(--shk-text, #f1f5f9)',
-  textMid:   'var(--shk-text-mid, #94a3b8)',
-  textDim:   'var(--shk-text-dim, #475569)',
+  text:      'var(--shk-text, #0f172a)',
+  textMid:   'var(--shk-text-mid, #475569)',
+  textDim:   'var(--shk-text-dim, #64748b)',
 };
 
 const navGroups = [
@@ -89,7 +89,7 @@ const adminItems = [
 ];
 
 // ── Nav item ───────────────────────────────────────────────────────────────
-function NavItem({ to, label, icon: Icon, accent, badge, roles: itemRoles }) {
+function NavItem({ to, label, icon: Icon, badge, roles: itemRoles }) {
   const { hasRole, isAdmin } = useAuth();
   if (itemRoles && !isAdmin && !hasRole(...itemRoles)) return null;
 
@@ -101,19 +101,20 @@ function NavItem({ to, label, icon: Icon, accent, badge, roles: itemRoles }) {
         display: 'flex',
         alignItems: 'center',
         gap: 10,
-        padding: '7px 10px',
-        borderRadius: 9,
+        padding: '9px 12px',
+        borderRadius: 12,
         fontSize: 13,
         fontWeight: isActive ? 700 : 500,
         textDecoration: 'none',
         color:      isActive ? C.text : C.textMid,
-        background: isActive ? 'rgba(249,115,22,0.12)' : 'transparent',
-        borderLeft: isActive ? `2px solid ${C.orange}` : '2px solid transparent',
-        transition: 'all 0.15s',
+        background: isActive ? 'linear-gradient(90deg, rgba(249,115,22,0.14), rgba(249,115,22,0.04))' : 'transparent',
+        border: isActive ? `1px solid rgba(249,115,22,0.28)` : '1px solid transparent',
+        boxShadow: isActive ? '0 6px 20px rgba(249,115,22,0.08)' : 'none',
+        transition: 'all 0.16s ease',
       })}
       onMouseEnter={e => {
         if (!e.currentTarget.style.background.includes('249')) {
-          e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
+          e.currentTarget.style.background = 'rgba(15,23,42,0.04)';
           e.currentTarget.style.color = C.text;
         }
       }}
@@ -146,7 +147,7 @@ function SectionLabel({ label }) {
       fontSize: 9, fontWeight: 800,
       textTransform: 'uppercase', letterSpacing: '0.12em',
       color: C.textDim,
-      fontFamily: 'monospace',
+      fontFamily: 'Outfit, sans-serif',
     }}>{label}</p>
   );
 }
@@ -175,18 +176,19 @@ function SidebarContent({ onClose }) {
         borderBottom: `1px solid ${C.border}`,
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', flexShrink: 0,
+        background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <img 
             src="/images/logo.png" 
             alt="Sea Hawk Logo" 
             style={{ 
-              height: 40, 
+              height: 40,
               width: 'auto', 
               objectFit: 'contain',
-              background: '#fff',
-              borderRadius: 6,
-              padding: 2
+              borderRadius: 8,
+              padding: 3,
+              border: `1px solid ${C.border}`
             }} 
           />
           <div>
@@ -233,7 +235,7 @@ function SidebarContent({ onClose }) {
           textDecoration: 'none',
           transition: 'background 0.15s',
         }}
-          onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+          onMouseEnter={e => e.currentTarget.style.background = 'rgba(15,23,42,0.04)'}
           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
         >
           <div style={{
@@ -249,7 +251,7 @@ function SidebarContent({ onClose }) {
             <div style={{ fontSize: 12, fontWeight: 700, color: C.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {user?.name}
             </div>
-            <div style={{ fontSize: 10, color: C.textDim, fontFamily: 'monospace' }}>{user?.role}</div>
+            <div style={{ fontSize: 10, color: C.textDim, fontFamily: 'Outfit, sans-serif', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{user?.role}</div>
           </div>
           <ChevronRight size={12} color={C.textDim} />
         </NavLink>
@@ -263,10 +265,10 @@ function SidebarContent({ onClose }) {
             fontSize: 12, color: C.textMid, fontFamily: 'Outfit, sans-serif',
             transition: 'all 0.15s',
           }}
-          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = C.text; }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(15,23,42,0.05)'; e.currentTarget.style.color = C.text; }}
           onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = C.textMid; }}
         >
-          {dark ? <Sun size={13} color="#f59e0b" /> : <Moon size={13} color="#6366f1" />}
+          {dark ? <Sun size={13} color="#f59e0b" /> : <Moon size={13} color="#334155" />}
           {dark ? 'Switch to Light' : 'Switch to Dark'}
         </button>
 
@@ -298,7 +300,7 @@ export function AppLayout({ children }) {
   return (
     <div style={{
       display: 'flex', height: '100vh',
-      background: C.bg,
+      background: 'linear-gradient(180deg, #f7faff 0%, #edf3fb 100%)',
       overflow: 'hidden',
       fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
     }}>
@@ -330,7 +332,7 @@ export function AppLayout({ children }) {
       {/* Desktop sidebar */}
       <aside style={{
         display: 'none',
-        width: 220, flexShrink: 0,
+        width: 248, flexShrink: 0,
         borderRight: `1px solid ${C.border}`,
       }}
         className="shk-sidebar-desktop"
@@ -345,7 +347,7 @@ export function AppLayout({ children }) {
             style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(2px)' }}
             onClick={() => setMobileOpen(false)}
           />
-          <aside style={{ position: 'relative', width: 220, height: '100%', borderRight: `1px solid ${C.border}` }}>
+          <aside style={{ position: 'relative', width: 248, height: '100%', borderRight: `1px solid ${C.border}` }}>
             <SidebarContent onClose={() => setMobileOpen(false)} />
           </aside>
         </div>
@@ -358,7 +360,7 @@ export function AppLayout({ children }) {
         <header style={{
           display: 'flex', alignItems: 'center', gap: 12,
           padding: '12px 16px',
-          background: C.sidebar,
+          background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
           borderBottom: `1px solid ${C.border}`,
           flexShrink: 0,
         }}
@@ -376,7 +378,7 @@ export function AppLayout({ children }) {
           </span>
         </header>
 
-        <main style={{ flex: 1, overflowY: 'auto', background: 'var(--shk-bg, #080d18)', transition: 'background 0.3s' }}>
+        <main style={{ flex: 1, overflowY: 'auto', background: 'var(--shk-bg, #f3f6fc)', transition: 'background 0.3s' }}>
           {children}
         </main>
       </div>

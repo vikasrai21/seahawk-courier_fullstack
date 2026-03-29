@@ -38,12 +38,41 @@ function buildFilters({ client, courier, status, dateFrom, dateTo, q }) {
   return where;
 }
 
-async function getAll(filters = {}, page = 1, limit = 500) {
+async function getAll(filters = {}, page = 1, limit = 50) {
+  const safePage = Math.max(1, parseInt(page, 10) || 1);
+  const safeLimit = Math.min(200, Math.max(10, parseInt(limit, 10) || 50));
   const where = buildFilters(filters);
-  const skip  = (parseInt(page) - 1) * parseInt(limit);
+  const skip  = (safePage - 1) * safeLimit;
   const [total, shipments] = await prisma.$transaction([
     prisma.shipment.count({ where }),
-    prisma.shipment.findMany({ where, include: { client: { select: { company: true } }, createdBy: { select: { name: true } } }, orderBy: [{ date: 'desc' }, { id: 'desc' }], skip, take: parseInt(limit) }),
+    prisma.shipment.findMany({
+      where,
+      orderBy: [{ date: 'desc' }, { id: 'desc' }],
+      skip,
+      take: safeLimit,
+      select: {
+        id: true,
+        date: true,
+        clientCode: true,
+        awb: true,
+        consignee: true,
+        destination: true,
+        phone: true,
+        pincode: true,
+        weight: true,
+        amount: true,
+        courier: true,
+        department: true,
+        service: true,
+        status: true,
+        ndrStatus: true,
+        remarks: true,
+        createdAt: true,
+        updatedAt: true,
+        client: { select: { company: true } },
+        createdBy: { select: { name: true } },
+      },
+    }),
   ]);
   return { shipments, total };
 }

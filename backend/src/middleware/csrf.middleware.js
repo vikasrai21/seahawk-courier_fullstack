@@ -4,6 +4,7 @@
 'use strict';
 const crypto = require('crypto');
 const logger = require('../utils/logger');
+const config = require('../config');
 
 const CSRF_HEADER = 'x-csrf-token';
 const CSRF_COOKIE = 'csrf_token';
@@ -20,8 +21,8 @@ function issueCsrfCookie(req, res, next) {
     const token = generateToken();
     res.cookie(CSRF_COOKIE, token, {
       httpOnly: false,    // Must be readable by JS to send in header
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      secure: config.cookie.secure,
+      sameSite: config.cookie.sameSite,
       maxAge: 24 * 60 * 60 * 1000, // 24h
     });
   }

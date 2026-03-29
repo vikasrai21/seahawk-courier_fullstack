@@ -120,7 +120,9 @@ async function revokeAllUserTokens(userId) {
       where: { userId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
-  } catch { }
+  } catch (err) {
+    logger.warn(`Failed to revoke all user tokens for userId=${userId}: ${err.message}`);
+  }
 }
 
 async function cleanupExpiredTokens() {
@@ -129,7 +131,9 @@ async function cleanupExpiredTokens() {
       where: { OR: [{ expiresAt: { lt: new Date() } }, { revokedAt: { not: null } }] },
     });
     logger.info(`Cleaned up ${result.count} expired/revoked refresh tokens`);
-  } catch { }
+  } catch (err) {
+    logger.warn(`Failed to clean expired refresh tokens: ${err.message}`);
+  }
 }
 
 async function createUser({ name, email, password, role, branch, clientCode }) {

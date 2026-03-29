@@ -52,7 +52,7 @@ export default class ErrorBoundary extends Component {
             Reload Page
           </button>
         </div>
-        {process.env.NODE_ENV !== 'production' && this.state.error && (
+        {!import.meta.env.PROD && this.state.error && (
           <details style={{ marginTop: 16, textAlign: 'left', maxWidth: 500 }}>
             <summary style={{ cursor: 'pointer', fontSize: '.75rem', color: '#9ca3af' }}>Error details (dev only)</summary>
             <pre style={{ fontSize: '.68rem', color: '#dc2626', background: '#fef2f2', padding: 10, borderRadius: 6, marginTop: 8, overflow: 'auto', maxHeight: 200 }}>

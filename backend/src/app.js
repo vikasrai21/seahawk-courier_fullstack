@@ -32,6 +32,24 @@ app.use(cors({
   allowedHeaders: ['Content-Type','Authorization','x-csrf-token'],
 }));
 
+// ── Compression (gzip/brotli when supported by proxy/runtime) ────────────
+let compression = null;
+try {
+  compression = require('compression');
+} catch {
+  logger.warn('compression package is not installed; response compression disabled');
+}
+
+if (compression) {
+  app.use(compression({
+    threshold: 1024,
+    filter: (req, res) => {
+      if (req.headers['x-no-compression']) return false;
+      return compression.filter(req, res);
+    },
+  }));
+}
+
 const logsDir = path.join(__dirname, '../logs');
 if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
 app.use(morgan(config.isProd ? 'combined' : 'dev', {
@@ -90,9 +108,25 @@ app.use('/api/webhooks',       require('./routes/webhook.routes'));
 // ── Serve React (production) ───────────────────────────────────────────────
 const frontendBuild = path.join(__dirname, '../public');
 if (fs.existsSync(frontendBuild)) {
-  app.use(express.static(frontendBuild, { maxAge: config.isProd ? '1d' : 0 }));
+  app.use(express.static(frontendBuild, {
+    maxAge: config.isProd ? '7d' : 0,
+    etag: true,
+    setHeaders: (res, filePath) => {
+      if (!config.isProd) return;
+      if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        return;
+      }
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache');
+        return;
+      }
+      res.setHeader('Cache-Control', 'public, max-age=604800');
+    },
+  }));
   app.get('*', (req, res) => {
     if (!req.path.startsWith('/api')) {
+      if (config.isProd) res.setHeader('Cache-Control', 'no-cache');
       res.sendFile(path.join(frontendBuild, 'index.html'));
     }
   });

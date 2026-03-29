@@ -2,7 +2,7 @@
   "name": "seahawk-fullstack",
   "version": "1.0.0",
   "scripts": {
-    "build": "npm ci --prefix frontend && npm run build --prefix frontend && cp -r frontend/dist backend/public && npm ci --prefix backend && cd backend && npx prisma generate",
+    "build": "npm ci --prefix frontend && npm run build --prefix frontend && node -e \"const fs=require('fs');fs.rmSync('backend/public',{recursive:true,force:true});fs.cpSync('frontend/dist','backend/public',{recursive:true});\" && npm ci --prefix backend && cd backend && npx prisma generate",
     "start": "cd backend && npx prisma migrate deploy && node server.js"
   }
 }

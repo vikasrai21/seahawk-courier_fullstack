@@ -6,9 +6,15 @@ const R = require('../utils/response');
 const { asyncHandler } = require('../middleware/errorHandler');
 
 const getAll = asyncHandler(async (req, res) => {
-  const { client, courier, status, date_from, date_to, q, page = 1, limit = 500 } = req.query;
-  const { shipments, total } = await svc.getAll({ client, courier, status, dateFrom: date_from, dateTo: date_to, q }, page, limit);
-  R.paginated(res, shipments, total, page, limit);
+  const { client, courier, status, date_from, date_to, q, page = 1, limit = 50 } = req.query;
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.min(200, Math.max(10, parseInt(limit, 10) || 50));
+  const { shipments, total } = await svc.getAll(
+    { client, courier, status, dateFrom: date_from, dateTo: date_to, q },
+    pageNum,
+    limitNum
+  );
+  R.paginated(res, shipments, total, pageNum, limitNum);
 });
 
 const getOne = asyncHandler(async (req, res) => {

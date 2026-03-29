@@ -3,7 +3,9 @@ node_modules/
 **/node_modules/
 
 # Build output
-
+frontend/dist/
+mobile/.expo/
+mobile/dist/
 
 # Environment files — NEVER commit these
 .env
@@ -43,3 +45,6 @@ coverage/
 # Temp
 *.tmp
 *.temp
+
+# Archives
+*.zip

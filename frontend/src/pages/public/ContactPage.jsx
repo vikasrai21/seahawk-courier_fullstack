@@ -6,6 +6,7 @@ import PublicLayout from './PublicLayout';
 export default function ContactPage() {
   const [form, setForm] = useState({ name: '', contact: '', subj: 'General Enquiry', msg: '' });
   const [sent, setSent] = useState(false);
+  const [formError, setFormError] = useState('');
 
   function handleChange(e) {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -94,6 +95,11 @@ export default function ContactPage() {
                 {sent && (
                   <div style={{ padding: '10px 14px', background: 'var(--green-bg)', borderRadius: 'var(--r)', fontSize: '.85rem', color: 'var(--green)', fontWeight: 600 }}>
                     ✅ Message sent! We'll reply on WhatsApp shortly.
+                  </div>
+                )}
+                {!!formError && (
+                  <div style={{ padding: '10px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 'var(--r)', fontSize: '.85rem', color: '#b91c1c', fontWeight: 600 }}>
+                    {formError}
                   </div>
                 )}
                 <button type="submit" style={{ padding: '13px', background: 'var(--orange)', color: '#fff', border: 'none', borderRadius: 'var(--r)', fontSize: '.95rem', fontWeight: 800, cursor: 'pointer' }}>
