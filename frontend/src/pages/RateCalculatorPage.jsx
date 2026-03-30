@@ -219,11 +219,11 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
   },[customPrice,activeContract,proposalSellPrice]);
 
   // Reverse margin → required sell price
-  const getPerCourierSell=useCallback((courierLevel)=>{
+  const getPerCourierSell=useCallback((courier)=>{
     if(customPrice&&parseFloat(customPrice)>0)return parseFloat(customPrice);
     if(activeContract)return activeContract.total;
     if(!zone||!chargeWt)return 0;
-    return proposalSell(zone,chargeWt,shipType,courierLevel)?.total||0;
+    return proposalSell(zone,chargeWt,shipType,courier.level, courier.id)?.total||0;
   },[customPrice,activeContract,zone,chargeWt,shipType]);
 
   // Results
@@ -237,7 +237,7 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
       .map(c=>{
         const bk=courierCost(c.id,zone,chargeWt,oda);
         if(!bk)return null;
-        const sell=getPerCourierSell(c.level);
+        const sell=getPerCourierSell(c);
         const profit=rnd(sell-bk.total);
         const margin=sell>0?rnd((profit/sell)*100):0;
         return{...c,bk,sell,profit,margin};
@@ -358,7 +358,7 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
 
   // ── RENDER ───────────────────────────────────────────────────────────────
   return (
-    <div className="p-4 max-w-6xl mx-auto">
+    <div className="p-4 md:p-6 max-w-5xl mx-auto">
 
       <HeaderPanel
         showSettings={showSettings}
@@ -456,10 +456,10 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
 
       {/* Tabs */}
       {results.length>0&&(
-        <div className="flex gap-1 mb-3 bg-gray-100 p-1 rounded-xl w-fit">
+        <div className="flex gap-1 mb-4 bg-slate-100 p-1 rounded-xl w-fit">
           {[['calc','Calculator',Calculator],['sensitivity','Sensitivity',BarChart2],['quote','Quote',Printer]].map(([id,label,Icon])=>(
             <button key={id} onClick={()=>setTab(id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${tab===id?'bg-white shadow-sm text-slate-800':'text-gray-500 hover:text-gray-700'}`}>
+              className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${tab===id?'bg-white shadow-sm text-slate-800':'text-slate-400 hover:text-slate-600'}`}>
               <Icon className="w-3.5 h-3.5"/>{label}
             </button>
           ))}
@@ -532,10 +532,10 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
 
       {/* Empty state */}
       {!zone&&(
-        <div className="text-center py-20">
-          <Package className="w-16 h-16 mx-auto mb-4 opacity-10"/>
-          <p className="text-lg font-medium text-gray-400">Enter destination to compare all 17 courier options</p>
-          <p className="text-sm mt-1 text-gray-300">e.g. <strong className="text-gray-400">400019</strong> · <strong className="text-gray-400">Mumbai</strong> · <strong className="text-gray-400">Bengaluru</strong></p>
+        <div className="text-center py-24">
+          <Package className="w-10 h-10 mx-auto mb-3 text-slate-200"/>
+          <p className="text-sm font-medium text-slate-400">Enter a destination to compare 18 courier options</p>
+          <p className="text-[12px] mt-1 text-slate-300">e.g. <strong className="text-slate-400">400019</strong> · <strong className="text-slate-400">Mumbai</strong> · <strong className="text-slate-400">Bengaluru</strong></p>
         </div>
       )}
     </div>

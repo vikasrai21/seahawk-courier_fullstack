@@ -1,53 +1,60 @@
 'use strict';
 
-const DTDC_XDOC = {
-  local: { w250: 13, w500: 15, addl: 15 },
-  region: { w250: 16, w500: 19, addl: 19 },
-  zone: { w250: 19, w500: 24, addl: 22 },
-  metro: { w250: 26, w500: 39, addl: 44 },
-  roi_a: { w250: 33, w500: 46, addl: 53 },
-  roi_b: { w250: 36, w500: 52, addl: 57 },
-  spl: { w250: 43, w500: 65, addl: 72 },
+const DTDC_D71 = {
+  local:  { w500: 12.47, addl: 11.11, pkg: 14.81 },
+  region: { w500: 16.91, addl: 14.81, pkg: 17.78 },
+  zone:   { w500: 21.36, addl: 18.52, pkg: 21.48 },
+  metro:  { w500: 25.06, addl: 21.48, pkg: 25.93 },
+  roi_a:  { w500: 27.28, addl: 25.93, pkg: 31.11 },
+  roi_b:  { w500: 33.21, addl: 29.63, pkg: 37.04 },
+  ne:     { w500: 36.91, addl: 34.07, pkg: 44.44 },
 };
 
-const DTDC_XNDX = {
-  local: [27, 25, 23, 21],
-  region: [32, 29, 27, 26],
-  zone: [41, 39, 37, 34],
-  metro: [82, 79, 76, 74],
-  roi_a: [93, 88, 86, 84],
-  roi_b: [103, 99, 97, 95],
-  spl: [140, 134, 129, 124],
+const DTDC_V71 = {
+  local:  { w500: 30.99, addl: 22.22 },
+  region: { w500: 48.02, addl: 25.93 },
+  zone:   { w500: 62.84, addl: 34.07 },
+  metro:  { w500: 81.36, addl: 62.96 },
+  roi_a:  { w500: 97.65, addl: 74.07 },
+  roi_b:  { w500: 101.36, addl: 77.78 },
+  ne:     { w500: 105.06, addl: 81.48 },
 };
 
-const DTDC_7X = {
-  local: { w500: 18, addl: 13 },
-  region: { w500: 23, addl: 15 },
-  zone: { w500: 30, addl: 27 },
-  metro: { w500: 39, addl: 42 },
-  roi_a: { w500: 41, addl: 47 },
-  roi_b: { w500: 45, addl: 50 },
-  spl: { w500: 55, addl: 60 },
+const DTDC_P7X = {
+  local:  { w500: 16.91, addl: 12.59, pkg: 17.78 },
+  region: { w500: 21.36, addl: 14.07, pkg: 20.74 },
+  zone:   { w500: 25.06, addl: 17.78, pkg: 28.89 },
+  metro:  { w500: 36.91, addl: 34.81, pkg: 66.67 },
+  roi_a:  { w500: 39.87, addl: 35.56, pkg: 69.63 },
+  roi_b:  { w500: 40.62, addl: 37.04, pkg: 70.37 },
+  ne:     { w500: 51.73, addl: 44.44, pkg: 81.48 },
 };
 
-const DTDC_7D = {
-  local: { w500: 18, addl: 13, pkg: 16 },
-  region: { w500: 23, addl: 15, pkg: 19 },
-  zone: { w500: 25, addl: 18, pkg: 23 },
-  metro: { w500: 28, addl: 25, pkg: 38 },
-  roi_a: { w500: 31, addl: 27, pkg: 44 },
-  roi_b: { w500: 37, addl: 29, pkg: 47 },
-  spl: { w500: 47, addl: 37, pkg: 52 },
+const DTDC_EXP = {
+  local:  { w250: 16, w500: 16, addl: 10 },
+  region: { w250: 17, w500: 18, addl: 12 },
+  zone:   { w250: 21, w500: 23, addl: 17 },
+  metro:  { w250: 36, w500: 48, addl: 45 },
+  roi:    { w250: 40, w500: 53, addl: 48 },
+  ne:     { w250: 45, w500: 58, addl: 53 },
+  spl:    { w250: 46, w500: 61, addl: 60 },
 };
 
-const DTDC_7G = {
-  local: { lt10: 14, gt10: 13 },
-  region: { lt10: 15, gt10: 14 },
-  zone: { lt10: 18, gt10: 16 },
-  metro: { lt10: 23, gt10: 20 },
-  roi_a: { lt10: 24, gt10: 21 },
-  roi_b: { lt10: 25, gt10: 23 },
-  spl: { lt10: 29, gt10: 27 },
+const DTDC_DSFC = {
+  local:  14,
+  region: 18,
+  zone:   26,
+  metro:  35,
+  roi:    37,
+  ne:     46,
+  spl:    55,
 };
 
-module.exports = { DTDC_XDOC, DTDC_XNDX, DTDC_7X, DTDC_7D, DTDC_7G };
+const DTDC_DAIR = {
+  metro:  77,
+  roi:    85,
+  ne:     95,
+  spl:    114,
+};
+
+module.exports = { DTDC_D71, DTDC_V71, DTDC_P7X, DTDC_EXP, DTDC_DSFC, DTDC_DAIR };

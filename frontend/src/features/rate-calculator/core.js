@@ -55,7 +55,7 @@ function stateToZones(state, district, city) {
     const isGuwahati = d.includes('kamrup')||c.includes('guwahati');
     const isTripura  = s.includes('tripura');
     const isManipul  = s.includes('manipur');
-    return Z('ne','ne_sfc','ne_air', isManipul?'F':'E', 'NE','spl','roi','roi_air','roi_sfc',
+    return Z('ne','ne_sfc','ne_air', isManipul?'F':'E', 'NE','ne','roi','roi_air','roi_sfc',
       isGuwahati?'ne_i':isTripura?'ne_iii':'ne_ii',
       isGuwahati?'ne1':'ne2','spl','North East');
   }
@@ -189,6 +189,15 @@ const SELL_DOC_PREM = {
   'North East':              {w250:90,  w500:115, addl:65},
   'Diplomatic / Port Blair': {w250:110, w500:140, addl:75},
 };
+// Prime Track specific selling rates (No FSC, only GST)
+const SELL_PT = {
+  'Delhi & NCR':             {w500:75,  addl:40},
+  'North India':             {w500:100, addl:40},
+  'Metro Cities':            {w500:150, addl:40},
+  'Rest of India':           {w500:150, addl:40},
+  'North East':              {w500:150, addl:40},
+  'Diplomatic / Port Blair': {w500:150, addl:40},
+};
 const SELL_SFC_ECO = {
   'Delhi & NCR':             {s3:22,  s10:20,  s25:18,  s50:16,  s100:15},
   'North India':             {s3:30,  s10:28,  s25:25,  s50:22,  s100:20},
@@ -229,10 +238,20 @@ function ceil1(n){return Math.ceil(n);} // ceil to nearest 1 kg
 function ceil05(n){return Math.ceil(n*2)/2;} // ceil to nearest 0.5
 
 // Build sell price + breakdown
-function proposalSell(zone, w, shipType, level='economy') {
+function proposalSell(zone, w, shipType, level='economy', courierId=null) {
   const FSC=0.25, GST=0.18;
   const szKey = zone.seahawkZone;
-  const src = level==='premium'?'Proposal (Premium)':'Proposal (Economy)';
+  let src = level==='premium'?'Proposal (Premium)':'Proposal (Economy)';
+
+  if (courierId === 'trackon_pt') {
+    src = 'Prime Track Special Rate';
+    const r = SELL_PT[szKey] || SELL_PT['Rest of India'];
+    const cw = ceil05(w);
+    const b = cw <= 0.5 ? r.w500 : r.w500 + Math.ceil((cw - 0.5) / 0.5) * r.addl;
+    // Prime track has 0% FSC, only GST 18%
+    const sub = b;
+    return {base:b, fsc:0, fscPct:'0%', gst:rnd(sub*0.18), total:rnd(sub*1.18), source:src};
+  }
 
   if (shipType==='doc') {
     const tbl=level==='premium'?SELL_DOC_PREM:SELL_DOC_ECO;
@@ -348,34 +367,33 @@ const DL_EXP={
 // Docket ₹250, FSC 15%, Green tax max(₹0.5/kg,₹100), MCW 20kg, Min charge ₹350 (excl docket/green), GST 18%
 const B2B_RATE={N1:6,N2:6,E:11.5,NE:16,W1:8.5,W2:9.5,S1:11.5,S2:14.5,Central:8.5};
 
-// DTDC PRIORITY X — Priority_TS_Rates.xlsx w.e.f 01 Jan 2024 (FSC 35%)
-const DTDC_XDOC={
-  local: {w250:13,w500:15,addl:15},region:{w250:16,w500:19,addl:19},
-  zone:  {w250:19,w500:24,addl:22},metro: {w250:26,w500:39,addl:44},
-  roi_a: {w250:33,w500:46,addl:53},roi_b: {w250:36,w500:52,addl:57},spl:{w250:43,w500:65,addl:72},
+// DTDC D71 Surface — LL2215 (FSC 35%)
+const DTDC_D71={
+  local: {w500:12.47,addl:11.11,pkg:14.81},region:{w500:16.91,addl:14.81,pkg:17.78},
+  zone:  {w500:21.36,addl:18.52,pkg:21.48},metro: {w500:25.06,addl:21.48,pkg:25.93},
+  roi_a: {w500:27.28,addl:25.93,pkg:31.11},roi_b: {w500:33.21,addl:29.63,pkg:37.04},ne:{w500:36.91,addl:34.07,pkg:44.44},
 };
-const DTDC_XNDX={
-  local:[27,25,23,21],region:[32,29,27,26],zone:[41,39,37,34],metro:[82,79,76,74],
-  roi_a:[93,88,86,84],roi_b:[103,99,97,95],spl:[140,134,129,124],
+// DTDC V71 PEP — LL2215 (FSC 35%)
+const DTDC_V71={
+  local: {w500:30.99,addl:22.22},region:{w500:48.02,addl:25.93},
+  zone:  {w500:62.84,addl:34.07},metro: {w500:81.36,addl:62.96},
+  roi_a: {w500:97.65,addl:74.07},roi_b: {w500:101.36,addl:77.78},ne:{w500:105.06,addl:81.48},
 };
-
-// DTDC Ecomm 7X — CP_TS_Rates Gold w.e.f 01 Jan 2024 (FSC 35% + Book Cost ₹12)
-const DTDC_7X={
-  local:{w500:18,addl:13},region:{w500:23,addl:15},zone:{w500:30,addl:27},metro:{w500:39,addl:42},
-  roi_a:{w500:41,addl:47},roi_b:{w500:45,addl:50},spl:{w500:55,addl:60},
+// DTDC P7X Priority — LL2215 (FSC 35%)
+const DTDC_P7X={
+  local: {w500:16.91,addl:12.59,pkg:17.78},region:{w500:21.36,addl:14.07,pkg:20.74},
+  zone:  {w500:25.06,addl:17.78,pkg:28.89},metro: {w500:36.91,addl:34.81,pkg:66.67},
+  roi_a: {w500:39.87,addl:35.56,pkg:69.63},roi_b: {w500:40.62,addl:37.04,pkg:70.37},ne:{w500:51.73,addl:44.44,pkg:81.48},
 };
-
-// DTDC Ecomm 7D — CP_TS_Rates Gold (FSC 35% + Book Cost ₹12)
-const DTDC_7D={
-  local: {w500:18,addl:13,pkg:16},region:{w500:23,addl:15,pkg:19},zone:  {w500:25,addl:18,pkg:23},
-  metro: {w500:28,addl:25,pkg:38},roi_a: {w500:31,addl:27,pkg:44},roi_b: {w500:37,addl:29,pkg:47},spl:{w500:47,addl:37,pkg:52},
+// DTDC Express — 2189 (FSC 35%)
+const DTDC_EXP={
+  local:{w250:16,w500:16,addl:10},region:{w250:17,w500:18,addl:12},zone:{w250:21,w500:23,addl:17},
+  metro:{w250:36,w500:48,addl:45},roi:{w250:40,w500:53,addl:48},ne:{w250:45,w500:58,addl:53},spl:{w250:46,w500:61,addl:60},
 };
-
-// DTDC Ecomm 7G — CP_TS_Rates Gold per kg (FSC 35% + Book Cost ₹12)
-const DTDC_7G={
-  local:{lt10:14,gt10:13},region:{lt10:15,gt10:14},zone:{lt10:18,gt10:16},metro:{lt10:23,gt10:20},
-  roi_a:{lt10:24,gt10:21},roi_b:{lt10:25,gt10:23},spl:{lt10:29,gt10:27},
-};
+// DTDC D-Surface — 2189 MCW 3kg (FSC 35%)
+const DTDC_DSFC={local:14,region:18,zone:26,metro:35,roi:37,ne:46,spl:55};
+// DTDC D-Air — 2189 MCW 3kg (FSC 35%)
+const DTDC_DAIR={metro:77,roi:85,ne:95,spl:114};
 
 // GEC Transhipment — GEC_TS_Rates.xlsx GA tier w.e.f. 16 Jan 2024
 // Rates FROM Gurgaon (North I) to each zone, per kg, FSC 20%, Docket ₹75, MCW 50kg, Min charge ₹275
@@ -491,40 +509,48 @@ function courierCost(id, zone, w, odaAmt=0) {
       notes.push(`Docket ₹${docket} + Green tax ₹${green}`);
       if(mcwApplied)notes.push('MCW 20kg applied'); break;
     }
-    case 'dtdc_xdoc': {
-      const r=DTDC_XDOC[zone.dtdc]||DTDC_XDOC.roi_a;
+    case 'dtdc_d71': {
+      const r=DTDC_D71[zone.dtdc]||DTDC_D71.roi_a||DTDC_D71.roi;
+      const cw=ceil05(w);
+      if(cw<=0.5)      base=r.w500;
+      else if(cw<=3)   base=r.w500+Math.ceil((cw-0.5)/0.5)*r.addl;
+      else             base=r.w500+Math.ceil((3-0.5)/0.5)*r.addl+Math.ceil(cw-3)*r.pkg;
+      fsc=rnd(base*0.35); fscPct='35%'; break;
+    }
+    case 'dtdc_v71': {
+      const r=DTDC_V71[zone.dtdc]||DTDC_V71.roi_a||DTDC_V71.roi;
+      const cw=ceil05(w);
+      base=cw<=0.5?r.w500:r.w500+Math.ceil((cw-0.5)/0.5)*r.addl;
+      fsc=rnd(base*0.35); fscPct='35%'; break;
+    }
+    case 'dtdc_p7x': {
+      const r=DTDC_P7X[zone.dtdc]||DTDC_P7X.roi_a||DTDC_P7X.roi;
+      const cw=ceil05(w);
+      if(cw<=0.5)      base=r.w500;
+      else if(cw<=3)   base=r.w500+Math.ceil((cw-0.5)/0.5)*r.addl;
+      else             base=r.w500+Math.ceil((3-0.5)/0.5)*r.addl+Math.ceil(cw-3)*r.pkg;
+      fsc=rnd(base*0.35); fscPct='35%'; break;
+    }
+    case 'dtdc_exp': {
+      const r=DTDC_EXP[zone.dtdc]||DTDC_EXP.roi_a||DTDC_EXP.roi;
       const cw=ceil05(w);
       base=cw<=0.25?r.w250:cw<=0.5?r.w500:r.w500+Math.ceil((cw-0.5)/0.5)*r.addl;
       fsc=rnd(base*0.35); fscPct='35%'; break;
     }
-    case 'dtdc_xndx': {
+    case 'dtdc_dsfc': {
       if(w<3)return null;
-      const nd=DTDC_XNDX[zone.dtdc]||DTDC_XNDX.roi_a;
+      const r=DTDC_DSFC[zone.dtdc]||DTDC_DSFC.roi_a||DTDC_DSFC.roi;
       const cw=Math.max(ceil1(w),3); if(w<cw)mcwApplied=true;
-      const rate=cw<=25?nd[0]:cw<=50?nd[1]:cw<=100?nd[2]:nd[3];
-      base=rnd(cw*rate); fsc=rnd(base*0.35); fscPct='35%';
+      base=rnd(cw*r); fsc=rnd(base*0.35); fscPct='35%';
       if(mcwApplied)notes.push('MCW 3kg applied'); break;
     }
-    case 'dtdc_7x': {
-      const r=DTDC_7X[zone.dtdc]||DTDC_7X.roi_a;
-      const cw=ceil05(w);
-      base=cw<=0.5?r.w500:r.w500+Math.ceil((cw-0.5)/0.5)*r.addl;
-      fsc=rnd(base*0.35); fscPct='35%'; docket=12; notes.push('Book cost ₹12'); break;
-    }
-    case 'dtdc_7d': {
-      const r=DTDC_7D[zone.dtdc]||DTDC_7D.roi_a;
-      const cw=ceil05(w);
-      if(cw<=0.5)      base=r.w500;
-      else if(cw<=5)   base=r.w500+Math.ceil((cw-0.5)/0.5)*r.addl;
-      else             base=r.w500+Math.ceil((5-0.5)/0.5)*r.addl+Math.ceil(cw-5)*r.pkg;
-      fsc=rnd(base*0.35); fscPct='35%'; docket=12; notes.push('Book cost ₹12'); break;
-    }
-    case 'dtdc_7g': {
-      if(w<1)return null;
-      const r=DTDC_7G[zone.dtdc]||DTDC_7G.roi_a;
-      const cw=Math.max(ceil1(w),1);
-      const rate=cw<=10?r.lt10:r.gt10;
-      base=rnd(cw*rate); fsc=rnd(base*0.35); fscPct='35%'; docket=12; notes.push('Book cost ₹12'); break;
+    case 'dtdc_dair': {
+      if(w<3)return null;
+      const mappedZone=(zone.dtdc==='metro'||zone.dtdc==='ne'||zone.dtdc==='spl')?zone.dtdc:'roi';
+      const r=DTDC_DAIR[mappedZone];
+      const cw=Math.max(ceil1(w),3); if(w<cw)mcwApplied=true;
+      base=rnd(cw*r); fsc=rnd(base*0.35); fscPct='35%';
+      if(mcwApplied)notes.push('MCW 3kg applied'); break;
     }
     case 'gec_sfc': {
       if(w<1)return null;
@@ -589,11 +615,12 @@ const COURIERS=[
   {id:'delhivery_exp',label:'Delhivery Express',        group:'Delhivery',mode:'Express',             color:'rose',  types:['doc'],           level:'economy', rateDate:RATE_DATES.delhivery},
   {id:'delhivery_std',label:'Delhivery Standard',       group:'Delhivery',mode:'Standard',            color:'pink',  types:['surface'],       level:'economy', rateDate:RATE_DATES.delhivery},
   {id:'b2b',          label:'B2B Courier',              group:'B2B',      mode:'Surface · MCW 20kg',  color:'blue',  types:['surface'],       level:'economy', rateDate:RATE_DATES.b2b},
-  {id:'dtdc_7x',      label:'DTDC Ecomm 7X',            group:'DTDC',     mode:'Priority',             color:'cyan',  types:['doc'],           level:'economy', rateDate:RATE_DATES.dtdc},
-  {id:'dtdc_7d',      label:'DTDC Ecomm 7D',            group:'DTDC',     mode:'Ground Express',      color:'teal',  types:['doc','surface'], level:'economy', rateDate:RATE_DATES.dtdc},
-  {id:'dtdc_7g',      label:'DTDC Ecomm 7G',            group:'DTDC',     mode:'Ground Cargo',        color:'green', types:['surface'],       level:'economy', rateDate:RATE_DATES.dtdc},
-  {id:'dtdc_xdoc',    label:'DTDC Priority X (Doc)',    group:'DTDC',     mode:'X-Series · Doc',      color:'emerald',types:['doc'],          level:'premium', rateDate:RATE_DATES.dtdc},
-  {id:'dtdc_xndx',    label:'DTDC Priority X (Parcel)',group:'DTDC',     mode:'X-Series · Parcel',   color:'lime',  types:['surface'],       level:'premium', rateDate:RATE_DATES.dtdc},
+  {id:'dtdc_d71',     label:'DTDC Surface D71',         group:'DTDC',     mode:'Surface',             color:'teal',  types:['doc','surface'], level:'economy', rateDate:RATE_DATES.dtdc},
+  {id:'dtdc_v71',     label:'DTDC PEP V71',             group:'DTDC',     mode:'Prem Express',        color:'emerald',types:['doc'],          level:'premium', rateDate:RATE_DATES.dtdc},
+  {id:'dtdc_p7x',     label:'DTDC Priority P7X',        group:'DTDC',     mode:'Priority',            color:'cyan',  types:['doc','surface'], level:'premium', rateDate:RATE_DATES.dtdc},
+  {id:'dtdc_exp',     label:'DTDC Express',             group:'DTDC',     mode:'Express',             color:'sky',   types:['doc'],           level:'economy', rateDate:RATE_DATES.dtdc},
+  {id:'dtdc_dsfc',    label:'DTDC D-Surface',           group:'DTDC',     mode:'D-Surface',           color:'blue',  types:['surface'],       level:'economy', rateDate:RATE_DATES.dtdc},
+  {id:'dtdc_dair',    label:'DTDC D-Air',               group:'DTDC',     mode:'D-Air',               color:'indigo',types:['air'],           level:'economy', rateDate:RATE_DATES.dtdc},
   {id:'gec_sfc',      label:'GEC Surface',              group:'GEC',      mode:'Tranship · MCW 50kg', color:'sky',   types:['surface'],       level:'economy', rateDate:RATE_DATES.gec},
   {id:'ltl_road',     label:'LTL Road Express',         group:'LTL',      mode:'Road · MCW 40kg',     color:'slate', types:['surface'],       level:'economy', rateDate:RATE_DATES.ltl},
   {id:'bluedart_exp', label:'BlueDart Express',         group:'BlueDart', mode:'Express',             color:'indigo',types:['doc'],           level:'premium', rateDate:RATE_DATES.bluedart},

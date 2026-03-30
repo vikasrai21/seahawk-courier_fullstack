@@ -35,7 +35,7 @@ export default function SensitivityTable({
                   {row.w} kg {row.w === chargeWt && <span className="text-[9px] bg-blue-100 text-blue-700 px-1 rounded">current</span>}
                 </td>
                 {visibleCouriers.map((courier) => {
-                  const sell = getPerCourierSell(courier.level);
+                  const sell = getPerCourierSell(courier);
                   const cost = row[courier.id];
                   const margin = cost && sell ? rnd(((sell - cost) / sell) * 100) : null;
                   return (

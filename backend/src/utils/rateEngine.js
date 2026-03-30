@@ -2,7 +2,7 @@
 
 const { TK_EXP, TK_SFC, TK_AIR, TK_PT } = require('../rates/trackon');
 const { DL_STD, DL_EXP } = require('../rates/delhivery');
-const { DTDC_XDOC, DTDC_XNDX, DTDC_7X, DTDC_7D, DTDC_7G } = require('../rates/dtdc');
+const { DTDC_D71, DTDC_V71, DTDC_P7X, DTDC_EXP, DTDC_DSFC, DTDC_DAIR } = require('../rates/dtdc');
 const { B2B_RATE, GEC_RATES, LTL_RATES, BD_EXP, BD_AIR, BD_SFC } = require('../rates/network');
 const { COURIERS, RATE_VALIDITY, COURIER_TO_PARTNER, getRateAge } = require('../rates/meta');
 
@@ -29,7 +29,7 @@ function stateToZones(state = '', district = '', city = '') {
     const isGuw = d.includes('kamrup') || c.includes('guwahati');
     const isTri = s.includes('tripura');
     const isMani = s.includes('manipur');
-    return Z('ne', 'ne_sfc', 'ne_air', isMani ? 'F' : 'E', 'NE', 'spl', 'roi', 'roi_air', 'roi_sfc', isGuw ? 'ne_i' : isTri ? 'ne_iii' : 'ne_ii', isGuw ? 'ne1' : 'ne2', 'spl', 'North East');
+    return Z('ne', 'ne_sfc', 'ne_air', isMani ? 'F' : 'E', 'NE', 'ne', 'roi', 'roi_air', 'roi_sfc', isGuw ? 'ne_i' : isTri ? 'ne_iii' : 'ne_ii', isGuw ? 'ne1' : 'ne2', 'spl', 'North East');
   }
 
   if (s.includes('andaman')) return Z('port_blair', 'ne_sfc', 'port_blair_air', 'F', 'NE', 'spl', 'roi', 'roi_air', 'roi_sfc', 'ne_ii', 'ne2', 'spl', 'Diplomatic / Port Blair');
@@ -164,40 +164,49 @@ function courierCost(id, zone, w, odaAmt = 0) {
       if (freight + fsc < 350) { const diff = 350 - (freight + fsc); base = rnd(base + diff); notes.push('Min freight ₹350 applied'); }
       if (mcwApplied) notes.push('MCW 20kg applied'); break;
     }
-    case 'dtdc_xdoc': {
-      const r = DTDC_XDOC[zone.dtdc] || DTDC_XDOC.roi_a;
+    case 'dtdc_d71': {
+      const r = DTDC_D71[zone.dtdc] || DTDC_D71.roi_a || DTDC_D71.roi;
+      const cw = ceil05(w);
+      if (cw <= 0.5) base = r.w500;
+      else if (cw <= 3) base = r.w500 + Math.ceil((cw - 0.5) / 0.5) * r.addl;
+      else base = r.w500 + Math.ceil((3 - 0.5) / 0.5) * r.addl + Math.ceil(cw - 3) * r.pkg;
+      fsc = rnd(base * 0.35); fscPct = '35%'; break;
+    }
+    case 'dtdc_v71': {
+      const r = DTDC_V71[zone.dtdc] || DTDC_V71.roi_a || DTDC_V71.roi;
+      const cw = ceil05(w);
+      base = cw <= 0.5 ? r.w500 : r.w500 + Math.ceil((cw - 0.5) / 0.5) * r.addl;
+      fsc = rnd(base * 0.35); fscPct = '35%'; break;
+    }
+    case 'dtdc_p7x': {
+      const r = DTDC_P7X[zone.dtdc] || DTDC_P7X.roi_a || DTDC_P7X.roi;
+      const cw = ceil05(w);
+      if (cw <= 0.5) base = r.w500;
+      else if (cw <= 3) base = r.w500 + Math.ceil((cw - 0.5) / 0.5) * r.addl;
+      else base = r.w500 + Math.ceil((3 - 0.5) / 0.5) * r.addl + Math.ceil(cw - 3) * r.pkg;
+      fsc = rnd(base * 0.35); fscPct = '35%'; break;
+    }
+    case 'dtdc_exp': {
+      const r = DTDC_EXP[zone.dtdc] || DTDC_EXP.roi_a || DTDC_EXP.roi;
       const cw = ceil05(w);
       base = cw <= 0.25 ? r.w250 : cw <= 0.5 ? r.w500 : r.w500 + Math.ceil((cw - 0.5) / 0.5) * r.addl;
       fsc = rnd(base * 0.35); fscPct = '35%'; break;
     }
-    case 'dtdc_xndx': {
+    case 'dtdc_dsfc': {
       if (w < 3) return null;
-      const nd = DTDC_XNDX[zone.dtdc] || DTDC_XNDX.roi_a;
+      const rate = DTDC_DSFC[zone.dtdc] || DTDC_DSFC.roi_a || DTDC_DSFC.roi;
       const cw = Math.max(ceil1(w), 3); if (w < cw) mcwApplied = true;
-      const rate = cw <= 25 ? nd[0] : cw <= 50 ? nd[1] : cw <= 100 ? nd[2] : nd[3];
       base = rnd(cw * rate); fsc = rnd(base * 0.35); fscPct = '35%';
       if (mcwApplied) notes.push('MCW 3kg applied'); break;
     }
-    case 'dtdc_7x': {
-      const r = DTDC_7X[zone.dtdc] || DTDC_7X.roi_a;
-      const cw = ceil05(w);
-      base = cw <= 0.5 ? r.w500 : r.w500 + Math.ceil((cw - 0.5) / 0.5) * r.addl;
-      fsc = rnd(base * 0.35); fscPct = '35%'; docket = 12; notes.push('Book cost ₹12'); break;
-    }
-    case 'dtdc_7d': {
-      const r = DTDC_7D[zone.dtdc] || DTDC_7D.roi_a;
-      const cw = ceil05(w);
-      if (cw <= 0.5) base = r.w500;
-      else if (cw <= 5) base = r.w500 + Math.ceil((cw - 0.5) / 0.5) * r.addl;
-      else base = r.w500 + Math.ceil((5 - 0.5) / 0.5) * r.addl + Math.ceil(cw - 5) * r.pkg;
-      fsc = rnd(base * 0.35); fscPct = '35%'; docket = 12; notes.push('Book cost ₹12'); break;
-    }
-    case 'dtdc_7g': {
-      if (w < 1) return null;
-      const r = DTDC_7G[zone.dtdc] || DTDC_7G.roi_a;
-      const cw = Math.max(ceil1(w), 1);
-      base = rnd(cw * (cw <= 10 ? r.lt10 : r.gt10));
-      fsc = rnd(base * 0.35); fscPct = '35%'; docket = 12; notes.push('Book cost ₹12'); break;
+    case 'dtdc_dair': {
+      if (w < 3) return null;
+      // D-Air only has metro, roi, ne, spl. Fallback properly.
+      const mappedZone = (zone.dtdc === 'metro' || zone.dtdc === 'ne' || zone.dtdc === 'spl') ? zone.dtdc : 'roi';
+      const rate = DTDC_DAIR[mappedZone];
+      const cw = Math.max(ceil1(w), 3); if (w < cw) mcwApplied = true;
+      base = rnd(cw * rate); fsc = rnd(base * 0.35); fscPct = '35%';
+      if (mcwApplied) notes.push('MCW 3kg applied'); break;
     }
     case 'gec_sfc': {
       if (w < 1) return null;

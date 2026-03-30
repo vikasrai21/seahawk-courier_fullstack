@@ -22,17 +22,17 @@
 }
 
 [data-theme="light"] {
-  --shk-bg: #f3f6fc;
+  --shk-bg: #f8fafc;
   --shk-sidebar: #ffffff;
   --shk-surface: #ffffff;
   --shk-surface-soft: #f8fafc;
-  --shk-border: #dde6f2;
-  --shk-border-hi: #c9d8eb;
+  --shk-border: #e2e8f0;
+  --shk-border-hi: #cbd5e1;
   --shk-text: #0f172a;
   --shk-text-mid: #475569;
-  --shk-text-dim: #64748b;
+  --shk-text-dim: #94a3b8;
   --shk-orange: #f97316;
-  background: #f4f7fd;
+  background: var(--shk-bg);
   color: var(--shk-text);
 }
 
@@ -95,12 +95,13 @@
   border-color: var(--shk-border);
 }
 
+/* Refined shadow — less intense, more spread */
 [data-theme] .shadow-sm {
-  box-shadow: 0 4px 18px rgba(11, 31, 58, 0.12);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
 [data-theme="dark"] .shadow-sm {
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 [data-theme] .hover\:bg-gray-50:hover,
@@ -108,21 +109,26 @@
   background-color: var(--shk-surface-soft);
 }
 
+/* Card surfaces — clean, no heavy shadows */
 [data-theme="light"] .card,
 [data-theme="light"] .bg-white.rounded-xl,
 [data-theme="light"] .bg-white.rounded-2xl {
-  box-shadow: 0 4px 24px -4px rgba(11, 31, 58, 0.07), 0 1px 4px rgba(11, 31, 58, 0.04);
-  border-color: #e8f0fb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  border-color: #e2e8f0;
 }
 
 [data-theme="light"] .btn-primary {
-  background: linear-gradient(135deg, #f97316 0%, #fb923c 100%);
-  border: 1px solid rgba(249, 115, 22, 0.22);
-  box-shadow: 0 8px 20px rgba(249, 115, 22, 0.2);
+  background: #0f172a;
+  border: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .btn-primary:hover {
+  background: #1e293b;
 }
 
 [data-theme="light"] .btn-secondary {
-  border-color: #dbe6f4;
+  border-color: #e2e8f0;
   background: #ffffff;
 }
 
@@ -142,7 +148,7 @@
 [data-theme="light"] input:not(.tw-input):not([class*="tw-"]),
 [data-theme="light"] select:not(.tw-select):not([class*="tw-"]),
 [data-theme="light"] textarea:not(.tw-input):not([class*="tw-"]) {
-  background-color: #f7faff;
+  background-color: #ffffff;
   color: var(--shk-text);
 }
 
@@ -183,26 +189,28 @@
   accent-color: var(--shk-orange);
 }
 
+/* Clean focus — subtle ring instead of heavy orange */
 [data-theme] input:focus,
 [data-theme] select:focus,
 [data-theme] textarea:focus {
   outline: none;
-  border-color: var(--shk-orange);
-  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.15);
+  border-color: #94a3b8;
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.06);
 }
 
+/* Smooth card transitions */
 [data-theme] .card,
 [data-theme] .bg-white.rounded-xl,
 [data-theme] .bg-white.rounded-2xl {
-  transition: box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-[data-theme] .card:hover,
-[data-theme] .bg-white.rounded-xl:hover,
-[data-theme] .bg-white.rounded-2xl:hover {
-  transform: translateY(-1px);
+/* Subtle hover lift — less aggressive */
+[data-theme] .card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
+/* Scrollbar */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
@@ -213,10 +221,18 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1f2d45;
+  background: #cbd5e1;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #1f2d45;
+}
+
+[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
   background: #2d4060;
 }

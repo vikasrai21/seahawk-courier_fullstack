@@ -18,15 +18,15 @@ import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
 
 // ── Design tokens (must match DashboardPage) ───────────────────────────────
 const C = {
-  bg:        'var(--shk-bg, #f3f6fc)',
+  bg:        'var(--shk-bg, #f8fafc)',
   sidebar:   'var(--shk-sidebar, #ffffff)',
   surface:   'var(--shk-surface, #ffffff)',
-  border:    'var(--shk-border, #dde6f2)',
-  borderHi:  'var(--shk-border-hi, #c9d8eb)',
+  border:    'var(--shk-border, #e2e8f0)',
+  borderHi:  'var(--shk-border-hi, #cbd5e1)',
   orange:    'var(--shk-orange, #f97316)',
   text:      'var(--shk-text, #0f172a)',
   textMid:   'var(--shk-text-mid, #475569)',
-  textDim:   'var(--shk-text-dim, #64748b)',
+  textDim:   'var(--shk-text-dim, #94a3b8)',
 };
 
 const navGroups = [
@@ -177,7 +177,7 @@ function SidebarContent({ onClose }) {
         borderBottom: `1px solid ${C.border}`,
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', flexShrink: 0,
-        background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
+        background: C.sidebar,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <img 
@@ -301,9 +301,9 @@ export function AppLayout({ children }) {
   return (
     <div style={{
       display: 'flex', height: '100vh',
-      background: 'linear-gradient(180deg, #f7faff 0%, #edf3fb 100%)',
+      background: 'var(--shk-bg, #f8fafc)',
       overflow: 'hidden',
-      fontFamily: "'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+      fontFamily: "'Inter', 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
     }}>
       <ShortcutsHelp />
 
@@ -361,7 +361,7 @@ export function AppLayout({ children }) {
         <header style={{
           display: 'flex', alignItems: 'center', gap: 12,
           padding: '12px 16px',
-          background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
+          background: C.sidebar,
           borderBottom: `1px solid ${C.border}`,
           flexShrink: 0,
         }}
@@ -379,13 +379,13 @@ export function AppLayout({ children }) {
           </span>
         </header>
 
-        <main style={{ flex: 1, overflowY: 'auto', background: 'var(--shk-bg, #f3f6fc)', transition: 'background 0.3s' }}>
+        <main style={{ flex: 1, overflowY: 'auto', background: 'var(--shk-bg, #f8fafc)', transition: 'background 0.3s' }}>
           {children}
         </main>
       </div>
 
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700;800&display=swap');
 
         /* Show desktop sidebar on md+ */
         @media (min-width: 768px) {
@@ -396,11 +396,11 @@ export function AppLayout({ children }) {
         /* Scrollbar styling */
         nav::-webkit-scrollbar       { width: 3px; }
         nav::-webkit-scrollbar-track { background: transparent; }
-        nav::-webkit-scrollbar-thumb { background: #1f2d45; border-radius: 3px; }
+        nav::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 
         main::-webkit-scrollbar       { width: 4px; }
         main::-webkit-scrollbar-track { background: transparent; }
-        main::-webkit-scrollbar-thumb { background: #1f2d45; border-radius: 4px; }
+        main::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
       `}</style>
     </div>
   );

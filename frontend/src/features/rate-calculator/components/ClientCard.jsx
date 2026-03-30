@@ -15,69 +15,57 @@ export default function ClientCard({
   filteredClients,
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-3">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">👤 Client — auto-loads contract rate</p>
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 mb-3">
+      <div className="flex items-center justify-between mb-1.5">
+        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Client</p>
         {selClient && (
           <button
-            onClick={() => {
-              setSelClient(null);
-              setContracts([]);
-              setClientSearch('');
-            }}
-            className="text-[10px] text-gray-400 hover:text-red-500 flex items-center gap-1"
+            onClick={() => { setSelClient(null); setContracts([]); setClientSearch(''); }}
+            className="text-[10px] text-slate-400 hover:text-red-500 flex items-center gap-0.5 transition-colors"
           >
-            <X className="w-3 h-3" />
-            Clear
+            <X className="w-3 h-3" /> Clear
           </button>
         )}
       </div>
       {selClient ? (
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center font-bold text-sm text-slate-700">{selClient.company?.[0]?.toUpperCase()}</div>
-          <div>
-            <p className="font-bold text-sm">{selClient.company}</p>
-            <p className="text-xs text-gray-400">
+          <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center font-semibold text-sm text-slate-600">{selClient.company?.[0]?.toUpperCase()}</div>
+          <div className="flex-1 min-w-0">
+            <p className="font-semibold text-[13px] text-slate-800 truncate">{selClient.company}</p>
+            <p className="text-[11px] text-slate-400">
               {selClient.code}
-              {contractLoad && <span className="ml-2 text-blue-500">Loading contracts…</span>}
-              {!contractLoad && contracts.length > 0 && <span className="ml-2 text-purple-600 font-semibold">✓ {contracts.length} contract{contracts.length > 1 ? 's' : ''} active</span>}
-              {!contractLoad && !contracts.length && <span className="ml-2 text-amber-500">No active contracts — using proposal rates</span>}
+              {contractLoad && <span className="ml-1.5 text-blue-500">Loading…</span>}
+              {!contractLoad && contracts.length > 0 && <span className="ml-1.5 text-violet-500 font-medium">✓ {contracts.length} contract{contracts.length > 1 ? 's' : ''}</span>}
+              {!contractLoad && !contracts.length && <span className="ml-1.5 text-amber-500">No contracts</span>}
             </p>
           </div>
           {activeContract && (
-            <div className="ml-auto text-right">
-              <p className="text-[10px] text-purple-600 font-bold uppercase">Contract Rate</p>
-              <p className="text-sm font-bold">{fmt(activeContract.total)}</p>
+            <div className="text-right shrink-0">
+              <p className="text-[9px] text-violet-500 font-semibold uppercase">Contract</p>
+              <p className="text-sm font-semibold text-slate-800">{fmt(activeContract.total)}</p>
             </div>
           )}
         </div>
       ) : (
         <div className="relative">
-          <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Users className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-300" />
           <input
-            className="input pl-9 text-sm"
-            placeholder="Search client by name or code…"
+            className="input pl-8 text-[13px] h-9"
+            placeholder="Search client…"
             value={clientSearch}
-            onChange={(e) => {
-              setClientSearch(e.target.value);
-              setShowClients(true);
-            }}
+            onChange={(e) => { setClientSearch(e.target.value); setShowClients(true); }}
             onFocus={() => setShowClients(true)}
           />
           {showClients && clientSearch && filteredClients.length > 0 && (
-            <div className="absolute top-full left-0 right-0 z-20 bg-white border border-gray-100 rounded-xl mt-1 shadow-lg overflow-hidden">
+            <div className="absolute top-full left-0 right-0 z-20 bg-white border border-slate-200 rounded-lg mt-1 shadow-lg overflow-hidden">
               {filteredClients.map((c) => (
                 <button
                   key={c.id}
-                  onClick={() => {
-                    setSelClient(c);
-                    setShowClients(false);
-                    setClientSearch('');
-                  }}
-                  className="w-full text-left px-3 py-2.5 hover:bg-gray-50 text-sm border-b border-gray-50 last:border-0"
+                  onClick={() => { setSelClient(c); setShowClients(false); setClientSearch(''); }}
+                  className="w-full text-left px-3 py-2 hover:bg-slate-50 text-[12px] border-b border-slate-50 last:border-0 transition-colors"
                 >
-                  <span className="font-semibold">{c.company}</span>
-                  <span className="text-gray-400 text-xs ml-2">{c.code}</span>
+                  <span className="font-semibold text-slate-700">{c.company}</span>
+                  <span className="text-slate-400 text-[11px] ml-2">{c.code}</span>
                 </button>
               ))}
             </div>
