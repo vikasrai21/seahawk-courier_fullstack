@@ -1,227 +1,320 @@
-# 🦅 Seahawk Courier & Cargo v2.0 — Production Ready
+# Seahawk Courier & Cargo — Operations Platform
 
-## What's New in v2.0
-This is a **complete rewrite** from the ground up with production-grade architecture.
+> Full-stack logistics management system for courier aggregators — built for the Indian B2B market.
 
-| Feature | v1 (Old) | v2 (New) |
-|---------|----------|----------|
-| Frontend | Static HTML | React + Vite + Tailwind |
-| Backend | Flat routes | Controllers → Services → DB |
-| Database | Raw SQL | Prisma ORM with migrations |
-| Auth | None | JWT + bcrypt + role-based |
-| Validation | None | Zod schema validation |
-| Error handling | Inconsistent | Global error handler |
-| Audit trail | None | Full audit logs table |
-| Backups | Manual | Auto daily via Task Scheduler |
-| Multi-computer | Same LAN only | LAN + Cloud ready |
+[![CI](https://github.com/your-org/seahawk/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/seahawk/actions)
+[![Node](https://img.shields.io/badge/node-20.x-brightgreen)](https://nodejs.org)
+[![License](https://img.shields.io/badge/license-Private-red)](#)
+
+---
+
+## What is this?
+
+Seahawk is a production-ready courier operations platform that lets a logistics business manage its entire shipment lifecycle — from booking and tracking to invoicing, NDR resolution, and client self-service — in one place.
+
+It integrates with major Indian carriers (Delhivery, DTDC, Trackon, BlueDart, DHL) and exposes a white-label client portal that each client company can use independently.
+
+---
+
+## Features at a glance
+
+### Operations (Staff / Admin)
+- **Shipment management** — create, update, bulk import via Excel, scan AWB via barcode
+- **Live tracking** — auto-sync with carrier APIs, manual event logging, real-time updates via Socket.IO
+- **NDR management** — non-delivery reason capture, reattempt actions, escalation rules
+- **Pickup scheduler** — assign agents, manage time slots, track completion
+- **Rate calculator** — multi-carrier cost vs. sell price with margin rule enforcement
+- **Bulk rate comparison** — compare costs across carriers for a destination/weight combination
+- **Reconciliation** — match courier invoices against booked shipments, flag discrepancies
+- **Daily sheet & monthly reports** — printable operations summaries
+- **WhatsApp notifications** — automated status updates via Meta Cloud API
+- **Audit trail** — every create/update/delete logged with user, IP, before/after values
+
+### Client Portal (`/portal/*`)
+- Shipment visibility with live tracking map
+- Branded public tracking page (white-labelled per client)
+- Bulk AWB tracking
+- Pickup booking from portal
+- NDR self-service — clients can request reattempts or address changes
+- Invoice download (PDF)
+- Wallet top-up via Razorpay + full transaction ledger
+- POD (proof of delivery) download
+- Support ticket system
+- Rate calculator (client-facing, selling price only)
+- RTO intelligence — delivery risk scoring per shipment
+- Embeddable tracking widget (drop a `<script>` on any external site)
+
+### Public Website
+- Landing page, services, contact form
+- Public shipment tracking (rate-limited)
+- Booking request form
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Node.js 20, Express 4, Prisma ORM, PostgreSQL 16 |
+| Frontend | React 18, Vite, Tailwind CSS, Recharts, Socket.IO client |
+| Auth | JWT (access 15m) + opaque refresh tokens (30d) with DB revocation |
+| Queue | BullMQ + Redis |
+| Real-time | Socket.IO with Redis adapter |
+| Validation | Zod (all API inputs) |
+| Logging | Winston — structured JSON, PII-redacted |
+| File storage | AWS S3 / Cloudflare R2 (labels, invoices, PODs) |
+| Payments | Razorpay |
+| Notifications | WhatsApp (Meta Cloud API), SMTP email |
+| Monitoring | Sentry, custom metrics middleware |
+| Deployment | Docker, Railway, PM2 |
+| CI/CD | GitHub Actions |
 
 ---
 
 ## Architecture
 
 ```
-seahawk-v6/
+seahawk/
 ├── backend/
-│   ├── src/
-│   │   ├── config/         — Central config, Prisma client
-│   │   ├── controllers/    — HTTP layer (auth, shipment, client, audit)
-│   │   ├── services/       — Business logic
-│   │   ├── routes/         — Route definitions with middleware
-│   │   ├── middleware/     — Auth, validation, global error handler
-│   │   ├── validators/     — Zod schemas for all inputs
-│   │   └── utils/          — Logger, response helpers, audit, seed
 │   ├── prisma/
-│   │   └── schema.prisma   — Single source of truth for DB
-│   └── server.js
+│   │   ├── schema.prisma          # Single source of truth for DB schema
+│   │   └── migrations/            # Versioned SQL migrations
+│   └── src/
+│       ├── config/                # Central config, Prisma client, Sentry
+│       ├── controllers/           # HTTP layer — thin, delegates to services
+│       ├── services/              # Business logic — shipment, invoice, wallet …
+│       ├── routes/                # Route definitions with middleware chains
+│       ├── middleware/            # Auth, RBAC, rate limiting, CSRF, sanitise, metrics
+│       ├── validators/            # Zod schemas for every input
+│       ├── workers/               # BullMQ job processors
+│       ├── realtime/              # Socket.IO event handlers
+│       └── utils/                 # Logger, response helpers, seed, scheduler
 ├── frontend/
 │   └── src/
-│       ├── components/     — Reusable UI + layout
-│       ├── context/        — AuthContext (user state)
-│       ├── hooks/          — useFetch, useToast
-│       ├── pages/          — All pages (Dashboard, Shipments, etc.)
-│       └── services/       — API client (axios)
-└── scripts/
-    └── seahawk-backup.bat  — Daily backup
+│       ├── components/            # Reusable UI components + layout
+│       ├── context/               # AuthContext, SocketContext, ThemeContext
+│       ├── features/              # Feature-scoped components (rate calculator)
+│       ├── hooks/                 # useFetch, useDebounce, useToast, usePWA …
+│       ├── pages/                 # All app pages (ops + client portal + public)
+│       ├── services/              # Axios API client
+│       └── stores/                # Zustand state (dataStore, uiStore)
+├── .github/workflows/ci.yml       # GitHub Actions CI/CD pipeline
+├── docker-compose.yml             # Local dev with Docker
+├── Dockerfile                     # Production container
+└── railway.toml                   # Railway deployment config
 ```
 
 ---
 
-## Quick Start (Windows)
+## Roles & permissions
 
-### Step 1 — Run setup (once)
-```
-Double-click: setup-windows.bat
-```
-This installs all dependencies, creates the database, runs migrations, and creates the admin user.
+| Feature | STAFF | OPS\_MANAGER | ADMIN | CLIENT |
+|---|:---:|:---:|:---:|:---:|
+| View / create / edit shipments | ✅ | ✅ | ✅ | — |
+| Manage clients | ✅ | ✅ | ✅ | — |
+| Rate calculator & quotes | ✅ | ✅ | ✅ | ✅ |
+| View analytics & reports | ✅ | ✅ | ✅ | — |
+| Reconciliation | — | ✅ | ✅ | — |
+| Manage users | — | — | ✅ | — |
+| View audit logs | — | — | ✅ | — |
+| Client portal access | — | — | — | ✅ |
 
-### Step 2 — Configure
-Edit `backend/.env`:
+---
+
+## Getting started
+
+### Prerequisites
+
+- Node.js 20+
+- PostgreSQL 16+
+- Redis 7+ (required for job queues)
+- Git
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/your-org/seahawk.git
+cd seahawk
+
+# Install backend dependencies
+cd backend && npm install
+
+# Install frontend dependencies
+cd ../frontend && npm install
+```
+
+### 2. Configure environment
+
+```bash
+cp backend/.env.example backend/.env
+```
+
+Edit `backend/.env` with your values. The required fields are:
+
 ```env
-DATABASE_URL="postgresql://postgres:YOUR_PASSWORD@localhost:5432/seahawk_v6"
-JWT_SECRET="put-any-long-random-string-here-minimum-32-chars"
-NODE_ENV=production
-PORT=3001
-GLOBAL_JSON_LIMIT=1mb
-IMPORT_JSON_LIMIT=10mb
-DELHIVERY_WEBHOOK_SECRET=""
-DTDC_WEBHOOK_SECRET=""
-WEBHOOK_REPLAY_WINDOW_SECONDS=300
+DATABASE_URL=postgresql://user:password@localhost:5432/seahawk
+JWT_SECRET=<minimum 32 random characters>
+JWT_REFRESH_SECRET=<different minimum 32 random characters>
+REDIS_URL=redis://localhost:6379
+NODE_ENV=development
 ```
 
-### Step 3 — Start
+See `.env.example` for the full list of optional carrier API keys, SMTP, Razorpay, S3, and Sentry config.
+
+### 3. Run database migrations
+
+```bash
+cd backend
+npx prisma migrate deploy
+npx prisma generate
 ```
-Double-click: start-seahawk.bat
+
+### 4. Seed initial admin user
+
+```bash
+npm run db:seed
 ```
 
-### Step 4 — Open
-- This computer: http://localhost:3001
-- Other computers: http://YOUR_LAN_IP:3001 (shown in console)
+> ⚠️ **Change the seeded admin password immediately after first login.**
 
-Default login: **admin@seahawk.com** / ****
-> ⚠️ Change the password after first login!
-
----
-
-## Running the React Frontend (Development)
-
-For development, run backend and frontend separately:
+### 5. Start development servers
 
 **Terminal 1 — Backend:**
 ```bash
 cd backend
-npm run dev
-# Runs on :3001
+npm run dev        # Runs on :3001
 ```
 
 **Terminal 2 — Frontend:**
 ```bash
 cd frontend
-npm install
-npm run dev
-# Runs on :5173 with proxy to :3001
+npm run dev        # Runs on :5173, proxies API to :3001
 ```
 
-**Building for production:**
+Open `http://localhost:5173`.
+
+---
+
+## Running with Docker
+
 ```bash
-cd frontend
-npm run build
-# Output goes to frontend/dist/
-# Backend serves this automatically
+# Copy and fill in your secrets
+cp backend/.env.example backend/.env
+
+docker-compose up -d
 ```
 
----
+The compose file starts PostgreSQL and the app. Redis is required separately — add a Redis service or point `REDIS_URL` at a managed instance (Redis Cloud free tier works).
 
-## Roles & Permissions
-
-| Feature | STAFF | ADMIN |
-|---------|-------|-------|
-| View/Add/Edit Shipments | ✅ | ✅ |
-| Manage Clients | ✅ | ✅ |
-| View Reports | ✅ | ✅ |
-| Manage Users | ❌ | ✅ |
-| View Audit Logs | ❌ | ✅ |
-| Delete All Data | ❌ | ✅ |
+Access at `http://localhost:3001`.
 
 ---
 
-## API Reference
+## Production deployment (Railway)
 
-All API responses follow:
+1. Push to GitHub
+2. Create a new Railway project → **Deploy from GitHub repo**
+3. Add a **PostgreSQL** plugin and a **Redis** plugin from the Railway dashboard
+4. Set environment variables (Railway injects `DATABASE_URL` and `REDIS_URL` automatically from the plugins)
+5. Add remaining secrets: `JWT_SECRET`, `JWT_REFRESH_SECRET`, `NODE_ENV=production`, `CORS_ORIGIN`
+6. Railway runs `npm run build` then `npm start` — migrations run automatically via `prisma migrate deploy` in the build step
+
+Health check endpoint: `GET /api/health`
+
+---
+
+## CI/CD pipeline
+
+Every push to `main` or `develop` runs:
+
+```
+Lint (backend + frontend)
+  → Backend tests (Vitest)
+    → Frontend smoke test
+      → Frontend build + bundle budget check
+        → Health check against deployed environment
+```
+
+- `develop` branch → auto-deploys to staging
+- `main` branch → auto-deploys to production
+
+---
+
+## API overview
+
+All responses follow a consistent envelope:
+
 ```json
-{ "success": true, "message": "...", "data": {...} }
-{ "success": false, "message": "...", "errors": [...] }
+{ "success": true,  "data": { ... } }
+{ "success": false, "message": "...", "errors": [ ... ] }
 ```
 
-Interactive OpenAPI docs:
-- `GET /api/docs` (Swagger UI)
-- `GET /api/docs/openapi.json` (raw OpenAPI spec)
+Interactive API docs (Swagger UI): `GET /api/docs`
+OpenAPI JSON spec: `GET /api/docs/openapi.json`
 
-Production docs access can be controlled with:
-```env
-API_DOCS_ENABLED=true
-API_DOCS_PUBLIC=false
-```
+Key route groups:
 
-### Auth
-- `POST /api/auth/login` — Login
-- `POST /api/auth/logout` — Logout
-- `GET  /api/auth/me` — Current user
-- `GET  /api/auth/users` — All users (admin)
-- `POST /api/auth/users` — Create user (admin)
-- `PUT  /api/auth/users/:id` — Update user (admin)
-
-### Shipments
-- `GET  /api/shipments` — List with filters (client, courier, status, date_from, date_to, q)
-- `POST /api/shipments` — Create
-- `GET  /api/shipments/:id` — Single
-- `PUT  /api/shipments/:id` — Update
-- `PATCH /api/shipments/:id/status` — Quick status update
-- `DELETE /api/shipments/:id` — Delete
-- `POST /api/shipments/import` — Bulk import
-- `GET  /api/shipments/stats/today` — Today's stats
-- `GET  /api/shipments/stats/monthly?year=2025&month=3` — Monthly data
-
-Body-size policy:
-- Global JSON body limit is `1mb`
-- `/api/shipments/import` has a route-specific higher limit (`IMPORT_JSON_LIMIT`, default `10mb`)
-
-### Clients
-- `GET  /api/clients` — All clients
-- `POST /api/clients` — Create/update client
-- `GET  /api/clients/:code` — Single client
-- `GET  /api/clients/:code/stats` — Client statistics
-- `DELETE /api/clients/:code` — Delete client
-
-### Audit
-- `GET /api/audit` — Audit logs (admin only, filters: entity, userId, action, from, to)
+| Prefix | Description |
+|---|---|
+| `POST /api/auth/login` | Login, logout, refresh token, change password |
+| `GET/POST /api/shipments` | Shipment CRUD, bulk import, status updates |
+| `GET/POST /api/clients` | Client management |
+| `GET/POST /api/invoices` | Invoice generation and PDF export |
+| `GET/POST /api/wallet` | Wallet top-up, ledger, Razorpay webhook |
+| `GET/POST /api/quotes` | Rate quotes and history |
+| `GET/POST /api/pickup` | Pickup request scheduling |
+| `GET/POST /api/ndr` | NDR event capture and resolution |
+| `GET /api/tracking/:awb` | Live tracking (public, rate-limited) |
+| `GET /api/analytics` | Dashboard stats and monthly reports |
+| `GET /api/audit` | Audit log (admin only) |
+| `POST /api/webhooks/*` | Carrier webhook receivers (HMAC-verified) |
 
 ---
 
-## Automatic Backup Setup (Windows Task Scheduler)
+## Security
 
-1. Edit `scripts/seahawk-backup.bat` — replace `YOUR_DB_PASSWORD` with your postgres password
-2. Open Task Scheduler (Win+R → `taskschd.msc`)
-3. Create Basic Task → Daily → set time → Action: Start a Program
-4. Program: `C:\path\to\seahawk-v6\scripts\seahawk-backup.bat`
-5. Backups saved to `seahawk-v6/backups/` (keeps last 30 days)
-
-Manual backup: `pg_dump -U postgres seahawk_v6 > backup.sql`
-Restore: `psql -U postgres seahawk_v6 < backup.sql`
-
----
-
-## Cloud Deployment (Railway/Render)
-
-1. Push code to GitHub
-2. Create account on railway.app or render.com
-3. New project → Deploy from GitHub
-4. Add PostgreSQL database plugin
-5. Set environment variables from the database panel:
-   - `DATABASE_URL` (provided by platform)
-   - `JWT_SECRET` (generate a random string)
-   - `NODE_ENV=production`
-6. Deploy → get public URL
-
-For Railway: run `npx prisma migrate deploy` as a pre-deploy command.
+- **Authentication** — JWT access tokens (15 min) + opaque refresh tokens (30 days) stored in the DB with revocation support
+- **RBAC** — four roles with middleware-enforced access on every route
+- **Rate limiting** — login: 5 req/15 min · API: 300 req/15 min · sensitive actions: 3 req/hr · public tracking: 20 req/hr
+- **Input validation** — Zod schemas on all API inputs; unknown fields are stripped
+- **CSRF** — double-submit cookie pattern for cookie-based auth sessions
+- **XSS** — global body sanitiser strips HTML tags from all string fields
+- **Logging** — PII fields (password, phone, email, address, tokens) are redacted from all log output
+- **Webhooks** — HMAC-SHA256 signature validation + 300-second replay window
+- **Helmet** — security headers including CSP in production
 
 ---
 
-## Migrating Data from v1
+## Environment variables reference
 
-1. In old dashboard → Sync & Backup → Export to Excel
-2. In new dashboard → Import Excel → upload the file
-3. All data imported, duplicates skipped automatically
+| Variable | Required | Description |
+|---|:---:|---|
+| `DATABASE_URL` | ✅ | PostgreSQL connection string |
+| `JWT_SECRET` | ✅ | Access token signing key (min 32 chars) |
+| `JWT_REFRESH_SECRET` | ✅ | Refresh token signing key (min 32 chars) |
+| `REDIS_URL` | ✅ | Redis connection string (for BullMQ) |
+| `NODE_ENV` | ✅ | `development` or `production` |
+| `PORT` | — | HTTP port, default `3001` |
+| `CORS_ORIGIN` | — | Comma-separated allowed origins |
+| `SMTP_HOST/USER/PASS` | — | Email notifications |
+| `WHATSAPP_TOKEN` | — | Meta Cloud API for WhatsApp updates |
+| `DELHIVERY_API_KEY` | — | Delhivery carrier integration |
+| `DTDC_API_KEY` | — | DTDC carrier integration |
+| `RAZORPAY_KEY_ID/SECRET` | — | Wallet top-up payments |
+| `BACKUP_S3_BUCKET` | — | S3/R2 bucket for database backups |
+| `SENTRY_DSN` | — | Error monitoring |
 
 ---
 
-## Troubleshooting
+## Contributing
 
-| Problem | Solution |
-|---------|----------|
-| `Cannot connect to database` | Check DB_PASSWORD in .env, ensure PostgreSQL is running |
-| `Token expired` | Re-login. Tokens last 7 days. |
-| `Validation failed` | Check the errors array in the response |
-| `Duplicate AWB` | AWB already exists — each AWB must be unique |
-| `Port 3001 in use` | Change PORT in .env |
+1. Branch off `develop` — never commit directly to `main`
+2. Run `npm run lint` and `npm test` before pushing
+3. PR titles should follow: `feat:`, `fix:`, `chore:`, `refactor:`
+4. CI must pass before merging
 
-Logs are in `backend/logs/` folder.
+---
+
+## License
+
+Private and proprietary. All rights reserved — Seahawk Courier & Cargo.
