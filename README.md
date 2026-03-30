@@ -77,7 +77,7 @@ Double-click: start-seahawk.bat
 - This computer: http://localhost:3001
 - Other computers: http://YOUR_LAN_IP:3001 (shown in console)
 
-Default login: **admin@seahawk.com** / **admin123**
+Default login: **admin@seahawk.com** / ****
 > ⚠️ Change the password after first login!
 
 ---
