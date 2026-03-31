@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw } from 'lucide-react';
+import { PageHeader } from '../components/ui/PageHeader';
+import { LayoutDashboard, RefreshCw } from 'lucide-react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { Skeleton, SkeletonCard } from '../components/ui/Skeleton';
-import { EmptyState } from '../components/ui/EmptyState';
+import { SkeletonCard, EmptyState } from '../components/ui/Loading';
+import { Skeleton } from '../components/ui/Skeleton';
 import DashboardStats from '../components/dashboard/DashboardStats';
 import DashboardAlerts from '../components/dashboard/DashboardAlerts';
 import DashboardCharts from '../components/dashboard/DashboardCharts';
@@ -177,23 +178,26 @@ export default function DashboardPage() {
           to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#fff7ed,_transparent_35%),linear-gradient(180deg,_#f8fafc,_#eef2ff)] p-6">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#fff7ed,_transparent_35%),linear-gradient(180deg,_#f8fafc,_#eef2ff)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(249,115,22,0.1),_transparent_35%),linear-gradient(180deg,_#0f172a,_#0f172a)] p-6 transition-colors duration-300">
         <div className="mx-auto max-w-7xl space-y-5">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">Operations dashboard</p>
-              <h1 className="mt-2 text-3xl font-black text-slate-900">Shipment performance at a glance</h1>
-              <p className="mt-2 text-sm text-slate-500">Live counters, trend comparisons, and courier performance with automatic refresh every 60 seconds.</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-500">
-                Last updated {secondsAgo(lastUpdated)}{tick ? '' : ''}
-              </span>
-              <button onClick={load} className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white">
-                <RefreshCw size={15} /> Refresh
-              </button>
-            </div>
-          </div>
+          <PageHeader
+            title="Shipment Performance"
+            subtitle="Live counters, trend comparisons, and courier performance at a glance."
+            icon={LayoutDashboard}
+            actions={
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                  Last updated {secondsAgo(lastUpdated)}
+                </span>
+                <button 
+                  onClick={load} 
+                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 dark:bg-orange-500 px-4 py-2 text-sm font-bold text-white transition-transform active:scale-95 shadow-lg shadow-orange-500/10"
+                >
+                  <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+                </button>
+              </div>
+            }
+          />
 
           <Filters
             range={range}
@@ -219,14 +223,6 @@ export default function DashboardPage() {
                 <Skeleton className="h-72 rounded-3xl" />
               </div>
             </div>
-          ) : totalShipments === 0 ? (
-            <div className="rounded-3xl border border-slate-200 bg-white p-10 shadow-sm">
-              <EmptyState
-                icon="📊"
-                title="No shipments in this range"
-                message="Try a wider date range or start booking shipments to activate the dashboard."
-              />
-            </div>
           ) : (
             <div className="space-y-5">
               <DashboardStats overview={overview} previousOverview={previousOverview} dateLabel={currentRange.label} />
@@ -235,14 +231,14 @@ export default function DashboardPage() {
             </div>
           )}
 
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Quick actions</p>
+          <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Quick actions</p>
             <div className="mt-4 flex flex-wrap gap-3">
-              <Link to="/app/entry" className="rounded-full bg-orange-500 px-4 py-2 text-sm font-semibold text-white">New Entry</Link>
-              <Link to="/app/import" className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">Import Shipments</Link>
-              <Link to="/app/scan" className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">Scan AWB</Link>
-              <Link to="/app/invoices" className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">Invoices</Link>
-              <Link to="/app/pickups" className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">Pickups</Link>
+              <Link to="/app/entry" className="rounded-full bg-orange-500 hover:bg-orange-600 px-4 py-2 text-sm font-semibold text-white transition-colors">New Entry</Link>
+              <Link to="/app/import" className="rounded-full bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Import Shipments</Link>
+              <Link to="/app/scan" className="rounded-full bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Scan AWB</Link>
+              <Link to="/app/invoices" className="rounded-full bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Invoices</Link>
+              <Link to="/app/pickups" className="rounded-full bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Pickups</Link>
             </div>
             <p className="mt-4 text-xs text-slate-400">Signed in as {user?.name || 'Team member'}.</p>
           </div>

@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
-import { Plus, CheckCircle, Keyboard, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Plus, CheckCircle, Keyboard, ChevronRight, MapPin, Loader2, AlertCircle, PackagePlus, IndianRupee } from 'lucide-react';
 import api from '../services/api';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const COURIERS  = ['BlueDart','DTDC','FedEx','DHL','Delhivery','Ecom Express','XpressBees','Shadowfax','Other'];
 const STATUSES  = ['Booked','InTransit','OutForDelivery','Delivered','Delayed','RTO','Cancelled'];
@@ -10,7 +11,7 @@ const SERVICES  = ['Standard','Express','Priority','Economy','Same Day'];
 const today = () => new Date().toISOString().split('T')[0];
 const blank  = () => ({
   date: today(), clientCode:'', awb:'', consignee:'',
-  destination:'', courier:'', department:'', weight:'', amount:'',
+  pincode: '', destination:'', courier:'', department:'', weight:'', amount:'',
   service:'Standard', status:'Booked', remarks:''
 });
 
@@ -22,6 +23,8 @@ export default function NewEntryPage({ toast }) {
   const [recent,  setRecent]  = useState([]);
   const [saving,  setSaving]  = useState(false);
   const [flash,   setFlash]   = useState(null);
+  const [pinLoading, setPinLoading] = useState(false);
+  const [touched, setTouched] = useState({});
   const awbRef = useRef();
 
   useEffect(() => {
@@ -37,6 +40,30 @@ export default function NewEntryPage({ toast }) {
   };
 
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
+  const handleBlur = (k) => setTouched(t => ({...t, [k]: true}));
+
+  // ── Pincode Auto-fill ───────────────────────────────────────────────────
+  useEffect(() => {
+    const fetchLocation = async (pin) => {
+      if (pin.length !== 6) return;
+      setPinLoading(true);
+      try {
+        const res = await fetch(`https://api.postalpincode.in/pincode/${pin}`);
+        const data = await res.json();
+        if (data[0]?.Status === 'Success' && data[0]?.PostOffice?.length) {
+          const po = data[0].PostOffice[0];
+          const location = `${po.District}, ${po.State}`;
+          setForm(f => ({...f, destination: location.toUpperCase()}));
+          toast?.(`Location set to ${location} ✓`, 'info');
+        }
+      } catch (err) {
+        console.error('Pincode fetch error:', err);
+      } finally {
+        setPinLoading(false);
+      }
+    };
+    if (form.pincode.length === 6) fetchLocation(form.pincode);
+  }, [form.pincode, toast]);
 
   const save = async (e) => {
     e?.preventDefault();
@@ -48,7 +75,8 @@ export default function NewEntryPage({ toast }) {
     try {
       const res = await api.post('/shipments', form);
       setFlash(res.data);
-      setForm(f => ({...blank(), date: f.date, clientCode: f.clientCode, courier: f.courier}));
+      setForm(f => ({...blank(), date: f.date, clientCode: f.clientCode, courier: f.courier, pincode: ''}));
+      setTouched({});
       await loadRecent();
       toast?.(`✓ AWB ${res.data.awb} saved`, 'success');
       setTimeout(() => awbRef.current?.focus(), 100);
@@ -57,167 +85,209 @@ export default function NewEntryPage({ toast }) {
     } finally { setSaving(false); }
   };
 
-  // Tab-order: awb → consignee → destination → courier → dept → weight → amount → status → save
   const handleKeyDown = (e, nextId) => {
     if (e.key === 'Enter') {
+      if (e.ctrlKey || nextId === 'SAVE') { 
+        save(); 
+        return; 
+      }
       e.preventDefault();
-      if (nextId === 'SAVE') { save(); return; }
       document.getElementById(nextId)?.focus();
     }
   };
 
-  return (
-    <div className="p-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="flex items-start justify-between mb-5">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">New Entry</h1>
-          <p className="text-xs text-gray-500 mt-0.5 flex items-center gap-1.5">
-            <Keyboard className="w-3 h-3" /> Tab between fields · Enter to move forward · Ctrl+Enter to save
-          </p>
-        </div>
-        {flash && (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 border border-green-200 text-green-700 text-sm animate-pulse">
-            <CheckCircle className="w-4 h-4" />
-            <span>Saved: <strong>{flash.awb}</strong></span>
-          </div>
-        )}
-      </div>
+  const errors = {
+    awb: touched.awb && !form.awb,
+    clientCode: touched.clientCode && !form.clientCode,
+    pincode: touched.pincode && form.pincode && form.pincode.length !== 6,
+  };
 
-      {/* Entry form */}
-      <form onSubmit={save} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-6">
-        {/* Row 1: Date, Client, AWB */}
-        <div className="grid grid-cols-3 divide-x divide-gray-100 border-b border-gray-100">
-          <FieldCell label="Date *" hint="DD/MM/YYYY">
+  return (
+    <div className="mx-auto max-w-7xl p-6 space-y-6">
+      <PageHeader
+        title="Quick Entry"
+        subtitle="Rapid shipment booking with pincode auto-fill and keyboard shortcuts."
+        icon={PackagePlus}
+        actions={
+          <div className="flex items-center gap-3">
+            {flash && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-100 dark:border-emerald-500/20 text-emerald-600 text-[10px] font-bold uppercase tracking-wider animate-in fade-in slide-in-from-right-4 duration-500">
+                <CheckCircle className="w-3.5 h-3.5" />
+                <span>Last Saved: {flash.awb}</span>
+              </div>
+            )}
+            <div className="hidden sm:flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-slate-900 px-3 py-1.5 rounded-xl border border-slate-100 dark:border-slate-800">
+              <Keyboard className="w-3 h-3" />
+              <span>Enter to move · Ctrl+Enter to save</span>
+            </div>
+          </div>
+        }
+      />
+
+      <form onSubmit={save} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden group/form transition-all hover:shadow-md">
+        {/* Step 1: Core Identity */}
+        <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800">
+          <FieldCell label="Shipment Date" icon={ChevronRight} error={errors.date}>
             <input id="date" type="date" className="cell-input" value={form.date}
               onChange={e => set('date', e.target.value)}
               onKeyDown={e => handleKeyDown(e, 'clientCode')} />
           </FieldCell>
-          <FieldCell label="Client *" hint="Select from list">
-            <select id="clientCode" className="cell-input" value={form.clientCode}
+          
+          <FieldCell label="Client Account" icon={ChevronRight} error={errors.clientCode}>
+            <select id="clientCode" className="cell-input pr-8" value={form.clientCode}
               onChange={e => set('clientCode', e.target.value)}
+              onBlur={() => handleBlur('clientCode')}
               onKeyDown={e => handleKeyDown(e, 'awb')}>
-              <option value="">— Select Client —</option>
+              <option value="">— Choose Client —</option>
               {clients.map(c => <option key={c.code} value={c.code}>{c.code} · {c.company}</option>)}
             </select>
           </FieldCell>
-          <FieldCell label="AWB No *" hint="Tracking number">
-            <input id="awb" ref={awbRef} type="text" className="cell-input font-mono uppercase"
-              placeholder="Enter AWB…" value={form.awb}
+          
+          <FieldCell label="AWB Number" icon={ChevronRight} error={errors.awb} hint="Unique tracking ID">
+            <input id="awb" ref={awbRef} type="text" className="cell-input font-mono font-bold uppercase tracking-wider pr-10"
+              placeholder="XXXXXXXXXXXX" value={form.awb}
               onChange={e => set('awb', e.target.value.toUpperCase())}
+              onBlur={() => handleBlur('awb')}
               onKeyDown={e => handleKeyDown(e, 'consignee')} autoFocus />
+            {errors.awb && <AlertCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-rose-500" />}
           </FieldCell>
         </div>
 
-        {/* Row 2: Consignee, Destination, Courier, Dept */}
-        <div className="grid grid-cols-4 divide-x divide-gray-100 border-b border-gray-100">
-          <FieldCell label="Consignee" hint="Recipient name">
-            <input id="consignee" type="text" className="cell-input uppercase"
-              placeholder="CONSIGNEE NAME" value={form.consignee}
+        {/* Step 2: Destination & Route */}
+        <div className="grid grid-cols-1 md:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800 bg-slate-50/30 dark:bg-slate-900/40">
+          <FieldCell label="Consignee Name" icon={ChevronRight}>
+            <input id="consignee" type="text" className="cell-input font-bold uppercase"
+              placeholder="RECIPIENT NAME" value={form.consignee}
               onChange={e => set('consignee', e.target.value.toUpperCase())}
-              onKeyDown={e => handleKeyDown(e, 'destination')} />
+              onKeyDown={e => handleKeyDown(e, 'pincode')} />
           </FieldCell>
-          <FieldCell label="Destination" hint="City / state">
-            <input id="destination" type="text" className="cell-input uppercase"
-              placeholder="CITY" value={form.destination}
+
+          <FieldCell label="Pincode" icon={MapPin} error={errors.pincode} hint="6 digits for auto-fill">
+            <div className="relative w-full">
+              <input id="pincode" type="text" maxLength={6} className="cell-input font-mono tracking-widest"
+                placeholder="000000" value={form.pincode}
+                onChange={e => set('pincode', e.target.value.replace(/\D/g, ''))}
+                onBlur={() => handleBlur('pincode')}
+                onKeyDown={e => handleKeyDown(e, 'destination')} />
+              {pinLoading && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-orange-500 animate-spin" />}
+            </div>
+          </FieldCell>
+
+          <FieldCell label="City / State" icon={MapPin}>
+            <input id="destination" type="text" className="cell-input uppercase font-semibold text-slate-600 dark:text-slate-300"
+              placeholder="SEARCH OR RADIUS" value={form.destination}
               onChange={e => set('destination', e.target.value.toUpperCase())}
               onKeyDown={e => handleKeyDown(e, 'courier')} />
           </FieldCell>
-          <FieldCell label="Courier" hint="Shipping company">
-            <select id="courier" className="cell-input" value={form.courier}
+
+          <FieldCell label="Carrier Partner" icon={ChevronRight}>
+            <select id="courier" className="cell-input font-bold text-orange-600 dark:text-orange-400 pr-8" value={form.courier}
               onChange={e => set('courier', e.target.value)}
-              onKeyDown={e => handleKeyDown(e, 'department')}>
+              onKeyDown={e => handleKeyDown(e, 'weight')}>
               <option value="">— Select —</option>
               {COURIERS.map(c => <option key={c}>{c}</option>)}
             </select>
           </FieldCell>
-          <FieldCell label="Department" hint="Optional">
-            <input id="department" type="text" className="cell-input"
-              placeholder="DEPT" value={form.department}
-              onChange={e => set('department', e.target.value)}
-              onKeyDown={e => handleKeyDown(e, 'weight')} />
-          </FieldCell>
         </div>
 
-        {/* Row 3: Weight, Amount, Service, Status, Remarks */}
-        <div className="grid grid-cols-5 divide-x divide-gray-100 border-b border-gray-100">
-          <FieldCell label="Weight (kg)" hint="e.g. 1.5">
-            <input id="weight" type="number" step="0.01" min="0" className="cell-input text-right"
+        {/* Step 3: Logistics & Billing */}
+        <div className="grid grid-cols-2 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800">
+          <FieldCell label="Actual Wt" hint="Kilograms">
+            <input id="weight" type="number" step="0.01" min="0" className="cell-input text-right font-bold"
               placeholder="0.00" value={form.weight}
               onChange={e => set('weight', e.target.value)}
               onKeyDown={e => handleKeyDown(e, 'amount')} />
           </FieldCell>
-          <FieldCell label="Amount (₹)" hint="Billing amount">
-            <input id="amount" type="number" step="0.01" min="0" className="cell-input text-right"
+          
+          <FieldCell label="Billing Amt" icon={IndianRupee} hint="Indian Rupees">
+            <input id="amount" type="number" step="0.01" min="0" className="cell-input text-right font-bold text-emerald-600"
               placeholder="0.00" value={form.amount}
               onChange={e => set('amount', e.target.value)}
               onKeyDown={e => handleKeyDown(e, 'service')} />
           </FieldCell>
-          <FieldCell label="Service">
+
+          <FieldCell label="Service Lvl">
             <select id="service" className="cell-input" value={form.service}
               onChange={e => set('service', e.target.value)}
               onKeyDown={e => handleKeyDown(e, 'status')}>
               {SERVICES.map(s => <option key={s}>{s}</option>)}
             </select>
           </FieldCell>
-          <FieldCell label="Status">
-            <select id="status" className="cell-input" value={form.status}
+
+          <FieldCell label="Current Status">
+            <select id="status" className="cell-input font-bold" value={form.status}
               onChange={e => set('status', e.target.value)}
               onKeyDown={e => handleKeyDown(e, 'remarks')}>
               {STATUSES.map(s => <option key={s}>{s}</option>)}
             </select>
           </FieldCell>
-          <FieldCell label="Remarks" hint="Optional notes">
+
+          <FieldCell label="Ref / Notes" hint="Optional">
             <input id="remarks" type="text" className="cell-input"
-              placeholder="Notes…" value={form.remarks}
+              placeholder="..." value={form.remarks}
               onChange={e => set('remarks', e.target.value)}
               onKeyDown={e => handleKeyDown(e, 'SAVE')} />
           </FieldCell>
         </div>
 
-        {/* Save row */}
-        <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
-          <div className="flex items-center gap-4 text-xs text-gray-400">
-            <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-white border border-gray-200 rounded text-[10px] font-mono">Tab</kbd> Next field</span>
-            <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-white border border-gray-200 rounded text-[10px] font-mono">Enter</kbd> Move forward</span>
-            <span className="flex items-center gap-1"><kbd className="px-1.5 py-0.5 bg-white border border-gray-200 rounded text-[10px] font-mono">Ctrl+Enter</kbd> Save</span>
-          </div>
-          <button type="submit" disabled={saving}
-            className="btn-primary gap-2 px-6" onKeyDown={e => e.key === 'Enter' && save()}>
-            {saving ? (
-              <span className="flex items-center gap-2">
-                <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Saving…
-              </span>
-            ) : (
-              <><Plus className="w-4 h-4" /> Save & Continue</>
-            )}
+        {/* Action Row */}
+        <div className="flex items-center justify-between px-6 py-4 bg-slate-50/50 dark:bg-slate-900">
+           <div className="hidden lg:block text-[10px] items-center gap-6 font-bold text-slate-400 uppercase tracking-widest text-center">
+              Automated Data Validation Active
+           </div>
+          <button type="submit" disabled={saving || errors.awb || errors.clientCode}
+            className="group relative flex items-center gap-3 bg-slate-900 dark:bg-orange-600 text-white px-8 py-3 rounded-2xl font-bold transition-all hover:scale-[1.02] active:scale-95 disabled:grayscale disabled:opacity-50 shadow-xl shadow-slate-900/10 overflow-hidden">
+             {saving && <div className="absolute inset-0 bg-white/20 animate-pulse" />}
+             {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />}
+             <span>{saving ? 'Processing...' : 'Complete Booking'}</span>
           </button>
         </div>
       </form>
 
-      {/* Recent entries */}
+      {/* Recent Activity Mini-List */}
       {recent.length > 0 && (
-        <div>
-          <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3 flex items-center gap-2">
-            Recent Entries <span className="badge badge-gray">{recent.length}</span>
-          </h2>
-          <div className="table-wrap">
-            <table className="tbl text-xs">
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 delay-200">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.25em]">Session Activity Log</h2>
+            <div className="h-[1px] flex-1 mx-6 bg-slate-100 dark:bg-slate-800" />
+            <span className="bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-lg text-[10px] font-bold text-slate-500 uppercase">{recent.length} Operations</span>
+          </div>
+          
+          <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+            <table className="w-full border-collapse text-left">
               <thead>
-                <tr><th>Date</th><th>AWB</th><th>Client</th><th>Consignee</th><th>Destination</th><th>Courier</th><th className="text-right">Wt</th><th className="text-right">Amt</th><th>Status</th></tr>
+                <tr className="bg-slate-50/50 dark:bg-slate-900/80 border-b border-slate-100 dark:border-slate-800">
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Carrier & AWB</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">Consignee Info</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Weight</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Revenue</th>
+                  <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Lifecycle</th>
+                </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
                 {recent.map(s => (
-                  <tr key={s.id}>
-                    <td className="text-gray-500">{s.date}</td>
-                    <td className="font-mono font-bold text-navy-600">{s.awb}</td>
-                    <td className="font-semibold">{s.clientCode}</td>
-                    <td className="max-w-[100px] truncate">{s.consignee}</td>
-                    <td className="text-gray-500">{s.destination}</td>
-                    <td>{s.courier}</td>
-                    <td className="text-right text-gray-500">{s.weight}kg</td>
-                    <td className="text-right font-medium">{fmt(s.amount)}</td>
-                    <td><StatusBadge status={s.status} /></td>
+                  <tr key={s.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter mb-1">{s.courier}</span>
+                        <span className="text-sm font-black text-slate-900 dark:text-white font-mono tracking-wider">{s.awb}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-300 truncate max-w-[150px]">{s.consignee}</span>
+                        <span className="text-[10px] font-medium text-slate-400">{s.destination}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <span className="text-xs font-black text-slate-600 dark:text-slate-400 tabular-nums">{s.weight} KG</span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <span className="text-sm font-black text-slate-900 dark:text-white tabular-nums">{fmt(s.amount)}</span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <StatusBadge status={s.status} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -225,20 +295,40 @@ export default function NewEntryPage({ toast }) {
           </div>
         </div>
       )}
+      <style>{`
+        .cell-input { 
+          width: 100%;
+          background: transparent;
+          padding: 1rem;
+          font-size: 0.875rem;
+          transition: all 0.2s;
+          border: none;
+        }
+        .cell-input:focus {
+           outline: none;
+           background: white;
+           box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05);
+        }
+        .dark .cell-input:focus {
+          background: rgba(30, 41, 59, 0.5);
+        }
+      `}</style>
     </div>
   );
 }
 
-function FieldCell({ label, hint, children }) {
+function FieldCell({ label, icon: Icon, hint, error, children }) {
   return (
-    <div className="p-0">
-      <div className="px-3 pt-2.5 pb-0.5">
-        <div className="flex items-center justify-between">
-          <label className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">{label}</label>
-          {hint && <span className="text-[9px] text-gray-300 italic">{hint}</span>}
-        </div>
+    <div className={`relative flex flex-col min-h-[90px] transition-colors ${error ? 'bg-rose-50/50 dark:bg-rose-950/10' : ''}`}>
+      <div className="px-4 pt-4 pb-1 flex items-center justify-between">
+        <label className={`text-[9px] font-black uppercase tracking-[0.15em] ${error ? 'text-rose-500' : 'text-slate-400'}`}>
+          {label}
+        </label>
+        {hint && !error && <span className="text-[8px] text-slate-300 dark:text-slate-600 font-bold uppercase tracking-widest">{hint}</span>}
       </div>
-      {children}
+      <div className="relative flex-1 flex items-center">
+        {children}
+      </div>
     </div>
   );
 }

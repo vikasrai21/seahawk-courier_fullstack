@@ -1,3 +1,4 @@
+import { SkeletonTable } from '../components/ui/Skeleton';
 import { useState } from 'react';
 import { Plus, Edit2, Trash2, Calculator, ChevronDown, ChevronUp, Zap } from 'lucide-react';
 import api from '../services/api';
@@ -85,7 +86,7 @@ export default function ContractsPage({ toast }) {
         </button>
       </div>
 
-      {loading ? <PageLoader /> : !Object.keys(grouped).length ? (
+      {loading ? <div className="p-6"><SkeletonTable rows={8} cols={6} /></div> : !Object.keys(grouped).length ? (
         <EmptyState icon="📋" title="No contracts yet"
           action={<button onClick={() => open()} className="btn-primary btn-sm">Add first contract</button>} />
       ) : (
