@@ -156,6 +156,27 @@ async function cancelShipment(awb) {
 
 /* ── 5. PIN SERVICEABILITY ─────────────────────────────────── */
 async function checkServiceability(pin) {
+  // 1. Try local DB first (Fast, accurate for ODA)
+  try {
+    const prisma = require('../config/prisma');
+    const local = await prisma.delhiveryPincode.findUnique({ where: { pincode: String(pin) } });
+    if (local) {
+      return {
+        serviceable: true,
+        zone: '',
+        cod: true,
+        pickup: true,
+        is_oda: local.oda,
+        city: local.facilityCity,
+        state: local.facilityState,
+        source: 'local'
+      };
+    }
+  } catch (err) {
+    logger.error(`[Delhivery] Local check failed for ${pin}: ${err.message}`);
+  }
+
+  // 2. Fallback to live API (Slow)
   if (!isConfigured()) return { serviceable: true, note: 'API key not set' };
   try {
     const data = await fetchJsonWithRetry(
@@ -169,6 +190,8 @@ async function checkServiceability(pin) {
       zone:        info?.pre_paid   || '',
       cod:         info?.cash_on_delivery === 'Y',
       pickup:      info?.pickup === 'Y',
+      is_oda:      info?.is_oda === 'Y' || info?.oda === 'Y', // Check various flag possibilities
+      source:      'api'
     };
   } catch { return { serviceable: true }; }
 }

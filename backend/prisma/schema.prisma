@@ -432,3 +432,16 @@ model JobQueue {
   @@index([type])
   @@map("job_queue")
 }
+
+model DelhiveryPincode {
+  id            Int      @id @default(autoincrement())
+  pincode       String   @unique
+  oda           Boolean  @default(false)
+  facilityCity  String?  @map("facility_city")
+  facilityState String?  @map("facility_state")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([pincode])
+  @@map("delhivery_pincodes")
+}

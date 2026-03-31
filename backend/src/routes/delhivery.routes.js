@@ -4,10 +4,10 @@ const dl     = require('../services/delhivery.service');
 const { authenticate, staffOnly } = require('../middleware/auth.middleware');
 const R      = require('../utils/response');
 
-router.use(authenticate, staffOnly);
+router.use(authenticate);
 
 /* GET /api/delhivery/status — is API key configured? */
-router.get('/status', (req, res) => {
+router.get('/status', staffOnly, (req, res) => {
   R.ok(res, {
     configured: dl.isConfigured(),
     message: dl.isConfigured()
@@ -15,6 +15,15 @@ router.get('/status', (req, res) => {
       : 'DELHIVERY_API_KEY not set. See DELHIVERY-API-SETUP.md',
   });
 });
+
+/* GET /api/delhivery/serviceability?pin=122015 */
+router.get('/serviceability', async (req, res) => {
+  if (!req.query.pin) return R.error(res, 'pin required', 400);
+  try { R.ok(res, await dl.checkServiceability(req.query.pin)); }
+  catch (err) { R.error(res, err.message); }
+});
+
+router.use(staffOnly);
 
 /* GET /api/delhivery/track/:awb — live tracking */
 router.get('/track/:awb', async (req, res) => {
