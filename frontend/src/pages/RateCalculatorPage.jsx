@@ -74,6 +74,7 @@ export default function RateCalculatorPage() {
   // ── ODA ──
   const [odaOn,    setOdaOn]   = useState(false);
   const [odaAmt,   setOdaAmt]  = useState(200);
+  const [delhiveryOda, setDelhiveryOda] = useState(false);
 
   // ── Client ──
   const clients = useDataStore((state) => state.clients);
@@ -140,7 +141,7 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
     sessionStorage.setItem('sh_hidden_couriers', JSON.stringify([...hiddenIds]));
   },[hiddenIds]);
   const lookupPin = useCallback(async pin=>{
-    setPinLoad(true);setPinErr('');setZone(null);setLocInfo(null);
+    setPinLoad(true);setPinErr('');setZone(null);setLocInfo(null);setDelhiveryOda(false);
     try{
       const res=await fetch(`https://api.postalpincode.in/pincode/${pin}`);
       const data=await res.json();
@@ -152,10 +153,17 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
         setLocInfo(li);
         setZoneConf('high');
         addRecent({query:pin,zone:z,locInfo:li});
+
+        // ── Delhivery ODA Auto-check ──
+        api.get(`/delhivery/serviceability?pin=${pin}`)
+          .then(r => {
+            if (r.data?.is_oda) setDelhiveryOda(true);
+          })
+          .catch(() => {});
       }else setPinErr('PIN not found — try city search.');
     }catch{setPinErr('PIN lookup failed — check connection.');}
     finally{setPinLoad(false);}
-  },[]);
+  },[addRecent]);
 
   const addRecent=useCallback(entry=>{
     setRecent(r=>[entry,...r.filter(e=>e.query!==entry.query)].slice(0,5));
@@ -229,21 +237,32 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
   // Results
   const results=useMemo(()=>{
     if(!zone||!chargeWt)return[];
-    const oda=odaOn?parseFloat(odaAmt)||0:0;
+    const generalOda = odaOn ? parseFloat(odaAmt) || 0 : 0;
+    
     return COURIERS
       .filter(c=>c.types.includes(shipType))
       .filter(c=>svcLevel==='all'||c.level===svcLevel)
       .filter(c=>!hiddenIds.has(c.id))
       .map(c=>{
-        const bk=courierCost(c.id,zone,chargeWt,oda);
+        // Delhivery ODA is automatic even if general ODA is off
+        const isDelhivery = c.group === 'Delhivery';
+        const finalOda = (isDelhivery && delhiveryOda) ? (parseFloat(odaAmt) || 200) : generalOda;
+        
+        const bk=courierCost(c.id,zone,chargeWt,finalOda);
         if(!bk)return null;
+
+        // If local ODA was applied, add a note
+        if (isDelhivery && delhiveryOda && !odaOn) {
+          bk.notes.push(`Auto-applied Delhivery ODA surcharge (₹${odaAmt})`);
+        }
+
         const sell=getPerCourierSell(c);
         const profit=rnd(sell-bk.total);
         const margin=sell>0?rnd((profit/sell)*100):0;
         return{...c,bk,sell,profit,margin};
       }).filter(Boolean)
       .sort((a,b)=>sortMode==='profit'?b.profit-a.profit:a.bk.total-b.bk.total);
-  },[zone,chargeWt,effectiveSell,sortMode,shipType,svcLevel,hiddenIds,odaOn,odaAmt,getPerCourierSell]);
+  },[zone,chargeWt,effectiveSell,sortMode,shipType,svcLevel,hiddenIds,odaOn,odaAmt,delhiveryOda,getPerCourierSell]);
 
   // Sensitivity data (for selected shipType, vary weight)
   const sensitivityData=useMemo(()=>{
@@ -391,6 +410,7 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
           odaAmt={odaAmt}
           setOdaAmt={setOdaAmt}
           zoneConf={zoneConf}
+          delhiveryOda={delhiveryOda}
         />
 
         <WeightCard

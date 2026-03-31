@@ -19,6 +19,7 @@ export default function DestinationCard({
   odaAmt,
   setOdaAmt,
   zoneConf,
+  delhiveryOda,
 }) {
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
@@ -56,7 +57,9 @@ export default function DestinationCard({
               <CheckCircle className="w-3 h-3 text-emerald-500" /> {locInfo.label}
               {locInfo.pincode && <span className="text-slate-400 font-normal ml-1">· {locInfo.pincode}</span>}
             </p>
-            <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${odaOn ? 'bg-amber-100 text-amber-700' : 'bg-emerald-50 text-emerald-600'}`}>{odaOn ? 'ODA' : 'Standard'}</span>
+            <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${odaOn || delhiveryOda ? 'bg-amber-100 text-amber-700' : 'bg-emerald-50 text-emerald-600'}`}>
+              {delhiveryOda ? 'Delhivery ODA' : odaOn ? 'Custom ODA' : 'Standard'}
+            </span>
           </div>
           <div className="flex flex-wrap gap-1 mt-1.5">
             {[['TK', zone.trackon], ['DL', 'Z-' + zone.delhivery], ['DTDC', zone.dtdc], ['BD', zone.bd], ['GEC', zone.gec], ['LTL', zone.ltl]].map(([k, v]) => (
