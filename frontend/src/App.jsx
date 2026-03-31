@@ -82,7 +82,7 @@ function AuthLoadingScreen() {
           />
         </div>
         <Spinner size="lg" />
-        <p style={{ color: '#475569', fontSize: 12, marginTop: 12, fontFamily: 'Outfit, sans-serif' }}>Authenticating...</p>
+        <p style={{ color: '#475569', fontSize: 12, marginTop: 12, fontFamily: 'Inter, sans-serif' }}>Authenticating...</p>
       </div>
     </div>
   );

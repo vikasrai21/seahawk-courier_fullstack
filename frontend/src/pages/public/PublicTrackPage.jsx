@@ -93,7 +93,7 @@ export default function PublicTrackPage() {
   const brandName = searchParams.get('brand') || 'Sea Hawk Courier';
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: "'Outfit', -apple-system, sans-serif" }}>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: "'Inter', -apple-system, sans-serif" }}>
 
       {/* Header */}
       <header style={{ background: '#0b1f3a', borderBottom: '3px solid #f97316', padding: '16px 0' }}>

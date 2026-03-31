@@ -92,7 +92,7 @@ export default function LoginPage() {
   return (
     <div style={{
       minHeight: '100vh', display: 'flex',
-      fontFamily: "'DM Sans',-apple-system,BlinkMacSystemFont,sans-serif",
+      fontFamily: "'Inter',-apple-system,BlinkMacSystemFont,sans-serif",
     }}>
 
       {/* ── LEFT: Login form ─────────────────────────────── */}

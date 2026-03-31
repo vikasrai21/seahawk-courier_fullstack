@@ -56,8 +56,43 @@ export default function AnalyticsPage({ toast }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const kpi = overview?.kpis;
+  let kpi = overview?.kpis;
+  const isDemo = Number(kpi?.totalShipments || 0) === 0;
 
+  let displayOverview = overview;
+  let displayCouriers = couriers;
+  let displayMonthly  = monthly;
+  let displayNdr      = ndr;
+
+  if (isDemo && overview) {
+    kpi = { totalShipments: 450, deliveryRate: 91, rtoRate: 4, totalRevenue: 135000 };
+    displayOverview = {
+      ...overview,
+      byStatus: [
+        { status: 'DELIVERED', count: 350 },
+        { status: 'IN TRANSIT', count: 70 },
+        { status: 'NDR', count: 20 },
+        { status: 'RTO', count: 10 },
+      ]
+    };
+    displayCouriers = [
+      { courier: 'Delhivery Surface', total: 150, delivered: 140, deliveryRate: 93, rto: 5, ndr: 5, avgDeliveryDays: 3.2, revenue: 45000 },
+      { courier: 'Bluedart Air', total: 100, delivered: 98, deliveryRate: 98, rto: 1, ndr: 1, avgDeliveryDays: 1.5, revenue: 50000 },
+      { courier: 'DTDC', total: 200, delivered: 180, deliveryRate: 90, rto: 4, ndr: 14, avgDeliveryDays: 4.1, revenue: 40000 },
+    ];
+    displayMonthly = [
+      { month: 'Jan', revenue: 100000, shipments: 300 },
+      { month: 'Feb', revenue: 120000, shipments: 350 },
+      { month: 'Mar', revenue: 135000, shipments: 450 },
+    ];
+    displayNdr = {
+      byReason: [
+        { reason: 'Customer Not Available', count: 15 },
+        { reason: 'Incomplete Address', count: 10 },
+        { reason: 'Refused to accept', count: 5 },
+      ]
+    };
+  }
   const KpiCard = ({ label, val, sub, icon: Icon, color, trend }) => (
     <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
       <div className="flex items-start justify-between mb-2">
@@ -117,13 +152,18 @@ export default function AnalyticsPage({ toast }) {
           )}
 
           {/* Charts row */}
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid md:grid-cols-2 gap-4 relative">
+            {isDemo && (
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-10 flex items-center justify-center">
+                  <div className="bg-white/90 backdrop-blur-md px-4 py-1.5 rounded-full border border-blue-400 text-blue-600 text-[10px] font-black tracking-widest uppercase shadow-lg shadow-blue-500/10">Showing Sample Analytics Data</div>
+              </div>
+            )}
             {/* Monthly revenue trend */}
-            {monthly.length > 0 && (
+            {displayMonthly.length > 0 && (
               <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
                 <p className="text-sm font-bold text-gray-700 mb-4">Monthly Revenue & Shipments</p>
                 <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={monthly}>
+                  <LineChart data={displayMonthly}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0"/>
                     <XAxis dataKey="month" tick={{fontSize:10}} />
                     <YAxis yAxisId="left" tick={{fontSize:10}} tickFormatter={v=>fmt(v).replace('₹','')}/>
@@ -138,13 +178,13 @@ export default function AnalyticsPage({ toast }) {
             )}
 
             {/* Status distribution */}
-            {overview?.byStatus?.length > 0 && (
+            {displayOverview?.byStatus?.length > 0 && (
               <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
                 <p className="text-sm font-bold text-gray-700 mb-4">Shipment Status Distribution</p>
                 <ResponsiveContainer width="100%" height={220}>
                   <PieChart>
-                    <Pie data={overview.byStatus} dataKey="count" nameKey="status" cx="50%" cy="50%" outerRadius={80} label={({status,percent})=>`${status} ${(percent*100).toFixed(0)}%`} labelLine={false} fontSize={10}>
-                      {(overview.byStatus).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]}/>)}
+                    <Pie data={displayOverview.byStatus} dataKey="count" nameKey="status" cx="50%" cy="50%" outerRadius={80} label={({status,percent})=>`${status} ${(percent*100).toFixed(0)}%`} labelLine={false} fontSize={10}>
+                      {(displayOverview.byStatus).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]}/>)}
                     </Pie>
                     <Tooltip/>
                   </PieChart>
@@ -154,7 +194,7 @@ export default function AnalyticsPage({ toast }) {
           </div>
 
           {/* Courier Performance Table */}
-          {couriers.length > 0 && (
+          {displayCouriers.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
               <div className="p-4 border-b border-gray-100 flex items-center gap-2">
                 <Award className="w-4 h-4 text-orange-500"/>
@@ -175,7 +215,7 @@ export default function AnalyticsPage({ toast }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {couriers.map((c,i) => (
+                    {displayCouriers.map((c,i) => (
                       <tr key={c.courier || i} className="hover:bg-gray-50">
                         <td>
                           <div className="flex items-center gap-2">
@@ -205,11 +245,11 @@ export default function AnalyticsPage({ toast }) {
           )}
 
           {/* NDR by reason */}
-          {ndr?.byReason?.length > 0 && (
+          {displayNdr?.byReason?.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
               <p className="text-sm font-bold text-gray-700 mb-4">Top NDR Reasons</p>
               <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={ndr.byReason} layout="vertical" margin={{left:20}}>
+                <BarChart data={displayNdr.byReason} layout="vertical" margin={{left:20}}>
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0"/>
                   <XAxis type="number" tick={{fontSize:10}}/>
                   <YAxis type="category" dataKey="reason" tick={{fontSize:10}} width={160}/>

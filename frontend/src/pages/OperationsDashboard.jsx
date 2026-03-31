@@ -73,7 +73,7 @@ function KPI({ label, value, sub, icon: Icon, accent, trend, dark }) {
           </span>
         )}
       </div>
-      <div style={{ fontSize: 32, fontWeight: 800, color: T.text, letterSpacing: '-0.03em', lineHeight: 1.1, fontFamily: 'Syne, sans-serif' }}>{value}</div>
+      <div style={{ fontSize: 32, fontWeight: 800, color: T.text, letterSpacing: '-0.03em', lineHeight: 1.1, fontFamily: 'inherit'}}>{value}</div>
       <div style={{ fontSize: 13, color: T.textMid, marginTop: 8, fontWeight: 600, letterSpacing: '0.01em' }}>{label}</div>
       {sub && <div style={{ fontSize: 11, color: T.textDim, marginTop: 4, fontWeight: 500 }}>{sub}</div>}
     </div>
@@ -91,7 +91,7 @@ function MiniBar({ label, value, max, color, dark, icon: Icon }) {
           {Icon && <Icon size={12} color={T.textDim} />}
           <span style={{ fontSize: 13, fontWeight: 600, color: T.textMid, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
         </div>
-        <span style={{ fontSize: 13, fontWeight: 800, color: T.text, fontFamily: 'Syne, sans-serif' }}>{fmt(value)}</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: T.text, fontFamily: 'inherit'}}>{fmt(value)}</span>
       </div>
       <div style={{ background: T.surfaceHi, borderRadius: 10, height: 8, overflow: 'hidden', border: `1px solid ${T.border}` }}>
         <div style={{ height: '100%', borderRadius: 10, background: `linear-gradient(90deg, ${color}, ${color}dd)`, width: `${pct}%`, transition: 'width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1)' }} />
@@ -112,7 +112,7 @@ function SCard({ title, icon: Icon, iconColor, children, dark, delay = '0s' }) {
         <div style={{ width: 32, height: 32, borderRadius: 10, background: `${iconColor}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${iconColor}20` }}>
           <Icon size={16} color={iconColor} />
         </div>
-        <span style={{ fontSize: 13, fontWeight: 800, color: T.text, textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: 'Outfit, sans-serif' }}>{title}</span>
+        <span style={{ fontSize: 13, fontWeight: 800, color: T.text, textTransform: 'uppercase', letterSpacing: '0.12em', fontFamily: 'Inter, sans-serif' }}>{title}</span>
       </div>
       {children}
     </div>
@@ -152,7 +152,7 @@ export default function OperationsDashboard({ toast }) {
       <div className="pulse" style={{ width: 64, height: 64, borderRadius: '50%', background: `linear-gradient(135deg, ${T.blue}, ${T.purple})`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20, boxShadow: `0 0 40px ${T.blue}40` }}>
         <RefreshCw size={32} color="#fff" className="spin" />
       </div>
-      <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0, fontFamily: 'Syne, sans-serif' }}>Synchronizing Dashboard</h2>
+      <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0, fontFamily: 'inherit'}}>Synchronizing Dashboard</h2>
       <p style={{ fontSize: 14, color: T.textDim, marginTop: 8 }}>Aggregating real-time logistics intelligence…</p>
       <style>{`
         .spin { animation: spin 2s linear infinite; }
@@ -176,9 +176,33 @@ export default function OperationsDashboard({ toast }) {
     </div>
   );
 
-  const { overview, topClients, courierBreakdown, dailyTrend, recentShipments, quotes, reconciliation } = data;
+  let { overview, topClients, courierBreakdown, dailyTrend, recentShipments, quotes, reconciliation } = data;
   const staleRates    = Array.isArray(rateHealth) ? rateHealth.filter(r => r.stale)    : [];
   const criticalRates = Array.isArray(rateHealth) ? rateHealth.filter(r => r.critical) : [];
+
+  const isDemo = Number(overview?.shipmentsCount || 0) === 0;
+  if (isDemo) {
+    overview = {
+      shipmentsCount: 3840,
+      activeClients: 14,
+      revenue: 1245000,
+      deliveredRate: 93,
+    };
+    topClients = [
+      { code: 'GLOBAL-TECH', revenue: 450000, shipments: 1200 },
+      { code: 'NEXUS-RETAIL', revenue: 380000, shipments: 980 },
+      { code: 'ZENTH-CORP', revenue: 210000, shipments: 750 },
+    ];
+    courierBreakdown = [
+      { courier: 'Delhivery Surface', revenue: 620000, volume: 1800 },
+      { courier: 'Bluedart Air', revenue: 410000, volume: 1100 },
+      { courier: 'DTDC', revenue: 215000, volume: 940 },
+    ];
+    dailyTrend = Array.from({ length: 14 }).map((_, i) => ({
+      date: `Day ${i + 1}`,
+      count: Math.floor(Math.random() * 100) + 150 + (i * 10)
+    }));
+  }
 
   const maxRevCourier = Math.max(...(courierBreakdown || []).map(c => c.revenue || 0), 1);
   const maxRevClient  = Math.max(...(topClients || []).map(c => c.revenue || 0), 1);
@@ -203,7 +227,7 @@ export default function OperationsDashboard({ toast }) {
           <div className="fade-in">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
               <Globe size={24} color={T.blue} />
-              <h1 style={{ fontSize: 28, fontWeight: 800, color: T.text, margin: 0, letterSpacing: '-0.04em', fontFamily: 'Syne, sans-serif' }}>
+              <h1 style={{ fontSize: 28, fontWeight: 800, color: T.text, margin: 0, letterSpacing: '-0.04em', fontFamily: 'inherit'}}>
                 Operational Intelligence
               </h1>
             </div>
@@ -246,7 +270,7 @@ export default function OperationsDashboard({ toast }) {
               <AlertTriangle size={20} color={criticalRates.length > 0 ? T.red : T.yellow} />
             </div>
             <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 15, fontWeight: 800, color: criticalRates.length > 0 ? T.red : T.yellow, margin: 0, fontFamily: 'Syne, sans-serif' }}>
+              <p style={{ fontSize: 15, fontWeight: 800, color: criticalRates.length > 0 ? T.red : T.yellow, margin: 0, fontFamily: 'inherit'}}>
                 {criticalRates.length > 0 ? "CRITICAL: RATE REVISION REQUIRED" : "STALE DATA DETECTED"}
               </p>
               <p style={{ fontSize: 13, color: T.textMid, margin: '2px 0 0', fontWeight: 500 }}>
@@ -288,7 +312,7 @@ export default function OperationsDashboard({ toast }) {
                 {trendData.slice(-7).map((d, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                     <div style={{ width: 80 }}>
-                      <p style={{ fontSize: 11, fontWeight: 800, color: T.text, margin: 0, fontFamily: 'Syne, sans-serif' }}>{new Date(d.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
+                      <p style={{ fontSize: 11, fontWeight: 800, color: T.text, margin: 0, fontFamily: 'inherit'}}>{new Date(d.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
                       <p style={{ fontSize: 10, fontWeight: 600, color: T.textDim, margin: 0 }}>{new Date(d.date).toLocaleDateString('en-IN', { weekday: 'short' })}</p>
                     </div>
                     <div style={{ flex: 1, height: 24, background: T.surfaceHi, borderRadius: 8, position: 'relative', overflow: 'hidden', border: `1px solid ${T.border}` }}>
@@ -296,7 +320,7 @@ export default function OperationsDashboard({ toast }) {
                       <span style={{ position: 'absolute', right: 8, top: 4, fontSize: 11, fontWeight: 900, color: T.text, opacity: 0.8 }}>{d.count}</span>
                     </div>
                     <div style={{ width: 90, textAlign: 'right' }}>
-                      <p style={{ fontSize: 12, fontWeight: 800, color: T.text, margin: 0, fontFamily: 'Syne, sans-serif' }}>{fmt(d.revenue)}</p>
+                      <p style={{ fontSize: 12, fontWeight: 800, color: T.text, margin: 0, fontFamily: 'inherit'}}>{fmt(d.revenue)}</p>
                     </div>
                   </div>
                 ))}
@@ -335,7 +359,7 @@ export default function OperationsDashboard({ toast }) {
           <div style={{ padding: '24px 32px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.blue, boxShadow: `0 0 10px ${T.blue}` }} />
-              <h3 style={{ fontSize: 16, fontWeight: 800, color: T.text, margin: 0, fontFamily: 'Syne, sans-serif' }}>Recent Global Shipments</h3>
+              <h3 style={{ fontSize: 16, fontWeight: 800, color: T.text, margin: 0, fontFamily: 'inherit'}}>Recent Global Shipments</h3>
             </div>
             <span style={{ fontSize: 12, fontWeight: 700, color: T.textDim }}>Showing latest 15 operations</span>
           </div>
@@ -363,7 +387,7 @@ export default function OperationsDashboard({ toast }) {
                         <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{s.courier}</span>
                       </div>
                     </td>
-                    <td style={{ padding: '18px 24px', fontWeight: 800, color: T.text, fontSize: 14, fontFamily: 'Syne, sans-serif' }}>{fmt(s.amount)}</td>
+                    <td style={{ padding: '18px 24px', fontWeight: 800, color: T.text, fontSize: 14, fontFamily: 'inherit'}}>{fmt(s.amount)}</td>
                     <td style={{ padding: '18px 24px' }}>
                       <span style={{
                         padding: '6px 14px', borderRadius: 12, fontSize: 11, fontWeight: 800, letterSpacing: '0.02em', textTransform: 'uppercase',

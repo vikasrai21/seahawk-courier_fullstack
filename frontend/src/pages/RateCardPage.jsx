@@ -100,7 +100,7 @@ export default function RateCardPage({ toast }) {
 <!DOCTYPE html><html><head><title>Seahawk Rate Card</title>
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'Helvetica Neue',Arial,sans-serif; color:#1e293b; background:#fff; padding:30px; }
+  body { font-family: 'Inter', sans-serif; color:#1e293b; background:#fff; padding:30px; }
   .logo { font-size:22px; font-weight:900; color:#1e293b; letter-spacing:-0.5px; }
   .tagline { font-size:10px; color:#94a3b8; text-transform:uppercase; letter-spacing:2px; margin-top:2px; }
   .header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #1e293b; padding-bottom:16px; margin-bottom:20px; }

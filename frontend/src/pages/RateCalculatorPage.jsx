@@ -332,7 +332,7 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
     const win=window.open('','_blank');
     win.document.write(`
       <html><head><title>Rate Quote</title>
-      <style>body{font-family:Arial,sans-serif;padding:40px;max-width:600px;margin:auto;}
+      <style>body{font-family: 'Inter', sans-serif;padding:40px;max-width:600px;margin:auto;}
       h1{color:#1e293b}table{width:100%;border-collapse:collapse;margin-top:20px}
       td,th{padding:8px 12px;border:1px solid #e2e8f0;text-align:left}
       th{background:#f8fafc;font-weight:600}.total{font-size:1.4em;font-weight:700;color:#166534}
