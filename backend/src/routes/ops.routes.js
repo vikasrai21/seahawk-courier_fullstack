@@ -243,4 +243,71 @@ router.get('/profit-summary', requireRole('ADMIN', 'OPS_MANAGER'), async (req, r
   } catch (err) { R.error(res, err.message); }
 });
 
+// ── GET /api/ops/dashboard — consolidated analytics ───────────────────────
+router.get('/dashboard', async (req, res) => {
+  try {
+    const now = new Date();
+    const today = now.toISOString().split('T')[0];
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString().split('T')[0];
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+
+    const [
+      todayCount, weekCount, todayRev, monthRev,
+      pendingCount, monthDelivered, monthTotal,
+      courierData, clientData, dailyData, recentShipments,
+      quoteStats, reconStats
+    ] = await Promise.all([
+      prisma.shipment.count({ where: { date: today } }),
+      prisma.shipment.count({ where: { date: { gte: sevenDaysAgo } } }),
+      prisma.shipment.aggregate({ where: { date: today }, _sum: { amount: true } }),
+      prisma.shipment.aggregate({ where: { date: { gte: monthStart } }, _sum: { amount: true } }),
+      prisma.shipment.count({ where: { status: { in: ['Booked', 'InTransit'] } } }),
+      prisma.shipment.count({ where: { status: 'Delivered', date: { gte: monthStart } } }),
+      prisma.shipment.count({ where: { date: { gte: monthStart } } }),
+      prisma.shipment.groupBy({ by: ['courier'], where: { date: { gte: monthStart }, courier: { not: null } }, _sum: { amount: true }, _count: { id: true }, orderBy: { _sum: { amount: 'desc' } } }),
+      prisma.shipment.groupBy({ by: ['clientCode'], where: { date: { gte: monthStart } }, _sum: { amount: true }, _count: { id: true }, orderBy: { _sum: { amount: 'desc' } }, take: 10 }),
+      prisma.shipment.groupBy({ by: ['date'], where: { date: { gte: sevenDaysAgo } }, _count: { id: true }, _sum: { amount: true }, orderBy: { date: 'asc' } }),
+      prisma.shipment.findMany({ where: { date: { gte: sevenDaysAgo } }, take: 15, orderBy: { createdAt: 'desc' } }),
+      prisma.quote.aggregate({ _count: { id: true }, _avg: { profit: true, margin: true } }),
+      prisma.courierInvoice.count({ where: { status: 'SUCCESS' } }),
+    ]);
+
+    // Enrich client data
+    const clientCodes = clientData.map(c => c.clientCode);
+    const clients = await prisma.client.findMany({ where: { code: { in: clientCodes } }, select: { code: true, company: true } });
+    const clientMap = Object.fromEntries(clients.map(c => [c.code, c.company]));
+
+    const responseData = {
+      overview: {
+        todayShipments: todayCount,
+        weekShipments: weekCount,
+        todayRevenue: todayRev._sum.amount || 0,
+        monthRevenue: monthRev._sum.amount || 0,
+        pendingCount,
+        deliveredCount: monthDelivered,
+        deliveryRate: monthTotal > 0 ? (monthDelivered / monthTotal * 100) : 0,
+      },
+      courierBreakdown: courierData.map(c => ({ courier: c.courier, revenue: c._sum.amount || 0, count: c._count.id })),
+      topClients: clientData.map(c => ({ code: c.clientCode, company: clientMap[c.clientCode] || c.clientCode, revenue: c._sum.amount || 0, count: c._count.id })),
+      dailyTrend: dailyData.map(d => ({ date: d.date, count: d._count.id, revenue: d._sum.amount || 0 })),
+      recentShipments: recentShipments.map(s => ({
+        id: s.id, date: s.date, awb: s.awb, consignee: s.consignee, destination: s.destination, courier: s.courier, amount: s.amount, status: s.status
+      })),
+      quotes: {
+        total: quoteStats._count.id || 0,
+        avgProfit: quoteStats._avg.profit || 0,
+        avgMargin: quoteStats._avg.margin || 0,
+      },
+      reconciliation: {
+        totalInvoices: reconStats,
+      }
+    };
+
+    R.ok(res, responseData);
+  } catch (err) {
+    logger.error(`Dashboard error: ${err.message}`);
+    R.error(res, err.message);
+  }
+});
+
 module.exports = router;

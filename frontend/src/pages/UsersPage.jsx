@@ -1,3 +1,4 @@
+import { SkeletonTable } from '../components/ui/Skeleton';
 import { useState } from 'react';
 import { Plus, Edit2, Key, Link2, Shield, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -119,7 +120,7 @@ export default function UsersPage({ toast }) {
       </div>
 
       {/* Cards */}
-      {loading ? <PageLoader /> : (
+      {loading ? <div className="p-6"><SkeletonTable rows={8} cols={6} /></div> : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 14 }}>
           {filtered.length === 0
             ? <div style={{ gridColumn: '1/-1' }}><EmptyState icon="👥" title="No users found" message="Create your first user above." /></div>

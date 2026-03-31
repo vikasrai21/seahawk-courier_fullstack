@@ -65,41 +65,75 @@ export default function WalletPage({ toast }) {
   const totalBalance = wallets.reduce((s,w) => s + (w.walletBalance || w.balance || 0), 0);
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Wallet & Payments</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Client wallet balances and transaction history</p>
-        </div>
-        <div className="flex gap-2">
-          {canManage && (
-            <button onClick={() => { setShowAdjust(true); }} className="btn-secondary btn-sm gap-1.5">
-              <TrendingUp className="w-3.5 h-3.5" /> Manual Adjust
+    <div className="mx-auto max-w-7xl p-6 space-y-6">
+      <PageHeader
+        title="Wallet & Payments"
+        subtitle="Manage client balances and track real-time transaction history."
+        icon={Wallet}
+        actions={
+          <div className="flex items-center gap-2">
+            {canManage && (
+              <button 
+                onClick={() => setShowAdjust(true)} 
+                className="flex items-center gap-2 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-4 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 hover:bg-slate-50 transition-all shadow-sm"
+              >
+                <TrendingUp className="w-3.5 h-3.5" /> Manual Adjust
+              </button>
+            )}
+            <button 
+              onClick={() => setShowRecharge(true)} 
+              className="flex items-center gap-2 bg-slate-900 dark:bg-orange-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-orange-500/10 transition-transform active:scale-95 leading-none"
+            >
+              <Plus className="w-4 h-4" /> Recharge Wallet
             </button>
-          )}
-          <button onClick={() => setShowRecharge(true)} className="btn-primary btn-sm gap-1.5">
-            <Plus className="w-3.5 h-3.5" /> Recharge Wallet
-          </button>
-          <button onClick={load} className="btn-secondary btn-sm">
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      </div>
+            <button 
+              onClick={load} 
+              disabled={loading}
+              className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+        }
+      />
 
       {/* Total balance strip (admin) */}
       {canManage && (
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
-          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
-            <p className="text-xs text-gray-500">Total Client Balances</p>
-            <p className="text-2xl font-black text-navy-700 mt-1">{fmt(totalBalance)}</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-white dark:bg-slate-900/40 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm overflow-hidden relative group">
+            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform">
+              <Wallet size={80} />
+            </div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Total Client Balances</p>
+            <p className="text-3xl font-black text-slate-900 dark:text-white mt-3">{fmt(totalBalance)}</p>
+            <div className="mt-4 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Across all active accounts</span>
+            </div>
           </div>
-          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
-            <p className="text-xs text-gray-500">Active Wallets</p>
-            <p className="text-2xl font-black text-green-600 mt-1">{wallets.filter(w=>(w.walletBalance||w.balance||0)>0).length}</p>
+          
+          <div className="bg-white dark:bg-slate-900/40 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm overflow-hidden relative group">
+            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform">
+              <CheckCircle2 size={80} />
+            </div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Positive Balances</p>
+            <p className="text-3xl font-black text-green-500 mt-3">{wallets.filter(w=>(w.walletBalance||w.balance||0)>0).length}</p>
+            <div className="mt-4 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Healthy accounts</span>
+            </div>
           </div>
-          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
-            <p className="text-xs text-gray-500">Zero Balance</p>
-            <p className="text-2xl font-black text-gray-400 mt-1">{wallets.filter(w=>(w.walletBalance||w.balance||0)<=0).length}</p>
+
+          <div className="bg-white dark:bg-slate-900/40 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm overflow-hidden relative group">
+            <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:scale-110 transition-transform">
+              <AlertCircle size={80} />
+            </div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Zero / Low Balance</p>
+            <p className="text-3xl font-black text-slate-400 mt-3">{wallets.filter(w=>(w.walletBalance||w.balance||0)<=0).length}</p>
+            <div className="mt-4 flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Requires attention</span>
+            </div>
           </div>
         </div>
       )}

@@ -47,7 +47,10 @@ async function storeRefreshToken(userId, token, meta = {}) {
 
 async function login(email, password, meta = {}) {
   const normalised = email.toLowerCase().trim();
-  const user = await prisma.user.findUnique({ where: { email: normalised } });
+  const user = await prisma.user.findUnique({ 
+    where: { email: normalised },
+    include: { clientProfile: { include: { client: { select: { walletBalance: true } } } } }
+  });
 
   // Always compare to prevent timing attacks
   const dummyHash = '$2a$12$invalidhashtopreventtimingattacks.padding.xx';
@@ -63,8 +66,16 @@ async function login(email, password, meta = {}) {
 
   logger.info(`Login: ${user.email} [${user.role}]`);
 
-  const { password: _, ...safeUser } = user;
-  return { accessToken, refreshToken, user: safeUser };
+  const { password: _, clientProfile, ...safeUser } = user;
+  return { 
+    accessToken, 
+    refreshToken, 
+    user: { 
+      ...safeUser, 
+      clientCode: clientProfile?.clientCode || null,
+      walletBalance: clientProfile?.client?.walletBalance ?? 0
+    } 
+  };
 }
 
 // Refresh — tries DB first, falls back to JWT verification

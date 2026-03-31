@@ -1,3 +1,4 @@
+import { SkeletonTable } from '../components/ui/Skeleton';
 import { useState } from 'react';
 import { Plus, Eye, Trash2, Download, MessageCircle, FileText, Mail } from 'lucide-react';
 import api from '../services/api';
@@ -177,18 +178,19 @@ export default function InvoicesPage({ toast }) {
   };
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Invoices</h1>
-          <p className="text-xs text-gray-500 mt-0.5">Generate, download and email invoices to clients</p>
-        </div>
-        <button onClick={() => { setCreateError(''); setCreating(true); }} className="btn-primary btn-sm gap-1.5">
-          <Plus className="w-3.5 h-3.5" /> Generate Invoice
-        </button>
-      </div>
+    <div className="mx-auto max-w-7xl p-6">
+      <PageHeader
+        title="Invoices"
+        subtitle="Generate, download and email invoices to clients"
+        icon={Receipt}
+        actions={
+          <button onClick={() => { setCreateError(''); setCreating(true); }} className="flex items-center gap-2 bg-slate-900 dark:bg-orange-500 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-orange-500/10 transition-transform active:scale-95 leading-none">
+            <Plus className="w-4 h-4" /> Generate Invoice
+          </button>
+        }
+      />
 
-      {loading ? <PageLoader /> : !invoices?.length ? (
+      {loading ? <div className="p-6"><SkeletonTable rows={8} cols={6} /></div> : !invoices?.length ? (
         <EmptyState icon="🧾" title="No invoices yet" description="Generate your first invoice for a client" />
       ) : (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">

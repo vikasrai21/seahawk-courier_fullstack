@@ -26,7 +26,12 @@ const protect = async (req, res, next) => {
         branch: true,
         phone: true,
         active: true,
-        clientProfile: { select: { clientCode: true } },
+        clientProfile: { 
+          select: { 
+            clientCode: true,
+            client: { select: { walletBalance: true } }
+          } 
+        },
       },
     });
     if (!user)        return R.unauthorized(res, 'User no longer exists.');
@@ -34,6 +39,7 @@ const protect = async (req, res, next) => {
     req.user = {
       ...user,
       clientCode: user.clientProfile?.clientCode || null,
+      walletBalance: user.clientProfile?.client?.walletBalance ?? 0,
       clientProfile: undefined,
     };
     next();

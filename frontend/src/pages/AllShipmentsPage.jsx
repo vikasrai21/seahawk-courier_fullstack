@@ -1,11 +1,13 @@
 // AllShipmentsPage.jsx — Enhanced with bulk status update + quick inline status + barcode scanner
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, Filter, Edit2, Trash2, X, CheckSquare, Square, ChevronDown, RefreshCw, Clock, Scan, Zap } from 'lucide-react';
+import { Search, Filter, Edit2, Trash2, X, CheckSquare, Square, ChevronDown, RefreshCw, Clock, Scan, Zap, Box } from 'lucide-react';
 import api from '../services/api';
 import { StatusBadge, STATUSES, formatStatusLabel, normalizeStatus } from '../components/ui/StatusBadge';
-import { PageLoader, EmptyState } from '../components/ui/Loading';
+import { PageLoader, EmptyState, SkeletonTable } from '../components/ui/Loading';
 import { Modal } from '../components/ui/Modal';
 import ShipmentForm from '../components/ShipmentForm';
+import { PageHeader } from '../components/ui/PageHeader';
+import { CourierBadge } from '../components/ui/CourierBadge';
 
 const fmt = n => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
@@ -24,12 +26,10 @@ function BarcodeScanner({ onScan, scanning, lastScanned }) {
   const [value, setValue] = useState('');
   const [pulse, setPulse] = useState(false);
 
-  // Auto-focus the input when scanner bar is visible
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  // Hardware scanners type fast and hit Enter — this handles both
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && value.trim()) {
       onScan(value.trim());
@@ -44,15 +44,12 @@ function BarcodeScanner({ onScan, scanning, lastScanned }) {
       pulse ? 'border-green-400 bg-green-50' : 'border-blue-200 bg-blue-50'
     }`}>
       <div className="flex items-center gap-3 px-4 py-3">
-        {/* Animated scan icon */}
         <div className={`flex-shrink-0 ${scanning ? 'text-green-500' : 'text-blue-400'}`}>
           {scanning
             ? <RefreshCw className="w-5 h-5 animate-spin" />
             : <Scan className={`w-5 h-5 ${pulse ? 'text-green-500' : ''}`} />
           }
         </div>
-
-        {/* Input */}
         <input
           ref={inputRef}
           type="text"
@@ -64,8 +61,6 @@ function BarcodeScanner({ onScan, scanning, lastScanned }) {
           autoComplete="off"
           spellCheck={false}
         />
-
-        {/* Submit button (for manual typing) */}
         {value.trim() && (
           <button
             onClick={() => { onScan(value.trim()); setValue(''); }}
@@ -74,8 +69,6 @@ function BarcodeScanner({ onScan, scanning, lastScanned }) {
             <Zap className="w-3 h-3" /> Search
           </button>
         )}
-
-        {/* Last scanned result */}
         {lastScanned && !value && (
           <div className="flex items-center gap-2 text-xs">
             <span className="text-gray-400">Last:</span>
@@ -87,7 +80,6 @@ function BarcodeScanner({ onScan, scanning, lastScanned }) {
             </span>
           </div>
         )}
-
         <div className="flex-shrink-0 text-xs text-blue-300 hidden sm:block">
           Hardware scanner ready · Press Enter
         </div>
@@ -292,13 +284,10 @@ function ScannedShipmentModal({ shipment, onClose, onStatusUpdate, toast }) {
   return (
     <Modal open onClose={onClose} title={`📦 Scanned — ${shipment.awb}`}>
       <div className="space-y-4">
-        {/* Big status display */}
         <div className="text-center py-3 bg-gray-50 rounded-xl">
           <div className="text-xs text-gray-400 mb-1">Current Status</div>
           <StatusBadge status={shipment.status} />
         </div>
-
-        {/* Shipment info */}
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div className="bg-white border border-gray-100 rounded-lg p-3">
             <div className="text-xs text-gray-400">Client</div>
@@ -321,8 +310,6 @@ function ScannedShipmentModal({ shipment, onClose, onStatusUpdate, toast }) {
             <div className="text-xs text-gray-500">{shipment.weight} kg</div>
           </div>
         </div>
-
-        {/* Quick status update buttons */}
         {transitions.length > 0 && (
           <div>
             <div className="text-xs text-gray-400 mb-2 font-semibold">QUICK UPDATE STATUS</div>
@@ -358,10 +345,10 @@ export default function AllShipmentsPage({ toast }) {
   const [bulkModal,      setBulkModal]      = useState(false);
   const [showScanner,    setShowScanner]    = useState(false);
   const [scanning,       setScanning]       = useState(false);
-  const [lastScanned,    setLastScanned]    = useState(null);   // { awb, found }
-  const [scannedShip,    setScannedShip]    = useState(null);   // shipment to show in modal
-  const [highlightId,    setHighlightId]    = useState(null);   // row to highlight
-  const rowRefs = useRef({});                                    // refs for auto-scroll
+  const [lastScanned,    setLastScanned]    = useState(null);   
+  const [scannedShip,    setScannedShip]    = useState(null);   
+  const [highlightId,    setHighlightId]    = useState(null);   
+  const rowRefs = useRef({});                                    
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -378,17 +365,11 @@ export default function AllShipmentsPage({ toast }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // ── Barcode scan handler ────────────────────────────────────────────────
   const handleScan = useCallback(async (awb) => {
     setScanning(true);
     try {
-      // First check if it's already in the loaded list (instant)
-      const existing = shipments.find(s =>
-        s.awb?.toLowerCase() === awb.toLowerCase()
-      );
-
+      const existing = shipments.find(s => s.awb?.toLowerCase() === awb.toLowerCase());
       if (existing) {
-        // Found in current list — highlight and scroll to row
         setHighlightId(existing.id);
         setLastScanned({ awb, found: true });
         setScannedShip(existing);
@@ -397,26 +378,22 @@ export default function AllShipmentsPage({ toast }) {
         }, 100);
         setTimeout(() => setHighlightId(null), 3000);
       } else {
-        // Not in current filtered list — fetch from API
         const res = await api.get(`/shipments?q=${encodeURIComponent(awb)}&limit=5`);
         const results = res.data || res || [];
         const match = results.find(s => s.awb?.toLowerCase() === awb.toLowerCase()) || results[0];
-
         if (match) {
           setLastScanned({ awb, found: true });
           setScannedShip(match);
           toast?.(`Found: ${match.awb}`, 'success');
         } else {
           setLastScanned({ awb, found: false });
-          toast?.(`AWB "${awb}" not found in your system`, 'error');
+          toast?.(`AWB "${awb}" not found`, 'error');
         }
       }
     } catch (err) {
       setLastScanned({ awb, found: false });
       toast?.(err.message, 'error');
-    } finally {
-      setScanning(false);
-    }
+    } finally { setScanning(false); }
   }, [shipments, toast]);
 
   const handleDelete = async (s) => {
@@ -464,41 +441,40 @@ export default function AllShipmentsPage({ toast }) {
   const totalWt  = shipments.reduce((a, s) => a + (s.weight || 0), 0);
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">All Shipments</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{total} records</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* Scanner toggle button */}
-          <button
-            onClick={() => setShowScanner(s => !s)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold border transition-all ${
-              showScanner
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'
-            }`}
-          >
-            <Scan className="w-4 h-4" />
-            {showScanner ? 'Scanner On' : 'Scan AWB'}
-          </button>
+    <div className="mx-auto max-w-7xl p-6">
+      <PageHeader
+        title="All Shipments"
+        subtitle={`${total} total records in system`}
+        icon={Box}
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowScanner(s => !s)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+                showScanner
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'bg-white dark:bg-slate-800 text-blue-600 border-blue-200 dark:border-slate-700 hover:bg-blue-50'
+              }`}
+            >
+              <Scan className="w-3.5 h-3.5" />
+              {showScanner ? 'Scanner On' : 'Scan to Find'}
+            </button>
 
-          {selected.size > 0 && (
-            <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2">
-              <span className="text-sm font-bold text-blue-700">{selected.size} selected</span>
-              <button onClick={() => setBulkModal(true)} className="btn-primary btn-sm">
-                🔄 Bulk Update Status
-              </button>
-              <button onClick={() => setSelected(new Set())} className="text-blue-400 hover:text-blue-600">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+            {selected.size > 0 && (
+              <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl px-3 py-1.5 animate-in fade-in zoom-in duration-200">
+                <span className="text-xs font-bold text-blue-700 dark:text-blue-400">{selected.size} selected</span>
+                <button onClick={() => setBulkModal(true)} className="flex items-center gap-1.5 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-transform active:scale-95">
+                  <RefreshCw className="w-3 h-3" /> Bulk Status
+                </button>
+                <button onClick={() => setSelected(new Set())} className="p-1 text-blue-400 hover:text-blue-600">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+        }
+      />
 
-      {/* Barcode Scanner Bar — shown when toggled */}
       {showScanner && (
         <BarcodeScanner
           onScan={handleScan}
@@ -507,103 +483,121 @@ export default function AllShipmentsPage({ toast }) {
         />
       )}
 
-      {/* Filters */}
-      <div className="card mb-4">
+      <div className="card mb-4 bg-white dark:bg-slate-900/50 p-4 border border-slate-200 dark:border-slate-800 rounded-3xl">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <div className="relative col-span-2 sm:col-span-2">
-            <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-gray-400" />
-            <input className="input pl-8" placeholder="Search AWB, client, consignee…"
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input className="input pl-10 bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 rounded-xl w-full text-sm" 
+              placeholder="Search AWB, client, consignee…"
               value={filters.q} onChange={e => setFilter('q', e.target.value)} />
           </div>
-          <select className="input" value={filters.status} onChange={e => setFilter('status', e.target.value)}>
+          <select className="input bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 rounded-xl text-sm" 
+            value={filters.status} onChange={e => setFilter('status', e.target.value)}>
             <option value="">All statuses</option>
             {STATUSES.map(s => <option key={s}>{s}</option>)}
           </select>
-          <input type="date" className="input" value={filters.date_from} onChange={e => setFilter('date_from', e.target.value)} />
-          <input type="date" className="input" value={filters.date_to} onChange={e => setFilter('date_to', e.target.value)} />
+          <input type="date" className="input bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 rounded-xl text-sm" 
+            value={filters.date_from} onChange={e => setFilter('date_from', e.target.value)} />
+          <input type="date" className="input bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 rounded-xl text-sm" 
+            value={filters.date_to} onChange={e => setFilter('date_to', e.target.value)} />
           <div className="flex gap-2">
-            <button onClick={load} className="btn-primary btn-sm flex-1 justify-center">
+            <button onClick={load} className="flex-1 bg-slate-900 dark:bg-slate-100 dark:text-slate-900 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2">
               <Filter className="w-3.5 h-3.5" /> Filter
             </button>
             {hasFilters && (
-              <button onClick={clearFilters} className="btn-secondary btn-sm"><X className="w-3.5 h-3.5" /></button>
+              <button onClick={clearFilters} className="w-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-500">
+                <X className="w-4 h-4" />
+              </button>
             )}
           </div>
         </div>
       </div>
 
-      {/* Totals */}
       {shipments.length > 0 && (
-        <div className="flex gap-4 mb-3 text-sm text-gray-600 flex-wrap">
-          <span>📦 <strong>{shipments.length}</strong> shown</span>
+        <div className="flex gap-4 mb-3 text-xs text-slate-500 font-medium px-2">
+          <span className="flex items-center gap-1"><Box size={12} /> <strong>{shipments.length}</strong> shown</span>
           <span>💰 <strong>{fmt(totalAmt)}</strong></span>
           <span>⚖️ <strong>{totalWt.toFixed(1)} kg</strong></span>
-          {selected.size > 0 && <span className="text-blue-600">✓ <strong>{selected.size}</strong> selected</span>}
-          <span className="text-xs text-gray-400 ml-auto">Click status badge to update · Click row to select</span>
+          <span className="ml-auto italic">Click row to select · Status badge to quick update</span>
         </div>
       )}
 
-      {loading ? <PageLoader /> : shipments.length === 0 ? (
+      {loading ? <SkeletonTable rows={10} cols={7} /> : shipments.length === 0 ? (
         <EmptyState icon="📭" title="No shipments found" description="Try adjusting your filters" />
       ) : (
-        <div className="table-wrap">
-          <table className="tbl">
-            <thead>
+        <div className="table-wrap rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 overflow-hidden shadow-sm">
+          <table className="tbl w-full border-collapse">
+            <thead className="bg-slate-50 dark:bg-slate-800/50">
               <tr>
-                <th className="w-8">
-                  <button onClick={toggleAll} className="p-0.5 rounded hover:bg-white/20">
+                <th className="w-10 p-3">
+                  <button onClick={toggleAll} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
                     {selected.size === shipments.length
-                      ? <CheckSquare className="w-4 h-4 text-white" />
-                      : <Square className="w-4 h-4 text-white/60" />}
+                      ? <CheckSquare className="w-4 h-4 text-orange-500" />
+                      : <Square className="w-4 h-4 text-slate-300" />}
                   </button>
                 </th>
-                <th>Date</th><th>AWB</th><th>Client</th><th>Consignee</th>
-                <th>Destination</th><th>Courier</th><th>Wt</th><th>Amt</th>
-                <th>Status ↓click</th><th>Actions</th>
+                <th className="text-left p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date / AWB</th>
+                <th className="text-left p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client</th>
+                <th className="text-left p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Recipient / Dest.</th>
+                <th className="text-left p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Courier</th>
+                <th className="text-right p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Wt / Amt</th>
+                <th className="text-center p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
+                <th className="text-right p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {shipments.map(s => (
                 <tr
                   key={s.id}
                   ref={el => rowRefs.current[s.id] = el}
-                  className={`hover:bg-gray-50 transition-colors cursor-pointer ${
-                    selected.has(s.id) ? 'bg-blue-50' :
-                    highlightId === s.id ? 'bg-yellow-50 ring-2 ring-yellow-400 ring-inset' : ''
+                  className={`hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors cursor-pointer group ${
+                    selected.has(s.id) ? 'bg-orange-50/50 dark:bg-orange-900/10' :
+                    highlightId === s.id ? 'bg-yellow-50 dark:bg-yellow-900/10' : ''
                   }`}
                   onClick={() => toggleSelect(s.id)}
                 >
-                  <td onClick={e => e.stopPropagation()}>
-                    <button onClick={() => toggleSelect(s.id)} className="p-0.5">
+                  <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
+                    <button onClick={() => toggleSelect(s.id)} className="p-1 transition-transform active:scale-90">
                       {selected.has(s.id)
-                        ? <CheckSquare className="w-4 h-4 text-blue-600" />
-                        : <Square className="w-4 h-4 text-gray-300" />}
+                        ? <CheckSquare className="w-4 h-4 text-orange-500" />
+                        : <Square className="w-4 h-4 text-slate-200 group-hover:text-slate-300" />}
                     </button>
                   </td>
-                  <td className="text-xs text-gray-500">{s.date}</td>
-                  <td className={`font-mono font-bold text-xs ${highlightId === s.id ? 'text-yellow-700' : 'text-navy-700'}`}>
-                    {s.awb}
-                    {highlightId === s.id && <span className="ml-1 text-yellow-500">◀</span>}
+                  <td className="p-3">
+                    <div className="text-[10px] text-slate-400 font-bold mb-0.5">{s.date}</div>
+                    <div className={`font-mono font-black text-sm ${highlightId === s.id ? 'text-yellow-600' : 'text-slate-700 dark:text-slate-200'}`}>
+                      {s.awb}
+                    </div>
                   </td>
-                  <td className="text-xs font-semibold">{s.clientCode}<br /><span className="font-normal text-gray-400">{s.client?.company}</span></td>
-                  <td className="text-xs max-w-[100px] truncate">{s.consignee}</td>
-                  <td className="text-xs">{s.destination}</td>
-                  <td className="text-xs">{s.courier || '—'}</td>
-                  <td className="text-xs text-right">{s.weight}</td>
-                  <td className="text-xs text-right font-semibold">{fmt(s.amount)}</td>
-                  <td onClick={e => e.stopPropagation()}>
+                  <td className="p-3">
+                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200">{s.clientCode}</div>
+                    <div className="text-[10px] text-slate-400 truncate max-w-[120px]">{s.client?.company}</div>
+                  </td>
+                  <td className="p-3">
+                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate max-w-[140px]">{s.consignee}</div>
+                    <div className="text-[10px] text-slate-400">📍 {s.destination}</div>
+                  </td>
+                  <td className="p-3">
+                    <CourierBadge name={s.courier} />
+                    <div className="text-[10px] text-slate-400 uppercase tracking-tight ml-8">{s.service}</div>
+                  </td>
+                  <td className="p-3 text-right">
+                    <div className="text-xs font-bold text-slate-700 dark:text-slate-200">{fmt(s.amount)}</div>
+                    <div className="text-[10px] text-slate-400">{s.weight} kg</div>
+                  </td>
+                  <td className="p-3 text-center" onClick={e => e.stopPropagation()}>
                     <QuickStatus shipment={s} onUpdate={handleQuickStatusUpdate} />
                   </td>
-                  <td onClick={e => e.stopPropagation()}>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => setTimeline(s)} title="Timeline" className="p-1.5 text-purple-600 hover:bg-purple-50 rounded-lg">
-                        <Clock className="w-3.5 h-3.5" />
+                  <td className="p-3 text-right" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-1 opacity-20 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => setTimeline(s)} className="p-2 text-slate-400 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors">
+                        <Clock className="w-4 h-4" />
                       </button>
-                      <button onClick={() => setEditShip(s)} title="Edit" className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg">
-                        <Edit2 className="w-3.5 h-3.5" />
+                      <button onClick={() => setEditShip(s)} className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors">
+                        <Edit2 className="w-4 h-4" />
                       </button>
-                      <button onClick={() => handleDelete(s)} title="Delete" className="p-1.5 text-red-400 hover:bg-red-50 rounded-lg">
-                        <Trash2 className="w-3.5 h-3.5" />
+                      <button onClick={() => handleDelete(s)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </td>
@@ -614,7 +608,47 @@ export default function AllShipmentsPage({ toast }) {
         </div>
       )}
 
-      {/* Scanned shipment detail modal */}
+      {/* Floating Bulk Action Toolbar */}
+      {selected.size > 0 && (
+        <div className="sticky bottom-6 flex justify-center z-30 pointer-events-none w-full animate-in slide-in-from-bottom-5 duration-300">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/50 shadow-2xl rounded-2xl p-2.5 flex items-center gap-4 pointer-events-auto">
+            
+            <div className="flex items-center gap-3 pl-3 pr-4 border-r border-slate-200 dark:border-slate-800">
+              <div className="w-6 h-6 rounded-full bg-orange-500 text-white flex items-center justify-center text-xs font-bold shadow-lg shadow-orange-500/30">
+                {selected.size}
+              </div>
+              <span className="text-sm font-bold text-slate-800 dark:text-slate-200">Selected</span>
+            </div>
+            
+            <div className="flex gap-2 pr-1">
+              <button 
+                onClick={() => setBulkModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-bold rounded-xl transition-all"
+              >
+                <Edit2 className="w-4 h-4 text-orange-500" /> Update Status
+              </button>
+              
+              <button 
+                className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-bold rounded-xl transition-all"
+                onClick={() => toast.info('Label Generation coming soon')}
+              >
+                <FileText className="w-4 h-4 text-blue-500" /> Print Labels
+              </button>
+
+              <div className="w-px h-6 bg-slate-200 dark:bg-slate-800 mx-2 self-center" />
+
+              <button 
+                onClick={() => setSelected(new Set())}
+                title="Clear Selection"
+                className="w-9 h-9 flex items-center justify-center bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 text-red-500 rounded-xl transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {scannedShip && (
         <ScannedShipmentModal
           shipment={scannedShip}
@@ -627,7 +661,6 @@ export default function AllShipmentsPage({ toast }) {
         />
       )}
 
-      {/* Bulk status modal */}
       {bulkModal && (
         <BulkStatusModal
           selectedIds={[...selected]}
@@ -641,18 +674,17 @@ export default function AllShipmentsPage({ toast }) {
         />
       )}
 
-      {/* Timeline modal */}
       {timeline && <TimelineModal shipment={timeline} onClose={() => setTimeline(null)} />}
 
-      {/* Edit modal */}
       {editShip && (
-        <Modal open onClose={() => setEditShip(null)} title={`Edit — ${editShip.awb}`}
-          footer={<>
-            <button onClick={() => setEditShip(null)} className="btn-secondary">Cancel</button>
-            <button onClick={() => document.getElementById('shipment-form-submit')?.click()} disabled={editLoading} className="btn-primary">
+        <Modal open onClose={() => setEditShip(null)} title={`Edit Shipment — ${editShip.awb}`}
+          footer={<div className="flex gap-2">
+            <button onClick={() => setEditShip(null)} className="flex-1 px-4 py-2 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-colors">Cancel</button>
+            <button onClick={() => document.getElementById('shipment-form-submit')?.click()} disabled={editLoading} 
+              className="flex-1 bg-slate-900 dark:bg-orange-500 text-white rounded-xl px-4 py-2 text-sm font-bold shadow-lg shadow-orange-500/20">
               {editLoading ? 'Saving…' : 'Save Changes'}
             </button>
-          </>}
+          </div>}
         >
           <ShipmentForm initialData={editShip} onSubmit={handleEdit} submitLabel="Save Changes" />
         </Modal>
