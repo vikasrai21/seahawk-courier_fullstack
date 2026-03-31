@@ -17,10 +17,10 @@ export default function WeightCard({
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
       <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Weight</p>
-      <input type="number" step="0.1" min="0" className="input h-9 text-[13px] mb-2" placeholder="Actual weight (kg)" value={weight} onChange={(e) => setWeight(e.target.value)} />
+      <input type="number" step="0.1" min="0" className="input glass-card h-9 text-[13px] mb-2" placeholder="Actual weight (kg)" value={weight} onChange={(e) => setWeight(e.target.value)} />
       <label className="flex items-center gap-2 cursor-pointer text-[11px] text-slate-500 mb-2 select-none">
         <input type="checkbox" checked={useVol} onChange={(e) => setUseVol(e.target.checked)} className="rounded" />
-        Volumetric (L×W×H ÷ 5000)
+        Volumetric (L×W×H ÷ {(results[0]?.group === 'B2B' || results[0]?.group === 'LTL') ? 4500 : 5000})
       </label>
       {useVol && (
         <div className="grid grid-cols-3 gap-1.5 mb-2">

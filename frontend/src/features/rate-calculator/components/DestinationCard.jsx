@@ -22,7 +22,7 @@ export default function DestinationCard({
   delhiveryOda,
 }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+    <div className="glass-card !p-5">
       <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Destination</p>
       <div className="relative">
         {pinLoad ? <Loader className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 animate-spin" /> : <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-300" />}
