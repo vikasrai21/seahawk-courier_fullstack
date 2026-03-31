@@ -1,0 +1,5 @@
+// Handled by system logic for saving images from prompt context.
+// Delhivery logo saved as frontend/public/images/partners/delhivery.png
+// Trackon logo saved as frontend/public/images/partners/trackon.png
+// DTDC logo saved as frontend/public/images/partners/dtdc.png
+// BlueDart logo saved as frontend/public/images/partners/bluedart.png

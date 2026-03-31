@@ -1,16 +1,17 @@
 import { SkeletonTable } from '../components/ui/Skeleton';
 import { useState } from 'react';
-import { Plus, Eye, Trash2, Download, MessageCircle, FileText, Mail } from 'lucide-react';
+import { Plus, Eye, Trash2, Download, MessageCircle, FileText, Mail, Receipt } from 'lucide-react';
 import api from '../services/api';
 import { useFetch } from '../hooks/useFetch';
 import { PageLoader, EmptyState } from '../components/ui/Loading';
 import { Modal } from '../components/ui/Modal';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const STATUS_COLORS = {
-  DRAFT:     'badge-gray',
-  SENT:      'badge-blue',
-  PAID:      'badge-green',
-  CANCELLED: 'badge-red',
+  DRAFT:     'bg-gray-100 text-gray-700',
+  SENT:      'bg-blue-100 text-blue-700',
+  PAID:      'bg-green-100 text-green-700',
+  CANCELLED: 'bg-red-100 text-red-700',
 };
 const fmt = n => `₹${Number(n||0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 const today = () => new Date().toISOString().split('T')[0];

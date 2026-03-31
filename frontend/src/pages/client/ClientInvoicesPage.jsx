@@ -1,26 +1,41 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { Eye, FileText, Download, MessageCircle, Mail, Receipt, X } from 'lucide-react';
 import api from '../../services/api';
 import { PageLoader } from '../../components/ui/Loading';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Modal } from '../../components/ui/Modal';
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
-const STATUS_COLORS = { DRAFT: 'gray', SENT: 'blue', PAID: 'green', OVERDUE: 'red' };
+const STATUS_COLORS = { DRAFT: 'bg-gray-100 text-gray-700', SENT: 'bg-blue-100 text-blue-700', PAID: 'bg-green-100 text-green-700', OVERDUE: 'bg-red-100 text-red-700' };
 
-function InvoiceStat({ label, value, hint }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-500">{label}</div>
-      <div className="mt-2 text-2xl font-black text-slate-900">{value}</div>
-      <div className="mt-2 text-xs text-slate-500">{hint}</div>
-    </div>
-  );
+function getTaxBreakdown(inv, client) {
+  const gstPercent = Number(inv?.gstPercent || 18);
+  const gstAmount = Number(inv?.gstAmount || 0);
+  const companyState = '06'; // Haryana
+  const clientState = String(client?.gst || '').slice(0, 2);
+  const intraState = clientState ? clientState === companyState : /haryana/i.test(String(client?.address || ''));
+
+  if (intraState) {
+    return {
+      type: 'Intra-state',
+      lines: [
+        { label: `CGST (${(gstPercent / 2).toFixed(1)}%)`, amount: gstAmount / 2 },
+        { label: `SGST (${(gstPercent / 2).toFixed(1)}%)`, amount: gstAmount / 2 },
+      ],
+    };
+  }
+  return {
+    type: 'Inter-state',
+    lines: [{ label: `IGST (${gstPercent}%)`, amount: gstAmount }],
+  };
 }
 
 export default function ClientInvoicesPage({ toast }) {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState(null);
+  const [viewing, setViewing] = useState(null);
 
   const triggerBlobDownload = (blob, filename) => {
     const url = window.URL.createObjectURL(blob);
@@ -155,14 +170,11 @@ export default function ClientInvoicesPage({ toast }) {
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap items-center gap-2">
-                          <button className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 transition hover:bg-sky-100" onClick={() => downloadInvoice(inv)}>
-                            {downloadingId === inv.id ? 'Preparing…' : 'PDF'}
+                          <button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" onClick={() => setViewing(inv)}>
+                            <Eye className="w-4 h-4" />
                           </button>
-                          <button className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-700 transition hover:bg-orange-100" onClick={() => downloadExport(inv, 'xls')}>
-                            Excel
-                          </button>
-                          <button className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100" onClick={() => downloadExport(inv, 'csv')}>
-                            CSV
+                          <button className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg" onClick={() => downloadInvoice(inv)}>
+                            <FileText className="w-4 h-4" />
                           </button>
                         </div>
                       </td>
@@ -174,6 +186,114 @@ export default function ClientInvoicesPage({ toast }) {
           </section>
         )}
       </div>
+
+      {viewing && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl my-8">
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-900 leading-none">View Invoice {viewing.invoiceNo}</h2>
+              <button onClick={() => setViewing(null)} className="p-2 hover:bg-gray-100 rounded-full transition-colors leading-none">
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+            </div>
+            
+            <div className="p-8">
+              <div className="flex justify-between items-start mb-8">
+                <div className="space-y-4">
+                  <div className="h-10 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-slate-900 flex items-center justify-center rounded-lg">
+                      <Receipt className="w-6 h-6 text-white" />
+                    </div>
+                    <span className="text-lg font-black text-slate-900">Sea Hawk Courier & Cargo</span>
+                  </div>
+                  <div className="text-sm text-slate-500 max-w-xs leading-relaxed">
+                    Shop 6 & 7, Rao Lal Singh Market, Sector-18, Gurugram – 122015, Haryana
+                    <br/>GSTIN: 06AJDPR0914N2Z1
+                  </div>
+                </div>
+                <div className="text-right space-y-1">
+                  <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-2 ${STATUS_COLORS[viewing.status]}`}>
+                    {viewing.status}
+                  </span>
+                  <div className="text-xs text-slate-400 uppercase font-black tracking-widest">Amount Due</div>
+                  <div className="text-3xl font-black text-slate-900">{fmt(viewing.total)}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-8 mb-8 pt-8 border-t border-slate-100">
+                <div className="space-y-1">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Bill To</div>
+                  <div className="text-base font-bold text-slate-900">{viewing.client?.company || viewing.clientCode}</div>
+                  <div className="text-sm text-slate-500 leading-relaxed">{viewing.client?.address || '—'}</div>
+                </div>
+                <div className="space-y-1">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">Period</div>
+                  <div className="text-base font-bold text-slate-900">{viewing.fromDate} to {viewing.toDate}</div>
+                  <div className="text-sm text-slate-500">Tax Type: {getTaxBreakdown(viewing, viewing.client).type}</div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-100 overflow-hidden mb-6">
+                <table className="w-full text-left text-sm border-collapse">
+                  <thead className="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
+                    <tr>
+                      <th className="px-4 py-3">#</th>
+                      <th className="px-4 py-3">Date</th>
+                      <th className="px-4 py-3">AWB No</th>
+                      <th className="px-4 py-3 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {(viewing.items || []).slice(0, 5).map((item, i) => (
+                      <tr key={item.id}>
+                        <td className="px-4 py-3 text-slate-400">{i + 1}</td>
+                        <td className="px-4 py-3 font-medium text-slate-600">{item.date}</td>
+                        <td className="px-4 py-3 font-mono font-bold text-slate-900">{item.awb}</td>
+                        <td className="px-4 py-3 text-right font-medium text-slate-900">{fmt(item.amount)}</td>
+                      </tr>
+                    ))}
+                    {viewing.items?.length > 5 && (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-2 text-center text-xs text-slate-400 bg-slate-50/50">
+                          ... and {(viewing.items.length - 5)} more shipments. Download PDF for full list.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex justify-end pt-4 border-t border-slate-100">
+                <div className="w-full max-w-xs space-y-3">
+                  <div className="flex justify-between text-sm text-slate-500 font-medium">
+                    <span>Subtotal</span>
+                    <span className="text-slate-900 font-bold">{fmt(viewing.subtotal)}</span>
+                  </div>
+                  {getTaxBreakdown(viewing, viewing.client).lines.map(line => (
+                    <div key={line.label} className="flex justify-between text-sm text-slate-500 font-medium">
+                      <span>{line.label}</span>
+                      <span className="text-slate-900 font-bold">{fmt(line.amount)}</span>
+                    </div>
+                  ))}
+                  <div className="pt-3 border-t border-slate-100 flex justify-between items-center">
+                    <span className="text-xs font-black uppercase tracking-widest text-slate-400">Total Charged</span>
+                    <span className="text-2xl font-black text-slate-900 leading-none">{fmt(viewing.total)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between rounded-b-2xl">
+              <button onClick={() => setViewing(null)} className="px-6 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-700 transition">Close Preview</button>
+              <div className="flex gap-2">
+                <button onClick={() => downloadInvoice(viewing)} title="Download PDF" className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-transform active:scale-95 leading-none">
+                  <FileText className="w-4 h-4" /> Download PDF
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

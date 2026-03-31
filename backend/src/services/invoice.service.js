@@ -20,6 +20,9 @@ async function generateInvoiceNo() {
 
 // Create invoice from shipments in date range
 async function create({ clientCode, fromDate, toDate, gstPercent = 18, notes }) {
+  const client = await prisma.client.findUnique({ where: { code: clientCode.toUpperCase() } });
+  if (!client) throw new AppError('Client not found', 404);
+
   // Get unbilled shipments for this client and date range
   const shipments = await prisma.shipment.findMany({
     where: {
@@ -35,8 +38,14 @@ async function create({ clientCode, fromDate, toDate, gstPercent = 18, notes }) 
 
   const invoiceNo = await generateInvoiceNo();
   const subtotal  = shipments.reduce((a, s) => a + (s.amount || 0), 0);
-  const gstAmount = subtotal * (gstPercent / 100);
-  const total     = subtotal + gstAmount;
+  
+  // Dynamic Tax Split Calculation
+  const companyState = '06'; // Haryana
+  const clientState = String(client.gst || '').slice(0, 2);
+  const isIntraState = clientState ? clientState === companyState : /haryana/i.test(client.address || '');
+
+  const gstAmount = Math.round(subtotal * (gstPercent / 100) * 100) / 100;
+  const total     = Math.round((subtotal + gstAmount) * 100) / 100;
 
   const invoice = await prisma.invoice.create({
     data: {
@@ -46,8 +55,8 @@ async function create({ clientCode, fromDate, toDate, gstPercent = 18, notes }) 
       toDate,
       subtotal:  Math.round(subtotal  * 100) / 100,
       gstPercent,
-      gstAmount: Math.round(gstAmount * 100) / 100,
-      total:     Math.round(total     * 100) / 100,
+      gstAmount,
+      total,
       notes,
       items: {
         create: shipments.map(s => ({

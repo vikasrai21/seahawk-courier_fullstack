@@ -39,11 +39,14 @@ import ResultsPanel from '../features/rate-calculator/components/ResultsPanel';
 import SensitivityTable from '../features/rate-calculator/components/SensitivityTable';
 import QuoteBuilder from '../features/rate-calculator/components/QuoteBuilder';
 
+import CourierSelectCard from '../features/rate-calculator/components/CourierSelectCard';
+
 import {
   stateToZones,
   proposalSell,
   courierCost,
   COURIERS,
+  COURIER_GROUPS,
   CITY_LIST,
   fmt,
   fmtI,
@@ -73,7 +76,7 @@ export default function RateCalculatorPage() {
 
   // ── ODA ──
   const [odaOn,    setOdaOn]   = useState(false);
-  const [odaAmt,   setOdaAmt]  = useState(200);
+  const [odaAmt,   setOdaAmt]  = useState(500);
   const [delhiveryOda, setDelhiveryOda] = useState(false);
 
   // ── Client ──
@@ -95,7 +98,8 @@ export default function RateCalculatorPage() {
   const [expanded,   setExpanded]  = useState(null); // courier id with expanded breakdown
   const [tab,        setTab]       = useState('calc');// calc | sensitivity | quote
   const [showSettings,setShowSettings]=useState(false);
-const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.parse(sessionStorage.getItem('sh_hidden_couriers') || '[]')); } catch { return new Set(); } });
+  const [selGroup,    setSelGroup]    = useState('all'); // all | Delhivery | Trackon | DTDC | BlueDart | LTL
+  const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.parse(sessionStorage.getItem('sh_hidden_couriers') || '[]')); } catch { return new Set(); } });
   // ── Recent searches ──
   const [recent, setRecent] = useState([]);
 
@@ -140,6 +144,10 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
  useEffect(()=>{
     sessionStorage.setItem('sh_hidden_couriers', JSON.stringify([...hiddenIds]));
   },[hiddenIds]);
+  const addRecent=useCallback(entry=>{
+    setRecent(r=>[entry,...r.filter(e=>e.query!==entry.query)].slice(0,5));
+  },[]);
+
   const lookupPin = useCallback(async pin=>{
     setPinLoad(true);setPinErr('');setZone(null);setLocInfo(null);setDelhiveryOda(false);
     try{
@@ -164,10 +172,6 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
     }catch{setPinErr('PIN lookup failed — check connection.');}
     finally{setPinLoad(false);}
   },[addRecent]);
-
-  const addRecent=useCallback(entry=>{
-    setRecent(r=>[entry,...r.filter(e=>e.query!==entry.query)].slice(0,5));
-  },[]);
 
   const isPin=/^\d+$/.test(query.trim());
   const suggestions=useMemo(()=>{
@@ -196,8 +200,15 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
   };
 
   // Volumetric weight
-  const volWt=useMemo(()=>(!useVol||!dims.l||!dims.b||!dims.h)?0
-    :(parseFloat(dims.l)||0)*(parseFloat(dims.b)||0)*(parseFloat(dims.h)||0)/5000,[useVol,dims]);
+  const volWt=useMemo(()=>{
+    if(!useVol||!dims.l||!dims.b||!dims.h)return 0;
+    const l = parseFloat(dims.l)||0;
+    const b = parseFloat(dims.b)||0;
+    const h = parseFloat(dims.h)||0;
+    // Audit check: B2B uses 4500 as per screenshot, others use 5000
+    const divisor = (selGroup === 'B2B' || selGroup === 'LTL' || shipType === 'surface') ? 4500 : 5000;
+    return (l * b * h) / divisor;
+  },[useVol,dims,selGroup,shipType]);
   const chargeWt=useMemo(()=>Math.max(parseFloat(weight)||0,volWt),[weight,volWt]);
 
   // Selling price
@@ -243,10 +254,11 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
       .filter(c=>c.types.includes(shipType))
       .filter(c=>svcLevel==='all'||c.level===svcLevel)
       .filter(c=>!hiddenIds.has(c.id))
+      .filter(c=>selGroup==='all'||c.group===selGroup)
       .map(c=>{
         // Delhivery ODA is automatic even if general ODA is off
         const isDelhivery = c.group === 'Delhivery';
-        const finalOda = (isDelhivery && delhiveryOda) ? (parseFloat(odaAmt) || 200) : generalOda;
+        const finalOda = (isDelhivery && delhiveryOda) ? (parseFloat(odaAmt) || 500) : generalOda;
         
         const bk=courierCost(c.id,zone,chargeWt,finalOda);
         if(!bk)return null;
@@ -262,7 +274,7 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
         return{...c,bk,sell,profit,margin};
       }).filter(Boolean)
       .sort((a,b)=>sortMode==='profit'?b.profit-a.profit:a.bk.total-b.bk.total);
-  },[zone,chargeWt,effectiveSell,sortMode,shipType,svcLevel,hiddenIds,odaOn,odaAmt,delhiveryOda,getPerCourierSell]);
+  },[zone,chargeWt,effectiveSell,sortMode,shipType,svcLevel,hiddenIds,odaOn,odaAmt,delhiveryOda,getPerCourierSell,selGroup]);
 
   // Sensitivity data (for selected shipType, vary weight)
   const sensitivityData=useMemo(()=>{
@@ -440,20 +452,48 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
         />
       </div>
 
-      <ClientCard
-        selClient={selClient}
-        setSelClient={setSelClient}
-        setContracts={setContracts}
-        setClientSearch={setClientSearch}
-        contractLoad={contractLoad}
-        contracts={contracts}
-        activeContract={activeContract}
-        fmt={fmt}
-        clientSearch={clientSearch}
-        setShowClients={setShowClients}
-        showClients={showClients}
-        filteredClients={filteredClients}
-      />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-3">
+        <CourierSelectCard
+          selGroup={selGroup}
+          setSelGroup={v=>{setSelGroup(v);setExpanded(null);}}
+        />
+
+        <ClientCard
+          selClient={selClient}
+          setSelClient={setSelClient}
+          setContracts={setContracts}
+          setClientSearch={setClientSearch}
+          contractLoad={contractLoad}
+          contracts={contracts}
+          activeContract={activeContract}
+          fmt={fmt}
+          clientSearch={clientSearch}
+          setShowClients={setShowClients}
+          showClients={showClients}
+          filteredClients={filteredClients}
+        />
+
+        <div className="glass-card !p-5 flex flex-col justify-center gap-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Risk: ODA Detection</span>
+            <div className={`px-3 py-1 rounded-full text-[10px] font-bold shadow-sm border ${delhiveryOda ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+              {delhiveryOda ? 'ODA DETECTED' : (selGroup === 'Delhivery' ? 'CLEAN CITY' : 'AUTO-DETECTION')}
+            </div>
+          </div>
+          <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+            {selGroup === 'Delhivery' 
+              ? 'Our live API check confirms ODA status for Delhivery instantly based on its specialized courier pin code.'
+              : 'Switch to a specific courier partner for automated serviceability alerts.'}
+          </p>
+          {delhiveryOda && (
+            <div className="p-3 bg-rose-50/50 border border-rose-200/50 rounded-2xl animate-pulse shadow-inner">
+              <p className="text-[11px] text-rose-700 font-bold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4" /> Warning: Delhivery ODA surcharge (₹{odaAmt}) applied.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
 
       <SellingPriceBanner
         effectiveSell={effectiveSell}
@@ -474,13 +514,13 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
         setSortMode={setSortMode}
       />
 
-      {/* Tabs */}
+      {/* Tabs (Premium Pill) */}
       {results.length>0&&(
-        <div className="flex gap-1 mb-4 bg-slate-100 p-1 rounded-xl w-fit">
+        <div className="flex gap-1 mb-6 bg-slate-200/50 backdrop-blur-md p-1.5 rounded-[1.5rem] w-fit border border-slate-200/50 shadow-inner">
           {[['calc','Calculator',Calculator],['sensitivity','Sensitivity',BarChart2],['quote','Quote',Printer]].map(([id,label,Icon])=>(
             <button key={id} onClick={()=>setTab(id)}
-              className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${tab===id?'bg-white shadow-sm text-slate-800':'text-slate-400 hover:text-slate-600'}`}>
-              <Icon className="w-3.5 h-3.5"/>{label}
+              className={`px-6 py-2.5 rounded-[1.2rem] text-[13px] font-bold flex items-center gap-2 transition-all duration-300 ${tab===id?'bg-white shadow-premium text-indigo-600':'text-slate-500 hover:text-slate-800'}`}>
+              <Icon className="w-4 h-4"/>{label}
             </button>
           ))}
         </div>
@@ -550,12 +590,21 @@ const [hiddenIds,  setHiddenIds] = useState(() => { try { return new Set(JSON.pa
         />
       )}
 
-      {/* Empty state */}
+      {/* Empty state (Luxury Glass) */}
       {!zone&&(
-        <div className="text-center py-24">
-          <Package className="w-10 h-10 mx-auto mb-3 text-slate-200"/>
-          <p className="text-sm font-medium text-slate-400">Enter a destination to compare 18 courier options</p>
-          <p className="text-[12px] mt-1 text-slate-300">e.g. <strong className="text-slate-400">400019</strong> · <strong className="text-slate-400">Mumbai</strong> · <strong className="text-slate-400">Bengaluru</strong></p>
+        <div className="glass-card !p-20 text-center animate-in">
+          <div className="w-20 h-20 rounded-[2.5rem] bg-indigo-50 flex items-center justify-center mx-auto mb-8 shadow-inner border border-indigo-100/50">
+            <Package className="w-10 h-10 text-indigo-500/40"/>
+          </div>
+          <h2 className="text-xl font-bold text-slate-800 mb-3 tracking-tight">Enterprise Rate Engine Ready</h2>
+          <p className="text-sm font-medium text-slate-400 max-w-sm mx-auto leading-relaxed">Enter a destination pincode or city name to compare contract-audited rates across 18 specialized logistics channels.</p>
+          <div className="mt-8 flex flex-wrap justify-center gap-3">
+             {['400019 (Mumbai)', 'Bangalore', 'Noida'].map(ex => (
+                <span key={ex} className="px-4 py-2 border border-slate-200 rounded-2xl text-[11px] font-bold text-slate-400 border-dashed hover:border-indigo-400 hover:text-indigo-500 cursor-pointer transition-all">
+                  Try "{ex}"
+                </span>
+             ))}
+          </div>
         </div>
       )}
     </div>
