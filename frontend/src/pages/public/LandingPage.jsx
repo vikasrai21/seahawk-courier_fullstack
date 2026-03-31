@@ -569,7 +569,7 @@ export default function LandingPage() {
                   <div key={lbl} style={{ background: '#fff', borderRadius: 'var(--r-lg)', padding: '14px 20px', boxShadow: 'var(--sh-sm)', border: '1.5px solid var(--border-l)', display: 'flex', alignItems: 'center', gap: 12 }}>
                     <div style={{ fontSize: '1.8rem' }}>{icon}</div>
                     <div>
-                      <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.6rem', fontWeight: 900, color: 'var(--ink)', lineHeight: 1 }}>{val}</div>
+                      <div style={{ fontFamily: 'inherit', fontSize: '1.6rem', fontWeight: 900, color: 'var(--ink)', lineHeight: 1 }}>{val}</div>
                       <div style={{ fontSize: '.7rem', fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: 1 }}>{lbl}</div>
                       <div style={{ fontSize: '.68rem', color: 'var(--ink-4)' }}>{sub}</div>
                     </div>
@@ -645,7 +645,7 @@ export default function LandingPage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 28 }} className="rev d1">
               {[{t:35000,c:'var(--navy)',bg:'var(--navy-faint)',brd:'var(--navy-pale)',l:'PIN Codes'},{t:800,c:'var(--orange)',bg:'var(--orange-bg)',brd:'var(--orange-brd)',l:'Indian Cities'},{t:180,c:'var(--navy)',bg:'var(--navy-faint)',brd:'var(--navy-pale)',l:'Countries'},{t:6,c:'var(--green)',bg:'var(--green-bg)',brd:'#a7f3d0',l:'Continents'}].map(({t,c,bg,brd,l}) => (
                 <div key={l} style={{ textAlign: 'center', padding: 16, background: bg, borderRadius: 'var(--r-lg)', border: `1.5px solid ${brd}` }}>
-                  <div style={{ fontFamily: 'var(--font-head)', fontSize: '1.7rem', fontWeight: 900, color: c }}><span className="count" data-t={t}>0</span>+</div>
+                  <div style={{ fontFamily: 'inherit', fontSize: '1.7rem', fontWeight: 900, color: c }}><span className="count" data-t={t}>0</span>+</div>
                   <div style={{ fontSize: '.68rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.5, color: c }}>{l}</div>
                 </div>
               ))}

@@ -111,7 +111,7 @@ export default function ServicesPage() {
                     <div style={{ position: 'absolute', top: 16, right: 16, background: s.badgeColor, color: '#fff', fontSize: '.65rem', fontWeight: 800, padding: '4px 10px', borderRadius: 40, textTransform: 'uppercase', letterSpacing: 1 }}>{s.badge}</div>
                   )}
                   <div style={{ fontSize: '2.2rem', marginBottom: 10 }}>{s.icon}</div>
-                  <h2 style={{ fontFamily: 'var(--font-head)', fontSize: '1.3rem', fontWeight: 800, color: 'var(--ink)', margin: '0 0 4px' }}>{s.title}</h2>
+                  <h2 style={{ fontFamily: 'inherit', fontSize: '1.3rem', fontWeight: 800, color: 'var(--ink)', margin: '0 0 4px' }}>{s.title}</h2>
                   <div style={{ fontSize: '.8rem', color: 'var(--orange)', fontWeight: 700 }}>{s.tagline}</div>
                 </div>
                 <div style={{ padding: '20px 24px', flex: 1 }}>

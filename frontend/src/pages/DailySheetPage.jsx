@@ -48,7 +48,7 @@ export default function DailySheetPage({ toast }) {
       <!DOCTYPE html><html><head>
       <title>Sea Hawk Daily Sheet — ${date}</title>
       <style>
-        body { font-family: Arial, sans-serif; font-size: 11px; margin: 20px; }
+        body { font-family: 'Inter', sans-serif; font-size: 11px; margin: 20px; }
         h1 { font-size: 16px; margin-bottom: 4px; }
         .meta { color: #666; font-size: 10px; margin-bottom: 16px; }
         table { width: 100%; border-collapse: collapse; }
@@ -98,7 +98,7 @@ export default function DailySheetPage({ toast }) {
       <!DOCTYPE html><html><head>
       <title>Sea Hawk Courier Manifest — ${date}</title>
       <style>
-        body { font-family: Arial, sans-serif; font-size: 11px; margin: 20px; }
+        body { font-family: 'Inter', sans-serif; font-size: 11px; margin: 20px; }
         h1 { font-size: 16px; margin-bottom: 4px; }
         h2 { font-size: 13px; margin: 16px 0 6px; color: #0b1f3a; border-bottom: 2px solid #e8580a; padding-bottom: 4px; }
         .meta { color: #666; font-size: 10px; margin-bottom: 16px; }

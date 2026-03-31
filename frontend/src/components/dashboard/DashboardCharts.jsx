@@ -48,17 +48,43 @@ function ChartShell({ title, icon: Icon, insight, tone = 'default', children }) 
 }
 
 export default function DashboardCharts({ overview, courierAnalytics, rangeLabel }) {
-  const statusData = Object.entries(overview?.byStatus || {})
+  const isDemo = Number(overview?.kpis?.totalShipments || 0) === 0;
+
+  let statusData = Object.entries(overview?.byStatus || {})
     .map(([name, value]) => ({ name, value: Number(value || 0) }))
     .filter((item) => item.value > 0);
-  const trendData = (overview?.dailyTrend || []).map(d => ({ ...d, label: d.date }));
-  const courierData = courierAnalytics?.couriers?.slice(0, 5).map((item) => ({
+  if (isDemo && statusData.length === 0) {
+    statusData = [
+      { name: 'DELIVERED', value: 342 },
+      { name: 'IN TRANSIT', value: 185 },
+      { name: 'NDR', value: 43 },
+      { name: 'RTO', value: 12 },
+    ];
+  }
+
+  let trendData = (overview?.dailyTrend || []).map(d => ({ ...d, label: d.date }));
+  if (isDemo && trendData.length === 0) {
+    trendData = Array.from({ length: 14 }).map((_, i) => ({
+      label: `Day ${i + 1}`,
+      count: Math.floor(Math.random() * 80) + 40 + i * 5,
+    }));
+  }
+
+  let courierData = courierAnalytics?.couriers?.slice(0, 5).map((item) => ({
     name: item.courier || 'Unknown',
     deliveryRate: item.deliveryRate || 0,
     count: item.total || 0,
   })) || [];
+  if (isDemo && courierData.length === 0) {
+    courierData = [
+      { name: 'Delhivery Surface', deliveryRate: 92, count: 210 },
+      { name: 'Bluedart Air', deliveryRate: 98, count: 185 },
+      { name: 'Xpressbees', deliveryRate: 88, count: 140 },
+      { name: 'Ecom Express', deliveryRate: 91, count: 95 },
+    ];
+  }
 
-  const totalShipments = Number(overview?.kpis?.totalShipments || 0);
+  const totalShipments = isDemo ? statusData.reduce((a, c) => a + c.value, 0) : Number(overview?.kpis?.totalShipments || 0);
   const maxTrend = trendData.reduce((best, item) => Math.max(best, item.count || 0), 0);
 
   return (

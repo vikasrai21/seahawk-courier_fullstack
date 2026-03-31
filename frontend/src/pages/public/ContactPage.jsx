@@ -41,7 +41,7 @@ export default function ContactPage() {
 
             {/* ── Contact Details ── */}
             <div>
-              <h2 style={{ fontFamily: 'var(--font-head)', fontSize: '1.3rem', fontWeight: 800, color: 'var(--ink)', marginBottom: 24 }}>Reach Us Directly</h2>
+              <h2 style={{ fontFamily: 'inherit', fontSize: '1.3rem', fontWeight: 800, color: 'var(--ink)', marginBottom: 24 }}>Reach Us Directly</h2>
               {[
                 { icon: '📞', title: 'Phone (Primary)', lines: [<a key="1" href="tel:+919911565523">+91 99115 65523</a>, <a key="2" href="tel:+919911555534">+91 99115 55534</a>] },
                 { icon: '📞', title: 'Phone (Secondary)', lines: [<a key="3" href="tel:+918368201122">+91 83682 01122</a>] },
@@ -63,7 +63,7 @@ export default function ContactPage() {
 
             {/* ── Contact Form ── */}
             <div style={{ background: '#fff', borderRadius: 'var(--r-xl)', border: '1.5px solid var(--border-l)', boxShadow: 'var(--sh-md)', padding: '32px' }}>
-              <h2 style={{ fontFamily: 'var(--font-head)', fontSize: '1.3rem', fontWeight: 800, color: 'var(--ink)', marginBottom: 8 }}>Send Us a Message</h2>
+              <h2 style={{ fontFamily: 'inherit', fontSize: '1.3rem', fontWeight: 800, color: 'var(--ink)', marginBottom: 8 }}>Send Us a Message</h2>
               <p style={{ fontSize: '.8rem', color: 'var(--ink-3)', marginBottom: 24 }}>We'll get back to you via WhatsApp within 1 business hour.</p>
               <form onSubmit={sendContact} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>

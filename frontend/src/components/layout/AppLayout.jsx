@@ -154,7 +154,7 @@ function SectionLabel({ label }) {
       fontSize: 10, fontWeight: 800,
       textTransform: 'uppercase', letterSpacing: '0.15em',
       color: dark ? '#94a3b8' : '#475569',
-      fontFamily: 'Outfit, sans-serif',
+      fontFamily: 'Inter, sans-serif',
       display: 'flex', alignItems: 'center', gap: 8
     }}>
       {label}
@@ -262,7 +262,7 @@ function SidebarContent({ onClose }) {
             <div style={{ fontSize: 12, fontWeight: 700, color: dark ? '#f8fafc' : '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {user?.name}
             </div>
-            <div style={{ fontSize: 10, color: dark ? '#94a3b8' : '#64748b', fontFamily: 'Outfit, sans-serif', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{user?.role}</div>
+            <div style={{ fontSize: 10, color: dark ? '#94a3b8' : '#64748b', fontFamily: 'Inter, sans-serif', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{user?.role}</div>
           </div>
           <ChevronRight size={12} color={C.textDim} />
         </NavLink>
@@ -273,7 +273,7 @@ function SidebarContent({ onClose }) {
             width: '100%', display: 'flex', alignItems: 'center', gap: 8,
             padding: '7px 10px', borderRadius: 8, marginBottom: 2,
             background: 'none', border: `1px solid ${dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)'}`, cursor: 'pointer',
-            fontSize: 12, color: dark ? '#94a3b8' : '#475569', fontFamily: 'Outfit, sans-serif',
+            fontSize: 12, color: dark ? '#94a3b8' : '#475569', fontFamily: 'Inter, sans-serif',
             transition: 'all 0.15s',
           }}
           onMouseEnter={e => { e.currentTarget.style.background = dark ? 'rgba(255,255,255,0.05)' : 'rgba(15,23,42,0.04)'; e.currentTarget.style.color = dark ? '#fff' : '#0f172a'; }}
@@ -347,7 +347,7 @@ export function AppLayout({ children }) {
       display: 'flex', height: '100vh',
       background: 'var(--shk-bg, #f8fafc)',
       overflow: 'hidden',
-      fontFamily: "'Inter', 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif",
+      fontFamily: "'Inter', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
     }}>
       <ShortcutsHelp />
 
@@ -424,7 +424,7 @@ export function AppLayout({ children }) {
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <img src="/images/logo.png" style={{ height: 32, width: 'auto', objectFit: 'contain', background: '#fff', borderRadius: 6, padding: 2 }} alt="Logo" className="shk-mobile-logo" />
-              <span style={{ fontWeight: 800, color: C.text, fontSize: 16, fontFamily: 'Syne, sans-serif' }} className="shk-mobile-logo">Seahawk</span>
+              <span style={{ fontWeight: 800, color: C.text, fontSize: 16, fontFamily: 'inherit'}} className="shk-mobile-logo">Seahawk</span>
               <div className="shk-desktop-search" style={{ position: 'relative', marginLeft: 20 }}>
                 <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: C.textDim }} />
                 <input 
@@ -461,7 +461,7 @@ export function AppLayout({ children }) {
                 <CreditCard size={14} color="#10b981" />
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   <span style={{ fontSize: 9, fontWeight: 700, color: '#10b981', textTransform: 'uppercase', letterSpacing: '0.05em', lineHeight: 1 }}>Wallet</span>
-                  <span style={{ fontSize: 13, fontWeight: 800, color: C.text, fontFamily: 'Syne, sans-serif' }}>₹{walletBalance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                  <span style={{ fontSize: 13, fontWeight: 800, color: C.text, fontFamily: 'inherit'}}>₹{walletBalance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                 </div>
               </div>
             )}

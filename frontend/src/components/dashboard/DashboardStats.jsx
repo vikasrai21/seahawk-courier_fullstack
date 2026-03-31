@@ -112,14 +112,29 @@ function StatCard({ title, value, previous, format, icon: Icon, tone }) {
 }
 
 export default function DashboardStats({ overview, previousOverview, dateLabel }) {
-  const kpis = overview?.kpis || {};
-  const prev = previousOverview?.kpis || {};
-  const failedCurrent = Number(overview?.byStatus?.Failed || 0);
-  const failedPrevious = Number(previousOverview?.byStatus?.Failed || 0);
-  const todayStats = overview?.todayStats || overview?.byStatus || {};
+  const isDemo = Number(overview?.kpis?.totalShipments || 0) === 0;
+
+  let kpis = overview?.kpis || {};
+  let prev = previousOverview?.kpis || {};
+  let failedCurrent = Number(overview?.byStatus?.Failed || 0);
+  let failedPrevious = Number(previousOverview?.byStatus?.Failed || 0);
+  let todayStats = overview?.todayStats || overview?.byStatus || {};
+
+  if (isDemo) {
+    kpis = { totalShipments: 1420, delivered: 1250, totalRevenue: 854000 };
+    prev = { totalShipments: 1210, delivered: 1050, totalRevenue: 712000 };
+    failedCurrent = 42;
+    failedPrevious = 38;
+    todayStats = { Booked: 145, OutForDelivery: 82, Delivered: 310, Failed: 8, RTO: 3 };
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {isDemo && (
+        <div className="absolute -top-10 left-1/2 -translate-x-1/2 z-10 flex items-center justify-center">
+            <div className="bg-white/90 backdrop-blur-md px-4 py-1.5 rounded-full border border-orange-400 text-orange-600 text-xs font-black tracking-widest uppercase shadow-lg shadow-orange-500/10">Showing Sample Demo Data</div>
+        </div>
+      )}
       <TodayPulse stats={todayStats} />
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
         <StatCard title="Total Shipments" value={kpis.totalShipments || 0} previous={prev.totalShipments || 0} icon={Package} tone="orange" />

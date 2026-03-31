@@ -59,7 +59,7 @@ export default function QuoteHistoryPage({ toast }) {
     const win = window.open('', '_blank');
     win.document.write(`
 <html><head><title>Quote ${q.quoteNo}</title>
-<style>body{font-family:Arial,sans-serif;padding:40px;max-width:600px;margin:auto;color:#1e293b}
+<style>body{font-family: 'Inter', sans-serif;padding:40px;max-width:600px;margin:auto;color:#1e293b}
 h1{font-size:20px;font-weight:900}table{width:100%;border-collapse:collapse;margin:20px 0}
 td,th{padding:8px 12px;border:1px solid #e2e8f0;text-align:left}th{background:#f8fafc;font-weight:600}
 .total{font-size:1.5em;font-weight:900;color:#166534}.meta{color:#64748b;font-size:12px;margin-bottom:4px}
