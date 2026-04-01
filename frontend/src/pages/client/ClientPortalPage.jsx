@@ -775,9 +775,9 @@ export default function ClientPortalPage({ toast }) {
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
                 <thead>
-                  <tr style={{ background: '#f8fbff' }}>
+                  <tr style={{ background: 'linear-gradient(180deg,#f8fbff 0%,#fdfefe 100%)' }}>
                     {['AWB', 'Date', 'Consignee', 'Destination', 'Courier', 'Weight', 'Amount', 'Status'].map((h) => (
-                      <th key={h} style={{ textAlign: 'left', padding: '11px 14px', borderBottom: '1px solid #e5edf8', fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.06em' }}>
+                      <th key={h} style={{ textAlign: 'left', padding: '12px 14px', borderBottom: '1px solid #e5edf8', fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.12em', fontWeight: 800 }}>
                         {h}
                       </th>
                     ))}
@@ -785,15 +785,15 @@ export default function ClientPortalPage({ toast }) {
                 </thead>
                 <tbody>
                   {filteredShipments.map((s, i) => (
-                    <tr key={s.id} style={{ background: i % 2 ? '#fcfdff' : '#fff', borderBottom: '1px solid #eef3fb' }}>
-                      <td style={{ padding: '10px 14px', fontWeight: 800, color: '#0f172a', fontFamily: 'monospace' }}>{s.awb}</td>
-                      <td style={{ padding: '10px 14px', color: '#475569' }}>{s.date}</td>
-                      <td style={{ padding: '10px 14px', color: '#334155' }}>{s.consignee || '—'}</td>
-                      <td style={{ padding: '10px 14px', color: '#475569' }}>{s.destination || '—'}</td>
-                      <td style={{ padding: '10px 14px', color: '#475569' }}>{s.courier || '—'}</td>
-                      <td style={{ padding: '10px 14px', color: '#475569' }}>{s.weight ? `${s.weight} kg` : '—'}</td>
-                      <td style={{ padding: '10px 14px', color: '#334155', fontWeight: 700 }}>{fmt(s.amount || 0)}</td>
-                      <td style={{ padding: '10px 14px' }}><StatusBadge status={s.status} /></td>
+                    <tr key={s.id} style={{ background: i % 2 ? '#fcfdff' : '#fff', borderBottom: '1px solid #eef3fb', transition: 'background 180ms ease' }}>
+                      <td style={{ padding: '12px 14px', fontWeight: 800, color: '#0f172a', fontFamily: 'monospace' }}>{s.awb}</td>
+                      <td style={{ padding: '12px 14px', color: '#475569' }}>{s.date}</td>
+                      <td style={{ padding: '12px 14px', color: '#334155' }}>{s.consignee || '—'}</td>
+                      <td style={{ padding: '12px 14px', color: '#475569' }}>{s.destination || '—'}</td>
+                      <td style={{ padding: '12px 14px', color: '#475569' }}>{s.courier || '—'}</td>
+                      <td style={{ padding: '12px 14px', color: '#475569' }}>{s.weight ? `${s.weight} kg` : '—'}</td>
+                      <td style={{ padding: '12px 14px', color: '#334155', fontWeight: 700 }}>{fmt(s.amount || 0)}</td>
+                      <td style={{ padding: '12px 14px' }}><StatusBadge status={s.status} /></td>
                     </tr>
                   ))}
                 </tbody>

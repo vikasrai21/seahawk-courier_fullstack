@@ -2,6 +2,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Upload, Shield, AlertTriangle, CheckCircle, X, Loader, ChevronDown, Eye, TrendingDown, IndianRupee, Package } from 'lucide-react';
 import api from '../services/api';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const fmt  = n => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtI = n => `₹${Math.round(n || 0).toLocaleString('en-IN')}`;
@@ -113,22 +114,23 @@ export default function ReconciliationPage({ toast }) {
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
-      <div className="flex items-start justify-between mb-5">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Invoice Reconciliation</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Upload partner invoices · auto-match AWBs · flag overcharges</p>
-        </div>
+      <PageHeader
+        title="Invoice Reconciliation"
+        subtitle="Upload partner invoices, auto-match AWBs, and surface overcharges with a cleaner dispute workflow."
+        icon={Shield}
+        actions={
         <div className="flex gap-2">
           <button onClick={downloadTemplate}
-            className="border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-xl text-xs font-bold hover:border-gray-400">
+            className="btn-secondary btn-sm">
             CSV Template
           </button>
           <button onClick={() => setShowUpload(!showUpload)}
-            className="bg-slate-800 text-white px-3 py-2 rounded-xl text-xs font-bold hover:bg-slate-700 flex items-center gap-1.5">
+            className="btn-primary btn-sm">
             <Upload className="w-3.5 h-3.5" />Upload Invoice
           </button>
         </div>
-      </div>
+        }
+      />
 
       {/* Stats */}
       {stats && (
@@ -139,7 +141,7 @@ export default function ReconciliationPage({ toast }) {
             ['Overcharges Found', fmtI(stats.totalOvercharges), stats.totalOvercharges > 0 ? 'text-red-600 font-extrabold' : 'text-green-700', TrendingDown],
             ['Disputed Items', stats.overchargeCount, stats.overchargeCount > 0 ? 'text-red-600' : 'text-green-700', AlertTriangle],
           ].map(([label, val, cls, Icon]) => (
-            <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+            <div key={label} className="card-compact">
               <Icon className="w-5 h-5 text-gray-400 mb-2" />
               <p className={`text-2xl font-bold ${cls}`}>{val}</p>
               <p className="text-[10px] text-gray-400 mt-0.5">{label}</p>
@@ -159,7 +161,7 @@ export default function ReconciliationPage({ toast }) {
 
       {/* Upload panel */}
       {showUpload && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4">
+        <div className="card mb-4">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-bold text-sm text-gray-700">Upload Partner Invoice</h2>
             <button onClick={() => setShowUpload(false)} className="text-gray-300 hover:text-gray-600"><X className="w-4 h-4" /></button>
@@ -167,34 +169,34 @@ export default function ReconciliationPage({ toast }) {
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1">Courier</label>
-              <select className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+              <select className="input"
                 value={form.courier} onChange={e => setForm(f => ({ ...f, courier: e.target.value }))}>
                 {COURIERS.map(c => <option key={c}>{c}</option>)}
               </select>
             </div>
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1">Invoice No</label>
-              <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+              <input className="input"
                 placeholder="e.g. TK-2024-0123" value={form.invoiceNo} onChange={e => setForm(f => ({ ...f, invoiceNo: e.target.value }))} />
             </div>
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1">Invoice Date</label>
-              <input type="date" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+              <input type="date" className="input"
                 value={form.invoiceDate} onChange={e => setForm(f => ({ ...f, invoiceDate: e.target.value }))} />
             </div>
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1">Period From</label>
-              <input type="date" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+              <input type="date" className="input"
                 value={form.fromDate} onChange={e => setForm(f => ({ ...f, fromDate: e.target.value }))} />
             </div>
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1">Period To</label>
-              <input type="date" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+              <input type="date" className="input"
                 value={form.toDate} onChange={e => setForm(f => ({ ...f, toDate: e.target.value }))} />
             </div>
             <div>
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1">Notes</label>
-              <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+              <input className="input"
                 placeholder="Optional notes…" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
             </div>
           </div>
@@ -208,7 +210,7 @@ export default function ReconciliationPage({ toast }) {
               onChange={e => { const f = e.target.files[0]; if (f) { const r = new FileReader(); r.onload = ev => setCsvText(ev.target.result); r.readAsText(f); } }} />
             <span className="text-xs text-gray-400 self-center">or paste below</span>
           </div>
-          <textarea className="w-full border border-gray-200 rounded-xl p-3 text-xs font-mono h-28 resize-none focus:outline-none focus:ring-2 focus:ring-slate-300"
+          <textarea className="input h-28 resize-none text-xs font-mono"
             placeholder={`Paste CSV:\n${CSV_TEMPLATE}`}
             value={csvText} onChange={e => setCsvText(e.target.value)} />
           {csvText && (
@@ -222,7 +224,7 @@ export default function ReconciliationPage({ toast }) {
       )}
 
       {/* Invoice list */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
+      <div className="table-shell mb-4">
         <div className="px-4 py-3 border-b border-gray-100">
           <h2 className="font-bold text-sm text-gray-700">Partner Invoices</h2>
         </div>
@@ -233,7 +235,7 @@ export default function ReconciliationPage({ toast }) {
         ) : (
           <div className="divide-y divide-gray-50">
             {invoices.map(inv => (
-              <div key={inv.id} className="px-4 py-3 flex flex-wrap items-center gap-3 hover:bg-gray-50">
+              <div key={inv.id} className="px-4 py-3 flex flex-wrap items-center gap-3 hover:bg-amber-50/30 transition-colors">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-sm text-gray-800">{inv.courier}</span>
@@ -274,7 +276,7 @@ export default function ReconciliationPage({ toast }) {
         <div className="py-8 text-center"><Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" /></div>
       )}
       {viewInv && !viewLoading && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="table-shell overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
             <div>
               <h2 className="font-bold text-sm text-gray-700">{viewInv.courier} — {viewInv.invoiceNo}</h2>
@@ -314,7 +316,7 @@ export default function ReconciliationPage({ toast }) {
           {/* Item table */}
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead className="bg-gray-50">
+              <thead className="table-head">
                 <tr>
                   {['AWB','Date','Destination','Weight','Billed (₹)','Calculated (₹)','Discrepancy (₹)','Status'].map(h => (
                     <th key={h} className="px-3 py-2 text-left font-semibold text-gray-500 whitespace-nowrap">{h}</th>

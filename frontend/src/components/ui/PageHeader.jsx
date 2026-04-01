@@ -7,7 +7,7 @@ export function PageHeader({ title, subtitle, breadcrumbs = [], actions, icon: I
   const crumbColor = dark ? '#64748b' : '#94a3b8';
 
   return (
-    <div className="shk-page-header">
+    <div className="shk-page-header animate-in">
       {/* Breadcrumbs */}
       {breadcrumbs.length > 0 && (
         <div className="shk-page-header__crumbs">
@@ -36,7 +36,7 @@ export function PageHeader({ title, subtitle, breadcrumbs = [], actions, icon: I
         </div>
 
         {actions && (
-          <div className="shk-page-header__actions">{actions}</div>
+          <div className="shk-page-header__actions animate-fade">{actions}</div>
         )}
       </div>
 

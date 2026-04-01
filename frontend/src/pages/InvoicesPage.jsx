@@ -8,10 +8,10 @@ import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
 
 const STATUS_COLORS = {
-  DRAFT:     'bg-gray-100 text-gray-700',
-  SENT:      'bg-blue-100 text-blue-700',
-  PAID:      'bg-green-100 text-green-700',
-  CANCELLED: 'bg-red-100 text-red-700',
+  DRAFT:     'badge-gray',
+  SENT:      'badge-blue',
+  PAID:      'badge-green',
+  CANCELLED: 'badge-rose',
 };
 const fmt = n => `₹${Number(n||0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 const today = () => new Date().toISOString().split('T')[0];
@@ -196,7 +196,7 @@ export default function InvoicesPage({ toast }) {
       {loading ? <div className="p-6"><SkeletonTable rows={8} cols={6} /></div> : !invoices?.length ? (
         <EmptyState icon="🧾" title="No invoices yet" description="Generate your first invoice for a client" />
       ) : (
-        <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+        <div className="table-shell">
           <div className="border-b border-slate-200 bg-[linear-gradient(135deg,#fffaf5_0%,#ffffff_60%,#f8fbff_100%)] px-5 py-3.5">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="min-w-0">
@@ -217,11 +217,11 @@ export default function InvoicesPage({ toast }) {
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse">
               <thead>
-                <tr className="bg-slate-50/90">
+                <tr className="table-head">
                   {['Invoice', 'Client', 'Billing Period', 'Shipments', 'Total', 'Status', 'Actions'].map((label) => (
                     <th
                       key={label}
-                      className={`px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 ${
+                      className={`px-4 py-3 text-left ${
                         label === 'Shipments' || label === 'Total' ? 'text-right' : ''
                       }`}
                     >
@@ -232,7 +232,7 @@ export default function InvoicesPage({ toast }) {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {(invoices || []).map((inv) => (
-                  <tr key={inv.id} className="transition-colors hover:bg-slate-50/60">
+                  <tr key={inv.id} className="table-row">
                     <td className="px-4 py-3.5 align-top">
                       <div className="font-mono text-base font-bold tracking-tight text-slate-900">{inv.invoiceNo}</div>
                       <div className="mt-1 text-[11px] text-slate-400">Billing cycle document</div>
@@ -258,7 +258,7 @@ export default function InvoicesPage({ toast }) {
                         <select
                           value={inv.status}
                           onChange={e => updateStatus(inv.id, e.target.value)}
-                          className={`badge cursor-pointer border-0 px-2 py-1 pr-5 text-[10px] ${STATUS_COLORS[inv.status]}`}
+                          className={`cursor-pointer border-0 px-2 py-1 pr-5 text-[10px] font-bold uppercase tracking-[0.16em] ${inv.status === 'DRAFT' ? 'text-slate-600' : inv.status === 'SENT' ? 'text-sky-700' : inv.status === 'PAID' ? 'text-emerald-700' : 'text-rose-700'}`}
                           style={{ appearance: 'none', background: 'transparent', fontWeight: 700 }}
                         >
                           {['DRAFT','SENT','PAID','CANCELLED'].map(s => <option key={s} value={s}>{s}</option>)}
@@ -267,18 +267,18 @@ export default function InvoicesPage({ toast }) {
                     </td>
                     <td className="px-4 py-3.5 align-top">
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <button onClick={() => loadView(inv.id)} title="View" className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-[11px] font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
-                          <Eye className="h-3.5 w-3.5 text-sky-600" />
-                          View
-                        </button>
-                        <button onClick={() => downloadPdf(inv)} title="Download PDF" className="inline-flex items-center gap-1.5 rounded-xl border border-orange-200 bg-orange-50 px-2.5 py-2 text-[11px] font-semibold text-orange-700 transition hover:bg-orange-100">
-                          <FileText className="h-3.5 w-3.5" />
-                          PDF
-                        </button>
-                        <button onClick={() => sendWhatsApp(inv)} title="Send WhatsApp" className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100">
-                          <MessageCircle className="h-3.5 w-3.5" />
-                          WhatsApp
-                        </button>
+                          <button onClick={() => loadView(inv.id)} title="View" className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-[11px] font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
+                            <Eye className="h-3.5 w-3.5 text-sky-600" />
+                            View
+                          </button>
+                          <button onClick={() => downloadPdf(inv)} title="Download PDF" className="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-2 text-[11px] font-semibold text-orange-700 transition hover:bg-orange-100">
+                            <FileText className="h-3.5 w-3.5" />
+                            PDF
+                          </button>
+                          <button onClick={() => sendWhatsApp(inv)} title="Send WhatsApp" className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100">
+                            <MessageCircle className="h-3.5 w-3.5" />
+                            WhatsApp
+                          </button>
                       </div>
                     </td>
                   </tr>
@@ -381,7 +381,7 @@ export default function InvoicesPage({ toast }) {
           const tax = getTaxBreakdown(viewing, viewing.client);
           return (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl my-8">
+          <div className="bg-white rounded-[30px] shadow-[0_28px_70px_rgba(15,23,42,0.18)] w-full max-w-3xl my-8 border border-slate-200/70">
             <div className="p-6 border-b border-gray-100">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
@@ -398,7 +398,7 @@ export default function InvoicesPage({ toast }) {
                 <div className="text-right">
                   <p className="text-2xl font-bold text-navy-600 font-mono">{viewing.invoiceNo}</p>
                   <p className="text-xs text-gray-500 mt-1">Date: {new Date().toLocaleDateString('en-IN')}</p>
-                  <span className={`badge text-xs mt-1 ${STATUS_COLORS[viewing.status]}`}>{viewing.status}</span>
+                  <span className={`badge text-xs mt-1 ${STATUS_COLORS[viewing.status] || 'badge-gray'}`}>{viewing.status}</span>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-gray-100">

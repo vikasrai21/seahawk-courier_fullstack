@@ -6,6 +6,7 @@ import { StatusBadge } from '../components/ui/StatusBadge';
 import { PageLoader, EmptyState } from '../components/ui/Loading';
 import { useFetch } from '../hooks/useFetch';
 import { sendWhatsAppReport } from '../utils/whatsapp';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const fmt    = n => `₹${Number(n||0).toLocaleString('en-IN')}`;
 const fmtNum = n => Number(n||0).toFixed(1);
@@ -146,8 +147,12 @@ export default function DailySheetPage({ toast }) {
   return (
     <div className="p-6">
       {/* Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-5 print:hidden">
-        <h1 className="text-2xl font-bold text-gray-900">Daily Dispatch Sheet</h1>
+      <div className="print:hidden">
+      <PageHeader
+        title="Daily Dispatch Sheet"
+        subtitle="Review same-day dispatches, courier manifests, and WhatsApp-ready summaries from one cleaner operations screen."
+        icon={Truck}
+        actions={
         <div className="flex flex-wrap items-center gap-2">
           <input type="date" className="input w-auto" value={date} onChange={e => setDate(e.target.value)} />
 
@@ -200,6 +205,8 @@ export default function DailySheetPage({ toast }) {
             )}
           </div>
         </div>
+        }
+      />
       </div>
 
       {loading ? <PageLoader /> : (
@@ -207,7 +214,7 @@ export default function DailySheetPage({ toast }) {
           {/* Summary strip */}
           {filtered.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-              <div className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm">
+              <div className="card-compact">
                 <div className="text-xl font-black text-gray-900">{filtered.length}</div>
                 <div className="text-xs text-gray-500">Total Shipments</div>
               </div>
@@ -235,9 +242,9 @@ export default function DailySheetPage({ toast }) {
             filtered.length === 0 ? (
               <EmptyState icon="📭" title="No shipments for this date" description="Try a different date or check if data was entered" />
             ) : (
-              <div className="table-wrap">
+              <div className="table-shell">
                 <table className="tbl text-xs">
-                  <thead>
+                  <thead className="table-head">
                     <tr>
                       <th>#</th><th>AWB</th><th>Client</th><th>Consignee</th>
                       <th>Destination</th><th>Dept</th><th>Courier</th>
@@ -272,7 +279,7 @@ export default function DailySheetPage({ toast }) {
                 <EmptyState icon="🚚" title="No shipments for this date" description="No manifest to display" />
               ) : (
                 manifest.couriers.map(c => (
-                  <div key={c.courier} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+                  <div key={c.courier} className="table-shell overflow-hidden">
                     <div className="px-4 py-3 flex items-center justify-between" style={{ background: '#0b1f3a' }}>
                       <div className="flex items-center gap-3">
                         <Truck className="w-4 h-4 text-orange-400" />

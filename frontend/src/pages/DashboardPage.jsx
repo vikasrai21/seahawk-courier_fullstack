@@ -66,15 +66,15 @@ function secondsAgo(date) {
 
 function Filters({ range, onRangeChange, customFrom, customTo, onCustomFromChange, onCustomToChange }) {
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="card-compact animate-in">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Date Range</div>
+        <div className="section-eyebrow">Date Range</div>
         <div className="flex flex-wrap gap-2">
           {RANGE_OPTIONS.map((option) => (
             <button
               key={option.key}
               onClick={() => onRangeChange(option.key)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${range === option.key ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition pressable ${range === option.key ? 'bg-slate-900 text-white shadow-[0_10px_20px_rgba(15,23,42,0.14)]' : 'bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-700'}`}
             >
               {option.label}
             </button>
@@ -82,8 +82,8 @@ function Filters({ range, onRangeChange, customFrom, customTo, onCustomFromChang
         </div>
         {range === 'custom' && (
           <div className="ml-auto flex flex-wrap items-center gap-2">
-            <input type="date" value={customFrom} onChange={(e) => onCustomFromChange(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" />
-            <input type="date" value={customTo} onChange={(e) => onCustomToChange(e.target.value)} className="rounded-xl border border-slate-200 px-3 py-2 text-sm" />
+            <input type="date" value={customFrom} onChange={(e) => onCustomFromChange(e.target.value)} className="input !w-auto !px-3 !py-2 text-sm" />
+            <input type="date" value={customTo} onChange={(e) => onCustomToChange(e.target.value)} className="input !w-auto !px-3 !py-2 text-sm" />
           </div>
         )}
       </div>
@@ -178,7 +178,7 @@ export default function DashboardPage() {
           to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
-      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_#fff7ed,_transparent_35%),linear-gradient(180deg,_#f8fafc,_#eef2ff)] dark:bg-[radial-gradient(circle_at_top_left,_rgba(249,115,22,0.1),_transparent_35%),linear-gradient(180deg,_#0f172a,_#0f172a)] p-6 transition-colors duration-300">
+      <div className="app-shell min-h-screen p-6 transition-colors duration-300">
         <div className="mx-auto max-w-7xl space-y-5">
           <PageHeader
             title="Shipment Performance"
@@ -186,12 +186,12 @@ export default function DashboardPage() {
             icon={LayoutDashboard}
             actions={
               <div className="flex items-center gap-3">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                <span className="badge badge-gray !px-3 !py-1.5 !rounded-full">
                   Last updated {secondsAgo(lastUpdated)}
                 </span>
                 <button 
                   onClick={load} 
-                  className="inline-flex items-center gap-2 rounded-xl bg-slate-900 dark:bg-orange-500 px-4 py-2 text-sm font-bold text-white transition-transform active:scale-95 shadow-lg shadow-orange-500/10"
+                  className="btn-primary pressable"
                 >
                   <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
                 </button>
@@ -231,16 +231,16 @@ export default function DashboardPage() {
             </div>
           )}
 
-          <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">Quick actions</p>
+          <div className="card interactive-lift">
+            <p className="section-eyebrow">Quick actions</p>
             <div className="mt-4 flex flex-wrap gap-3">
-              <Link to="/app/entry" className="rounded-full bg-orange-500 hover:bg-orange-600 px-4 py-2 text-sm font-semibold text-white transition-colors">New Entry</Link>
-              <Link to="/app/import" className="rounded-full bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Import Shipments</Link>
-              <Link to="/app/scan" className="rounded-full bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Scan AWB</Link>
-              <Link to="/app/invoices" className="rounded-full bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Invoices</Link>
-              <Link to="/app/pickups" className="rounded-full bg-slate-100 dark:bg-slate-800 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">Pickups</Link>
+              <Link to="/app/entry" className="btn-indigo pressable">New Entry</Link>
+              <Link to="/app/import" className="btn-secondary pressable">Import Shipments</Link>
+              <Link to="/app/scan" className="btn-secondary pressable">Scan AWB</Link>
+              <Link to="/app/invoices" className="btn-secondary pressable">Invoices</Link>
+              <Link to="/app/pickups" className="btn-secondary pressable">Pickups</Link>
             </div>
-            <p className="mt-4 text-xs text-slate-400">Signed in as {user?.name || 'Team member'}.</p>
+            <p className="mt-4 text-xs text-slate-500">Signed in as {user?.name || 'Team member'}.</p>
           </div>
         </div>
       </div>

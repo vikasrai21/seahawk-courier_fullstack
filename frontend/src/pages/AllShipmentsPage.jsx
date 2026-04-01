@@ -1,6 +1,6 @@
 // AllShipmentsPage.jsx — Enhanced with bulk status update + quick inline status + barcode scanner
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, Filter, Edit2, Trash2, X, CheckSquare, Square, ChevronDown, RefreshCw, Clock, Scan, Zap, Box } from 'lucide-react';
+import { Search, Filter, Edit2, Trash2, X, CheckSquare, Square, ChevronDown, RefreshCw, Clock, Scan, Zap, Box, FileText } from 'lucide-react';
 import api from '../services/api';
 import { StatusBadge, STATUSES, formatStatusLabel, normalizeStatus } from '../components/ui/StatusBadge';
 import { PageLoader, EmptyState, SkeletonTable } from '../components/ui/Loading';
@@ -40,10 +40,10 @@ function BarcodeScanner({ onScan, scanning, lastScanned }) {
   };
 
   return (
-    <div className={`mb-4 rounded-xl border-2 transition-all duration-300 ${
-      pulse ? 'border-green-400 bg-green-50' : 'border-blue-200 bg-blue-50'
+    <div className={`mb-4 rounded-[24px] border transition-all duration-300 shadow-sm ${
+      pulse ? 'border-emerald-300 bg-emerald-50/80' : 'border-sky-200 bg-gradient-to-r from-sky-50 to-white'
     }`}>
-      <div className="flex items-center gap-3 px-4 py-3">
+      <div className="flex items-center gap-3 px-4 py-3.5">
         <div className={`flex-shrink-0 ${scanning ? 'text-green-500' : 'text-blue-400'}`}>
           {scanning
             ? <RefreshCw className="w-5 h-5 animate-spin" />
@@ -64,7 +64,7 @@ function BarcodeScanner({ onScan, scanning, lastScanned }) {
         {value.trim() && (
           <button
             onClick={() => { onScan(value.trim()); setValue(''); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors"
+            className="btn-primary btn-sm !rounded-full"
           >
             <Zap className="w-3 h-3" /> Search
           </button>
@@ -450,10 +450,10 @@ export default function AllShipmentsPage({ toast }) {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowScanner(s => !s)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold border transition-all ${
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold border transition-all ${
                 showScanner
-                  ? 'bg-blue-600 text-white border-blue-600'
-                  : 'bg-white dark:bg-slate-800 text-blue-600 border-blue-200 dark:border-slate-700 hover:bg-blue-50'
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-[0_10px_22px_rgba(15,23,42,0.16)]'
+                  : 'bg-white text-sky-700 border-sky-200 hover:bg-sky-50'
               }`}
             >
               <Scan className="w-3.5 h-3.5" />
@@ -461,12 +461,12 @@ export default function AllShipmentsPage({ toast }) {
             </button>
 
             {selected.size > 0 && (
-              <div className="flex items-center gap-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl px-3 py-1.5 animate-in fade-in zoom-in duration-200">
-                <span className="text-xs font-bold text-blue-700 dark:text-blue-400">{selected.size} selected</span>
-                <button onClick={() => setBulkModal(true)} className="flex items-center gap-1.5 bg-blue-600 text-white px-3 py-1.5 rounded-lg text-[11px] font-bold hover:bg-blue-700 shadow-md shadow-blue-500/20 transition-transform active:scale-95">
+              <div className="flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 animate-in">
+                <span className="text-xs font-bold text-sky-700">{selected.size} selected</span>
+                <button onClick={() => setBulkModal(true)} className="btn-primary btn-sm !rounded-full">
                   <RefreshCw className="w-3 h-3" /> Bulk Status
                 </button>
-                <button onClick={() => setSelected(new Set())} className="p-1 text-blue-400 hover:text-blue-600">
+                <button onClick={() => setSelected(new Set())} className="p-1 text-sky-400 hover:text-sky-600">
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -483,29 +483,29 @@ export default function AllShipmentsPage({ toast }) {
         />
       )}
 
-      <div className="card mb-4 bg-white dark:bg-slate-900/50 p-4 border border-slate-200 dark:border-slate-800 rounded-3xl">
+      <div className="card-compact mb-4">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <div className="relative col-span-2 sm:col-span-2">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input className="input pl-10 bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 rounded-xl w-full text-sm" 
+            <input className="input pl-10 w-full text-sm" 
               placeholder="Search AWB, client, consignee…"
               value={filters.q} onChange={e => setFilter('q', e.target.value)} />
           </div>
-          <select className="input bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 rounded-xl text-sm" 
+          <select className="input text-sm" 
             value={filters.status} onChange={e => setFilter('status', e.target.value)}>
             <option value="">All statuses</option>
             {STATUSES.map(s => <option key={s}>{s}</option>)}
           </select>
-          <input type="date" className="input bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 rounded-xl text-sm" 
+          <input type="date" className="input text-sm" 
             value={filters.date_from} onChange={e => setFilter('date_from', e.target.value)} />
-          <input type="date" className="input bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 rounded-xl text-sm" 
+          <input type="date" className="input text-sm" 
             value={filters.date_to} onChange={e => setFilter('date_to', e.target.value)} />
           <div className="flex gap-2">
-            <button onClick={load} className="flex-1 bg-slate-900 dark:bg-slate-100 dark:text-slate-900 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2">
+            <button onClick={load} className="btn-primary flex-1 !rounded-2xl text-sm">
               <Filter className="w-3.5 h-3.5" /> Filter
             </button>
             {hasFilters && (
-              <button onClick={clearFilters} className="w-10 flex items-center justify-center bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-500">
+              <button onClick={clearFilters} className="w-10 flex items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50">
                 <X className="w-4 h-4" />
               </button>
             )}
@@ -514,7 +514,7 @@ export default function AllShipmentsPage({ toast }) {
       </div>
 
       {shipments.length > 0 && (
-        <div className="flex gap-4 mb-3 text-xs text-slate-500 font-medium px-2">
+        <div className="card-compact mb-3 flex flex-wrap gap-4 text-xs text-slate-500 font-medium px-4 py-3">
           <span className="flex items-center gap-1"><Box size={12} /> <strong>{shipments.length}</strong> shown</span>
           <span>💰 <strong>{fmt(totalAmt)}</strong></span>
           <span>⚖️ <strong>{totalWt.toFixed(1)} kg</strong></span>
@@ -525,9 +525,9 @@ export default function AllShipmentsPage({ toast }) {
       {loading ? <SkeletonTable rows={10} cols={7} /> : shipments.length === 0 ? (
         <EmptyState icon="📭" title="No shipments found" description="Try adjusting your filters" />
       ) : (
-        <div className="table-wrap rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/40 overflow-hidden shadow-sm">
+        <div className="table-shell">
           <table className="tbl w-full border-collapse">
-            <thead className="bg-slate-50 dark:bg-slate-800/50">
+            <thead className="table-head">
               <tr>
                 <th className="w-10 p-3">
                   <button onClick={toggleAll} className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
@@ -536,13 +536,13 @@ export default function AllShipmentsPage({ toast }) {
                       : <Square className="w-4 h-4 text-slate-300" />}
                   </button>
                 </th>
-                <th className="text-left p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Date / AWB</th>
-                <th className="text-left p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client</th>
-                <th className="text-left p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Recipient / Dest.</th>
-                <th className="text-left p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Courier</th>
-                <th className="text-right p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Wt / Amt</th>
-                <th className="text-center p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
-                <th className="text-right p-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
+                <th className="text-left p-3">Date / AWB</th>
+                <th className="text-left p-3">Client</th>
+                <th className="text-left p-3">Recipient / Dest.</th>
+                <th className="text-left p-3">Courier</th>
+                <th className="text-right p-3">Wt / Amt</th>
+                <th className="text-center p-3">Status</th>
+                <th className="text-right p-3">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -550,7 +550,7 @@ export default function AllShipmentsPage({ toast }) {
                 <tr
                   key={s.id}
                   ref={el => rowRefs.current[s.id] = el}
-                  className={`hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors cursor-pointer group ${
+                  className={`table-row cursor-pointer group ${
                     selected.has(s.id) ? 'bg-orange-50/50 dark:bg-orange-900/10' :
                     highlightId === s.id ? 'bg-yellow-50 dark:bg-yellow-900/10' : ''
                   }`}
@@ -589,14 +589,14 @@ export default function AllShipmentsPage({ toast }) {
                     <QuickStatus shipment={s} onUpdate={handleQuickStatusUpdate} />
                   </td>
                   <td className="p-3 text-right" onClick={e => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-1 opacity-20 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => setTimeline(s)} className="p-2 text-slate-400 hover:text-purple-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors">
+                    <div className="flex items-center justify-end gap-1 opacity-30 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => setTimeline(s)} className="p-2 text-slate-400 hover:text-purple-500 hover:bg-purple-50 rounded-xl transition-colors">
                         <Clock className="w-4 h-4" />
                       </button>
-                      <button onClick={() => setEditShip(s)} className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors">
+                      <button onClick={() => setEditShip(s)} className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-colors">
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button onClick={() => handleDelete(s)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
+                      <button onClick={() => handleDelete(s)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -611,7 +611,7 @@ export default function AllShipmentsPage({ toast }) {
       {/* Floating Bulk Action Toolbar */}
       {selected.size > 0 && (
         <div className="sticky bottom-6 flex justify-center z-30 pointer-events-none w-full animate-in slide-in-from-bottom-5 duration-300">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/50 shadow-2xl rounded-2xl p-2.5 flex items-center gap-4 pointer-events-auto">
+          <div className="bg-white border border-slate-200 shadow-[0_22px_50px_rgba(15,23,42,0.14)] rounded-[24px] p-2.5 flex items-center gap-4 pointer-events-auto">
             
             <div className="flex items-center gap-3 pl-3 pr-4 border-r border-slate-200 dark:border-slate-800">
               <div className="w-6 h-6 rounded-full bg-orange-500 text-white flex items-center justify-center text-xs font-bold shadow-lg shadow-orange-500/30">
@@ -623,13 +623,13 @@ export default function AllShipmentsPage({ toast }) {
             <div className="flex gap-2 pr-1">
               <button 
                 onClick={() => setBulkModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-bold rounded-xl transition-all"
+                className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-all"
               >
                 <Edit2 className="w-4 h-4 text-orange-500" /> Update Status
               </button>
               
               <button 
-                className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800/80 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-bold rounded-xl transition-all"
+                className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-all"
                 onClick={() => toast.info('Label Generation coming soon')}
               >
                 <FileText className="w-4 h-4 text-blue-500" /> Print Labels

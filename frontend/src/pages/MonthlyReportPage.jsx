@@ -4,6 +4,7 @@ import api from '../services/api';
 import { PageLoader, EmptyState } from '../components/ui/Loading';
 import { useFetch } from '../hooks/useFetch';
 import { sendWhatsAppReport } from '../utils/whatsapp';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const fmt    = n => `₹${Number(n||0).toLocaleString('en-IN')}`;
 const fmtNum = n => Number(n||0).toFixed(1);
@@ -78,8 +79,12 @@ export default function MonthlyReportPage({ toast }) {
 
   return (
     <div className="p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-5 print:hidden">
-        <h1 className="text-2xl font-bold text-gray-900">Monthly Report</h1>
+      <div className="print:hidden">
+      <PageHeader
+        title="Monthly Report"
+        subtitle="Track shipment volume, revenue, and client trends by month with cleaner exports and WhatsApp sharing."
+        icon={Printer}
+        actions={
         <div className="flex flex-wrap items-center gap-2">
           <select className="input w-auto" value={month} onChange={e => setMonth(Number(e.target.value))}>
             {months.map((m,i) => <option key={i} value={i+1}>{m}</option>)}
@@ -132,6 +137,8 @@ export default function MonthlyReportPage({ toast }) {
             <Printer className="w-3.5 h-3.5" /> Print / PDF
           </button>
         </div>
+        }
+      />
       </div>
 
       {/* Print header */}
@@ -145,15 +152,15 @@ export default function MonthlyReportPage({ toast }) {
       ) : (
         <>
           <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="bg-navy-50 border border-navy-100 rounded-xl p-4">
+            <div className="card-compact bg-navy-50 border-navy-100">
               <p className="text-[10px] text-navy-500 font-bold uppercase tracking-wider">Total Shipments</p>
               <p className="text-3xl font-bold text-navy-700 mt-1">{filtered.length}</p>
             </div>
-            <div className="bg-green-50 border border-green-100 rounded-xl p-4">
+            <div className="card-compact bg-green-50 border-green-100">
               <p className="text-[10px] text-green-600 font-bold uppercase tracking-wider">Total Revenue</p>
               <p className="text-3xl font-bold text-green-700 mt-1">{fmt(totalRevenue)}</p>
             </div>
-            <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+            <div className="card-compact bg-blue-50 border-blue-100">
               <p className="text-[10px] text-blue-600 font-bold uppercase tracking-wider">Total Weight</p>
               <p className="text-3xl font-bold text-blue-700 mt-1">{fmtNum(totalWeight)} <span className="text-base font-normal">kg</span></p>
             </div>
@@ -162,9 +169,9 @@ export default function MonthlyReportPage({ toast }) {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             <div>
               <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">By Client</h2>
-              <div className="table-wrap">
+              <div className="table-shell">
                 <table className="tbl text-xs">
-                  <thead><tr><th>Client</th><th>Company</th><th className="text-right">Shipments</th><th className="text-right">Revenue</th><th className="text-right">Weight</th></tr></thead>
+                  <thead className="table-head"><tr><th>Client</th><th>Company</th><th className="text-right">Shipments</th><th className="text-right">Revenue</th><th className="text-right">Weight</th></tr></thead>
                   <tbody>
                     {Object.entries(byClient).sort((a,b) => b[1].amount - a[1].amount).map(([code, d]) => {
                       const info = clients?.find(c => c.code === code);
@@ -185,9 +192,9 @@ export default function MonthlyReportPage({ toast }) {
 
             <div>
               <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-3">By Day</h2>
-              <div className="table-wrap max-h-[350px] overflow-y-auto">
+              <div className="table-shell max-h-[350px] overflow-y-auto">
                 <table className="tbl text-xs">
-                  <thead><tr><th>Date</th><th className="text-right">Shipments</th><th className="text-right">Revenue</th></tr></thead>
+                  <thead className="table-head"><tr><th>Date</th><th className="text-right">Shipments</th><th className="text-right">Revenue</th></tr></thead>
                   <tbody>
                     {Object.entries(byDay).sort((a,b) => a[0].localeCompare(b[0])).map(([date, d]) => (
                       <tr key={date}>
