@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDebounce } from '../hooks/useDebounce';
 import { EmptyState } from '../components/ui/EmptyState';
-import { CreditCard, RefreshCw, ArrowUpCircle, ArrowDownCircle, Plus, Search, TrendingUp } from 'lucide-react';
+import { CreditCard, RefreshCw, ArrowUpCircle, ArrowDownCircle, Plus, Search, TrendingUp, Wallet, CheckCircle2, AlertCircle } from 'lucide-react';
 import api from '../services/api';
 import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../context/AuthContext';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const fmt    = n => `₹${Number(n||0).toLocaleString('en-IN')}`;
 const fmtDt  = d => new Date(d).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});

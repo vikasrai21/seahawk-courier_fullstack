@@ -1,12 +1,17 @@
 import axios from 'axios';
 
 let _accessToken = null;
+let _logoutHandler = null;
 
 export const tokenManager = {
   get:   () => _accessToken,
   set:   (tok) => { _accessToken = tok; },
   clear: () => { _accessToken = null; },
 };
+
+export function setUnauthorizedHandler(handler) {
+  _logoutHandler = handler;
+}
 
 const api = axios.create({
   baseURL:     import.meta.env.VITE_API_URL || '/api',
@@ -23,14 +28,11 @@ function getCookie(name) {
 // ── Request: attach Bearer token + CSRF header ─────────────────────────────
 api.interceptors.request.use((config) => {
   const token = tokenManager.get();
+  const csrf = getCookie('csrf_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
-  } else {
-    // No Bearer token → this is likely a cookie-auth request (e.g. /auth/refresh)
-    // Must send CSRF token so backend middleware doesn't block it
-    const csrf = getCookie('csrf_token');
-    if (csrf) config.headers['x-csrf-token'] = csrf;
   }
+  if (csrf) config.headers['x-csrf-token'] = csrf;
   return config;
 });
 
@@ -80,6 +82,7 @@ api.interceptors.response.use(
         );
 
         const newToken = res.data?.data?.accessToken;
+        if (!newToken) throw new Error('Refresh did not return an access token');
         tokenManager.set(newToken);
         processQueue(null, newToken);
         original.headers.Authorization = `Bearer ${newToken}`;
@@ -87,7 +90,7 @@ api.interceptors.response.use(
       } catch {
         processQueue(null, null);
         tokenManager.clear();
-        window.dispatchEvent(new CustomEvent('auth:logout'));
+        _logoutHandler?.();
         return Promise.reject({ message: 'Session expired. Please log in again.', status: 401 });
       } finally {
         _refreshing = false;

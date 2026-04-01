@@ -178,6 +178,8 @@ export default function InvoicesPage({ toast }) {
     window.open(`https://wa.me/${waPhone}?text=${encodeURIComponent(msg)}`, '_blank');
   };
 
+  const draftCount = (invoices || []).filter(inv => inv.status === 'DRAFT').length;
+
   return (
     <div className="mx-auto max-w-7xl p-6">
       <PageHeader
@@ -194,57 +196,96 @@ export default function InvoicesPage({ toast }) {
       {loading ? <div className="p-6"><SkeletonTable rows={8} cols={6} /></div> : !invoices?.length ? (
         <EmptyState icon="🧾" title="No invoices yet" description="Generate your first invoice for a client" />
       ) : (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th className="th">Invoice No</th>
-                <th className="th">Client</th>
-                <th className="th">Period</th>
-                <th className="th text-right">Shipments</th>
-                <th className="th text-right">Total</th>
-                <th className="th">Status</th>
-                <th className="th">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(invoices||[]).map(inv => (
-                <tr key={inv.id} className="hover:bg-gray-50">
-                  <td className="font-mono font-bold text-navy-600">{inv.invoiceNo}</td>
-                  <td>
-                    <div className="font-semibold text-sm">{inv.client?.company || inv.clientCode}</div>
-                    <div className="text-xs text-gray-400">{inv.clientCode}</div>
-                  </td>
-                  <td className="text-sm text-gray-600">{inv.fromDate}<br/><span className="text-xs text-gray-400">to {inv.toDate}</span></td>
-                  <td className="text-right text-sm">{inv._count?.items || 0}</td>
-                  <td className="text-right font-bold">{fmt(inv.total)}</td>
-                  <td>
-                    <select
-                      value={inv.status}
-                      onChange={e => updateStatus(inv.id, e.target.value)}
-                      className={`badge cursor-pointer border-0 ${STATUS_COLORS[inv.status]}`}
-                      style={{ appearance: 'none', background: 'none', fontWeight: 700 }}
+        <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 bg-[linear-gradient(135deg,#fffaf5_0%,#ffffff_60%,#f8fbff_100%)] px-5 py-3.5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-slate-500">Invoice Register</div>
+                  <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold text-slate-500 shadow-sm">
+                    {invoices.length} records
+                  </span>
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700">
+                    {draftCount} draft
+                  </span>
+                </div>
+                <div className="mt-1 text-[13px] text-slate-600">Track generated invoices, status, exports and communication in one compact register.</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-collapse">
+              <thead>
+                <tr className="bg-slate-50/90">
+                  {['Invoice', 'Client', 'Billing Period', 'Shipments', 'Total', 'Status', 'Actions'].map((label) => (
+                    <th
+                      key={label}
+                      className={`px-4 py-3 text-left text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500 ${
+                        label === 'Shipments' || label === 'Total' ? 'text-right' : ''
+                      }`}
                     >
-                      {['DRAFT','SENT','PAID','CANCELLED'].map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </td>
-                  <td>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => loadView(inv.id)} title="View" className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg">
-                        <Eye className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => downloadPdf(inv)} title="Download PDF" className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg">
-                        <FileText className="w-3.5 h-3.5" />
-                      </button>
-                      <button onClick={() => sendWhatsApp(inv)} title="Send WhatsApp" className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg">
-                        <MessageCircle className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </td>
+                      {label}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(invoices || []).map((inv) => (
+                  <tr key={inv.id} className="transition-colors hover:bg-slate-50/60">
+                    <td className="px-4 py-3.5 align-top">
+                      <div className="font-mono text-base font-bold tracking-tight text-slate-900">{inv.invoiceNo}</div>
+                      <div className="mt-1 text-[11px] text-slate-400">Billing cycle document</div>
+                    </td>
+                    <td className="px-4 py-3.5 align-top">
+                      <div className="text-[15px] font-semibold text-slate-900">{inv.client?.company || inv.clientCode}</div>
+                      <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-400">{inv.clientCode}</div>
+                    </td>
+                    <td className="px-4 py-3.5 align-top">
+                      <div className="text-[14px] font-semibold text-slate-900">{inv.fromDate}</div>
+                      <div className="mt-1 text-[11px] text-slate-500">to {inv.toDate}</div>
+                    </td>
+                    <td className="px-4 py-3.5 text-right align-top">
+                      <div className="text-[15px] font-bold text-slate-900">{inv._count?.items || 0}</div>
+                      <div className="mt-1 text-[11px] text-slate-400">shipments</div>
+                    </td>
+                    <td className="px-4 py-3.5 text-right align-top">
+                      <div className="text-[15px] font-black tracking-tight text-slate-900">{fmt(inv.total)}</div>
+                      <div className="mt-1 text-[11px] text-slate-400">GST included</div>
+                    </td>
+                    <td className="px-4 py-3.5 align-top">
+                      <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-1">
+                        <select
+                          value={inv.status}
+                          onChange={e => updateStatus(inv.id, e.target.value)}
+                          className={`badge cursor-pointer border-0 px-2 py-1 pr-5 text-[10px] ${STATUS_COLORS[inv.status]}`}
+                          style={{ appearance: 'none', background: 'transparent', fontWeight: 700 }}
+                        >
+                          {['DRAFT','SENT','PAID','CANCELLED'].map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5 align-top">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button onClick={() => loadView(inv.id)} title="View" className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-[11px] font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
+                          <Eye className="h-3.5 w-3.5 text-sky-600" />
+                          View
+                        </button>
+                        <button onClick={() => downloadPdf(inv)} title="Download PDF" className="inline-flex items-center gap-1.5 rounded-xl border border-orange-200 bg-orange-50 px-2.5 py-2 text-[11px] font-semibold text-orange-700 transition hover:bg-orange-100">
+                          <FileText className="h-3.5 w-3.5" />
+                          PDF
+                        </button>
+                        <button onClick={() => sendWhatsApp(inv)} title="Send WhatsApp" className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-100">
+                          <MessageCircle className="h-3.5 w-3.5" />
+                          WhatsApp
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

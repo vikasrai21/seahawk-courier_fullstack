@@ -510,7 +510,7 @@ export function AppLayout({ children }) {
                   position: 'absolute', top: 'calc(100% + 8px)', right: 0,
                   width: 320, background: C.surface,
                   border: `1px solid ${C.border}`, borderRadius: 16,
-                  boxShadow: C.shadow, overflow: 'hidden',
+                  boxShadow: dark ? '0 18px 38px rgba(0,0,0,0.35)' : '0 18px 38px rgba(15,23,42,0.12)', overflow: 'hidden',
                   zIndex: 100,
                   animation: 'shkFadeInDown 0.15s ease-out'
                 }}>
@@ -518,7 +518,7 @@ export function AppLayout({ children }) {
                     <div style={{ fontWeight: 800, fontSize: 13, color: C.text }}>Notifications</div>
                     <button 
                       onClick={() => setUnreadCount(0)}
-                      style={{ fontSize: 11, fontWeight: 600, color: C.blue, background: 'none', border: 'none', cursor: 'pointer' }}
+                      style={{ fontSize: 11, fontWeight: 600, color: C.orange, background: 'none', border: 'none', cursor: 'pointer' }}
                     >
                       Mark all read
                     </button>

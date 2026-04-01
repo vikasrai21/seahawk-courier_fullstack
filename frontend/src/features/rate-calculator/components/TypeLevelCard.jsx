@@ -60,7 +60,7 @@ export default function TypeLevelCard({
       {shipType === 'air' && (
         <div className="mt-2 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1.5">
           <p className="text-[9px] text-amber-600">
-            <strong>Note:</strong> Air cargo: Trackon + BlueDart only from Delhi/NCR.
+            <strong>Note:</strong> Air cargo availability depends on the verified partner tables loaded into this calculator.
           </p>
         </div>
       )}
