@@ -3,6 +3,7 @@ import { Search, ExternalLink, RefreshCw, Filter, X, Package } from 'lucide-reac
 import api from '../services/api';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { useFetch } from '../hooks/useFetch';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const TRACKING_LINKS = {
   BlueDart:  awb => `https://www.bluedart.com/tracking?trackFor=0&track=awb&trackNo=${awb}`,
@@ -52,20 +53,20 @@ export default function TrackPage({ toast }) {
 
   return (
     <div className="p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-5">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Track Shipments</h1>
-          <p className="text-xs text-gray-500 mt-0.5">Search by AWB, consignee, or filter by client</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {loading && <RefreshCw className="w-4 h-4 text-gray-400 animate-spin" />}
-          <span className="badge badge-blue">{shipments.length} results</span>
-        </div>
-      </div>
+      <PageHeader
+        title="Track Shipments"
+        subtitle="Search by AWB, consignee, or client and jump directly into courier tracking links."
+        icon={Package}
+        actions={(
+          <div className="flex items-center gap-2">
+            {loading && <RefreshCw className="w-4 h-4 text-gray-400 animate-spin" />}
+            <span className="badge badge-blue">{shipments.length} results</span>
+          </div>
+        )}
+      />
 
       {/* Filters */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 mb-5">
+      <div className="card-compact mb-5">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           {/* AWB / Consignee search */}
           <div className="md:col-span-2 relative">
@@ -118,9 +119,9 @@ export default function TrackPage({ toast }) {
           <p className="text-sm mt-1">Try adjusting your filters</p>
         </div>
       ) : (
-        <div className="table-wrap">
+        <div className="table-shell">
           <table className="tbl">
-            <thead>
+            <thead className="table-head">
               <tr>
                 <th>AWB</th>
                 <th>Date</th>
@@ -138,7 +139,7 @@ export default function TrackPage({ toast }) {
               {shipments.map(s => {
                 const link = s.courier && TRACKING_LINKS[s.courier] ? TRACKING_LINKS[s.courier](s.awb) : null;
                 return (
-                  <tr key={s.id}>
+                  <tr key={s.id} className="table-row">
                     <td className="font-mono font-bold text-xs text-navy-600">{s.awb}</td>
                     <td className="text-xs text-gray-500">{s.date}</td>
                     <td className="text-xs font-semibold">{s.clientCode}</td>
@@ -151,7 +152,7 @@ export default function TrackPage({ toast }) {
                     <td>
                       {link ? (
                         <a href={link} target="_blank" rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-navy-50 hover:bg-navy-100 text-navy-600 text-xs font-semibold transition-colors">
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full border border-sky-200 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-semibold transition-colors">
                           <ExternalLink className="w-3 h-3" /> Track
                         </a>
                       ) : (

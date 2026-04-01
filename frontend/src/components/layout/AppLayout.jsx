@@ -574,6 +574,11 @@ export function AppLayout({ children }) {
           to { transform: translateX(0); }
         }
 
+        @keyframes shkFadeInDown {
+          from { opacity: 0; transform: translateY(-8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
         /* Show desktop sidebar on md+ */
         @media (min-width: 768px) {
           .shk-sidebar-desktop   { display: flex !important; flex-direction: column; }

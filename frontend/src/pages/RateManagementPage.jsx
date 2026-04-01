@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Shield, AlertTriangle, CheckCircle, Plus, Edit3, Trash2, Loader, Clock, Package, X } from 'lucide-react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const COURIERS_LIST = ['','trackon_exp','trackon_pt','trackon_sfc','trackon_air','delhivery_exp','delhivery_std','b2b','dtdc_7x','dtdc_7d','dtdc_7g','dtdc_xdoc','dtdc_xndx','gec_sfc','ltl_road','bluedart_exp','bluedart_air','bluedart_sfc'];
 const ZONES_LIST = ['','Delhi & NCR','North India','Metro Cities','Rest of India','North East','Diplomatic / Port Blair'];
@@ -98,18 +99,17 @@ export default function RateManagementPage({ toast }) {
 
   return (
     <div className="p-4 max-w-5xl mx-auto">
-      <div className="flex items-start justify-between mb-5">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Rate Management</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Rate health · Margin floor rules · Version history</p>
-        </div>
-      </div>
+      <PageHeader
+        title="Rate Management"
+        subtitle="Monitor partner rate health, margin floors, and version history from one cleaner admin workspace."
+        icon={Shield}
+      />
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-4 bg-gray-100 p-1 rounded-xl w-fit">
+      <div className="flex gap-1 mb-4 bg-white p-1 rounded-full w-fit border border-slate-200 shadow-sm">
         {[['health','Rate Health'],['margin','Margin Rules'],['versions','Version History']].map(([id,label]) => (
           <button key={id} onClick={() => setTab(id)}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${tab === id ? 'bg-white shadow-sm text-slate-800' : 'text-gray-500 hover:text-gray-700'}`}>
+            className={`px-4 py-2 rounded-full text-xs font-semibold transition-all ${tab === id ? 'bg-slate-900 text-white shadow-[0_10px_20px_rgba(15,23,42,0.14)]' : 'text-gray-500 hover:text-gray-700'}`}>
             {label}
           </button>
         ))}
@@ -120,7 +120,7 @@ export default function RateManagementPage({ toast }) {
         <div className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {rateHealth.map(r => (
-              <div key={r.partner} className={`rounded-2xl border p-4 ${r.critical ? 'border-red-200 bg-red-50' : r.stale ? 'border-amber-200 bg-amber-50' : 'border-green-100 bg-green-50/40'}`}>
+              <div key={r.partner} className={`rounded-2xl border p-4 shadow-sm ${r.critical ? 'border-red-200 bg-red-50' : r.stale ? 'border-amber-200 bg-amber-50' : 'border-green-100 bg-green-50/40'}`}>
                 <div className="flex items-center gap-2 mb-2">
                   <div className={`w-2.5 h-2.5 rounded-full ${r.critical ? 'bg-red-500' : r.stale ? 'bg-amber-500' : 'bg-green-500'}`} />
                   <span className="font-bold text-sm text-gray-800 capitalize">{r.partner}</span>
@@ -136,7 +136,7 @@ export default function RateManagementPage({ toast }) {
             ))}
           </div>
 
-          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
+          <div className="card-compact bg-blue-50 border-blue-100">
             <h3 className="font-bold text-sm text-blue-800 mb-2">Rate Update Protocol</h3>
             <ol className="text-xs text-blue-700 space-y-1 list-decimal list-inside">
               <li>Receive new rate sheet from courier partner (PDF/Excel)</li>
@@ -163,7 +163,7 @@ export default function RateManagementPage({ toast }) {
           </div>
 
           {showForm && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4">
+            <div className="card mb-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-bold text-sm">{editRule ? 'Edit Rule' : 'New Margin Rule'}</h3>
                 <button onClick={() => setShowForm(false)} className="text-gray-300 hover:text-gray-600"><X className="w-4 h-4" /></button>
@@ -171,26 +171,26 @@ export default function RateManagementPage({ toast }) {
               <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-3">
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Rule Name *</label>
-                  <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-300"
+                  <input className="input"
                     placeholder="e.g. Minimum All Couriers" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Courier (blank = all)</label>
-                  <select className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                  <select className="input"
                     value={form.courier} onChange={e => setForm(f => ({ ...f, courier: e.target.value }))}>
                     {COURIERS_LIST.map(c => <option key={c} value={c}>{c || 'All Couriers'}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Zone (blank = all)</label>
-                  <select className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                  <select className="input"
                     value={form.zone} onChange={e => setForm(f => ({ ...f, zone: e.target.value }))}>
                     {ZONES_LIST.map(z => <option key={z} value={z}>{z || 'All Zones'}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Ship Type (blank = all)</label>
-                  <select className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                  <select className="input"
                     value={form.shipType} onChange={e => setForm(f => ({ ...f, shipType: e.target.value }))}>
                     {TYPES_LIST.map(t => <option key={t} value={t}>{t || 'All Types'}</option>)}
                   </select>
@@ -198,13 +198,13 @@ export default function RateManagementPage({ toast }) {
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Min Margin % *</label>
                   <input type="number" min="0" max="100" step="0.5"
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                    className="input"
                     value={form.minMarginPct} onChange={e => setForm(f => ({ ...f, minMarginPct: e.target.value }))} />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Min Absolute Profit ₹</label>
                   <input type="number" min="0" step="10"
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                    className="input"
                     placeholder="Optional" value={form.minProfitAbs} onChange={e => setForm(f => ({ ...f, minProfitAbs: e.target.value }))} />
                 </div>
               </div>
@@ -231,9 +231,9 @@ export default function RateManagementPage({ toast }) {
               <p className="text-xs text-gray-300 mt-1">e.g. "Minimum 15% margin on all couriers"</p>
             </div>
           ) : (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="table-shell">
               <table className="w-full text-xs">
-                <thead className="bg-gray-50">
+                <thead className="table-head">
                   <tr>
                     {['Name','Courier','Zone','Type','Min Margin','Min Profit ₹','Status','Actions'].map(h => (
                       <th key={h} className="px-3 py-2.5 text-left font-semibold text-gray-500">{h}</th>
@@ -242,7 +242,7 @@ export default function RateManagementPage({ toast }) {
                 </thead>
                 <tbody>
                   {marginRules.map(r => (
-                    <tr key={r.id} className="border-t border-gray-50 hover:bg-gray-50">
+                    <tr key={r.id} className="border-t border-gray-50 hover:bg-amber-50/30 transition-colors">
                       <td className="px-3 py-2.5 font-bold text-gray-800">{r.name}</td>
                       <td className="px-3 py-2.5 text-gray-500">{r.courier || 'All'}</td>
                       <td className="px-3 py-2.5 text-gray-500">{r.zone || 'All'}</td>
@@ -285,23 +285,23 @@ export default function RateManagementPage({ toast }) {
           </div>
 
           {showVForm && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4">
+            <div className="card mb-4">
               <div className="grid grid-cols-3 gap-3 mb-3">
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Partner</label>
-                  <select className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                  <select className="input"
                     value={vForm.courier} onChange={e => setVForm(f => ({ ...f, courier: e.target.value }))}>
                     {['trackon','primetrack','delhivery','dtdc','gec','ltl','b2b','bluedart'].map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Effective Date *</label>
-                  <input type="date" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                  <input type="date" className="input"
                     value={vForm.effectiveDate} onChange={e => setVForm(f => ({ ...f, effectiveDate: e.target.value }))} />
                 </div>
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Notes</label>
-                  <input className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                  <input className="input"
                     placeholder="Rate revision details…" value={vForm.notes} onChange={e => setVForm(f => ({ ...f, notes: e.target.value }))} />
                 </div>
               </div>
@@ -318,7 +318,7 @@ export default function RateManagementPage({ toast }) {
               <p className="text-gray-400">No rate versions logged yet</p>
             </div>
           ) : (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
+            <div className="table-shell divide-y divide-gray-50">
               {rateVersions.map(v => (
                 <div key={v.id} className="px-4 py-3 flex items-center gap-4">
                   <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-600 shrink-0 capitalize">

@@ -1,233 +1,256 @@
-// src/pages/BookingsPage.jsx — Dashboard pickup requests management
 import { useState, useEffect, useCallback } from 'react';
+import { RefreshCw, CalendarDays, Phone, Package, MapPin } from 'lucide-react';
 import api from '../services/api';
-
-const STATUS_COLORS = {
-    PENDING: { bg: 'rgba(234,179,8,0.1)', text: '#ca8a04', border: 'rgba(234,179,8,0.3)' },
-    CONFIRMED: { bg: 'rgba(59,130,246,0.1)', text: '#2563eb', border: 'rgba(59,130,246,0.3)' },
-    ASSIGNED: { bg: 'rgba(168,85,247,0.1)', text: '#7c3aed', border: 'rgba(168,85,247,0.3)' },
-    COMPLETED: { bg: 'rgba(34,197,94,0.1)', text: '#16a34a', border: 'rgba(34,197,94,0.3)' },
-    CANCELLED: { bg: 'rgba(239,68,68,0.1)', text: '#dc2626', border: 'rgba(239,68,68,0.3)' },
-};
+import { PageHeader } from '../components/ui/PageHeader';
+import { PageLoader, EmptyState } from '../components/ui/Loading';
+import { Modal } from '../components/ui/Modal';
 
 const STATUS_OPTIONS = ['PENDING', 'CONFIRMED', 'ASSIGNED', 'COMPLETED', 'CANCELLED'];
 
-export default function BookingsPage() {
-    const [bookings, setBookings] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [filter, setFilter] = useState('ALL');
-    const [search, setSearch] = useState('');
-    const [selected, setSelected] = useState(null);
-    const [updating, setUpdating] = useState(false);
+const STATUS_STYLES = {
+  PENDING: 'badge-amber',
+  CONFIRMED: 'badge-blue',
+  ASSIGNED: 'badge-blue',
+  COMPLETED: 'badge-green',
+  CANCELLED: 'badge-rose',
+};
 
-    const fetchBookings = useCallback(async () => {
-        setLoading(true);
-        try {
-            const params = new URLSearchParams();
-            if (filter !== 'ALL') params.set('status', filter);
-            if (search) params.set('search', search);
-            const res = await api.get(`/pickups?${params}`);
-            setBookings(res.data?.pickups || []);
-        } catch (e) {
-            console.error(e);
-        } finally {
-            setLoading(false);
-        }
-    }, [filter, search]);
+function BookingStatus({ status }) {
+  return <span className={`badge ${STATUS_STYLES[status] || 'badge-gray'}`}>{status}</span>;
+}
 
-    useEffect(() => { fetchBookings(); }, [fetchBookings]);
+export default function BookingsPage({ toast }) {
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('ALL');
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState(null);
+  const [updating, setUpdating] = useState(false);
 
-    async function updateStatus(id, status) {
-        setUpdating(true);
-        try {
-            await api.patch(`/pickups/${id}/status`, { status });
-            fetchBookings();
-            if (selected?.id === id) setSelected(p => ({ ...p, status }));
-        } catch (e) {
-            alert('Failed to update status');
-        } finally {
-            setUpdating(false);
-        }
+  const fetchBookings = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (filter !== 'ALL') params.set('status', filter);
+      if (search) params.set('search', search);
+      const res = await api.get(`/pickups?${params}`);
+      setBookings(res.data?.pickups || []);
+    } catch (e) {
+      toast?.('Failed to load pickup requests', 'error');
+    } finally {
+      setLoading(false);
     }
+  }, [filter, search, toast]);
 
-    const filtered = bookings.filter(b => {
-        if (filter !== 'ALL' && b.status !== filter) return false;
-        if (search) {
-            const q = search.toLowerCase();
-            return b.requestNo?.toLowerCase().includes(q) ||
-                b.contactName?.toLowerCase().includes(q) ||
-                b.contactPhone?.includes(q) ||
-                b.pickupCity?.toLowerCase().includes(q);
-        }
-        return true;
-    });
+  useEffect(() => { fetchBookings(); }, [fetchBookings]);
 
-    const counts = STATUS_OPTIONS.reduce((acc, s) => {
-        acc[s] = bookings.filter(b => b.status === s).length;
-        return acc;
-    }, {});
+  async function updateStatus(id, status) {
+    setUpdating(true);
+    try {
+      await api.patch(`/pickups/${id}/status`, { status });
+      await fetchBookings();
+      if (selected?.id === id) setSelected((p) => ({ ...p, status }));
+      toast?.('Pickup status updated', 'success');
+    } catch (e) {
+      toast?.('Failed to update pickup status', 'error');
+    } finally {
+      setUpdating(false);
+    }
+  }
 
-    const tk = s => STATUS_COLORS[s] || STATUS_COLORS.PENDING;
+  const filtered = bookings.filter((b) => {
+    if (filter !== 'ALL' && b.status !== filter) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return (
+        b.requestNo?.toLowerCase().includes(q) ||
+        b.contactName?.toLowerCase().includes(q) ||
+        b.contactPhone?.includes(q) ||
+        b.pickupCity?.toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
 
-    return (
-        <div style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }}>
+  const counts = STATUS_OPTIONS.reduce((acc, s) => {
+    acc[s] = bookings.filter((b) => b.status === s).length;
+    return acc;
+  }, {});
 
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-                <div>
-                    <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, letterSpacing: '-0.3px' }}>Pickup Requests</h1>
-                    <p style={{ color: 'var(--shk-text-mid,#94a3b8)', fontSize: 13, margin: '4px 0 0' }}>
-                        {bookings.length} total · {counts.PENDING || 0} pending
-                    </p>
-                </div>
-                <button onClick={fetchBookings} style={{ padding: '8px 16px', background: 'var(--shk-surface-hi,#1a2236)', border: '1px solid var(--shk-border,#1f2d45)', borderRadius: 8, color: 'inherit', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-                    ↻ Refresh
-                </button>
-            </div>
+  const totalPending = counts.PENDING || 0;
 
-            {/* Stats */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(120px,1fr))', gap: 12, marginBottom: 24 }}>
-                {[['ALL', bookings.length, '#f97316'], ...STATUS_OPTIONS.map(s => [s, counts[s] || 0, tk(s).text])].map(([s, c, color]) => (
-                    <div
-                        key={s} onClick={() => setFilter(s)}
-                        style={{ padding: '14px 16px', background: filter === s ? 'rgba(249,115,22,0.1)' : 'var(--shk-surface,#111827)', border: `1.5px solid ${filter === s ? '#f97316' : 'var(--shk-border,#1f2d45)'}`, borderRadius: 12, cursor: 'pointer', transition: 'all 0.15s' }}
-                    >
-                        <div style={{ fontSize: 22, fontWeight: 900, color, fontFamily: 'monospace' }}>{c}</div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--shk-text-mid,#94a3b8)', textTransform: 'uppercase', letterSpacing: '0.07em', marginTop: 2 }}>{s}</div>
-                    </div>
-                ))}
-            </div>
+  return (
+    <div className="p-6 max-w-7xl mx-auto">
+      <PageHeader
+        title="Pickup Requests"
+        subtitle={`${bookings.length} total requests · ${totalPending} pending confirmation`}
+        icon={CalendarDays}
+        actions={(
+          <button onClick={fetchBookings} className="btn-secondary btn-sm">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </button>
+        )}
+      />
 
-            {/* Search */}
-            <div style={{ marginBottom: 20 }}>
-                <input
-                    value={search} onChange={e => setSearch(e.target.value)}
-                    placeholder="Search by name, phone, request no, city..."
-                    style={{ width: '100%', maxWidth: 400, padding: '10px 14px', borderRadius: 10, background: 'var(--shk-surface,#111827)', border: '1px solid var(--shk-border,#1f2d45)', color: 'inherit', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
-                />
-            </div>
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-5">
+        {[['ALL', bookings.length], ...STATUS_OPTIONS.map((s) => [s, counts[s] || 0])].map(([label, count]) => (
+          <button
+            key={label}
+            onClick={() => setFilter(label)}
+            className={`card-compact text-left interactive-lift ${filter === label ? 'border-orange-200 bg-orange-50/70' : ''}`}
+          >
+            <div className="section-eyebrow">{label}</div>
+            <div className="mt-2 text-2xl font-black text-slate-900">{count}</div>
+            <div className="mt-1 text-xs text-slate-500">pickup requests</div>
+          </button>
+        ))}
+      </div>
 
-            {/* Table */}
-            <div style={{ background: 'var(--shk-surface,#111827)', border: '1px solid var(--shk-border,#1f2d45)', borderRadius: 14, overflow: 'hidden' }}>
-                {loading ? (
-                    <div style={{ padding: '48px', textAlign: 'center', color: 'var(--shk-text-mid,#94a3b8)' }}>Loading...</div>
-                ) : filtered.length === 0 ? (
-                    <div style={{ padding: '48px', textAlign: 'center', color: 'var(--shk-text-mid,#94a3b8)' }}>
-                        <div style={{ fontSize: 32, marginBottom: 8 }}>📭</div>
-                        No pickup requests found
-                    </div>
-                ) : (
-                    <div style={{ overflowX: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                            <thead>
-                                <tr style={{ borderBottom: '1px solid var(--shk-border,#1f2d45)' }}>
-                                    {['Ref No', 'Customer', 'Pickup City', 'Delivery', 'Package', 'Date / Slot', 'Status', 'Actions'].map(h => (
-                                        <th key={h} style={{ padding: '12px 16px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: 'var(--shk-text-mid,#94a3b8)', textTransform: 'uppercase', letterSpacing: '0.07em', whiteSpace: 'nowrap' }}>{h}</th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filtered.map(b => (
-                                    <tr key={b.id} style={{ borderBottom: '1px solid var(--shk-border,#1f2d45)', cursor: 'pointer', transition: 'background 0.1s' }}
-                                        onMouseEnter={e => e.currentTarget.style.background = 'var(--shk-surface-hi,#1a2236)'}
-                                        onMouseLeave={e => e.currentTarget.style.background = ''}
-                                        onClick={() => setSelected(b)}
-                                    >
-                                        <td style={{ padding: '12px 16px', fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: '#f97316' }}>{b.requestNo}</td>
-                                        <td style={{ padding: '12px 16px' }}>
-                                            <div style={{ fontWeight: 700, fontSize: 13 }}>{b.contactName}</div>
-                                            <div style={{ fontSize: 12, color: 'var(--shk-text-mid,#94a3b8)' }}>{b.contactPhone}</div>
-                                        </td>
-                                        <td style={{ padding: '12px 16px', fontSize: 13 }}>{b.pickupCity}</td>
-                                        <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--shk-text-mid,#94a3b8)' }}>{b.deliveryCity || '—'}, {b.deliveryCountry}</td>
-                                        <td style={{ padding: '12px 16px', fontSize: 12 }}>
-                                            <div>{b.packageType}</div>
-                                            <div style={{ color: 'var(--shk-text-mid,#94a3b8)' }}>{b.weightGrams}kg · {b.pieces}pc</div>
-                                        </td>
-                                        <td style={{ padding: '12px 16px', fontSize: 12 }}>
-                                            <div style={{ fontWeight: 600 }}>{b.scheduledDate}</div>
-                                            <div style={{ color: 'var(--shk-text-mid,#94a3b8)' }}>{b.timeSlot}</div>
-                                        </td>
-                                        <td style={{ padding: '12px 16px' }}>
-                                            <span style={{ padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, background: tk(b.status).bg, color: tk(b.status).text, border: `1px solid ${tk(b.status).border}`, whiteSpace: 'nowrap' }}>
-                                                {b.status}
-                                            </span>
-                                        </td>
-                                        <td style={{ padding: '12px 16px' }} onClick={e => e.stopPropagation()}>
-                                            <select
-                                                value={b.status}
-                                                onChange={e => updateStatus(b.id, e.target.value)}
-                                                disabled={updating}
-                                                style={{ padding: '5px 8px', borderRadius: 6, background: 'var(--shk-surface-hi,#1a2236)', border: '1px solid var(--shk-border,#1f2d45)', color: 'inherit', fontSize: 12, cursor: 'pointer' }}
-                                            >
-                                                {STATUS_OPTIONS.map(s => <option key={s}>{s}</option>)}
-                                            </select>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </div>
-
-            {/* Detail panel */}
-            {selected && (
-                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}
-                    onClick={() => setSelected(null)}
-                >
-                    <div style={{ width: '100%', maxWidth: 460, height: '100%', background: 'var(--shk-surface,#111827)', borderLeft: '1px solid var(--shk-border,#1f2d45)', overflowY: 'auto', padding: 28 }}
-                        onClick={e => e.stopPropagation()}
-                    >
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-                            <div>
-                                <div style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, color: '#f97316' }}>{selected.requestNo}</div>
-                                <div style={{ fontSize: 18, fontWeight: 800, marginTop: 2 }}>{selected.contactName}</div>
-                            </div>
-                            <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', color: 'var(--shk-text-mid,#94a3b8)', fontSize: 20, cursor: 'pointer', padding: 4 }}>✕</button>
-                        </div>
-
-                        <span style={{ padding: '5px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, background: tk(selected.status).bg, color: tk(selected.status).text, border: `1px solid ${tk(selected.status).border}` }}>
-                            {selected.status}
-                        </span>
-
-                        {[
-                            ['👤 Contact', `${selected.contactName}\n${selected.contactPhone}${selected.contactEmail ? '\n' + selected.contactEmail : ''}`],
-                            ['📍 Pickup', `${selected.pickupAddress}\n${selected.pickupCity} — ${selected.pickupPin}`],
-                            ['🚚 Delivery', `${selected.deliveryAddress || ''}\n${selected.deliveryCity || '—'}, ${selected.deliveryCountry}`],
-                            ['📦 Package', `${selected.packageType} · ${selected.weightGrams}kg · ${selected.pieces} piece(s)\nService: ${selected.service}${selected.declaredValue ? `\nDeclared: ₹${selected.declaredValue}` : ''}`],
-                            ['📅 Schedule', `${selected.scheduledDate} · ${selected.timeSlot}`],
-                            ...(selected.notes ? [['📝 Notes', selected.notes]] : []),
-                        ].map(([title, val]) => (
-                            <div key={title} style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--shk-border,#1f2d45)' }}>
-                                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--shk-text-mid,#94a3b8)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6 }}>{title}</div>
-                                <div style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: 'pre-line' }}>{val}</div>
-                            </div>
-                        ))}
-
-                        <div style={{ marginTop: 24, paddingTop: 24, borderTop: '1px solid var(--shk-border,#1f2d45)' }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--shk-text-mid,#94a3b8)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Update Status</div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                {STATUS_OPTIONS.map(s => (
-                                    <button key={s} onClick={() => updateStatus(selected.id, s)} disabled={updating || selected.status === s}
-                                        style={{ padding: '7px 14px', borderRadius: 8, border: `1px solid ${s === selected.status ? tk(s).border : 'var(--shk-border,#1f2d45)'}`, background: s === selected.status ? tk(s).bg : 'transparent', color: s === selected.status ? tk(s).text : 'var(--shk-text-mid,#94a3b8)', fontWeight: 700, fontSize: 12, cursor: s === selected.status ? 'default' : 'pointer', opacity: updating ? 0.5 : 1 }}
-                                    >{s}</button>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div style={{ marginTop: 20 }}>
-                            <a
-                                href={`https://wa.me/${(selected.contactPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(`Hello ${selected.contactName}, your pickup request ${selected.requestNo} is ${selected.status}. Thank you for choosing Sea Hawk Courier!`)}`}
-                                target="_blank" rel="noreferrer"
-                                style={{ display: 'block', textAlign: 'center', padding: '11px', background: '#16a34a', color: '#fff', borderRadius: 10, textDecoration: 'none', fontWeight: 700, fontSize: 13 }}
-                            >
-                                💬 WhatsApp Customer
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            )}
+      <div className="card-compact mb-5">
+        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by customer, phone, request number, or city"
+            className="input"
+          />
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span className="badge badge-gray">{filtered.length} shown</span>
+          </div>
         </div>
-    );
+      </div>
+
+      {loading ? (
+        <PageLoader />
+      ) : filtered.length === 0 ? (
+        <EmptyState icon="📭" title="No pickup requests found" message="Try a different status filter or search term." />
+      ) : (
+        <div className="table-shell overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse min-w-[1080px]">
+              <thead className="table-head">
+                <tr>
+                  <th className="px-4 py-3 text-left">Ref No</th>
+                  <th className="px-4 py-3 text-left">Customer</th>
+                  <th className="px-4 py-3 text-left">Pickup City</th>
+                  <th className="px-4 py-3 text-left">Delivery</th>
+                  <th className="px-4 py-3 text-left">Package</th>
+                  <th className="px-4 py-3 text-left">Date / Slot</th>
+                  <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-left">Update</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((b) => (
+                  <tr key={b.id} className="table-row cursor-pointer" onClick={() => setSelected(b)}>
+                    <td className="px-4 py-3 font-mono text-xs font-bold text-orange-600">{b.requestNo}</td>
+                    <td className="px-4 py-3">
+                      <div className="font-semibold text-slate-900">{b.contactName}</div>
+                      <div className="text-xs text-slate-500">{b.contactPhone}</div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-700">{b.pickupCity}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">{b.deliveryCity || '—'}, {b.deliveryCountry}</td>
+                    <td className="px-4 py-3 text-sm text-slate-600">
+                      <div>{b.packageType}</div>
+                      <div className="text-xs text-slate-400">{b.weightGrams}kg · {b.pieces}pc</div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-600">
+                      <div className="font-semibold text-slate-900">{b.scheduledDate}</div>
+                      <div className="text-xs text-slate-400">{b.timeSlot}</div>
+                    </td>
+                    <td className="px-4 py-3"><BookingStatus status={b.status} /></td>
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      <select
+                        value={b.status}
+                        onChange={(e) => updateStatus(b.id, e.target.value)}
+                        disabled={updating}
+                        className="input !w-auto !py-2 text-xs min-w-[150px]"
+                      >
+                        {STATUS_OPTIONS.map((s) => <option key={s}>{s}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <Modal
+        open={!!selected}
+        onClose={() => setSelected(null)}
+        title={selected ? `Pickup ${selected.requestNo}` : 'Pickup Details'}
+        size="lg"
+        footer={selected ? (
+          <>
+            <a
+              href={`https://wa.me/${(selected.contactPhone || '').replace(/\D/g, '')}?text=${encodeURIComponent(`Hello ${selected.contactName}, your pickup request ${selected.requestNo} is ${selected.status}. Thank you for choosing Sea Hawk Courier!`)}`}
+              target="_blank"
+              rel="noreferrer"
+              className="btn-success"
+            >
+              <Phone className="w-4 h-4" /> WhatsApp Customer
+            </a>
+            <button onClick={() => setSelected(null)} className="btn-secondary">Close</button>
+          </>
+        ) : null}
+      >
+        {selected && (
+          <div className="grid gap-4">
+            <div className="flex items-center justify-between">
+              <BookingStatus status={selected.status} />
+              <div className="text-xs text-slate-500">Request raised for {selected.scheduledDate}</div>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <DetailCard icon={<Phone className="w-4 h-4 text-sky-600" />} title="Contact" value={`${selected.contactName}\n${selected.contactPhone}${selected.contactEmail ? `\n${selected.contactEmail}` : ''}`} />
+              <DetailCard icon={<MapPin className="w-4 h-4 text-orange-600" />} title="Pickup" value={`${selected.pickupAddress}\n${selected.pickupCity} — ${selected.pickupPin}`} />
+              <DetailCard icon={<TruckIcon />} title="Delivery" value={`${selected.deliveryAddress || '—'}\n${selected.deliveryCity || '—'}, ${selected.deliveryCountry}`} />
+              <DetailCard icon={<Package className="w-4 h-4 text-emerald-600" />} title="Package" value={`${selected.packageType} · ${selected.weightGrams}kg · ${selected.pieces} piece(s)\nService: ${selected.service}${selected.declaredValue ? `\nDeclared: ₹${selected.declaredValue}` : ''}`} />
+            </div>
+
+            <div className="card-compact">
+              <div className="section-eyebrow">Update Status</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {STATUS_OPTIONS.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => updateStatus(selected.id, s)}
+                    disabled={updating || selected.status === s}
+                    className={`btn-sm ${selected.status === s ? 'btn-primary' : 'btn-secondary'}`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {selected.notes && (
+              <div className="card-compact">
+                <div className="section-eyebrow">Notes</div>
+                <div className="mt-2 text-sm text-slate-600 whitespace-pre-line">{selected.notes}</div>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function DetailCard({ icon, title, value }) {
+  return (
+    <div className="card-compact">
+      <div className="flex items-center gap-2">
+        {icon}
+        <div className="section-eyebrow">{title}</div>
+      </div>
+      <div className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-700">{value}</div>
+    </div>
+  );
+}
+
+function TruckIcon() {
+  return <span className="inline-flex text-base text-violet-600">🚚</span>;
 }

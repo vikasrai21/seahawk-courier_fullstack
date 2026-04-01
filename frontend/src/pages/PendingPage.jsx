@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import api from '../services/api';
 import { StatusBadge, STATUSES } from '../components/ui/StatusBadge';
 import { PageLoader, EmptyState } from '../components/ui/Loading';
+import { PageHeader } from '../components/ui/PageHeader';
+import { Clock3 } from 'lucide-react';
 
 const PENDING_STATUSES = ['Booked', 'InTransit', 'OutForDelivery', 'Delayed', 'RTO'];
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
@@ -39,16 +41,17 @@ export default function PendingPage({ toast }) {
 
   return (
     <div className="p-6">
-      <div className="flex items-center justify-between mb-5">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Pending & Delayed</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{shipments.length} open shipments</p>
-        </div>
-        <select className="input w-auto" value={filter} onChange={(e) => setFilter(e.target.value)}>
-          <option value="">All pending</option>
-          {PENDING_STATUSES.map((s) => <option key={s}>{s}</option>)}
-        </select>
-      </div>
+      <PageHeader
+        title="Pending & Delayed"
+        subtitle={`${shipments.length} open shipments requiring action or monitoring`}
+        icon={Clock3}
+        actions={(
+          <select className="input w-auto" value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <option value="">All pending</option>
+            {PENDING_STATUSES.map((s) => <option key={s}>{s}</option>)}
+          </select>
+        )}
+      />
 
       {/* Count badges */}
       <div className="flex flex-wrap gap-2 mb-5">
@@ -66,9 +69,9 @@ export default function PendingPage({ toast }) {
       {loading ? <PageLoader /> : shown.length === 0 ? (
         <EmptyState icon="✅" title="All caught up!" description="No pending shipments" />
       ) : (
-        <div className="table-wrap">
+        <div className="table-shell">
           <table className="tbl">
-            <thead>
+            <thead className="table-head">
               <tr>
                 <th>Date</th><th>AWB</th><th>Client</th><th>Consignee</th>
                 <th>Destination</th><th>Courier</th><th>Amt</th><th>Status</th><th>Update</th>
@@ -76,7 +79,7 @@ export default function PendingPage({ toast }) {
             </thead>
             <tbody>
               {shown.map((s) => (
-                <tr key={s.id}>
+                <tr key={s.id} className="table-row">
                   <td className="text-xs text-gray-500">{s.date}</td>
                   <td className="font-mono text-xs font-bold text-navy-600">{s.awb}</td>
                   <td className="text-xs font-semibold">{s.clientCode}</td>

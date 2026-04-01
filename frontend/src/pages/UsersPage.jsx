@@ -7,6 +7,7 @@ import { useFetch } from '../hooks/useFetch';
 import { PageLoader } from '../components/ui/Loading';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
+import { PageHeader } from '../components/ui/PageHeader';
 
 const ROLE_META = {
   ADMIN: { label: 'Admin', color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
@@ -79,13 +80,11 @@ export default function UsersPage({ toast }) {
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 24, gap: 16, flexWrap: 'wrap' }}>
-        <div>
-          <h1 style={{ fontSize: 22, fontWeight: 800, margin: 0, color: C.text }}>User Management</h1>
-          <p style={{ fontSize: 12, color: C.dim, margin: '4px 0 0' }}>Admin only · Create logins for staff and client portal access</p>
-        </div>
+      <PageHeader
+        title="User Management"
+        subtitle="Create and manage internal and client portal logins with clearer separation by role."
+        icon={Users}
+        actions={(
         <div style={{ display: 'flex', gap: 8 }}>
           <Link to="/app/profile" className="btn-secondary btn-sm" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Key size={13} /> My Password
@@ -94,7 +93,8 @@ export default function UsersPage({ toast }) {
             <Plus size={13} /> Add User
           </button>
         </div>
-      </div>
+        )}
+      />
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: `1px solid ${C.border}` }}>
@@ -127,7 +127,7 @@ export default function UsersPage({ toast }) {
             : filtered.map(u => {
               const meta = ROLE_META[u.role] || ROLE_META.STAFF;
               return (
-                <div key={u.id} style={{
+                <div key={u.id} className="interactive-lift" style={{
                   background: C.surface, border: `1px solid ${C.border}`,
                   borderRadius: 14, padding: 16,
                   display: 'flex', alignItems: 'flex-start', gap: 12,
