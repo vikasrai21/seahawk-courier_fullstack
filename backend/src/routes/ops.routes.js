@@ -6,14 +6,17 @@ const router = require('express').Router();
 const prisma  = require('../config/prisma');
 const R       = require('../utils/response');
 const { protect, requireRole, staffOnly } = require('../middleware/auth.middleware');
+const { validate } = require('../middleware/validate.middleware');
 const stateMachine = require('../services/stateMachine');
+const walletSvc = require('../services/wallet.service');
 const { auditLog } = require('../utils/audit');
 const logger = require('../utils/logger');
+const { bulkStatusSchema } = require('../validators/ops.validator');
 
 router.use(protect, staffOnly);
 
 // ── POST /api/ops/bulk-status — bulk update shipment statuses ─────────────
-router.post('/bulk-status', async (req, res) => {
+router.post('/bulk-status', validate(bulkStatusSchema), async (req, res) => {
   const { ids, status } = req.body;
   if (!Array.isArray(ids) || !ids.length) return R.error(res, 'ids array required', 400);
   if (!status) return R.error(res, 'status required', 400);
@@ -41,10 +44,13 @@ router.post('/bulk-status', async (req, res) => {
 
       // Wallet refund on RTO/Cancel
       if (stateMachine.shouldRefund(status) && shipment.amount > 0) {
-        await prisma.client.update({
-          where: { code: shipment.clientCode },
-          data:  { walletBalance: { increment: shipment.amount } },
-        }).catch(() => {});
+        await walletSvc.credit({
+          clientCode: shipment.clientCode,
+          amount: shipment.amount,
+          description: `Refund — AWB ${shipment.awb} (${status})`,
+          reference: shipment.awb,
+          paymentMode: 'SYSTEM_REFUND',
+        });
       }
 
       updated++;

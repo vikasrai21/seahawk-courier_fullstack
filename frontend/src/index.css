@@ -4,7 +4,7 @@
 
 @layer base {
   body { 
-    @apply bg-slate-50 text-slate-900 antialiased selection:bg-indigo-100 selection:text-indigo-900; 
+    @apply bg-slate-50 text-slate-900 antialiased selection:bg-orange-100 selection:text-orange-900; 
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
   }
   h1, h2, h3, h4, .font-heading {
@@ -19,7 +19,7 @@
     @apply bg-white/70 backdrop-blur-md border border-white/20 shadow-xl shadow-slate-200/50;
   }
   .glass-dark {
-    @apply bg-slate-900/80 backdrop-blur-lg border border-white/10 shadow-2xl shadow-indigo-900/20;
+    @apply bg-slate-900/80 backdrop-blur-lg border border-white/10 shadow-2xl shadow-slate-950/30;
   }
   .glass-card {
     @apply bg-white/80 backdrop-blur-sm border border-white/40 shadow-lg shadow-slate-200/40 rounded-2xl p-6 transition-all duration-300 hover:shadow-xl hover:translate-y-[-2px] hover:bg-white;
@@ -36,17 +36,17 @@
   .btn-secondary { @apply btn bg-white/80 backdrop-blur-sm border border-slate-200/60 text-slate-700 hover:bg-white hover:border-slate-300 shadow-sm active:bg-slate-50; }
   .btn-danger  { @apply btn bg-rose-500 text-white hover:bg-rose-600 shadow-lg shadow-rose-500/20; }
   .btn-success { @apply btn bg-emerald-500 text-white hover:bg-emerald-600 shadow-lg shadow-emerald-500/20; }
-  .btn-indigo  { @apply btn bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-600/20; }
+  .btn-indigo  { @apply btn bg-orange-600 text-white hover:bg-orange-700 shadow-lg shadow-orange-600/20; }
   .btn-sm      { @apply px-3.5 py-1.5 text-xs rounded-lg; }
 
   /* ── Inputs ──────────────────────────────────────────────── */
-  .input       { @apply w-full rounded-xl border border-slate-200/80 bg-white/60 px-4 py-2.5 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-400 focus:bg-white transition-all placeholder:text-slate-400/80; }
+  .input       { @apply w-full rounded-xl border border-slate-200/80 bg-white/60 px-4 py-2.5 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-orange-500/10 focus:border-orange-400 focus:bg-white transition-all placeholder:text-slate-400/80; }
   .label       { @apply block text-[10px] font-bold text-slate-400 mb-1.5 uppercase tracking-widest; }
 
   /* ── Badges ──────────────────────────────────────────────── */
   .badge       { @apply inline-flex items-center px-2.5 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wider border; }
   .badge-green  { @apply badge bg-emerald-50 text-emerald-700 border-emerald-100; }
-  .badge-blue   { @apply badge bg-indigo-50 text-indigo-700 border-indigo-100; }
+  .badge-blue   { @apply badge bg-sky-50 text-sky-700 border-sky-100; }
   .badge-rose   { @apply badge bg-rose-50 text-rose-700 border-rose-100; }
   .badge-amber  { @apply badge bg-amber-50 text-amber-700 border-amber-100; }
   .badge-gray   { @apply badge bg-slate-100 text-slate-600 border-slate-200; }
@@ -68,4 +68,3 @@
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { @apply bg-slate-200 rounded-full hover:bg-slate-300 transition-colors; }
-

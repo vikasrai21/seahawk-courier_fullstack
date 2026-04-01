@@ -33,7 +33,9 @@ module.exports = {
   cors: {
     origin: process.env.CORS_ORIGIN
       ? process.env.CORS_ORIGIN.split(',').map(s => s.trim())
-      : true,
+      : env === 'production'
+        ? []
+        : true,
   },
 
   redis: {
@@ -59,6 +61,10 @@ module.exports = {
     dtdc:      { key: optional('DTDC_API_KEY'),      customerCode: optional('DTDC_CUSTOMER_CODE') },
     bluedart:  { key: optional('BLUEDART_LICENSE_KEY'), loginId: optional('BLUEDART_LOGIN_ID') },
     razorpay:  { keyId: optional('RAZORPAY_KEY_ID'), secret: optional('RAZORPAY_KEY_SECRET') },
+  },
+
+  payments: {
+    allowMockRecharge: optional('ALLOW_MOCK_WALLET_RECHARGE', env !== 'production' ? 'true' : 'false') === 'true',
   },
 
   whatsapp: {

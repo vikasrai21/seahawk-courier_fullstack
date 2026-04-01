@@ -1,32 +1,11 @@
 /**
- * Seahawk Courier Rate & Profit Calculator — v5.0
- * All rates from verified partner documents
- *
- * Rate validity:
- *   Trackon Express/Surface/Air  : w.e.f. 01 Apr 2025
- *   Trackon Prime Track          : w.e.f. 01 Apr 2025
- *   DTDC Priority X              : w.e.f. 01 Jan 2024
- *   DTDC Ecomm 7X/7D/7G (Gold)  : w.e.f. 01 Jan 2024
- *   Delhivery Standard/Express   : as per Final_Outlet_Rates
- *   GEC Transhipment             : w.e.f. 16 Jan 2024
- *   LTL Road Express             : as per LTL rate sheet
- *   B2B Courier                  : as per B2B_rates sheet
- *   BlueDart/DEL TS              : as per Z_LITE rate sheet
- *
- * Surcharge formulas (all verified):
- *   Trackon Express/Surface/Air  : Base × 1.23 × 1.18  (FSC 18% + Dev 5% + GST 18%)
- *   Trackon Prime Track          : (Base + CN₹35) × 1.18  (GST 18% only)
- *   Delhivery Std/Exp            : Base × 1.18  (no FSC confirmed)
- *   B2B                          : (max(freight+FSC15%,₹350) + docket₹250 + green max(0.5/kg,₹100)) × 1.18
- *   DTDC Priority X              : Base × 1.35 × 1.18  (FSC 35%)
- *   DTDC 7X/7D/7G (Gold)        : (Base × 1.35 + BookCost₹12) × 1.18
- *   GEC (GA tier)                : (max(freight×1.20,₹275) + docket₹75) × 1.18  (FSC 20%, MCW 50kg)
- *   LTL                          : (max(freight×1.15,₹750) + doc₹100 + env max(0.5/kg,₹100)) × 1.18  (MCW 40kg)
- *   BlueDart                     : Base × 1.35 × 1.18  (FSC 35%)
+ * Seahawk Courier Rate & Profit Calculator
+ * Logic is contract-driven: if a charge is not explicitly written in the
+ * source rate sheet, it is not applied in calculation.
  */
 
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { BarChart2, Calculator, Package, Printer } from 'lucide-react';
+import { AlertTriangle, BarChart2, Calculator, Package, Printer } from 'lucide-react';
 import api from '../services/api';
 import { useDataStore } from '../stores/dataStore';
 import HeaderPanel from '../features/rate-calculator/components/HeaderPanel';
@@ -160,7 +139,7 @@ export default function RateCalculatorPage() {
         const li={label:`${po.District}, ${po.State}`,pincode:pin};
         setLocInfo(li);
         setZoneConf('high');
-        addRecent({query:pin,zone:z,locInfo:li});
+        addRecent({query:pin,zone:z,locInfo:li,zoneConf:'high'});
 
         // ── Delhivery ODA Auto-check ──
         api.get(`/delhivery/serviceability?pin=${pin}`)
@@ -205,7 +184,6 @@ export default function RateCalculatorPage() {
     const l = parseFloat(dims.l)||0;
     const b = parseFloat(dims.b)||0;
     const h = parseFloat(dims.h)||0;
-    // Audit check: B2B uses 4500 as per screenshot, others use 5000
     const divisor = (selGroup === 'B2B' || selGroup === 'LTL' || shipType === 'surface') ? 4500 : 5000;
     return (l * b * h) / divisor;
   },[useVol,dims,selGroup,shipType]);
@@ -437,6 +415,8 @@ export default function RateCalculatorPage() {
           targetMargin={targetMargin}
           setTargetMargin={setTargetMargin}
           results={results}
+          selGroup={selGroup}
+          shipType={shipType}
           fmt={fmt}
         />
 
@@ -473,21 +453,21 @@ export default function RateCalculatorPage() {
           filteredClients={filteredClients}
         />
 
-        <div className="glass-card !p-5 flex flex-col justify-center gap-3">
+        <div className="card !p-4 flex flex-col justify-center gap-3 border-slate-200/90">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Risk: ODA Detection</span>
-            <div className={`px-3 py-1 rounded-full text-[10px] font-bold shadow-sm border ${delhiveryOda ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Delhivery Check</span>
+            <div className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${delhiveryOda ? 'bg-rose-50 text-rose-600 border-rose-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
               {delhiveryOda ? 'ODA DETECTED' : (selGroup === 'Delhivery' ? 'CLEAN CITY' : 'AUTO-DETECTION')}
             </div>
           </div>
-          <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
+          <p className="text-[11px] text-slate-500 leading-relaxed">
             {selGroup === 'Delhivery' 
-              ? 'Our live API check confirms ODA status for Delhivery instantly based on its specialized courier pin code.'
-              : 'Switch to a specific courier partner for automated serviceability alerts.'}
+              ? 'The Delhivery lookup verifies whether the selected pincode is standard or ODA before the result list is ranked.'
+              : 'Select Delhivery focus when you want serviceability and ODA feedback to be shown more prominently.'}
           </p>
           {delhiveryOda && (
-            <div className="p-3 bg-rose-50/50 border border-rose-200/50 rounded-2xl animate-pulse shadow-inner">
-              <p className="text-[11px] text-rose-700 font-bold flex items-center gap-2">
+            <div className="px-3 py-2.5 bg-rose-50 border border-rose-200/70 rounded-2xl">
+              <p className="text-[11px] text-rose-700 font-semibold flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4" /> Warning: Delhivery ODA surcharge (₹{odaAmt}) applied.
               </p>
             </div>
@@ -516,10 +496,10 @@ export default function RateCalculatorPage() {
 
       {/* Tabs (Premium Pill) */}
       {results.length>0&&(
-        <div className="flex gap-1 mb-6 bg-slate-200/50 backdrop-blur-md p-1.5 rounded-[1.5rem] w-fit border border-slate-200/50 shadow-inner">
+        <div className="flex gap-1 mb-5 bg-white p-1 rounded-full w-fit border border-slate-200 shadow-sm">
           {[['calc','Calculator',Calculator],['sensitivity','Sensitivity',BarChart2],['quote','Quote',Printer]].map(([id,label,Icon])=>(
             <button key={id} onClick={()=>setTab(id)}
-              className={`px-6 py-2.5 rounded-[1.2rem] text-[13px] font-bold flex items-center gap-2 transition-all duration-300 ${tab===id?'bg-white shadow-premium text-indigo-600':'text-slate-500 hover:text-slate-800'}`}>
+              className={`px-4 py-2 rounded-full text-[13px] font-bold flex items-center gap-2 transition-all duration-300 ${tab===id?'bg-slate-900 text-white shadow-[0_8px_18px_rgba(15,23,42,0.14)]':'text-slate-500 hover:text-slate-800'}`}>
               <Icon className="w-4 h-4"/>{label}
             </button>
           ))}
@@ -592,15 +572,15 @@ export default function RateCalculatorPage() {
 
       {/* Empty state (Luxury Glass) */}
       {!zone&&(
-        <div className="glass-card !p-20 text-center animate-in">
-          <div className="w-20 h-20 rounded-[2.5rem] bg-indigo-50 flex items-center justify-center mx-auto mb-8 shadow-inner border border-indigo-100/50">
-            <Package className="w-10 h-10 text-indigo-500/40"/>
+        <div className="card !p-12 md:!p-14 text-center animate-in border-slate-200/90">
+          <div className="w-16 h-16 rounded-[1.75rem] bg-gradient-to-br from-amber-50 to-sky-50 flex items-center justify-center mx-auto mb-6 border border-slate-200/70">
+            <Package className="w-8 h-8 text-slate-400"/>
           </div>
-          <h2 className="text-xl font-bold text-slate-800 mb-3 tracking-tight">Enterprise Rate Engine Ready</h2>
-          <p className="text-sm font-medium text-slate-400 max-w-sm mx-auto leading-relaxed">Enter a destination pincode or city name to compare contract-audited rates across 18 specialized logistics channels.</p>
-          <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <h2 className="text-xl font-bold text-slate-800 mb-3 tracking-tight">Contract-Based Rate Engine</h2>
+          <p className="text-sm text-slate-500 max-w-md mx-auto leading-relaxed">Search a destination to compare courier costs against the verified rate sheets you shared, without extra assumed surcharges.</p>
+          <div className="mt-6 flex flex-wrap justify-center gap-2.5">
              {['400019 (Mumbai)', 'Bangalore', 'Noida'].map(ex => (
-                <span key={ex} className="px-4 py-2 border border-slate-200 rounded-2xl text-[11px] font-bold text-slate-400 border-dashed hover:border-indigo-400 hover:text-indigo-500 cursor-pointer transition-all">
+                <span key={ex} className="px-3.5 py-2 border border-slate-200 rounded-full text-[11px] font-semibold text-slate-500 hover:border-amber-300 hover:text-amber-700 cursor-pointer transition-all">
                   Try "{ex}"
                 </span>
              ))}

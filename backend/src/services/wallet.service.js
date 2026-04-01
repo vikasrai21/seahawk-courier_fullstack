@@ -1,6 +1,15 @@
 // wallet.service.js — FIXED: uses Client.walletBalance directly (no separate Wallet model)
 'use strict';
 const prisma = require('../config/prisma');
+const { AppError } = require('../middleware/errorHandler');
+
+function parseAmount(amount) {
+  const value = Number(amount);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new AppError('Amount must be a valid positive number.', 400);
+  }
+  return Number(value.toFixed(2));
+}
 
 async function getWallet(clientCode) {
   const client = await prisma.client.findUnique({
@@ -33,19 +42,20 @@ async function getTransactions(clientCode, { page = 1, limit = 30 } = {}) {
 
 // ── Credit (recharge / refund) ─────────────────────────────────────────────
 async function credit({ clientCode, amount, description, reference, paymentMode, paymentId }) {
+  const safeAmount = parseAmount(amount);
   return prisma.$transaction(async (tx) => {
     const updated = await tx.client.update({
       where: { code: clientCode },
-      data:  { walletBalance: { increment: amount } },
+      data:  { walletBalance: { increment: safeAmount } },
       select: { code: true, company: true, walletBalance: true },
     });
     const txn = await tx.walletTransaction.create({
       data: {
         clientCode,
         type:        'CREDIT',
-        amount,
+        amount:      safeAmount,
         balance:     updated.walletBalance,
-        description,
+        description: description || 'Wallet credit',
         reference:   reference || null,
         paymentMode: paymentMode || null,
         paymentId:   paymentId || null,
@@ -58,27 +68,28 @@ async function credit({ clientCode, amount, description, reference, paymentMode,
 
 // ── Debit (pay for shipment) ──────────────────────────────────────────────
 async function debit({ clientCode, amount, description, reference }) {
+  const safeAmount = parseAmount(amount);
   return prisma.$transaction(async (tx) => {
     const client = await tx.client.findUnique({
       where:  { code: clientCode },
       select: { walletBalance: true },
     });
     if (!client) throw new Error(`Client not found: ${clientCode}`);
-    if (client.walletBalance < amount) {
-      throw new Error(`Insufficient wallet balance (available: ₹${client.walletBalance.toFixed(2)}, required: ₹${amount.toFixed(2)})`);
+    if (client.walletBalance < safeAmount) {
+      throw new Error(`Insufficient wallet balance (available: ₹${client.walletBalance.toFixed(2)}, required: ₹${safeAmount.toFixed(2)})`);
     }
     const updated = await tx.client.update({
       where: { code: clientCode },
-      data:  { walletBalance: { decrement: amount } },
+      data:  { walletBalance: { decrement: safeAmount } },
       select: { code: true, company: true, walletBalance: true },
     });
     const txn = await tx.walletTransaction.create({
       data: {
         clientCode,
         type:        'DEBIT',
-        amount,
+        amount:      safeAmount,
         balance:     updated.walletBalance,
-        description,
+        description: description || 'Wallet debit',
         reference:   reference || null,
         status:      'SUCCESS',
       },
@@ -89,19 +100,24 @@ async function debit({ clientCode, amount, description, reference }) {
 
 // ── Adjust (admin correction) ─────────────────────────────────────────────
 async function adjust({ clientCode, amount, description }) {
+  const safeAmount = Number(amount);
+  if (!Number.isFinite(safeAmount) || safeAmount === 0) {
+    throw new AppError('Adjustment amount must be non-zero.', 400);
+  }
   return prisma.$transaction(async (tx) => {
     const updated = await tx.client.update({
       where: { code: clientCode },
-      data:  { walletBalance: { increment: amount } }, // negative amount = deduct
+      data:  { walletBalance: { increment: safeAmount } }, // negative amount = deduct
       select: { code: true, company: true, walletBalance: true },
     });
     const txn = await tx.walletTransaction.create({
       data: {
         clientCode,
-        type:    amount >= 0 ? 'CREDIT' : 'DEBIT',
-        amount:  Math.abs(amount),
+        type:    safeAmount >= 0 ? 'CREDIT' : 'DEBIT',
+        amount:  Math.abs(safeAmount),
         balance: updated.walletBalance,
         description,
+        paymentMode: 'ADJUSTMENT',
         status:  'SUCCESS',
       },
     });

@@ -17,6 +17,8 @@
   --shk-text-mid: #94a3b8;
   --shk-text-dim: #475569;
   --shk-orange: #f97316;
+  --shk-primary: #f8fafc;
+  --shk-primary-soft: rgba(255, 255, 255, 0.05);
   background: var(--shk-bg);
   color: var(--shk-text);
 }
@@ -32,6 +34,8 @@
   --shk-text-mid: #475569;
   --shk-text-dim: #94a3b8;
   --shk-orange: #f97316;
+  --shk-primary: #0f172a;
+  --shk-primary-soft: rgba(15, 23, 42, 0.04);
   background: var(--shk-bg);
   color: var(--shk-text);
 }
@@ -107,6 +111,106 @@
 [data-theme] .hover\:bg-gray-50:hover,
 [data-theme] .hover\:bg-slate-50:hover {
   background-color: var(--shk-surface-soft);
+}
+
+.shk-page-header {
+  padding: 20px 24px;
+  background: transparent;
+  margin-bottom: 20px;
+}
+
+.shk-page-header__crumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.shk-page-header__crumb {
+  font-size: 11px;
+  color: var(--shk-text-dim);
+  font-weight: 600;
+}
+
+.shk-page-header__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.shk-page-header__copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.shk-page-header__title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.shk-page-header__icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: rgba(249, 115, 22, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(249, 115, 22, 0.2);
+}
+
+.shk-page-header__title {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--shk-text);
+  letter-spacing: -0.4px;
+  margin: 0;
+  font-family: 'Syne', sans-serif;
+}
+
+.shk-page-header__subtitle {
+  font-size: 13px;
+  color: var(--shk-text-mid);
+  margin: 0;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.shk-page-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.shk-page-header__rule {
+  margin-top: 20px;
+  height: 1px;
+  background: rgba(15, 23, 42, 0.04);
+  width: 100%;
+}
+
+[data-theme="dark"] .shk-page-header__rule {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+@media (max-width: 768px) {
+  .shk-page-header {
+    padding: 16px;
+  }
+
+  .shk-page-header__row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .shk-page-header__actions {
+    justify-content: flex-start;
+  }
 }
 
 /* Card surfaces — clean, no heavy shadows */

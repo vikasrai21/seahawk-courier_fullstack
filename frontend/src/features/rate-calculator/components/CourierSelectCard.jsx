@@ -1,16 +1,16 @@
 import React from 'react';
-import { ShieldCheck, Truck, Zap, Globe } from 'lucide-react';
+import { ShieldCheck, Truck } from 'lucide-react';
 import { COURIER_GROUPS } from '../core';
 
 export default function CourierSelectCard({ selGroup, setSelGroup }) {
   return (
-    <div className="card h-full flex flex-col">
-      <div className="flex items-center gap-2 mb-4">
-        <div className="p-2 bg-indigo-50 rounded-lg">
-          <Truck className="w-4 h-4 text-indigo-600" />
+    <div className="card h-full !p-4 flex flex-col">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="p-2 bg-amber-50 rounded-xl border border-amber-100">
+          <Truck className="w-4 h-4 text-amber-600" />
         </div>
         <div>
-          <h3 className="text-sm font-bold text-slate-800">Select Courier</h3>
+          <h3 className="text-sm font-bold text-slate-800">Courier Focus</h3>
           <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Partner Focus</p>
         </div>
       </div>
@@ -20,18 +20,18 @@ export default function CourierSelectCard({ selGroup, setSelGroup }) {
           <button
             key={g.id}
             onClick={() => setSelGroup(g.id)}
-            className={`flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all relative group ${
+            className={`flex flex-col items-center justify-center min-h-[82px] p-2.5 rounded-[20px] border transition-all relative group ${
               selGroup === g.id
-                ? 'border-indigo-500 bg-indigo-50/50 ring-4 ring-indigo-50'
-                : 'border-slate-50 bg-slate-50/30 hover:border-slate-200 hover:bg-white'
+                ? 'border-slate-900 bg-slate-900 text-white shadow-[0_12px_24px_rgba(15,23,42,0.12)]'
+                : 'border-slate-200 bg-white hover:border-amber-200 hover:bg-amber-50/30'
             }`}
           >
             {g.logo ? (
-              <div className="h-8 w-full flex items-center justify-center mb-1">
+              <div className="h-7 w-full flex items-center justify-center mb-1">
                 <img 
                   src={g.logo} 
                   alt={g.label} 
-                  className={`max-h-full max-w-[80%] object-contain filter ${selGroup === g.id ? 'drop-shadow-sm' : 'grayscale opacity-70 group-hover:grayscale-0 group-hover:opacity-100'} transition-all`}
+                  className={`max-h-full max-w-[80%] object-contain filter ${selGroup === g.id ? 'brightness-0 invert opacity-95' : 'grayscale opacity-70 group-hover:grayscale-0 group-hover:opacity-100'} transition-all`}
                 />
               </div>
             ) : (
@@ -39,22 +39,22 @@ export default function CourierSelectCard({ selGroup, setSelGroup }) {
             )}
             
             <span className={`text-[10px] font-bold text-center leading-tight ${
-              selGroup === g.id ? 'text-indigo-700' : 'text-slate-500'
+              selGroup === g.id ? 'text-white' : 'text-slate-600'
             }`}>
               {g.label}
             </span>
             {selGroup === g.id && (
               <div className="absolute top-1 right-1">
-                <ShieldCheck className="w-3 h-3 text-indigo-500" />
+                <ShieldCheck className="w-3 h-3 text-amber-300" />
               </div>
             )}
           </button>
         ))}
       </div>
 
-      <div className="mt-4 pt-3 border-t border-slate-50">
-        <p className="text-[10px] text-slate-400 italic">
-          Selecting a specific partner focuses the ODA checks and serviceability alerts.
+      <div className="mt-3 pt-3 border-t border-slate-100">
+        <p className="text-[10px] text-slate-500">
+          Narrow the list to one partner when you want cleaner serviceability and ODA feedback.
         </p>
       </div>
     </div>

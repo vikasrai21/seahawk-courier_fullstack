@@ -2,9 +2,11 @@
 'use strict';
 
 const prisma                = require('../config/prisma');
+const config                = require('../config');
 const R                     = require('../utils/response');
 const notify                = require('../services/notification.service');
 const pdf                   = require('../services/pdf.service');
+const walletService         = require('../services/wallet.service');
 const { auditLog }          = require('../utils/audit');
 const { asyncHandler }      = require('../middleware/errorHandler');
 
@@ -20,6 +22,48 @@ function withReceiptMeta(txn) {
     gstAmount,
     receiptNo: `RCPT-${new Date(txn.createdAt || Date.now()).toISOString().slice(0, 10).replace(/-/g, '')}-${txn.id}`,
   };
+}
+
+async function fetchVerifiedRazorpayPayment({ orderId, paymentId, signature, expectedAmount, expectedClientCode }) {
+  const razorpayKey = config.carriers.razorpay.keyId;
+  const razorpaySecret = config.carriers.razorpay.secret;
+
+  if (!razorpayKey || !razorpaySecret) {
+    if (config.payments.allowMockRecharge) {
+      return {
+        id: paymentId,
+        order_id: orderId,
+        amount: Math.round(expectedAmount * 100),
+        currency: 'INR',
+        status: 'captured',
+        notes: { clientCode: expectedClientCode },
+      };
+    }
+    return null;
+  }
+
+  const crypto = require('crypto');
+  const expectedSig = crypto
+    .createHmac('sha256', razorpaySecret)
+    .update(`${orderId}|${paymentId}`)
+    .digest('hex');
+
+  if (expectedSig !== signature) return false;
+
+  const Razorpay = require('razorpay');
+  const rzp = new Razorpay({ key_id: razorpayKey, key_secret: razorpaySecret });
+  const [payment, order] = await Promise.all([
+    rzp.payments.fetch(paymentId),
+    rzp.orders.fetch(orderId),
+  ]);
+
+  if (!payment || !order) return false;
+  if (payment.order_id !== orderId) return false;
+  if (!['captured', 'authorized'].includes(String(payment.status || '').toLowerCase())) return false;
+  if (Number(payment.amount) !== Math.round(expectedAmount * 100)) return false;
+  if (String(order.notes?.clientCode || '').trim().toUpperCase() !== expectedClientCode) return false;
+
+  return payment;
 }
 
 /* ── GET /api/wallet  — all wallets (admin) ── */
@@ -138,10 +182,10 @@ const createRechargeOrder = asyncHandler(async (req, res) => {
   const client = await prisma.client.findUnique({ where: { code: clientCode } });
   if (!client) return R.error(res, 'Client not found', 404);
 
-  const razorpayKey    = process.env.RAZORPAY_KEY_ID;
-  const razorpaySecret = process.env.RAZORPAY_KEY_SECRET;
+  const razorpayKey = config.carriers.razorpay.keyId;
+  const razorpaySecret = config.carriers.razorpay.secret;
 
-  if (!razorpayKey || !razorpaySecret) {
+  if ((!razorpayKey || !razorpaySecret) && config.payments.allowMockRecharge) {
     const mockOrder = {
       id:       `order_dev_${Date.now()}`,
       amount:   amount * 100,
@@ -149,6 +193,9 @@ const createRechargeOrder = asyncHandler(async (req, res) => {
       receipt:  `wallet_${clientCode}_${Date.now()}`,
     };
     return R.ok(res, { order: mockOrder, key: 'rzp_dev_key', clientCode, amount, devMode: true });
+  }
+  if (!razorpayKey || !razorpaySecret) {
+    return R.error(res, 'Wallet recharge is temporarily unavailable', 503);
   }
 
   const Razorpay = require('razorpay');
@@ -176,27 +223,26 @@ const verifyRecharge = asyncHandler(async (req, res) => {
     return R.error(res, 'Valid clientCode and amount are required', 400);
   }
 
-  const razorpaySecret = process.env.RAZORPAY_KEY_SECRET;
-  if (razorpaySecret && razorpay_signature) {
-    const crypto      = require('crypto');
-    const expectedSig = crypto
-      .createHmac('sha256', razorpaySecret)
-      .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-      .digest('hex');
-    if (expectedSig !== razorpay_signature) {
-      return R.error(res, 'Invalid payment signature', 400);
-    }
+  const verifiedPayment = await fetchVerifiedRazorpayPayment({
+    orderId: razorpay_order_id,
+    paymentId: razorpay_payment_id,
+    signature: razorpay_signature,
+    expectedAmount: amount,
+    expectedClientCode: clientCode,
+  });
+  if (verifiedPayment === null) {
+    return R.error(res, 'Wallet recharge is temporarily unavailable', 503);
+  }
+  if (verifiedPayment === false) {
+    return R.error(res, 'Payment verification failed', 400);
   }
 
   const existing = await prisma.walletTransaction.findFirst({
     where: {
-      clientCode,
-      ...((razorpay_payment_id || razorpay_order_id) ? {
-        OR: [
-          ...(razorpay_payment_id ? [{ paymentId: razorpay_payment_id }] : []),
-          [{ reference: razorpay_payment_id || razorpay_order_id }],
-        ].flat(),
-      } : {}),
+      OR: [
+        { paymentId: razorpay_payment_id },
+        { reference: razorpay_order_id },
+      ],
     },
     select: { id: true },
   });
@@ -204,28 +250,13 @@ const verifyRecharge = asyncHandler(async (req, res) => {
     return R.error(res, 'This payment has already been processed', 409);
   }
 
-  const { wallet, txn } = await prisma.$transaction(async (tx) => {
-    const updatedClient = await tx.client.update({
-      where: { code: clientCode },
-      data:  { walletBalance: { increment: amount } },
-      select: { walletBalance: true },
-    });
-
-    const createdTxn = await tx.walletTransaction.create({
-      data: {
-        clientCode,
-        type:        'CREDIT',
-        amount,
-        balance:     updatedClient.walletBalance,
-        description: 'Wallet recharge via Razorpay',
-        reference:   razorpay_payment_id || razorpay_order_id,
-        paymentMode: 'RAZORPAY',
-        paymentId:   razorpay_payment_id || null,
-        status:      'SUCCESS',
-      },
-    });
-
-    return { wallet: updatedClient, txn: createdTxn };
+  const { wallet, txn } = await walletService.credit({
+    clientCode,
+    amount,
+    description: 'Wallet recharge via Razorpay',
+    reference: razorpay_order_id,
+    paymentMode: config.carriers.razorpay.keyId ? 'RAZORPAY' : 'MOCK_RAZORPAY',
+    paymentId: razorpay_payment_id,
   });
 
   await notify.paymentReceived({ ...txn, balance: wallet.walletBalance }, clientCode).catch(() => {});
@@ -249,68 +280,19 @@ const verifyRecharge = asyncHandler(async (req, res) => {
 /* ── POST /api/wallet/debit  — debit wallet for shipment (admin/ops) ── */
 const debitWallet = asyncHandler(async (req, res) => {
   const { clientCode, amount, description, reference } = req.body;
-  if (!clientCode || !amount) return R.error(res, 'clientCode and amount required', 400);
-
-  const client = await prisma.client.findUnique({ where: { code: clientCode } });
-  if (!client) return R.error(res, 'Client not found', 404);
-  if (client.walletBalance < amount) {
-    return R.error(res, `Insufficient balance. Available: ₹${client.walletBalance}`, 400);
-  }
-
-  const [txn] = await prisma.$transaction([
-    prisma.walletTransaction.create({
-      data: {
-        clientCode,
-        type:        'DEBIT',
-        amount:      parseFloat(amount),
-        balance:     client.walletBalance - parseFloat(amount),
-        description: description || 'Shipment charge',
-        reference:   reference || undefined,
-        paymentMode: 'WALLET',
-        status:      'SUCCESS',
-      },
-    }),
-    prisma.client.update({
-      where: { code: clientCode },
-      data:  { walletBalance: { decrement: parseFloat(amount) } },
-    }),
-  ]);
-
-  R.ok(res, { message: 'Wallet debited', amount: parseFloat(amount), newBalance: txn.balance });
+  const { wallet } = await walletService.debit({ clientCode, amount, description, reference });
+  R.ok(res, { message: 'Wallet debited', amount: Number(amount), newBalance: wallet.walletBalance });
 });
 
 /* ── POST /api/wallet/adjust  — manual adjustment by admin ── */
 const adjustWallet = asyncHandler(async (req, res) => {
   const { clientCode, amount, type, description } = req.body;
-  if (!['CREDIT', 'DEBIT'].includes(type)) return R.error(res, 'type must be CREDIT or DEBIT', 400);
-
-  const client = await prisma.client.findUnique({ where: { code: clientCode } });
-  if (!client) return R.error(res, 'Client not found', 404);
-
-  const newBalance = type === 'CREDIT'
-    ? client.walletBalance + parseFloat(amount)
-    : client.walletBalance - parseFloat(amount);
-
-  if (newBalance < 0) return R.error(res, 'Adjustment would result in negative balance', 400);
-
-  await prisma.$transaction([
-    prisma.walletTransaction.create({
-      data: {
-        clientCode,
-        userId:      req.user?.id,
-        type,
-        amount:      parseFloat(amount),
-        balance:     newBalance,
-        description: description || 'Manual adjustment',
-        paymentMode: 'ADJUSTMENT',
-        status:      'SUCCESS',
-      },
-    }),
-    prisma.client.update({
-      where: { code: clientCode },
-      data:  { walletBalance: newBalance },
-    }),
-  ]);
+  const signedAmount = type === 'CREDIT' ? Number(amount) : -Number(amount);
+  const { wallet } = await walletService.adjust({
+    clientCode,
+    amount: signedAmount,
+    description: description || 'Manual adjustment',
+  });
 
   await auditLog({
     userId:    req.user?.id,
@@ -322,7 +304,7 @@ const adjustWallet = asyncHandler(async (req, res) => {
     ip:        req.ip,
   });
 
-  R.ok(res, { message: `Wallet ${type.toLowerCase()}ed`, amount: parseFloat(amount), newBalance });
+  R.ok(res, { message: `Wallet ${type.toLowerCase()}ed`, amount: Number(amount), newBalance: wallet.walletBalance });
 });
 
 module.exports = {

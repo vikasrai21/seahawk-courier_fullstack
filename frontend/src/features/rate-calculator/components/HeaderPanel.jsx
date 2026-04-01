@@ -12,21 +12,21 @@ export default function HeaderPanel({
 }) {
   return (
     <>
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-slate-900 to-slate-700 flex items-center justify-center shadow-sm">
-              <Sparkles className="w-4 h-4 text-white" />
+            <div className="w-9 h-9 rounded-xl bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] flex items-center justify-center shadow-sm ring-1 ring-slate-200">
+              <Sparkles className="w-4 h-4 text-orange-300" />
             </div>
             <div>
               <h1 className="text-xl font-semibold text-slate-900 tracking-tight">Rate Calculator</h1>
-              <p className="text-[11px] text-slate-400 font-medium -mt-0.5">18 services across 7 partners</p>
+              <p className="text-[11px] text-slate-500 font-medium -mt-0.5">Verified contract pricing across active courier partners</p>
             </div>
           </div>
         </div>
         <button
           onClick={() => setShowSettings(!showSettings)}
-          className={`h-8 px-3 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all ${showSettings ? 'bg-slate-900 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-500 hover:border-slate-300 hover:text-slate-700'}`}
+          className={`h-9 px-3 rounded-xl text-[11px] font-semibold flex items-center gap-1.5 transition-all ${showSettings ? 'bg-slate-900 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900'}`}
         >
           <Settings className="w-3.5 h-3.5" />
           Manage
@@ -34,7 +34,7 @@ export default function HeaderPanel({
       </div>
 
       {showSettings && (
-        <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4 shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 mb-4 shadow-sm">
           <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Toggle Couriers</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1">
             {couriers.map((c) => (
