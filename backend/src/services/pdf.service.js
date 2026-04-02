@@ -29,12 +29,22 @@ const BRAND = {
   orangeSoft: '#fff2e8',
   slate900: '#0f172a',
   slate700: '#334155',
+  slate600: '#475569',
   slate500: '#64748b',
   slate300: '#cbd5e1',
   slate200: '#e2e8f0',
   slate100: '#f1f5f9',
   white: '#ffffff',
 };
+
+const BANK_DETAILS = {
+  name: 'ICICI BANK LTD',
+  account: '1658056174',
+  ifsc: 'ICIC0000615',
+  branch: 'SECTOR 18, GURGAON',
+};
+
+const FOOTER_CTA = 'Get Daily Stock Updates, You Can Download SeaHawk App From Play Store or App Store.';
 
 const LOGO_PATH = path.join(__dirname, '../../public/images/logo.png');
 
@@ -216,6 +226,9 @@ async function generateShippingLabel(shipment) {
 async function generateInvoicePDF(invoice, items, client) {
   const PDFDocument = await getPDF();
   const tax = getTaxBreakdown(invoice, client);
+  const subtotal = Number(invoice.subtotal || 0);
+  const gstAmount = Number(invoice.gstAmount || tax.components.reduce((sum, c) => sum + (c.amount || 0), 0));
+  const total = Number(invoice.total || subtotal + gstAmount);
 
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -229,189 +242,276 @@ async function generateInvoicePDF(invoice, items, client) {
     const H = doc.page.height;
     const pageM = 42;
     const contentW = W - (pageM * 2);
+
+    const headerY = pageM - 8;
+    const headerLeftWidth = contentW * 0.52;
+    const rightColWidth = contentW - headerLeftWidth;
+    const headerRightX = pageM + headerLeftWidth;
+
+    drawRoundedCard(doc, pageM, headerY + 8, 64, 64, 12, BRAND.white, BRAND.slate200);
+    drawLogo(doc, pageM + 6, headerY + 14, 52, 52);
+
+    doc.fontSize(18).fillColor(BRAND.slate900).font('Helvetica-Bold')
+      .text(COMPANY.name, pageM + 72, headerY + 14, { width: headerLeftWidth - 72 });
+    doc.fontSize(10).fillColor(BRAND.slate700).font('Helvetica')
+      .text(`${COMPANY.address}`, pageM + 72, headerY + 40, { width: headerLeftWidth - 72, lineGap: 2 })
+      .text(`${COMPANY.phone} | ${COMPANY.email}`, pageM + 72, headerY + 60, { width: headerLeftWidth - 72 })
+      .text(`GSTIN: ${COMPANY.gstin} | HSN/SAC: ${COMPANY.hsnCode}`, pageM + 72, headerY + 74, { width: headerLeftWidth - 72 });
+
+    doc.fontSize(32).fillColor(BRAND.slate900).font('Helvetica-Bold')
+      .text('TAX INVOICE', headerRightX, headerY + 12, { width: rightColWidth - 4, align: 'right' });
+    doc.fontSize(10).fillColor(BRAND.slate600).font('Helvetica')
+      .text(`Invoice No: ${invoice.invoiceNo || 'DRAFT'}`, headerRightX, headerY + 60, { width: rightColWidth - 4, align: 'right' })
+      .text(`Date: ${fmtDate(invoice.createdAt || new Date())}`, headerRightX, headerY + 74, { width: rightColWidth - 4, align: 'right' });
+
+    doc.moveTo(pageM, headerY + 96).lineTo(W - pageM, headerY + 96).strokeColor(BRAND.slate300).lineWidth(1).stroke();
+
+    const billingY = headerY + 110;
+    const blockWidth = (contentW / 2) - 12;
+    doc.fontSize(9).fillColor(BRAND.slate500).font('Helvetica-Bold')
+      .text('BILLING ADDRESS', pageM, billingY);
+    doc.fontSize(15).fillColor(BRAND.slate900).font('Helvetica-Bold')
+      .text(client?.company || invoice.clientCode || 'Client', pageM, billingY + 18, { width: blockWidth });
+    doc.fontSize(9).fillColor(BRAND.slate700).font('Helvetica')
+      .text([
+        client?.address,
+        client?.phone ? `Phone: ${client.phone}` : null,
+        client?.gst ? `GSTIN: ${client.gst}` : 'GSTIN: Unregistered',
+      ].filter(Boolean).join('\n'), pageM, billingY + 38, { width: blockWidth, lineGap: 2 });
+
+    const metaX = pageM + blockWidth + 24;
+    const metaRows = [
+      ['SERVICE PERIOD', `${invoice.fromDate || '—'} to ${invoice.toDate || '—'}`],
+      ['PLACE OF SUPPLY', tax.placeOfSupply || 'Inter-state supply'],
+      ['TAX STRUCTURE', tax.label],
+      ['COMPANY GSTIN', COMPANY.gstin],
+    ];
+    metaRows.forEach(([label, value], idx) => {
+      const y = billingY + (idx * 18);
+      doc.fontSize(8).fillColor(BRAND.slate500).font('Helvetica-Bold')
+        .text(label, metaX, y, { width: blockWidth + 4, align: 'left' });
+      doc.fontSize(10).fillColor(BRAND.slate900).font('Helvetica-Bold')
+        .text(value, metaX, y + 10, { width: blockWidth + 4, align: 'left' });
+    });
+
+    doc.moveTo(pageM, billingY + 90).lineTo(W - pageM, billingY + 90).strokeColor(BRAND.slate200).lineWidth(1).stroke();
+
     const tableX = pageM;
     const tableW = contentW;
-    const tableHeaderHeight = 24;
-    const rowHeight = 18;
-    const footerReserve = 94;
-    let rowY = 0;
-
+    const tableHeaderHeight = 32;
+    const rowHeight = 34;
+    const bottomReserve = 180;
     const columns = [
-      { id: '#', x: tableX + 6, w: 18 },
-      { id: 'AWB NO', x: tableX + 28, w: 96 },
-      { id: 'DATE', x: tableX + 128, w: 64 },
-      { id: 'CONSIGNEE', x: tableX + 196, w: 120 },
-      { id: 'DESTINATION', x: tableX + 320, w: 84 },
-      { id: 'WT (KG)', x: tableX + 408, w: 44, align: 'right' },
-      { id: 'AMOUNT', x: tableX + 458, w: 64, align: 'right' },
+      { id: '#', width: 24, align: 'center' },
+      { id: 'ITEMS & DESCRIPTION', width: 160 },
+      { id: 'HSN/SAC', width: 60, align: 'center' },
+      { id: 'QTY', width: 40, align: 'right' },
+      { id: 'RATE', width: 62, align: 'right' },
+      { id: 'IGST %', width: 50, align: 'right' },
+      { id: 'IGST AMT', width: 62, align: 'right' },
+      { id: 'AMOUNT', width: 58, align: 'right' },
     ];
-
-    function drawPageHeader(isContinuation = false) {
-      doc.fontSize(10).fillColor(BRAND.slate900).font('Helvetica-Bold')
-        .text(COMPANY.name.toUpperCase(), pageM + 76, 28, { width: 260 });
-      doc.fontSize(8.5).fillColor(BRAND.slate700).font('Helvetica')
-        .text(`${COMPANY.address}, ${COMPANY.city}`, pageM + 76, 43, { width: 300 })
-        .text(`${COMPANY.phone} | ${COMPANY.email}`, pageM + 76, 56, { width: 300 })
-        .text(`GSTIN: ${COMPANY.gstin} | HSN/SAC: ${COMPANY.hsnCode}`, pageM + 76, 69, { width: 300 });
-
-      drawRoundedCard(doc, pageM, 24, 56, 56, 10, BRAND.white, BRAND.slate200);
-      drawLogo(doc, pageM + 6, 30, 44, 44);
-
-      doc.fontSize(18).fillColor(BRAND.slate900).font('Helvetica-Bold')
-        .text('TAX INVOICE', W - 200, 28, { width: 158, align: 'right' });
-      doc.fontSize(9).fillColor(BRAND.slate700).font('Helvetica')
-        .text(`Invoice No: ${invoice.invoiceNo || 'DRAFT'}`, W - 200, 49, { width: 158, align: 'right' })
-        .text(`Date: ${fmtDate(invoice.createdAt || new Date())}`, W - 200, 63, { width: 158, align: 'right' });
-      if (isContinuation) {
-        doc.fontSize(8).fillColor(BRAND.orange).font('Helvetica-Bold')
-          .text('CONTINUED', W - 200, 77, { width: 158, align: 'right' });
-      }
-
-      doc.moveTo(pageM, 94).lineTo(W - pageM, 94).strokeColor(BRAND.slate300).lineWidth(1).stroke();
-    }
-
-    function drawBillingBlock() {
-      doc.fontSize(8).fillColor(BRAND.slate500).font('Helvetica-Bold')
-        .text('BILL TO', pageM, 112);
-      doc.fontSize(14).fillColor(BRAND.slate900).font('Helvetica-Bold')
-        .text(client?.company || invoice.clientCode || 'Client', pageM, 126, { width: 260 });
-      doc.fontSize(9).fillColor(BRAND.slate700).font('Helvetica')
-        .text([
-          client?.address,
-          client?.phone ? `Phone: ${client.phone}` : null,
-          client?.gst ? `Client GSTIN: ${client.gst}` : 'Client GSTIN: Unregistered',
-        ].filter(Boolean).join('\n'), pageM, 146, { width: 260, lineGap: 2 });
-
-      const metaX = W - 230;
-      const metaRows = [
-        ['Service Period', `${invoice.fromDate || '—'} to ${invoice.toDate || '—'}`],
-        ['Place of Supply', tax.placeOfSupply],
-        ['Tax Structure', tax.label],
-        ['Company GSTIN', COMPANY.gstin],
-      ];
-      metaRows.forEach(([label, value], index) => {
-        const y = 112 + (index * 18);
-        doc.fontSize(8).fillColor(BRAND.slate500).font('Helvetica-Bold')
-          .text(label.toUpperCase(), metaX, y, { width: 188, align: 'right' });
-        doc.fontSize(9).fillColor(BRAND.slate900).font('Helvetica-Bold')
-          .text(value, metaX, y + 9, { width: 188, align: 'right' });
-      });
-
-      doc.moveTo(pageM, 196).lineTo(W - pageM, 196).strokeColor(BRAND.slate200).lineWidth(1).stroke();
-    }
+    const columnPositions = [];
+    let acc = tableX;
+    columns.forEach((column) => {
+      columnPositions.push({ ...column, x: acc + 4 });
+      acc += column.width;
+    });
 
     function drawTableHeader(y) {
-      doc.rect(tableX, y, tableW, tableHeaderHeight).fill(BRAND.navy);
-      columns.forEach((col) => {
-        doc.fontSize(7.5).fillColor(BRAND.white).font('Helvetica-Bold')
-          .text(col.id, col.x, y + 8, { width: col.w, align: col.align || 'left' });
+      doc.rect(tableX, y, tableW, tableHeaderHeight).fill(BRAND.navy).strokeColor('transparent');
+      columnPositions.forEach((col) => {
+        doc.fontSize(8).fillColor(BRAND.white).font('Helvetica-Bold')
+          .text(col.id, col.x, y + 10, { width: col.width, align: col.align || 'left' });
       });
     }
 
-    function drawFooter() {
-      const footerY = H - 58;
-      doc.moveTo(pageM, footerY).lineTo(W - pageM, footerY).strokeColor(BRAND.slate300).lineWidth(1).stroke();
-      doc.fontSize(7.5).fillColor(BRAND.slate500).font('Helvetica')
-        .text(
-          'Certified that the particulars given above are true and correct. This is a computer-generated tax invoice and does not require a physical signature.',
-          pageM,
-          footerY + 10,
-          { width: contentW, align: 'center' }
-        );
-      doc.fontSize(7.5).fillColor(BRAND.slate700).font('Helvetica-Bold')
-        .text(`${COMPANY.website} | GSTIN: ${COMPANY.gstin} | ${COMPANY.email}`, pageM, footerY + 28, { width: contentW, align: 'center' });
+    function startTable(y) {
+      drawTableHeader(y);
+      return y + tableHeaderHeight + 6;
     }
 
-    function addContinuationPage() {
-      doc.addPage({ size: 'A4', margin: 40 });
-      drawPageHeader(true);
-      rowY = 112;
-      drawTableHeader(rowY);
-      rowY += tableHeaderHeight + 8;
+    function ensureRowFits(currentY) {
+      if (currentY + rowHeight > H - bottomReserve) {
+        doc.addPage();
+        const newY = startTable(pageM + 30);
+        return newY;
+      }
+      return currentY;
     }
 
-    drawPageHeader(false);
-    drawBillingBlock();
-    rowY = 214;
-    drawTableHeader(rowY);
-    rowY += tableHeaderHeight + 8;
-
+    let rowY = startTable(billingY + 110);
     items.forEach((item, index) => {
-      if (rowY + rowHeight > H - footerReserve) {
-        addContinuationPage();
-      }
+      rowY = ensureRowFits(rowY);
+      const bgColor = index % 2 === 0 ? BRAND.white : '#f9fafb';
+      doc.rect(tableX, rowY - 6, tableW, rowHeight).fill(bgColor);
 
-      if (index % 2 === 0) {
-        doc.rect(tableX, rowY - 2, tableW, rowHeight).fill('#fbfcfe');
-      }
+      const descLines = [
+        item.consignee,
+        item.destination ? `Destination: ${item.destination}` : null,
+        item.awb ? `AWB: ${item.awb}` : null,
+        item.courier ? item.courier : null,
+      ].filter(Boolean).join('\n');
+      const taxableAmount = Number(item.baseAmount || item.amount || 0);
+      const qty = Number(item.quantity || 1);
+      const proportion = subtotal ? taxableAmount / subtotal : 0;
+      const igstAmount = Number((gstAmount * proportion).toFixed(2));
+      const igstPercent = Number(invoice.gstPercent || 0);
+      const lineAmount = Number(item.amount || taxableAmount + igstAmount);
 
-      doc.fontSize(8).fillColor(BRAND.slate700).font('Helvetica')
-        .text(String(index + 1), columns[0].x, rowY + 3, { width: columns[0].w });
-      doc.font('Helvetica-Bold').fillColor(BRAND.slate900)
-        .text(item.awb || '-', columns[1].x, rowY + 3, { width: columns[1].w });
+      doc.fontSize(9).fillColor(BRAND.slate900).font('Helvetica-Bold')
+        .text(String(index + 1), columnPositions[0].x, rowY - 2, { width: columnPositions[0].width, align: 'center' });
+      doc.font('Helvetica').fillColor(BRAND.slate900)
+        .text(descLines || 'Shipment charges', columnPositions[1].x, rowY - 6, { width: columnPositions[1].width, lineGap: 2 });
       doc.font('Helvetica').fillColor(BRAND.slate700)
-        .text(item.date || '-', columns[2].x, rowY + 3, { width: columns[2].w })
-        .text((item.consignee || '').slice(0, 24), columns[3].x, rowY + 3, { width: columns[3].w })
-        .text((item.destination || '').slice(0, 18), columns[4].x, rowY + 3, { width: columns[4].w })
-        .text(((item.weight || 0) / 1000).toFixed(3), columns[5].x, rowY + 3, { width: columns[5].w, align: 'right' });
+        .text(COMPANY.hsnCode, columnPositions[2].x, rowY, { width: columnPositions[2].width, align: 'center' })
+        .text(qty.toFixed(0), columnPositions[3].x, rowY, { width: columnPositions[3].width, align: 'right' })
+        .text(fmtMoney(taxableAmount), columnPositions[4].x, rowY, { width: columnPositions[4].width, align: 'right' })
+        .text(`${igstPercent.toFixed(0)}%`, columnPositions[5].x, rowY, { width: columnPositions[5].width, align: 'right' })
+        .text(fmtMoney(igstAmount), columnPositions[6].x, rowY, { width: columnPositions[6].width, align: 'right' });
       doc.font('Helvetica-Bold').fillColor(BRAND.slate900)
-        .text(fmtMoney(item.amount || 0), columns[6].x, rowY + 3, { width: columns[6].w, align: 'right' });
+        .text(fmtMoney(lineAmount), columnPositions[7].x, rowY, { width: columnPositions[7].width, align: 'right' });
 
       rowY += rowHeight;
-      doc.moveTo(tableX, rowY - 2).lineTo(tableX + tableW, rowY - 2).strokeColor('#edf2f7').lineWidth(0.5).stroke();
+      doc.moveTo(tableX, rowY - 4).lineTo(tableX + tableW, rowY - 4).strokeColor('#e2e8f0').lineWidth(0.5).stroke();
+      doc.fillColor(BRAND.slate900);
     });
 
-    const notesX = pageM;
-    const notesW = 245;
-    const summaryX = W - pageM - 210;
-    const noteLines = [
-      `Tax type: ${tax.label}`,
-      `Place of supply: ${tax.placeOfSupply}`,
-      `Line items billed: ${items.length}`,
-      `Company GSTIN: ${COMPANY.gstin}`,
-    ];
-    const summaryLines = [
-      ['Subtotal', fmtMoney(invoice.subtotal)],
-      ...tax.components.map((component) => [component.label, fmtMoney(component.amount)]),
-    ];
-    const summaryHeight = Math.max(86, 42 + (summaryLines.length * 16) + 28);
-    const notesHeight = 18 + (noteLines.length * 15);
-    const finalBlockTop = rowY + 14;
-    const finalBlockBottom = Math.max(finalBlockTop + notesHeight, finalBlockTop + summaryHeight);
+    const totalQuantity = items.reduce((sum, item) => sum + (Number(item.quantity || 1)), 0);
+    const rounding = Number((total - subtotal - gstAmount).toFixed(2));
 
-    if (finalBlockBottom > H - footerReserve) {
-      addContinuationPage();
+    let summaryY = rowY + 30;
+    if (summaryY + 160 > H - bottomReserve) {
+      doc.addPage();
+      summaryY = pageM;
     }
 
+    const summaryWidth = contentW;
+    const summaryHeight = 120;
+    doc.rect(pageM, summaryY, summaryWidth, summaryHeight).strokeColor(BRAND.slate300).lineWidth(1).stroke();
+
+    const summaryLeftX = pageM + 14;
+    const summaryRightX = pageM + summaryWidth - 180;
+
     doc.fontSize(8).fillColor(BRAND.slate500).font('Helvetica-Bold')
-      .text('NOTES', notesX, rowY + 18);
-    doc.fontSize(9).fillColor(BRAND.slate700).font('Helvetica')
-      .text(noteLines[0], notesX, rowY + 34)
-      .text(noteLines[1], notesX, rowY + 49, { width: notesW })
-      .text(noteLines[2], notesX, rowY + 64)
-      .text(noteLines[3], notesX, rowY + 79, { width: notesW });
+      .text('TOTAL QUANTITY', summaryLeftX, summaryY + 12);
+    doc.fontSize(16).fillColor(BRAND.slate900).font('Helvetica-Bold')
+      .text(totalQuantity, summaryLeftX, summaryY + 26);
+    doc.fontSize(8).fillColor(BRAND.slate500).font('Helvetica-Bold')
+      .text('TOTAL TAXABLE AMOUNT', summaryRightX, summaryY + 12, { align: 'right' });
+    doc.fontSize(12).fillColor(BRAND.slate900).font('Helvetica-Bold')
+      .text(fmtMoney(subtotal), summaryRightX, summaryY + 24, { align: 'right' });
 
-    doc.rect(summaryX, rowY + 10, 210, summaryHeight).stroke(BRAND.slate300).lineWidth(1);
-    let sy = rowY + 22;
-    summaryLines.forEach(([label, value]) => {
-      doc.fontSize(8.5).fillColor(BRAND.slate700).font('Helvetica')
-        .text(label, summaryX + 14, sy, { width: 110 });
-      doc.fontSize(8.5).fillColor(BRAND.slate900).font('Helvetica-Bold')
-        .text(value, summaryX + 110, sy, { width: 84, align: 'right' });
-      sy += 16;
-    });
+    doc.fontSize(8).fillColor(BRAND.slate500).font('Helvetica-Bold')
+      .text('IGST', summaryRightX, summaryY + 44, { align: 'right' });
+    doc.fontSize(12).fillColor(BRAND.slate900).font('Helvetica-Bold')
+      .text(fmtMoney(gstAmount), summaryRightX, summaryY + 54, { align: 'right' });
 
-    doc.moveTo(summaryX + 14, sy + 2).lineTo(summaryX + 194, sy + 2).strokeColor(BRAND.slate300).lineWidth(1).stroke();
-    sy += 10;
+    doc.fontSize(8).fillColor(BRAND.slate500).font('Helvetica-Bold')
+      .text('ROUNDING', summaryRightX, summaryY + 74, { align: 'right' });
+    doc.fontSize(12).fillColor(BRAND.slate900).font('Helvetica-Bold')
+      .text(fmtMoney(rounding), summaryRightX, summaryY + 84, { align: 'right' });
+
+    doc.fontSize(10).fillColor(BRAND.slate500).font('Helvetica')
+      .text('Amount in words:', summaryLeftX, summaryY + 60);
     doc.fontSize(10).fillColor(BRAND.slate900).font('Helvetica-Bold')
-      .text('TOTAL DUE', summaryX + 14, sy);
-    doc.fontSize(14).fillColor(BRAND.orange).font('Helvetica-Bold')
-      .text(fmtMoney(invoice.total), summaryX + 92, sy - 2, { width: 102, align: 'right' });
+      .text(amountInWords(total), summaryLeftX, summaryY + 72, { width: summaryRightX - summaryLeftX - 4 });
 
-    drawFooter();
+    doc.fontSize(14).fillColor(BRAND.orange).font('Helvetica-Bold')
+      .text('BALANCE DUE', summaryRightX, summaryY + 100, { align: 'right' });
+    doc.fontSize(20).fillColor(BRAND.slate900).font('Helvetica-Bold')
+      .text(fmtMoney(total), summaryRightX, summaryY + 116, { align: 'right' });
+
+    let paymentY = summaryY + summaryHeight + 18;
+    if (paymentY + 140 > H - 32) {
+      doc.addPage();
+      paymentY = pageM;
+    }
+
+    const paymentHeight = 130;
+    doc.rect(pageM, paymentY, contentW, paymentHeight).strokeColor(BRAND.slate300).lineWidth(1).stroke();
+    doc.fontSize(10).fillColor(BRAND.slate900).font('Helvetica-Bold')
+      .text('MAKE PAYMENT BY CLICKING HERE', pageM + 14, paymentY + 12);
+    doc.fontSize(9).fillColor(BRAND.slate500).font('Helvetica')
+      .text('Company Bank Details', pageM + 14, paymentY + 30);
+    doc.fontSize(9).fillColor(BRAND.slate700).font('Helvetica')
+      .text(`Bank: ${BANK_DETAILS.name}`, pageM + 14, paymentY + 44)
+      .text(`Account: ${BANK_DETAILS.account}`, pageM + 14, paymentY + 56)
+      .text(`IFSC: ${BANK_DETAILS.ifsc}`, pageM + 14, paymentY + 68)
+      .text(`Branch: ${BANK_DETAILS.branch}`, pageM + 14, paymentY + 80);
+    if (invoice.notes) {
+      doc.fontSize(8).fillColor(BRAND.slate600).font('Helvetica')
+        .text(invoice.notes, pageM + 14, paymentY + 100, { width: contentW / 2, lineGap: 2 });
+    }
+
+    const qrSize = 88;
+    const qrX = W - pageM - qrSize - 12;
+    doc.rect(qrX, paymentY + 18, qrSize, qrSize).strokeColor(BRAND.slate300).lineWidth(1).stroke();
+    doc.fontSize(8).fillColor(BRAND.slate700).font('Helvetica-Bold')
+      .text('SCAN THIS QR CODE TO MAKE PAYMENT', qrX, paymentY + qrSize + 24, { width: qrSize, align: 'center' });
+
+    doc.fontSize(9).fillColor(BRAND.slate500).font('Helvetica')
+      .text(FOOTER_CTA, pageM, H - 28, { width: contentW, align: 'center' });
 
     doc.end();
   });
+}
+
+function amountInWords(amount) {
+  const rupees = Math.floor(amount);
+  const paise = Math.round((amount - rupees) * 100);
+  const parts = [];
+  if (rupees > 0) parts.push(`${numberToWords(rupees)} Rupees`);
+  if (paise > 0) parts.push(`${numberToWords(paise)} Paise`);
+  if (!parts.length) parts.push('Zero Rupees');
+  return `${parts.join(' and ')} Only`;
+}
+
+function numberToWords(value) {
+  if (!value) return 'Zero';
+  const units = [
+    'Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen',
+  ];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  const scales = [
+    { value: 10000000, label: 'Crore' },
+    { value: 100000, label: 'Lakh' },
+    { value: 1000, label: 'Thousand' },
+    { value: 100, label: 'Hundred' },
+  ];
+
+  const parts = [];
+  let remainder = value;
+
+  scales.forEach(({ value: scaleValue, label }) => {
+    if (remainder >= scaleValue) {
+      const count = Math.floor(remainder / scaleValue);
+      remainder %= scaleValue;
+      parts.push(`${formatSegment(count, units, tens)} ${label}`);
+    }
+  });
+
+  if (remainder > 0) {
+    parts.push(formatSegment(remainder, units, tens));
+  }
+
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+function formatSegment(num, units, tens) {
+  if (num === 0) return '';
+  if (num < 20) return units[num];
+  if (num < 100) {
+    const tenPart = Math.floor(num / 10);
+    const unitPart = num % 10;
+    return unitPart ? `${tens[tenPart]} ${units[unitPart]}` : tens[tenPart];
+  }
+  const hundredPart = Math.floor(num / 100);
+  const remainder = num % 100;
+  const hundredText = `${units[hundredPart]} Hundred`;
+  if (remainder === 0) return hundredText;
+  return `${hundredText} ${formatSegment(remainder, units, tens)}`;
 }
 
 async function generateWalletReceiptPDF(txn, client) {
