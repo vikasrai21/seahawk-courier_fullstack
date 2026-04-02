@@ -21,8 +21,16 @@ app.set('trust proxy', 1);
 
 initSentry(app);
 
+const cspDirectives = helmet.contentSecurityPolicy.getDefaultDirectives();
+cspDirectives.connectSrc = [
+  ...new Set([
+    ...(cspDirectives.connectSrc || cspDirectives.defaultSrc || ["'self'"]),
+    'https://api.postalpincode.in',
+  ]),
+];
+
 app.use(helmet({
-  contentSecurityPolicy: config.isProd ? undefined : false,
+  contentSecurityPolicy: config.isProd ? { directives: cspDirectives } : false,
   crossOriginEmbedderPolicy: false,
 }));
 
