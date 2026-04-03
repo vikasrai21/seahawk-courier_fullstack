@@ -130,10 +130,9 @@ export default function RateCalculatorPage() {
   const lookupPin = useCallback(async pin=>{
     setPinLoad(true);setPinErr('');setZone(null);setLocInfo(null);setDelhiveryOda(false);
     try{
-      const res=await fetch(`https://api.postalpincode.in/pincode/${pin}`);
-      const data=await res.json();
-      if(data[0]?.Status==='Success'&&data[0]?.PostOffice?.length>0){
-        const po=data[0].PostOffice[0];
+      const res = await api.get('/pincodes/lookup', { params: { pin } });
+      const po = res?.data?.postOffice;
+      if(po){
         const z=stateToZones(po.State,po.District,po.Name);
         setZone(z);
         const li={label:`${po.District}, ${po.State}`,pincode:pin};
@@ -147,9 +146,13 @@ export default function RateCalculatorPage() {
             if (r.data?.is_oda) setDelhiveryOda(true);
           })
           .catch(() => {});
-      }else setPinErr('PIN not found — try city search.');
-    }catch{setPinErr('PIN lookup failed — check connection.');}
-    finally{setPinLoad(false);}
+      }else{
+        setPinErr('PIN not found — try city search.');
+      }
+    }catch(err){
+      if(err?.status===404) setPinErr('PIN not found — try city search.');
+      else setPinErr('PIN lookup failed — check connection.');
+    }finally{setPinLoad(false);}
   },[addRecent]);
 
   const isPin=/^\d+$/.test(query.trim());
