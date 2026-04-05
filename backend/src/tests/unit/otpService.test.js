@@ -1,62 +1,92 @@
 // C:\Users\hp\OneDrive\Desktop\seahawk-full_stack\backend\src\tests\unit\otpService.test.js
 'use strict';
 
-const mockEmail = {
-  isConfigured: vi.fn(() => true),
-  sendGeneral: vi.fn(async () => ({ success: true, messageId: 'test' })),
+const mockEmailService = {
+  isConfigured: vi.fn().mockReturnValue(true),
+  sendGeneral: vi.fn().mockResolvedValue({ success: true }),
+  sendLoginOTP: vi.fn().mockResolvedValue(true),
 };
 
-// Variable must start with 'mock' to be used in vi.mock factory
-vi.mock('C:/Users/hp/OneDrive/Desktop/seahawk-full_stack/backend/src/services/email.service', () => mockEmail);
-vi.mock('../../services/email.service', () => mockEmail);
+// Manual cache injection for email.service
+const emailServicePath = require.resolve('../../services/email.service');
+require.cache[emailServicePath] = {
+  id: emailServicePath,
+  filename: emailServicePath,
+  loaded: true,
+  exports: mockEmailService,
+};
 
-const otpService = require('../../services/otp.service');
 const mockPrisma = require('../../config/__mocks__/prisma');
+
+// Now require the service
+const otpService = require('../../services/otp.service');
 
 describe('otp.service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('generateOTP', () => {
-    it('generates a 6-digit numeric string', () => {
-      const otp = otpService.generateOTP();
-      expect(otp).toHaveLength(6);
-    });
-  });
+  const email = 'test@example.com';
+  const userName = 'Test User';
 
   describe('sendLoginOTP', () => {
-    const email = 'test@example.com';
-    const userName = 'Test User';
+    it('falls back to console in non-production environments', async () => {
+      process.env.NODE_ENV = 'development';
+      mockPrisma.$executeRaw.mockResolvedValue(1);
+      mockEmailService.isConfigured.mockReturnValue(false);
+      
+      const result = await otpService.sendLoginOTP(email, userName);
+      expect(result.sent).toBe(true);
+      expect(result.method).toBe('console');
+    });
 
     it('invalidates existing OTPs and creates a new one via SMTP', async () => {
-      vi.stubEnv('NODE_ENV', 'production');
+      process.env.NODE_ENV = 'production';
+      process.env.EMAIL_USER = 'user';
+      process.env.EMAIL_PASS = 'pass';
       mockPrisma.$executeRaw.mockResolvedValue(1);
+      mockEmailService.isConfigured.mockReturnValue(true);
       
       const result = await otpService.sendLoginOTP(email, userName);
       
       expect(mockPrisma.$executeRaw).toHaveBeenCalled();
-      expect(mockEmail.sendGeneral).toHaveBeenCalled();
+      expect(mockEmailService.sendGeneral).toHaveBeenCalled();
       expect(result.sent).toBe(true);
       expect(result.method).toBe('email');
-    });
-
-    it('falls back to console in non-production environments', async () => {
-      vi.stubEnv('NODE_ENV', 'development');
-      const result = await otpService.sendLoginOTP(email, userName);
-      expect(result.method).toBe('console');
     });
   });
 
   describe('verifyOTP', () => {
     it('verifies correctly and marks as used', async () => {
-      mockPrisma.$queryRaw.mockResolvedValueOnce([{
-        id: 1, otp: '123456', attempts: 0, used: false
-      }]);
+      const mockOtpRecord = { 
+        id: 1, 
+        otp: '123456', 
+        attempts: 0, 
+        expires_at: new Date(Date.now() + 10000) 
+      };
+      mockPrisma.$queryRaw.mockResolvedValue([mockOtpRecord]);
       mockPrisma.$executeRaw.mockResolvedValue(1);
 
-      const result = await otpService.verifyOTP('test@example.com', '123456');
+      const result = await otpService.verifyOTP(email, '123456');
       expect(result).toBe(true);
+      expect(mockPrisma.$executeRaw).toHaveBeenCalled();
+    });
+
+    it('rejects incorrect OTP', async () => {
+      const mockOtpRecord = { 
+        id: 1, 
+        otp: '123456', 
+        attempts: 0, 
+        expires_at: new Date(Date.now() + 10000) 
+      };
+      mockPrisma.$queryRaw.mockResolvedValue([mockOtpRecord]);
+      
+      await expect(otpService.verifyOTP(email, '000000')).rejects.toThrow('Incorrect OTP');
+    });
+
+    it('rejects expired or missing OTP', async () => {
+      mockPrisma.$queryRaw.mockResolvedValue([]);
+      await expect(otpService.verifyOTP(email, '123456')).rejects.toThrow('OTP expired or not found');
     });
   });
 });

@@ -28,12 +28,16 @@ const mockDoc = {
   end: vi.fn().mockReturnThis(),
 };
 
-// Variable must start with 'mock' to be used in vi.mock factory
-vi.mock('pdfkit', () => {
-  const m = vi.fn(() => mockDoc);
-  return m;
-});
+// Manual cache injection for pdfkit
+const pdfkitPath = require.resolve('pdfkit');
+require.cache[pdfkitPath] = {
+  id: pdfkitPath,
+  filename: pdfkitPath,
+  loaded: true,
+  exports: vi.fn(() => mockDoc),
+};
 
+// Now require the service
 const pdfService = require('../../services/pdf.service');
 
 describe('pdf.service', () => {

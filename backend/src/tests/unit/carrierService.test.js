@@ -6,18 +6,32 @@ const mockHttp = {
   fetchWithRetry: vi.fn(),
 };
 
-// Use hardcoded path with forward slashes for Windows/Vitest reliability
-vi.mock('C:/Users/hp/OneDrive/Desktop/seahawk-full_stack/backend/src/utils/httpRetry', () => mockHttp);
+// Manual cache injection: The most reliable way for CJS on Windows
+const httpPath = require.resolve('../../utils/httpRetry');
+require.cache[httpPath] = {
+  id: httpPath,
+  filename: httpPath,
+  loaded: true,
+  exports: mockHttp,
+};
 
-const carrierService = require('../../services/carrier.service');
 const mockPrisma = require('../../config/__mocks__/prisma');
+
+// Now require the service - it will get the mock from the cache
+const carrierService = require('../../services/carrier.service');
 
 describe('carrier.service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Set ALL required environment variables for the configs to be "enabled"
     process.env.DELHIVERY_API_KEY = 'test-key';
+    process.env.DELHIVERY_WAREHOUSE = 'Primary';
+    
     process.env.DTDC_API_KEY = 'test-key';
+    process.env.DTDC_CUSTOMER_CODE = 'TEST_CUST'; // CRITICAL
+    
     process.env.BLUEDART_LICENSE_KEY = 'test-key';
+    process.env.BLUEDART_LOGIN_ID = 'test-login';
   });
 
   const mockData = {
@@ -27,7 +41,8 @@ describe('carrier.service', () => {
     deliveryState: 'Haryana',
     pin: '122015',
     weightGrams: 500,
-    declaredValue: 1000
+    declaredValue: 1000,
+    awb: 'AWB123'
   };
 
   describe('createShipment', () => {
@@ -63,7 +78,10 @@ describe('carrier.service', () => {
     it('fetches tracking info and returns mapped status', async () => {
       mockHttp.fetchJsonWithRetry.mockResolvedValueOnce({
         ShipmentData: [{
-          Shipment: { Status: { Status: 'Delivered' }, Scans: [] }
+          Shipment: { 
+            Status: { Status: 'Delivered', Instructions: 'Delivered to recipient' }, 
+            Scans: [] 
+          }
         }]
       });
 
@@ -74,18 +92,25 @@ describe('carrier.service', () => {
 
   describe('syncTrackingEvents', () => {
     it('integrates tracking events and updates shipment status', async () => {
+      // Mock tracking reply from Delhivery
       mockHttp.fetchJsonWithRetry.mockResolvedValueOnce({
         ShipmentData: [{
           Shipment: {
             Status: { Status: 'Delivered' },
             Scans: [{
-              ScanDetail: { Scan: 'Delivered', ScanDateTime: new Date().toISOString() }
+              ScanDetail: { 
+                Scan: 'Delivered', 
+                ScanDateTime: new Date().toISOString(),
+                ScannedLocation: 'GGM',
+                Instructions: 'OK'
+              }
             }]
           }
         }]
       });
 
-      mockPrisma.trackingEvent.findMany.mockResolvedValueOnce([]);
+      // Mock prisma interactions
+      mockPrisma.trackingEvent.findMany.mockResolvedValueOnce([]); // No existing events
       mockPrisma.trackingEvent.createMany.mockResolvedValueOnce({ count: 1 });
       mockPrisma.shipment.update.mockResolvedValueOnce({ id: 1 });
 
@@ -96,7 +121,7 @@ describe('carrier.service', () => {
 
   describe('cancelShipment', () => {
     it('sends cancellation to Delhivery', async () => {
-      mockHttp.fetchJsonWithRetry.mockResolvedValueOnce({ success: true });
+      mockHttp.fetchJsonWithRetry.mockResolvedValueOnce({ success: true, waybill: 'AWB123' });
       const res = await carrierService.cancelShipment('Delhivery', 'AWB123');
       expect(res.success).toBe(true);
     });

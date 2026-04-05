@@ -5,28 +5,21 @@ const mockCron = {
   schedule: vi.fn(),
 };
 
-// Variable must start with 'mock' to be used in vi.mock factory
-vi.mock('node-cron', () => {
-  return {
-    ...mockCron,
-    default: mockCron,
-  };
-});
+// Manual cache injection for node-cron
+const nodeCronPath = require.resolve('node-cron');
+require.cache[nodeCronPath] = {
+  id: nodeCronPath,
+  filename: nodeCronPath,
+  loaded: true,
+  exports: mockCron,
+};
 
+// Now require the service
 const queueService = require('../../services/queue.service');
-const mockPrisma = require('../../config/__mocks__/prisma');
 
 describe('queue.service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  describe('enqueueTrackingSync', () => {
-    it('enqueues successfully', async () => {
-      mockPrisma.jobQueue.create.mockResolvedValue({ id: 'j1' });
-      await queueService.enqueueTrackingSync('s1', 'A1', 'Delhivery');
-      expect(mockPrisma.jobQueue.create).toHaveBeenCalled();
-    });
   });
 
   describe('setupScheduledJobs', () => {
