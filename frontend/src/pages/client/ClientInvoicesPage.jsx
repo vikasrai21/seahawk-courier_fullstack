@@ -1,13 +1,22 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Eye, FileText, Download, MessageCircle, Mail, Receipt, X } from 'lucide-react';
+import { Eye, FileText, Download, Receipt, X } from 'lucide-react';
 import api from '../../services/api';
 import { PageLoader } from '../../components/ui/Loading';
 import { EmptyState } from '../../components/ui/EmptyState';
-import { Modal } from '../../components/ui/Modal';
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 const STATUS_COLORS = { DRAFT: 'bg-gray-100 text-gray-700', SENT: 'bg-blue-100 text-blue-700', PAID: 'bg-green-100 text-green-700', OVERDUE: 'bg-red-100 text-red-700' };
+
+function InvoiceStat({ label, value, hint }) {
+  return (
+    <div className="rounded-2xl border border-slate-200/70 bg-white/80 p-4 shadow-sm">
+      <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-slate-400">{label}</div>
+      <div className="mt-2 text-3xl font-black text-slate-900">{value}</div>
+      <div className="mt-1 text-xs leading-5 text-slate-500">{hint}</div>
+    </div>
+  );
+}
 
 function getTaxBreakdown(inv, client) {
   const gstPercent = Number(inv?.gstPercent || 18);
@@ -166,15 +175,37 @@ export default function ClientInvoicesPage({ toast }) {
                       <td className="px-4 py-4 text-slate-600">{inv.fromDate} → {inv.toDate}</td>
                       <td className="px-4 py-4 text-sm font-black text-slate-900">{fmt(inv.total)}</td>
                       <td className="px-4 py-4">
-                        <span className={`badge badge-${STATUS_COLORS[inv.status] || 'gray'}`}>{inv.status}</span>
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em] ${STATUS_COLORS[inv.status] || STATUS_COLORS.DRAFT}`}>
+                          {inv.status}
+                        </span>
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap items-center gap-2">
                           <button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" onClick={() => setViewing(inv)}>
                             <Eye className="w-4 h-4" />
                           </button>
-                          <button className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg" onClick={() => downloadInvoice(inv)}>
+                          <button
+                            className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg disabled:opacity-50"
+                            onClick={() => downloadInvoice(inv)}
+                            disabled={downloadingId === inv.id}
+                            title="Download PDF"
+                          >
                             <FileText className="w-4 h-4" />
+                          </button>
+                          <button
+                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg disabled:opacity-50"
+                            onClick={() => downloadExport(inv, 'csv')}
+                            disabled={downloadingId === inv.id}
+                            title="Export CSV"
+                          >
+                            <Download className="w-4 h-4" />
+                          </button>
+                          <button
+                            className="rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500 hover:border-slate-300 hover:text-slate-700 disabled:opacity-50"
+                            onClick={() => downloadExport(inv, 'xls')}
+                            disabled={downloadingId === inv.id}
+                          >
+                            XLS
                           </button>
                         </div>
                       </td>

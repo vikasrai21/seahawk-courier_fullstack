@@ -1,0 +1,23 @@
+The CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.
+
+[7m[1m[36m RUN [39m[22m[27m [36mv1.6.1[39m [90mC:/Users/hp/OneDrive/Desktop/seahawk-full_stack/backend[39m
+
+ [33m❯[39m src/tests/unit/carrierService.test.js [2m ([22m[2m0 test[22m[2m)[22m
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/tests/unit/carrierService.test.js [ src/tests/unit/carrierService.test.js ]
+SyntaxError: Cannot export hoisted variable. You can control hoisting behavior by placing the import from this file first.
+      3| 
+      4| // ── Hoisted Global Mocks ──
+      5| // These MUST be hoisted to ensure they are available BEFORE any modul…
+       |                           ^
+      6| export const mocks = vi.hoisted(() => {
+      7|   const doc = {
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [2mno tests[22m
+[2m   Start at [22m 13:50:21
+[2m   Duration [22m 428ms[2m (transform 19ms, setup 0ms, collect 0ms, tests 0ms, environment 0ms, prepare 136ms)[22m
+

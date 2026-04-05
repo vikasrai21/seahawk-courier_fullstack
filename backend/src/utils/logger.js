@@ -43,7 +43,7 @@ function redactPII(obj, depth = 0) {
 // Custom format that applies PII redaction to every log entry
 const piiRedact = format((info) => {
   // Redact meta fields
-  const { level, message, timestamp, stack, ...meta } = info;
+  const { message, ...meta } = info;
   const cleanMeta = redactPII(meta);
   // Also scrub message string for common patterns
   const cleanMsg = typeof message === 'string'

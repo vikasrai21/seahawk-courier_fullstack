@@ -2,6 +2,11 @@
   "name": "seahawk-fullstack",
   "version": "1.0.0",
   "scripts": {
+    "lint": "npm run lint --prefix backend && npm run lint --prefix frontend",
+    "typecheck": "npm run typecheck --prefix backend && npm run typecheck --prefix frontend",
+    "test": "npm run test:ci --prefix backend && npm run test --prefix frontend",
+    "verify": "npm run lint && npm run typecheck && npm run test",
+    "verify:full": "npm run verify && npm run build:ci --prefix frontend",
     "build": "npm ci --prefix frontend && npm run build --prefix frontend && node -e \"const fs=require('fs');fs.rmSync('backend/public',{recursive:true,force:true});fs.cpSync('frontend/dist','backend/public',{recursive:true});\" && npm ci --prefix backend && cd backend && npx prisma generate",
     "start": "cd backend && npx prisma migrate deploy && node server.js"
   }

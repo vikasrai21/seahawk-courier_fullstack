@@ -694,69 +694,86 @@ function courierCost(id, zone, w, odaAmt = 0) {
   }
 }
 
-const SELL_DOC = {
-  ncr: { w250: 22, w500: 25, addl: 12 },
-  north: { w250: 28, w500: 40, addl: 14 },
-  metro: { w250: 35, w500: 55, addl: 35 },
-  roi: { w250: 40, w500: 65, addl: 38 },
-  ne: { w250: 65, w500: 80, addl: 45 },
-  spl: { w250: 75, w500: 95, addl: 50 },
+const SELL_DOC_ECO = {
+  'Delhi & NCR': { w250: 22, w500: 25, addl: 12 },
+  'North India': { w250: 28, w500: 40, addl: 14 },
+  'Metro Cities': { w250: 35, w500: 55, addl: 35 },
+  'Rest of India': { w250: 40, w500: 65, addl: 38 },
+  'North East': { w250: 65, w500: 80, addl: 45 },
+  'Diplomatic / Port Blair': { w250: 75, w500: 95, addl: 50 },
 };
 
-const SELL_SFC = {
-  ncr: { s10: 25, s25: 20, s50: 18, s100: 16, splus: 15 },
-  north: { s10: 30, s25: 28, s50: 25, s100: 22, splus: 20 },
-  metro: { s10: 35, s25: 32, s50: 30, s100: 29, splus: 27 },
-  roi: { s10: 45, s25: 43, s50: 40, s100: 38, splus: 35 },
-  ne: { s10: 55, s25: 52, s50: 50, s100: 47, splus: 45 },
-  kashmir: { s10: 60, s25: 55, s50: 52, s100: 48, splus: 46 },
-  spl: { s10: 120, s25: 110, s50: 90, s100: 85, splus: 80 },
+const SELL_DOC_PREM = {
+  'Delhi & NCR': { w250: 30, w500: 38, addl: 18 },
+  'North India': { w250: 40, w500: 58, addl: 20 },
+  'Metro Cities': { w250: 50, w500: 80, addl: 50 },
+  'Rest of India': { w250: 58, w500: 95, addl: 55 },
+  'North East': { w250: 90, w500: 115, addl: 65 },
+  'Diplomatic / Port Blair': { w250: 110, w500: 140, addl: 75 },
+};
+
+const SELL_SFC_ECO = {
+  'Delhi & NCR': { s3: 22, s10: 20, s25: 18, s50: 16, s100: 15 },
+  'North India': { s3: 30, s10: 28, s25: 25, s50: 22, s100: 20 },
+  'Metro Cities': { s3: 35, s10: 32, s25: 30, s50: 29, s100: 27 },
+  'Rest of India': { s3: 45, s10: 43, s25: 40, s50: 38, s100: 35 },
+  'North East': { s3: 55, s10: 52, s25: 50, s50: 47, s100: 45 },
+  'Diplomatic / Port Blair': { s3: 120, s10: 110, s25: 90, s50: 85, s100: 80 },
+};
+
+const SELL_SFC_PREM = {
+  'Delhi & NCR': { s3: 30, s10: 28, s25: 25, s50: 22, s100: 20 },
+  'North India': { s3: 42, s10: 40, s25: 36, s50: 32, s100: 28 },
+  'Metro Cities': { s3: 50, s10: 46, s25: 42, s50: 40, s100: 36 },
+  'Rest of India': { s3: 62, s10: 58, s25: 55, s50: 52, s100: 48 },
+  'North East': { s3: 75, s10: 70, s25: 68, s50: 64, s100: 60 },
+  'Diplomatic / Port Blair': { s3: 160, s10: 145, s25: 120, s50: 110, s100: 100 },
 };
 
 const SELL_AIR = {
-  kashmir: { s5: 72, s10: 70, s25: 65, s50: 62, splus: 60 },
-  bihar_jh: { s5: 80, s10: 78, s25: 75, s50: 72, splus: 70 },
-  metro: { s5: 85, s10: 80, s25: 78, s50: 75, splus: 74 },
-  roi: { s5: 88, s10: 85, s25: 82, s50: 80, splus: 78 },
-  ne: { s5: 95, s10: 90, s25: 85, s50: 82, splus: 80 },
-  spl: { s5: 125, s10: 110, s25: 100, s50: 95, splus: 90 },
+  'Srinagar Sector': { lt5: 72, t10: 70, t25: 65, t50: 62, g50: 60 },
+  'Bihar & JH': { lt5: 80, t10: 78, t25: 75, t50: 72, g50: 70 },
+  'Metro Cities': { lt5: 85, t10: 80, t25: 78, t50: 75, g50: 74 },
+  'Rest of India': { lt5: 88, t10: 85, t25: 82, t50: 80, g50: 78 },
+  'North East': { lt5: 95, t10: 90, t25: 85, t50: 82, g50: 80 },
+  'Port Blair': { lt5: 125, t10: 110, t25: 100, t50: 95, g50: 90 },
 };
 
-const SELL_PRIORITY = {
-  ncr: { w500: 70, w1000: 100, addl: 50 },
-  north: { w500: 100, w1000: 140, addl: 75 },
-  roi: { w500: 140, w1000: 190, addl: 100 },
-  ne: { w500: 175, w1000: 225, addl: 125 },
+const AIR_SELL_MAP = {
+  delhi: 'Metro Cities', ncr: 'Metro Cities', north_city: 'Metro Cities',
+  north_state: 'Srinagar Sector', metro: 'Metro Cities', east_bihar: 'Bihar & JH',
+  central_states: 'Rest of India', east_south: 'Rest of India', north_east: 'North East', port_blair: 'Port Blair',
 };
 
 function proposalSell(zone, w, shipType, level = 'economy') {
-  const pz = zone?.proposal || 'roi';
-  let base = 0;
+  const FSC = 0.25;
+  const GST = 0.18;
+  const src = level === 'premium' ? 'Proposal (Premium)' : 'Proposal (Economy)';
 
-  if (level === 'premium' && shipType === 'doc') {
-    const r = SELL_PRIORITY[pz] || SELL_PRIORITY.roi;
-    const slab = ceil05(w);
-    base = slab <= 0.5 ? r.w500 : slab <= 1 ? r.w1000 : r.w1000 + Math.ceil((slab - 1) / 0.5) * r.addl;
-  } else if (shipType === 'air') {
-    const r = SELL_AIR[pz] || SELL_AIR.roi;
-    const chargeable = Math.max(ceil1(w), 3);
-    const rate = chargeable < 5 ? r.s5 : chargeable <= 10 ? r.s10 : chargeable <= 25 ? r.s25 : chargeable <= 50 ? r.s50 : r.splus;
-    base = chargeable * rate;
-  } else if (shipType === 'surface' || Number(w) >= 3) {
-    const r = SELL_SFC[pz] || SELL_SFC.roi;
-    const chargeable = Math.max(ceil1(w), 3);
-    const rate = chargeable <= 10 ? r.s10 : chargeable <= 25 ? r.s25 : chargeable <= 50 ? r.s50 : chargeable <= 100 ? r.s100 : r.splus;
-    base = chargeable * rate;
-  } else {
-    const r = SELL_DOC[pz] || SELL_DOC.roi;
-    const slab = ceil05(w);
-    base = slab <= 0.25 ? r.w250 : slab <= 0.5 ? r.w500 : r.w500 + Math.ceil((slab - 0.5) / 0.5) * r.addl;
+  if (shipType === 'doc') {
+    const r = (level === 'premium' ? SELL_DOC_PREM : SELL_DOC_ECO)[zone.seahawkZone] || SELL_DOC_ECO['Rest of India'];
+    const cw = ceil05(w);
+    const b = cw <= 0.25 ? r.w250 : cw <= 0.5 ? r.w500 : r.w500 + Math.ceil((cw - 0.5) / 0.5) * r.addl;
+    const fsc = rnd(b * FSC); const sub = b + fsc;
+    return { base: rnd(b), fsc, fscPct: '25%', gst: rnd(sub * GST), total: rnd(sub * (1 + GST)), source: src };
   }
-
-  const fsc = rnd(base * 0.25);
-  const subtotal = rnd(base + fsc);
-  const gst = rnd(subtotal * 0.18);
-  return { base: rnd(base), fsc, gst, total: rnd(subtotal + gst), source: `Proposal (${shipType.toUpperCase()})` };
+  if (shipType === 'surface') {
+    if (w < 3) return null;
+    const r = (level === 'premium' ? SELL_SFC_PREM : SELL_SFC_ECO)[zone.seahawkZone] || SELL_SFC_ECO['Rest of India'];
+    const cw = ceil1(w);
+    const rate = cw <= 10 ? r.s3 : cw <= 25 ? r.s10 : cw <= 50 ? r.s25 : cw <= 100 ? r.s50 : r.s100;
+    const b = Math.max(cw, 3) * rate; const fsc = rnd(b * FSC); const sub = b + fsc;
+    return { base: rnd(b), fsc, fscPct: '25%', gst: rnd(sub * GST), total: rnd(sub * (1 + GST)), source: src };
+  }
+  if (shipType === 'air') {
+    if (w < 3) return null;
+    const r = SELL_AIR[AIR_SELL_MAP[zone.trackon] || 'Rest of India'] || SELL_AIR['Rest of India'];
+    const cw = ceil1(w);
+    const rate = cw < 5 ? r.lt5 : cw <= 10 ? r.t10 : cw <= 25 ? r.t25 : cw <= 50 ? r.t50 : r.g50;
+    const b = Math.max(cw, 3) * rate; const fsc = rnd(b * FSC); const sub = b + fsc;
+    return { base: rnd(b), fsc, fscPct: '25%', gst: rnd(sub * GST), total: rnd(sub * (1 + GST)), source: 'Proposal (Air)' };
+  }
+  return null;
 }
 
 const COURIERS = [

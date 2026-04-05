@@ -50,3 +50,11 @@ coverage/
 
 # Archives
 *.zip
+
+# Temporary files and reports
+BILLS/~$*
+RATE CARDS/~$*
+backend/test_output*.txt
+backend/coverage*.txt
+backend/final_test_report.txt
+tmp_readxlsx.py

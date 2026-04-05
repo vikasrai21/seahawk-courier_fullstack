@@ -1,13 +1,11 @@
 import { useState } from 'react';
-import { Download, DatabaseBackup, Info, FileSpreadsheet, Filter } from 'lucide-react';
+import { Download, DatabaseBackup, Info, FileSpreadsheet } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import api from '../services/api';
 import { useFetch } from '../hooks/useFetch';
 
 const today = () => new Date().toISOString().split('T')[0];
 const firstOfMonth = () => { const d = new Date(); d.setDate(1); return d.toISOString().split('T')[0]; };
-const fmt = n => Number(n||0).toFixed(2);
-
 export default function SyncPage({ toast }) {
   const [exporting, setExporting] = useState(false);
   const [clientFilter, setClient] = useState('');

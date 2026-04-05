@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDebounce } from '../hooks/useDebounce';
 import { EmptyState } from '../components/ui/EmptyState';
-import { AlertTriangle, RefreshCw, ChevronRight, Search, Filter, X, CheckCircle2, RotateCcw, MapPin } from 'lucide-react';
+import { AlertTriangle, RefreshCw, ChevronRight, Search } from 'lucide-react';
 import api from '../services/api';
 import { Modal } from '../components/ui/Modal';
-import { StatusBadge } from '../components/ui/StatusBadge';
 
 const REASONS = [
   'Customer not available',
@@ -33,7 +32,6 @@ export default function NDRPage({ toast }) {
   const [ndrs,       setNdrs]       = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [stats,      setStats]      = useState(null);
-  const [total,      setTotal]      = useState(0);
   const [page,       setPage]       = useState(1);
   const [filter,     setFilter]     = useState('');
   const [search,     setSearch]     = useState('');
@@ -53,7 +51,6 @@ export default function NDRPage({ toast }) {
       const r = await api.get(`/ndr?${p}`);
       const data = r.data;
       setNdrs(data?.ndrs || data?.items || data || []);
-      setTotal(data?.total || 0);
     } catch(e) { toast?.(e.message,'error'); }
     finally { setLoading(false); }
   }, [page, filter]);

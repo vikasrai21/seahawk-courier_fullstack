@@ -28,28 +28,33 @@ router.post('/bulk-status', validate(bulkStatusSchema), async (req, res) => {
     try {
       const shipment = await prisma.shipment.findUnique({ where: { id: parseInt(id) } });
       if (!shipment) { failed++; continue; }
+      const canonicalStatus = stateMachine.normalizeStatus(status);
 
       // Enforce state machine
-      stateMachine.assertValidTransition(shipment.status, status);
+      stateMachine.assertValidTransition(shipment.status, canonicalStatus);
+
+      if (stateMachine.normalizeStatus(shipment.status) === canonicalStatus) {
+        updated++;
+        continue;
+      }
 
       await prisma.shipment.update({
         where: { id: parseInt(id) },
-        data:  { status, updatedById: req.user?.id },
+        data:  { status: canonicalStatus, updatedById: req.user?.id },
       });
 
       // Log tracking event
       await prisma.trackingEvent.create({
-        data: { shipmentId: parseInt(id), awb: shipment.awb, status, description: `Bulk status update to ${status}`, source: 'MANUAL' },
+        data: { shipmentId: parseInt(id), awb: shipment.awb, status: canonicalStatus, description: `Bulk status update to ${canonicalStatus}`, source: 'MANUAL' },
       }).catch(() => {});
 
       // Wallet refund on RTO/Cancel
-      if (stateMachine.shouldRefund(status) && shipment.amount > 0) {
-        await walletSvc.credit({
+      if (stateMachine.shouldRefund(canonicalStatus) && shipment.amount > 0) {
+        await walletSvc.creditShipmentRefund({
           clientCode: shipment.clientCode,
+          awb: shipment.awb,
           amount: shipment.amount,
-          description: `Refund — AWB ${shipment.awb} (${status})`,
-          reference: shipment.awb,
-          paymentMode: 'SYSTEM_REFUND',
+          reason: canonicalStatus,
         });
       }
 

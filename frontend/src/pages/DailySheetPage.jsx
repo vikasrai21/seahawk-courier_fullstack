@@ -1,6 +1,6 @@
 // DailySheetPage.jsx — Enhanced with auto-print + courier manifest
 import { useState, useEffect } from 'react';
-import { Printer, MessageCircle, ChevronDown, FileDown, Truck } from 'lucide-react';
+import { Printer, MessageCircle, ChevronDown, Truck } from 'lucide-react';
 import api from '../services/api';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { PageLoader, EmptyState } from '../components/ui/Loading';
@@ -9,8 +9,6 @@ import { sendWhatsAppReport } from '../utils/whatsapp';
 import { PageHeader } from '../components/ui/PageHeader';
 
 const fmt    = n => `₹${Number(n||0).toLocaleString('en-IN')}`;
-const fmtNum = n => Number(n||0).toFixed(1);
-
 export default function DailySheetPage({ toast }) {
   const today = new Date().toISOString().split('T')[0];
   const [date,       setDate]      = useState(today);

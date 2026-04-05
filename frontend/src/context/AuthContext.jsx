@@ -48,7 +48,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(async () => {
-    try { await api.post('/auth/logout'); } catch {}
+    try { await api.post('/auth/logout'); } catch { void 0; }
     clearSession();
     setUser(null);
   }, []);
@@ -62,6 +62,7 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={{
       user, loading, login, logout,
       isAdmin:   user?.role === 'ADMIN',
+      isOwner:   !!user?.isOwner,
       isStaff:   user?.role === 'STAFF',
       isOps:     user?.role === 'OPS_MANAGER',
       isClient:  user?.role === 'CLIENT',

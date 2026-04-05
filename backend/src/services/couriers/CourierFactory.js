@@ -3,20 +3,18 @@
 // Providers: Delhivery, DTDC, BlueDart, Trackon, Primtrack
 // Add new couriers by extending ICourierProvider and registering below
 
-const logger = require('../../utils/logger');
-
 // ─────────────────────────────────────────────────────────────
 // BASE PROVIDER
 // ─────────────────────────────────────────────────────────────
 class ICourierProvider {
   get name()    { throw new Error('name not implemented'); }
   get enabled() { return false; }
-  async createShipment(payload)            { throw new Error(`${this.name}: createShipment not implemented`); }
-  async trackShipment(awb)                 { throw new Error(`${this.name}: trackShipment not implemented`); }
-  async cancelShipment(awb)                { throw new Error(`${this.name}: cancelShipment not implemented`); }
-  async getLabel(awb)                      { throw new Error(`${this.name}: getLabel not implemented`); }
-  async calculateRate(payload)             { throw new Error(`${this.name}: calculateRate not implemented`); }
-  async checkServiceability(originPin, destPin) { throw new Error(`${this.name}: checkServiceability not implemented`); }
+  async createShipment(_payload)           { throw new Error(`${this.name}: createShipment not implemented`); }
+  async trackShipment(_awb)                { throw new Error(`${this.name}: trackShipment not implemented`); }
+  async cancelShipment(_awb)               { throw new Error(`${this.name}: cancelShipment not implemented`); }
+  async getLabel(_awb)                     { throw new Error(`${this.name}: getLabel not implemented`); }
+  async calculateRate(_payload)            { throw new Error(`${this.name}: calculateRate not implemented`); }
+  async checkServiceability(_originPin, _destPin) { throw new Error(`${this.name}: checkServiceability not implemented`); }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -199,10 +197,10 @@ class BlueDartProvider extends ICourierProvider {
     return { status: scans[0]?.ScanCode || 'Unknown', events: scans.map(s => ({ status: s.ScanDescription || '', location: s.ScannedLocation || '', timestamp: s.ScanDate ? new Date(s.ScanDate) : new Date() })) };
   }
 
-  async cancelShipment(awb) { return { success: false, message: 'BlueDart cancellation requires manual intervention. Call 1860-233-1234.' }; }
+  async cancelShipment(_awb) { return { success: false, message: 'BlueDart cancellation requires manual intervention. Call 1860-233-1234.' }; }
   async getLabel(awb) { return { url: `${this.baseUrl}/in/transportation/waybill/v1/GenerateLabel?AWB=${awb}`, type: 'url' }; }
 
-  async calculateRate({ originPin, destPin, weight, cod }) {
+  async calculateRate({ originPin: _originPin, destPin, weight, cod }) {
     const res = await fetch(`${this.baseUrl}/in/transportation/rate/v1/getRateCalculation`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000),
       body: JSON.stringify({ Profile: this._profile(), PIN: destPin, ProductCode: 'D', SubProductCode: 'P', PaymentType: 'P', PieceCount: 1, ActualWeight: weight || 0.5, CollectableAmount: cod || 0, DeclaredValue: 0 }),

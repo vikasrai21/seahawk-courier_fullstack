@@ -63,7 +63,6 @@ export default function OperationsDashboard({ toast }) {
   const [data,        setData]        = useState(null);
   const [rateHealth,  setRateHealth]  = useState([]);
   const [loading,     setLoading]     = useState(true);
-  const [lastRefresh, setLastRefresh] = useState(null);
 
   const load = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -74,7 +73,6 @@ export default function OperationsDashboard({ toast }) {
       ]);
       setData(ops?.data || ops);
       setRateHealth(health?.data || health || []);
-      setLastRefresh(new Date());
     } catch (e) {
       toast?.('Failed to sync operations data', 'error');
     } finally {
@@ -132,37 +130,9 @@ export default function OperationsDashboard({ toast }) {
     </div>
   );
 
-  let { overview, topClients, courierBreakdown, dailyTrend, recentShipments, quotes, reconciliation } = data;
+  const { overview, topClients, courierBreakdown, dailyTrend, recentShipments, quotes, reconciliation } = data;
   const staleRates    = Array.isArray(rateHealth) ? rateHealth.filter(r => r.stale)    : [];
   const criticalRates = Array.isArray(rateHealth) ? rateHealth.filter(r => r.critical) : [];
-
-  const isDemo = Number(overview?.shipmentsCount || 0) === 0;
-  if (isDemo) {
-    overview = {
-      todayShipments: 156,
-      weekShipments: 840,
-      todayRevenue: 42000,
-      monthRevenue: 1245000,
-      pendingCount: 24,
-      deliveredCount: 310,
-      deliveryRate: 93.4,
-    };
-    topClients = [
-      { company: 'Global Tech', revenue: 450000, count: 1200 },
-      { company: 'Nexus Retail', revenue: 380000, count: 980 },
-      { company: 'Zenith Corp', revenue: 210000, count: 750 },
-    ];
-    courierBreakdown = [
-      { courier: 'Delhivery Surface', revenue: 620000, count: 1800 },
-      { courier: 'Bluedart Air', revenue: 410000, count: 1100 },
-      { courier: 'DTDC', revenue: 215000, count: 940 },
-    ];
-    dailyTrend = Array.from({ length: 14 }).map((_, i) => ({
-      date: new Date(Date.now() - (13 - i) * 86400000).toISOString().split('T')[0],
-      count: Math.floor(Math.random() * 100) + 150 + (i * 10),
-      revenue: Math.floor(Math.random() * 50000) + 20000
-    }));
-  }
 
   const maxRevClient  = Math.max(...(topClients || []).map(c => c.revenue || 0), 1);
   const trendData     = dailyTrend || [];

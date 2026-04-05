@@ -25,7 +25,6 @@ import {
   proposalSell,
   courierCost,
   COURIERS,
-  COURIER_GROUPS,
   CITY_LIST,
   fmt,
   fmtI,

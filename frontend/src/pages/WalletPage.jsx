@@ -11,7 +11,7 @@ const fmt    = n => `₹${Number(n||0).toLocaleString('en-IN')}`;
 const fmtDt  = d => new Date(d).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
 
 export default function WalletPage({ toast }) {
-  const { isAdmin, hasRole, user } = useAuth();
+  const { isAdmin, hasRole } = useAuth();
   const [wallets,    setWallets]    = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [selected,   setSelected]   = useState(null);

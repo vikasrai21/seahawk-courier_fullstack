@@ -97,7 +97,7 @@ async function create(req, res) {
 async function update(req, res) {
   try {
     const { id } = req.params;
-    const { action, newAddress, notes } = req.body;
+    const { action, newAddress } = req.body;
 
     const validActions = ['PENDING', 'REATTEMPT', 'UPDATE_ADDRESS', 'RTO', 'RESOLVED'];
     if (!validActions.includes(action)) {

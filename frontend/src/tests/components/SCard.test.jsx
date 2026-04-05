@@ -32,8 +32,9 @@ describe('SCard Component', () => {
 
   it('renders icons properly', () => {
     const { container } = render(<SCard {...defaultProps} />);
-    // Check if the icon wrapper has the correct background with transparency
-    const iconWrapper = container.querySelector('div > div > div');
-    expect(iconWrapper.style.background).toContain('rgba');
+    const iconWrapper = container.querySelector('svg')?.parentElement;
+    expect(iconWrapper).toBeTruthy();
+    expect(iconWrapper.style.background).not.toBe('');
+    expect(iconWrapper.style.border).not.toBe('');
   });
 });

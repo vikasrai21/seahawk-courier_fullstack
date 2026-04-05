@@ -1,5 +1,6 @@
 // src/controllers/shipment.controller.js
 const svc          = require('../services/shipment.service');
+const importLedger = require('../services/import-ledger.service');
 const stateMachine = require('../services/stateMachine');
 const { auditLog } = require('../utils/audit');
 const R = require('../utils/response');
@@ -51,8 +52,8 @@ const remove = asyncHandler(async (req, res) => {
 
 const bulkImport = asyncHandler(async (req, res) => {
   const result = await svc.bulkImport(req.body.shipments, req.user?.id);
-  await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'BULK_IMPORT', entity: 'SHIPMENT', newValue: { imported: result.imported, duplicates: result.duplicates }, ip: req.ip });
-  R.ok(res, result, `Imported ${result.imported} shipments`);
+  await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'BULK_IMPORT', entity: 'SHIPMENT', newValue: { importedRows: result.imported, operationalCreated: result.operationalCreated, duplicateAwbs: result.duplicates, batchKey: result.batchKey }, ip: req.ip });
+  R.ok(res, result, `Imported ${result.imported} rows`);
 });
 
 const getValidStatuses = asyncHandler(async (req, res) => {
@@ -64,6 +65,37 @@ const getValidStatuses = asyncHandler(async (req, res) => {
 const getTodayStats = asyncHandler(async (req, res) => {
   const stats = await svc.getTodayStats();
   R.ok(res, stats);
+});
+
+const getImportLedger = asyncHandler(async (req, res) => {
+  const {
+    date_from,
+    date_to,
+    q,
+    batch_key,
+    page = 1,
+    limit = 50,
+  } = req.query;
+
+  const [list, summary] = await Promise.all([
+    importLedger.listRows({ dateFrom: date_from, dateTo: date_to, q, batchKey: batch_key }, page, limit),
+    importLedger.getSummary({ dateFrom: date_from, dateTo: date_to, q }),
+  ]);
+
+  res.status(200).json({
+    success: true,
+    message: 'Success',
+    data: {
+      rows: list.rows,
+      summary,
+    },
+    pagination: {
+      total: list.total,
+      page: list.page,
+      limit: list.limit,
+      pages: Math.ceil(list.total / list.limit),
+    },
+  });
 });
 
 const getMonthlyStats = asyncHandler(async (req, res) => {
@@ -97,6 +129,7 @@ const scanAwbBulk = asyncHandler(async (req, res) => {
 });
 
 module.exports = { getAll, getOne, create, update, patchStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getValidStatuses, deleteShipment: remove,
+  getImportLedger,
   scanAwb,
   scanAwbBulk
 };

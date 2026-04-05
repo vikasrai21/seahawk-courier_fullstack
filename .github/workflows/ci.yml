@@ -36,6 +36,10 @@ jobs:
         working-directory: backend
         run: npm run lint
 
+      - name: Typecheck backend
+        working-directory: backend
+        run: npm run typecheck
+
       - name: Run backend tests
         working-directory: backend
         run: npm run test:ci
@@ -47,6 +51,10 @@ jobs:
       - name: Lint frontend
         working-directory: frontend
         run: npm run lint
+
+      - name: Typecheck frontend
+        working-directory: frontend
+        run: npm run typecheck
 
       - name: Run frontend unit tests
         working-directory: frontend

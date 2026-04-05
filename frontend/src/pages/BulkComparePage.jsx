@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Upload, Download, Play, X, AlertTriangle, CheckCircle, TrendingUp, Package, FileText } from 'lucide-react';
+import { Upload, Download, Play, AlertTriangle, Package } from 'lucide-react';
 import api from '../services/api';
 
 const fmt  = n => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Area, AreaChart, BarChart, Bar, ResponsiveContainer, CartesianGrid, Tooltip, XAxis, YAxis, LineChart, Line, Legend } from 'recharts';
+import { Area, AreaChart, ResponsiveContainer, CartesianGrid, Tooltip, XAxis, YAxis, LineChart, Line, Legend } from 'recharts';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
@@ -353,40 +353,14 @@ export default function ClientPortalPage({ toast }) {
   }, [shipments]);
 
   const trendData = useMemo(() => {
-    let raw = stats?.trend || [];
-    if (raw.length === 0 || raw.every(d => !d.shipments)) {
-      raw = Array.from({ length: 14 }).map((_, i) => {
-        const d = new Date();
-        d.setDate(d.getDate() - (13 - i));
-        return {
-          date: d.toISOString().split('T')[0],
-          shipments: Math.floor(Math.random() * 30) + 15 + (i * 2),
-          isDemo: true
-        };
-      });
-    }
-    return raw.map((t) => ({
+    return (stats?.trend || []).map((t) => ({
       ...t,
       day: String(t.date).slice(5),
     }));
   }, [stats]);
 
   const performanceData = useMemo(() => {
-    let raw = performance?.series || [];
-    if (raw.length === 0 || raw.every(d => !d.delivered && !d.failed && !d.rto)) {
-      raw = Array.from({ length: 14 }).map((_, i) => {
-        const d = new Date();
-        d.setDate(d.getDate() - (13 - i));
-        return {
-          date: d.toISOString().split('T')[0],
-          delivered: Math.floor(Math.random() * 25) + 8 + i,
-          failed: Math.floor(Math.random() * 3),
-          rto: Math.floor(Math.random() * 2),
-          isDemo: true
-        };
-      });
-    }
-    return raw.map((row) => ({
+    return (performance?.series || []).map((row) => ({
       ...row,
       day: String(row.date).slice(5),
     }));
@@ -596,11 +570,6 @@ export default function ClientPortalPage({ toast }) {
               ))}
             </div>
             <div style={{ height: 260, position: 'relative' }}>
-              {trendData[0]?.isDemo && (
-                <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(2px)', borderRadius: 16 }}>
-                   <div style={{ background: '#fff', padding: '8px 16px', borderRadius: 999, border: '1px solid #fb923c', color: '#ea580c', fontSize: 13, fontWeight: 800, boxShadow: '0 4px 12px rgba(234,88,12,0.15)' }}>Showing Sample Demo Data</div>
-                </div>
-              )}
               <ResponsiveContainer width="100%" height="100%" minWidth={250}>
                 <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
@@ -711,11 +680,6 @@ export default function ClientPortalPage({ toast }) {
           </div>
 
           <div style={{ height: 260, position: 'relative' }}>
-            {performanceData[0]?.isDemo && (
-              <div style={{ position: 'absolute', inset: 0, zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(2px)', borderRadius: 16 }}>
-                 <div style={{ background: '#fff', padding: '8px 16px', borderRadius: 999, border: '1px solid #16a34a', color: '#15803d', fontSize: 13, fontWeight: 800, boxShadow: '0 4px 12px rgba(22,163,74,0.15)' }}>Showing Sample Demo Data</div>
-              </div>
-            )}
             <ResponsiveContainer width="100%" height="100%" minWidth={250}>
               <LineChart data={performanceData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />

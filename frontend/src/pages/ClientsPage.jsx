@@ -4,7 +4,7 @@ import { useDebounce } from '../hooks/useDebounce';
 import { Plus, Edit2, Trash2, MessageCircle, Phone, Mail, MapPin, Building2, Search } from 'lucide-react';
 import api from '../services/api';
 import { useFetch } from '../hooks/useFetch';
-import { PageLoader, EmptyState } from '../components/ui/Loading';
+import { EmptyState } from '../components/ui/Loading';
 import { Modal } from '../components/ui/Modal';
 import { useDataStore } from '../stores/dataStore';
 

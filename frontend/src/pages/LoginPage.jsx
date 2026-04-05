@@ -18,7 +18,7 @@ function SpaceCanvas() {
 
     class Star {
       constructor() { this.reset(true); }
-      reset(init) { this.x = Math.random() * W; this.y = Math.random() * H; this.r = 0.2 + Math.random() * 1.0; this.a = 0.15 + Math.random() * 0.7; this.sp = 0.002 + Math.random() * 0.01; this.ph = Math.random() * Math.PI * 2; }
+      reset() { this.x = Math.random() * W; this.y = Math.random() * H; this.r = 0.2 + Math.random() * 1.0; this.a = 0.15 + Math.random() * 0.7; this.sp = 0.002 + Math.random() * 0.01; this.ph = Math.random() * Math.PI * 2; }
       draw(t) { const a = this.a * (0.4 + 0.6 * Math.sin(t * this.sp + this.ph)); ctx.beginPath(); ctx.arc(this.x, this.y, this.r, 0, Math.PI * 2); ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fill(); }
     }
     class Ember {

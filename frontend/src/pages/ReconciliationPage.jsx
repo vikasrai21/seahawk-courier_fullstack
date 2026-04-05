@@ -1,6 +1,6 @@
 import { EmptyState } from '../components/ui/EmptyState';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Upload, Shield, AlertTriangle, CheckCircle, X, Loader, ChevronDown, Eye, TrendingDown, IndianRupee, Package } from 'lucide-react';
+import { Upload, Shield, AlertTriangle, X, Loader, Eye, TrendingDown, IndianRupee } from 'lucide-react';
 import api from '../services/api';
 import { PageHeader } from '../components/ui/PageHeader';
 

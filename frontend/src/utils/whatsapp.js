@@ -72,8 +72,8 @@ function downloadExcel({ rows, clientInfo, dateLabel, reportType }) {
   const wb    = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Report');
   const fname = clientInfo
-    ? `seahawk-${clientInfo.code}-${dateLabel.replace(/[\s\/]/g, '-')}.xlsx`
-    : `seahawk-report-${dateLabel.replace(/[\s\/]/g, '-')}.xlsx`;
+    ? `seahawk-${clientInfo.code}-${dateLabel.replace(/[\s/]/g, '-')}.xlsx`
+    : `seahawk-report-${dateLabel.replace(/[\s/]/g, '-')}.xlsx`;
   XLSX.writeFile(wb, fname);
   return fname;
 }

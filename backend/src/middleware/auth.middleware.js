@@ -2,8 +2,8 @@
 const jwt    = require('jsonwebtoken');
 const config = require('../config');
 const prisma = require('../config/prisma');
-const logger = require('../utils/logger');
 const R      = require('../utils/response');
+const { isOwnerUser } = require('../utils/owner');
 
 const protect = async (req, res, next) => {
   try {
@@ -40,6 +40,7 @@ const protect = async (req, res, next) => {
       ...user,
       clientCode: user.clientProfile?.clientCode || null,
       walletBalance: user.clientProfile?.client?.walletBalance ?? 0,
+      isOwner: isOwnerUser(user),
       clientProfile: undefined,
     };
     next();
@@ -62,6 +63,11 @@ const adminOnly    = requireRole('ADMIN');
 const staffOrAdmin = requireRole('STAFF', 'ADMIN');
 const managementOnly = requireRole('ADMIN', 'OPS_MANAGER');
 const staffOnly = requireRole('ADMIN', 'OPS_MANAGER', 'STAFF');
+const ownerOnly = (req, res, next) => {
+  if (!req.user) return R.unauthorized(res);
+  if (!req.user.isOwner) return R.forbidden(res, 'Owner access required.');
+  next();
+};
 
 const requireClientAccountAccess = ({ param = 'clientCode', body = null, allowManagement = true } = {}) => (req, res, next) => {
   if (!req.user) return R.unauthorized(res);
@@ -99,6 +105,7 @@ module.exports = {
   authenticate: protect,   // alias
   requireRole,
   adminOnly,
+  ownerOnly,
   staffOrAdmin,
   managementOnly,
   staffOnly,

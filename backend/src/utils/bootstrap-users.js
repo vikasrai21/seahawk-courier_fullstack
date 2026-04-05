@@ -1,8 +1,9 @@
 // src/utils/bootstrap-users.js
-// Local helper to restore demo users and/or reset admin password.
+// Local helper to reset the admin password and optionally restore test users.
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 const prisma = require('../config/prisma');
 const bcrypt = require('bcryptjs');
+const { assertSafeBootstrap, isTrue } = require('./bootstrap-guard');
 
 const DEFAULT_CLIENT_CODE = 'SEA HAWK';
 const DEMO_USERS = [
@@ -20,13 +21,13 @@ async function ensureClient() {
     where: { code: DEFAULT_CLIENT_CODE },
     create: {
       code: DEFAULT_CLIENT_CODE,
-      company: 'Sea Hawk Demo Client',
-      contact: 'Client Demo User',
+      company: 'Sea Hawk Client',
+      contact: 'Client User',
       phone: '9999999999',
     },
     update: {
-      company: 'Sea Hawk Demo Client',
-      contact: 'Client Demo User',
+      company: 'Sea Hawk Client',
+      contact: 'Client User',
       phone: '9999999999',
     },
   });
@@ -69,14 +70,15 @@ async function upsertUser(definition, resetPassword = false) {
 }
 
 async function main() {
+  const guard = assertSafeBootstrap('bootstrap-users');
   const resetAdminOnly = hasFlag('--reset-admin');
   const restoreDemo = hasFlag('--restore-demo') || !resetAdminOnly;
-
-  await ensureClient();
+  const showPasswords = hasFlag('--show-passwords') || guard.showPasswords || isTrue(process.env.SHOW_BOOTSTRAP_PASSWORDS);
 
   const results = [];
 
   if (restoreDemo) {
+    await ensureClient();
     for (const user of DEMO_USERS) {
       results.push(await upsertUser(user, true));
     }
@@ -85,11 +87,16 @@ async function main() {
   }
 
   console.log('\nBootstrap complete:');
-  console.log('• ADMIN       → admin@seahawk.com / Admin@12345');
-  console.log('• OPS_MANAGER → ops.manager@seahawk.com / Ops@12345');
-  console.log('• CLIENT      → client.user@seahawk.com / Client@12345');
+  console.log('• ADMIN       → admin@seahawk.com');
+  console.log('• OPS_MANAGER → ops.manager@seahawk.com');
+  console.log('• CLIENT      → client.user@seahawk.com');
   console.log(`• CLIENT code → ${DEFAULT_CLIENT_CODE}`);
   console.log(`• Updated     → ${results.map(r => r.email).join(', ')}`);
+  if (showPasswords) {
+    console.log('• Passwords   → Admin@12345 / Ops@12345 / Client@12345');
+  } else {
+    console.log('• Passwords   → hidden (use --show-passwords or SHOW_BOOTSTRAP_PASSWORDS=true)');
+  }
 
   await prisma.$disconnect();
 }

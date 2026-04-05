@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, Filter, Edit2, Trash2, X, CheckSquare, Square, ChevronDown, RefreshCw, Clock, Scan, Zap, Box, FileText } from 'lucide-react';
 import api from '../services/api';
 import { StatusBadge, STATUSES, formatStatusLabel, normalizeStatus } from '../components/ui/StatusBadge';
-import { PageLoader, EmptyState, SkeletonTable } from '../components/ui/Loading';
+import { EmptyState, SkeletonTable } from '../components/ui/Loading';
 import { Modal } from '../components/ui/Modal';
 import ShipmentForm from '../components/ShipmentForm';
 import { PageHeader } from '../components/ui/PageHeader';
@@ -212,7 +212,7 @@ function TimelineModal({ shipment, onClose }) {
 }
 
 // ── Bulk Status Modal ─────────────────────────────────────────────────────
-function BulkStatusModal({ selectedIds, selectedShipments, onDone, onClose, toast }) {
+function BulkStatusModal({ selectedIds, selectedShipments: _selectedShipments, onDone, onClose, toast }) {
   const [status, setStatus]   = useState('');
   const [saving, setSaving]   = useState(false);
   const [result, setResult]   = useState(null);
@@ -355,7 +355,7 @@ export default function AllShipmentsPage({ toast }) {
     try {
       const params = new URLSearchParams();
       Object.entries(filters).forEach(([k, v]) => { if (v) params.set(k, v); });
-      const res = await api.get(`/shipments?${params}&limit=200`);
+      const res = await api.get(`/shipments?${params.toString()}&limit=200`);
       setShipments(res.data || res || []);
       setTotal(res.pagination?.total || res.data?.length || res.length || 0);
       setSelected(new Set());

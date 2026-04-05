@@ -4,7 +4,6 @@ import { Plus, Edit2, Key, Link2, Shield, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { useFetch } from '../hooks/useFetch';
-import { PageLoader } from '../components/ui/Loading';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';

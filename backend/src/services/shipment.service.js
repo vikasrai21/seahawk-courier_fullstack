@@ -9,13 +9,17 @@ const trackonSvc   = require('./trackon.service');
 const dtdcSvc      = require('./dtdc.service');
 const walletSvc    = require('./wallet.service');
 const redis        = require('../config/redis');
+const cache        = require('../utils/cache');
 const { normalizeStatus } = require('./stateMachine');
 const { emitShipmentCreated, emitShipmentStatusUpdated } = require('../realtime/socket');
+const contractSvc  = require('./contract.service');
+const importLedger = require('./import-ledger.service');
 
 const clearCache = () => {
-  if (redis.status === 'ready') {
+  if (redis?.status === 'ready') {
     redis.del('stats:today', 'stats:monthly').catch(e => logger.warn(`[Redis] Clear cache failed: ${e.message}`));
   }
+  cache.delByPrefix('analytics:').catch(e => logger.warn(`[Cache] Analytics clear failed: ${e.message}`));
 };
 
 const COURIERS = {
@@ -91,14 +95,25 @@ async function getById(id) {
 async function create(data, userId) {
   const today = new Date().toISOString().split('T')[0];
   const shipment = await prisma.$transaction(async (tx) => {
+    const contractPrice = (!Number(data.amount || 0) && data.clientCode)
+      ? await contractSvc.calculatePrice({
+          clientCode: data.clientCode,
+          courier: data.courier || '',
+          service: data.service || 'Standard',
+          weight: parseFloat(data.weight) || 0,
+        })
+      : null;
+
     const payload = {
       ...data,
       date: data.date || today,
       consignee: (data.consignee || '').toUpperCase(),
       destination: (data.destination || '').toUpperCase(),
+      amount: Number(data.amount || 0) > 0 ? Number(data.amount) : Number(contractPrice?.total || 0),
       status: 'Booked',
       createdById: userId || null,
       updatedById: userId || null,
+      remarks: data.remarks || (contractPrice ? `AUTO_PRICED:${contractPrice.contractName}` : ''),
     };
 
     if ((payload.amount || 0) > 0) {
@@ -157,6 +172,10 @@ async function updateStatus(id, newStatus, userId) {
   const canonicalStatus = normalizeStatus(newStatus);
   if (stateMachine.assertValidTransition) stateMachine.assertValidTransition(shipment.status, canonicalStatus);
 
+  if (normalizeStatus(shipment.status) === canonicalStatus) {
+    return shipment;
+  }
+
   const updated = await prisma.shipment.update({
     where: { id: parseInt(id) },
     data:  { status: canonicalStatus, updatedById: userId },
@@ -171,8 +190,14 @@ async function updateStatus(id, newStatus, userId) {
   // Auto-refund on cancel/RTO
   if (stateMachine.shouldRefund && stateMachine.shouldRefund(canonicalStatus) && shipment.amount > 0) {
     try {
-      await walletSvc.credit({ clientCode: shipment.clientCode, amount: shipment.amount, description: `Refund — AWB ${shipment.awb} (${canonicalStatus})`, reference: shipment.awb });
-      logger.info(`[Wallet] Refunded ₹${shipment.amount} for ${shipment.awb}`);
+      const refund = await walletSvc.creditShipmentRefund({
+        clientCode: shipment.clientCode,
+        awb: shipment.awb,
+        amount: shipment.amount,
+        reason: canonicalStatus,
+      });
+      if (refund.skipped) logger.info(`[Wallet] Refund skipped for ${shipment.awb}; already refunded`);
+      else logger.info(`[Wallet] Refunded ₹${shipment.amount} for ${shipment.awb}`);
     } catch (e) { logger.warn(`[Wallet] Refund failed: ${e.message}`); }
   }
 
@@ -199,24 +224,72 @@ async function remove(id) {
 
 async function bulkImport(shipments, userId) {
   const today = new Date().toISOString().split('T')[0];
-  let imported = 0, duplicates = 0;
+  const batchKey = `imp_${Date.now()}`;
+  let imported = 0, duplicates = 0, autoPriced = 0, operationalCreated = 0;
   const errors = [];
+  await importLedger.ensureTable();
   const clientCodes = [...new Set(shipments.map(s => (s.clientCode || 'MISC').toUpperCase()))];
+  const contractsByClient = await contractSvc.getActiveContractsByClientCodes(clientCodes);
   for (const code of clientCodes) { await prisma.client.upsert({ where: { code }, create: { code, company: code }, update: {} }); }
-  for (const s of shipments) {
+  for (let index = 0; index < shipments.length; index++) {
+    const s = shipments[index];
     if (!s.awb || String(s.awb).trim() === '') { errors.push({ awb: '(empty)', error: 'No AWB' }); continue; }
     const awb = String(s.awb).trim();
     try {
+      const clientCode = (s.clientCode || 'MISC').toUpperCase();
+      const amount = parseFloat(s.amount) || 0;
+      const weight = parseFloat(s.weight) || 0;
+      const contractPrice = amount > 0
+        ? null
+        : contractSvc.calculatePriceFromContract(
+            contractSvc.selectBestContract(contractsByClient[clientCode] || [], {
+              courier: String(s.courier || ''),
+              service: String(s.service || 'Standard'),
+            }),
+            weight
+          );
+      const finalAmount = amount > 0 ? amount : Number(contractPrice?.total || 0);
+      if (contractPrice) autoPriced++;
+      const normalizedStatus = normalizeStatus(String(s.status || 'Delivered'));
       const existing = await prisma.shipment.findUnique({ where: { awb } });
-      if (existing) { duplicates++; continue; }
-      const created = await prisma.shipment.create({ data: { awb, clientCode: (s.clientCode || 'MISC').toUpperCase(), date: s.date || today, consignee: String(s.consignee || '').toUpperCase(), destination: String(s.destination || '').toUpperCase(), weight: parseFloat(s.weight) || 0, amount: parseFloat(s.amount) || 0, courier: String(s.courier || ''), department: String(s.department || ''), service: String(s.service || 'Standard'), status: normalizeStatus(String(s.status || 'Delivered')), remarks: String(s.remarks || ''), createdById: userId || null, updatedById: userId || null } });
-      emitShipmentCreated(created);
+
+      let operationalShipment = existing;
+      if (!existing) {
+        operationalShipment = await prisma.shipment.create({ data: { awb, clientCode, date: s.date || today, consignee: String(s.consignee || '').toUpperCase(), destination: String(s.destination || '').toUpperCase(), weight, amount: finalAmount, courier: String(s.courier || ''), department: String(s.department || ''), service: String(s.service || 'Standard'), status: normalizedStatus, remarks: String(s.remarks || (contractPrice ? `AUTO_PRICED:${contractPrice.contractName}` : '')), createdById: userId || null, updatedById: userId || null } });
+        emitShipmentCreated(operationalShipment);
+        operationalCreated++;
+      } else {
+        duplicates++;
+      }
+
+      await importLedger.insertRow({
+        batchKey,
+        rowNo: index + 1,
+        date: s.date || today,
+        clientCode,
+        awb,
+        consignee: String(s.consignee || '').toUpperCase(),
+        destination: String(s.destination || '').toUpperCase(),
+        phone: String(s.phone || ''),
+        pincode: String(s.pincode || ''),
+        weight,
+        amount: finalAmount,
+        courier: String(s.courier || ''),
+        department: String(s.department || ''),
+        service: String(s.service || 'Standard'),
+        status: normalizedStatus,
+        remarks: String(s.remarks || (contractPrice ? `AUTO_PRICED:${contractPrice.contractName}` : '')),
+        autoPriced: !!contractPrice,
+        shipmentId: operationalShipment?.id || null,
+        createdById: userId || null,
+      });
+
       imported++;
     } catch (err) { if (err.code === 'P2002') duplicates++; else errors.push({ awb, error: err.message }); }
   }
   
   if (imported > 0) clearCache();
-  return { imported, duplicates, errors: errors.slice(0, 20) };
+  return { imported, duplicates, autoPriced, operationalCreated, batchKey, errors: errors.slice(0, 20) };
 }
 
 async function getTodayStats() {

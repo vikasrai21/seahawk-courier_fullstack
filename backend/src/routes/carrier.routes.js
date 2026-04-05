@@ -5,7 +5,6 @@ const prisma   = require('../config/prisma');
 const carrier  = require('../services/carrier.service');
 const compare  = require('../services/rateCompare.service');
 const R        = require('../utils/response');
-const logger   = require('../utils/logger');
 const queue    = require('../services/queue.service');
 const pdf      = require('../services/pdf.service');
 

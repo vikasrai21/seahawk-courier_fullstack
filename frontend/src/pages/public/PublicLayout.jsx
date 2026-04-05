@@ -1,7 +1,7 @@
 // PublicLayout.jsx — Shared header + footer for all public pages
 // Proper React component (no DOM hacks, no global function injection)
 import { useEffect, useState } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 export default function PublicLayout({ children }) {
   const [mobOpen, setMobOpen] = useState(false);

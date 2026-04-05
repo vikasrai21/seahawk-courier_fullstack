@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Plus, CheckCircle, Keyboard, ChevronRight, MapPin, Loader2, AlertCircle, PackagePlus, IndianRupee } from 'lucide-react';
 import api from '../services/api';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -28,7 +28,7 @@ export default function NewEntryPage({ toast }) {
   const awbRef = useRef();
 
   useEffect(() => {
-    api.get('/clients').then(r => setClients(r.data || [])).catch(() => {});
+    api.get('/clients').then(r => setClients(r.data || [])).catch(() => undefined);
     loadRecent();
   }, []);
 
@@ -36,7 +36,9 @@ export default function NewEntryPage({ toast }) {
     try {
       const res = await api.get('/shipments?limit=8&page=1');
       setRecent(res.data || []);
-    } catch {}
+    } catch {
+      // Recent shipments are optional for the quick-entry flow.
+    }
   };
 
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
@@ -317,7 +319,7 @@ export default function NewEntryPage({ toast }) {
   );
 }
 
-function FieldCell({ label, icon: Icon, hint, error, children }) {
+function FieldCell({ label, hint, error, children }) {
   return (
     <div className={`relative flex flex-col min-h-[90px] transition-colors ${error ? 'bg-rose-50/50 dark:bg-rose-950/10' : ''}`}>
       <div className="px-4 pt-4 pb-1 flex items-center justify-between">
