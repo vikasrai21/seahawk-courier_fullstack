@@ -5,7 +5,7 @@
 import { useState, useCallback } from 'react';
 import {
   MessageCircle, Send, Zap, Copy, CheckCircle, AlertTriangle,
-  Search, TrendingUp, Phone, Loader, IndianRupee, X, Clock
+  Search, TrendingUp, Phone, Loader, IndianRupee, Clock
 } from 'lucide-react';
 import api from '../services/api';
 

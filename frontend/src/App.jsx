@@ -62,6 +62,7 @@ const PickupSchedulerPage = lazy(() => import('./pages/PickupSchedulerPage'));
 const WalletPage = lazy(() => import('./pages/WalletPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const SupportTicketsPage = lazy(() => import('./pages/SupportTicketsPage'));
+const OwnerAuditPage = lazy(() => import('./pages/OwnerAuditPage'));
 
 function AuthLoadingScreen() {
   return (
@@ -96,9 +97,10 @@ function RouteLoadingScreen() {
   );
 }
 
-function PrivateRoute({ children, adminOnly = false, roles = null }) {
-  const { user, isAdmin, hasRole } = useAuth();
+function PrivateRoute({ children, adminOnly = false, ownerOnly = false, roles = null }) {
+  const { user, isAdmin, isOwner, hasRole } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
+  if (ownerOnly && !isOwner) return <Navigate to="/app" replace />;
   if (adminOnly && !isAdmin) return <Navigate to="/app" replace />;
   if (roles && !hasRole(...roles)) return <Navigate to="/app" replace />;
   return children;
@@ -181,6 +183,8 @@ function AppRoutes() {
                       <Route path="/support" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(SupportTicketsPage)}</PrivateRoute>} />
                       <Route path="/reconciliation" element={withToast(ReconciliationPage)} />
                       <Route path="/rates" element={<RateCalculatorPage />} />
+                      <Route path="/audit" element={<PrivateRoute ownerOnly>{withToast(OwnerAuditPage)}</PrivateRoute>} />
+                      <Route path="/billing-verify" element={<Navigate to="/app/audit" replace />} />
                       <Route path="/bulk" element={withToast(BulkComparePage)} />
                       <Route path="/rate-card" element={withToast(RateCardPage)} />
                       <Route path="/quotes" element={withToast(QuoteHistoryPage)} />
@@ -195,7 +199,7 @@ function AppRoutes() {
                       <Route path="/ndr" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(NDRPage)}</PrivateRoute>} />
                       <Route path="/pickups" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(PickupSchedulerPage)}</PrivateRoute>} />
                       <Route path="/users" element={<PrivateRoute adminOnly>{withToast(UsersPage)}</PrivateRoute>} />
-                      <Route path="/audit" element={<PrivateRoute adminOnly><AuditPage /></PrivateRoute>} />
+                      <Route path="/audit-logs" element={<PrivateRoute adminOnly><AuditPage /></PrivateRoute>} />
                       <Route path="/rate-mgmt" element={<PrivateRoute adminOnly>{withToast(RateManagementPage)}</PrivateRoute>} />
                     </Routes>
                   </AppLayout>

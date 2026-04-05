@@ -92,7 +92,7 @@ async function sendWhatsApp(phone, message) {
 
 // ── Shipment status change notifications ───────────────────────────────────
 async function notifyStatusChange(shipment) {
-  const { awb, status, consignee, phone, courier, clientCode } = shipment;
+  const { awb, status, consignee, phone, clientCode } = shipment;
   const prefs = await getClientNotificationPreferences(clientCode);
 
   // Notify consignee via WhatsApp when out for delivery or delivered

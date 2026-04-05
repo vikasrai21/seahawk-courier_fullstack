@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Calendar, MapPin, Package, RefreshCw, Plus, User, Clock, CheckCircle2, X, ChevronRight } from 'lucide-react';
+import { Calendar, MapPin, Package, RefreshCw, Plus, User, X } from 'lucide-react';
 import api from '../services/api';
 import { Modal } from '../components/ui/Modal';
 import { EmptyState } from '../components/ui/EmptyState';
@@ -69,8 +69,6 @@ export default function PickupSchedulerPage({ toast }) {
       setSelected(null);
     } catch(e) { toast?.(e.message,'error'); }
   };
-
-  const TodayCount = stats?.pending || 0;
 
   return (
     <div className="p-4 md:p-6">

@@ -5,7 +5,7 @@ import { LayoutDashboard, RefreshCw } from 'lucide-react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
-import { SkeletonCard, EmptyState } from '../components/ui/Loading';
+import { SkeletonCard } from '../components/ui/Loading';
 import { Skeleton } from '../components/ui/Skeleton';
 import DashboardStats from '../components/dashboard/DashboardStats';
 import DashboardAlerts from '../components/dashboard/DashboardAlerts';
@@ -106,7 +106,7 @@ export default function DashboardPage() {
   const [activity, setActivity] = useState([]);
   const [shipments, setShipments] = useState([]);
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [tick, setTick] = useState(Date.now());
+  const [, setTick] = useState(Date.now());
 
   const currentRange = useMemo(() => getRange(range, customFrom, customTo), [range, customFrom, customTo]);
   const previousRange = useMemo(() => getPreviousRange(range, customFrom, customTo), [range, customFrom, customTo]);
@@ -167,8 +167,6 @@ export default function DashboardPage() {
       socket.off('shipment:status-updated', refresh);
     };
   }, [socket, load]);
-
-  const totalShipments = Number(overview?.kpis?.totalShipments || 0);
 
   return (
     <>

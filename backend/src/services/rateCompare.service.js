@@ -7,8 +7,6 @@
 
 'use strict';
 
-const prisma      = require('../config/prisma');
-const rateEngine  = require('../utils/rateEngine');
 const logger      = require('../utils/logger');
 
 /* ════════════════════════════════════════════════════════════

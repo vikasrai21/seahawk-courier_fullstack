@@ -77,6 +77,32 @@ async function del(key) {
   }
 }
 
+async function delByPrefix(prefix) {
+  try {
+    const redis = await getRedis();
+    if (redis) {
+      const stream = redis.scanStream({ match: `${prefix}*`, count: 100 });
+      const keys = [];
+      return await new Promise((resolve, reject) => {
+        stream.on('data', (resultKeys) => {
+          if (Array.isArray(resultKeys) && resultKeys.length) keys.push(...resultKeys);
+        });
+        stream.on('end', async () => {
+          if (keys.length) await redis.del(...keys);
+          resolve();
+        });
+        stream.on('error', reject);
+      });
+    }
+
+    for (const key of [...memCache.keys()]) {
+      if (key.startsWith(prefix)) memCache.delete(key);
+    }
+  } catch (err) {
+    logger.warn(`Cache delByPrefix failed for ${prefix}:`, err.message);
+  }
+}
+
 // ── wrap — cache-aside helper ─────────────────────────────────────────────
 // Usage: const data = await cache.wrap('key', () => expensiveQuery(), 300)
 async function wrap(key, fn, ttlSeconds = 300) {
@@ -87,4 +113,4 @@ async function wrap(key, fn, ttlSeconds = 300) {
   return fresh;
 }
 
-module.exports = { get, set, del, wrap };
+module.exports = { get, set, del, delByPrefix, wrap };

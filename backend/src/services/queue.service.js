@@ -16,13 +16,12 @@ const prisma  = require('../config/prisma');
 const logger  = require('../utils/logger');
 
 /* ── Detect BullMQ availability ── */
-let Queue, Worker, QueueEvents;
+let Queue, Worker;
 let bullMQAvailable = false;
 try {
   const bullmq = require('bullmq');
   Queue       = bullmq.Queue;
   Worker      = bullmq.Worker;
-  QueueEvents = bullmq.QueueEvents;
   bullMQAvailable = true;
 } catch {
   logger.warn('BullMQ not installed — using in-memory job runner (no Redis needed in dev)');
@@ -186,16 +185,18 @@ async function _runTrackingSync({ shipmentId, awb, carrier }) {
   }
 }
 
-async function _runNotification({ type, shipmentId, clientCode, data }) {
+async function _runNotification({ type, shipmentId, clientCode: _clientCode, data }) {
   try {
     const notify = require('./notification.service');
     if (shipmentId) {
       const s = await prisma.shipment.findUnique({ where: { id: shipmentId }, include: { client: true } });
       if (!s) return;
-      if (type === 'SHIPMENT_BOOKED')      await notify.shipmentBooked(s, s.client);
-      if (type === 'OUT_FOR_DELIVERY')     await notify.outForDelivery(s);
-      if (type === 'DELIVERED')            await notify.delivered(s);
-      if (type === 'NDR' && data?.reason)  await notify.ndrAlert(s, data.reason);
+      if (type === 'SHIPMENT_BOOKED') {
+        await notify.sendWelcomeEmail(s.client, 'Your portal password'); // Example for booking
+      } else {
+        // Use the centralized status change notifier
+        await notify.notifyStatusChange(s);
+      }
     }
   } catch (err) {
     logger.error(`Notification job failed: ${err.message}`);

@@ -104,7 +104,7 @@ export default function ServicesPage() {
       <section className="sec">
         <div className="wrap">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 28 }}>
-            {services.map((s, i) => (
+            {services.map((s) => (
               <div key={s.id} id={s.id} className="rev" style={{ background: '#fff', borderRadius: 'var(--r-xl)', border: '1.5px solid var(--border-l)', boxShadow: 'var(--sh-md)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ background: 'var(--navy-faint)', padding: '24px 24px 20px', borderBottom: '1px solid var(--border-l)', position: 'relative' }}>
                   {s.badge && (

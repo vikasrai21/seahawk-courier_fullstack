@@ -3,7 +3,7 @@ import { Edit3 } from 'lucide-react';
 
 export default function SellingPriceBanner({
   effectiveSell,
-  bannerColor,
+  _bannerColor,
   customPrice,
   activeContract,
   svcLevel,

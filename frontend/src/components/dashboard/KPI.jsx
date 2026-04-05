@@ -1,7 +1,5 @@
 import { ArrowUp, ArrowDown } from 'lucide-react';
 
-const fmtN = n => Number(n || 0).toLocaleString('en-IN');
-
 function tokens(dark) {
   return dark ? {
     surface:   'rgba(15, 23, 42, 0.65)',

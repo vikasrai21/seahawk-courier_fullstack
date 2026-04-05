@@ -8,9 +8,9 @@ const COMPANY = {
 };
 
 // Auto-generate invoice number: INV-YYYY-NNN
-async function generateInvoiceNo() {
+async function generateInvoiceNo(db = prisma) {
   const year  = new Date().getFullYear();
-  const last  = await prisma.invoice.findFirst({
+  const last  = await db.invoice.findFirst({
     where: { invoiceNo: { startsWith: `INV-${year}-` } },
     orderBy: { id: 'desc' },
   });
@@ -19,12 +19,12 @@ async function generateInvoiceNo() {
 }
 
 // Create invoice from shipments in date range
-async function create({ clientCode, fromDate, toDate, gstPercent = 18, notes }) {
-  const client = await prisma.client.findUnique({ where: { code: clientCode.toUpperCase() } });
+async function create({ clientCode, fromDate, toDate, gstPercent = 18, notes }, db = prisma) {
+  const client = await db.client.findUnique({ where: { code: clientCode.toUpperCase() } });
   if (!client) throw new AppError('Client not found', 404);
 
   // Get unbilled shipments for this client and date range
-  const shipments = await prisma.shipment.findMany({
+  const shipments = await db.shipment.findMany({
     where: {
       clientCode: clientCode.toUpperCase(),
       date: { gte: fromDate, lte: toDate },
@@ -36,18 +36,21 @@ async function create({ clientCode, fromDate, toDate, gstPercent = 18, notes }) 
 
   if (!shipments.length) throw new AppError('No unbilled shipments found for this date range.', 400);
 
-  const invoiceNo = await generateInvoiceNo();
+  const invoiceNo = await generateInvoiceNo(db);
   const subtotal  = shipments.reduce((a, s) => a + (s.amount || 0), 0);
   
   // Dynamic Tax Split Calculation
   const companyState = '06'; // Haryana
   const clientState = String(client.gst || '').slice(0, 2);
-  const isIntraState = clientState ? clientState === companyState : /haryana/i.test(client.address || '');
+  const intraState = clientState ? clientState === companyState : /haryana/i.test(client.address || '');
 
   const gstAmount = Math.round(subtotal * (gstPercent / 100) * 100) / 100;
+  const cgstAmount = intraState ? Math.round((gstAmount / 2) * 100) / 100 : 0;
+  const sgstAmount = intraState ? Math.round((gstAmount / 2) * 100) / 100 : 0;
+  const igstAmount = intraState ? 0 : gstAmount;
   const total     = Math.round((subtotal + gstAmount) * 100) / 100;
 
-  const invoice = await prisma.invoice.create({
+  const invoice = await db.invoice.create({
     data: {
       invoiceNo,
       clientCode: clientCode.toUpperCase(),
@@ -56,6 +59,9 @@ async function create({ clientCode, fromDate, toDate, gstPercent = 18, notes }) 
       subtotal:  Math.round(subtotal  * 100) / 100,
       gstPercent,
       gstAmount,
+      cgstAmount,
+      sgstAmount,
+      igstAmount,
       total,
       notes,
       items: {
@@ -80,8 +86,8 @@ async function create({ clientCode, fromDate, toDate, gstPercent = 18, notes }) 
 }
 
 // Get all invoices
-async function getAll(clientCode) {
-  return prisma.invoice.findMany({
+async function getAll(clientCode, db = prisma) {
+  return db.invoice.findMany({
     where: clientCode ? { clientCode } : undefined,
     include: {
       client: { select: { company: true } },
@@ -92,8 +98,8 @@ async function getAll(clientCode) {
 }
 
 // Get single invoice with full details
-async function getById(id) {
-  const inv = await prisma.invoice.findUnique({
+async function getById(id, db = prisma) {
+  const inv = await db.invoice.findUnique({
     where: { id: parseInt(id) },
     include: { client: true, items: { orderBy: { date: 'asc' } } },
   });
@@ -102,13 +108,13 @@ async function getById(id) {
 }
 
 // Update status
-async function updateStatus(id, status) {
-  return prisma.invoice.update({ where: { id: parseInt(id) }, data: { status } });
+async function updateStatus(id, status, db = prisma) {
+  return db.invoice.update({ where: { id: parseInt(id) }, data: { status } });
 }
 
 // Delete invoice (restores shipments to unbilled)
-async function remove(id) {
-  return prisma.invoice.delete({ where: { id: parseInt(id) } });
+async function remove(id, db = prisma) {
+  return db.invoice.delete({ where: { id: parseInt(id) } });
 }
 
 function getTaxBreakdown(invoice, client) {

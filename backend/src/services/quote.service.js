@@ -1,10 +1,10 @@
 // src/services/quote.service.js
 const prisma = require('../config/prisma');
 
-async function generateQuoteNo() {
+async function generateQuoteNo(db = prisma) {
   const year = new Date().getFullYear();
   const prefix = `SH-Q-${year}-`;
-  const last = await prisma.quote.findFirst({
+  const last = await db.quote.findFirst({
     where: { quoteNo: { startsWith: prefix } },
     orderBy: { createdAt: 'desc' },
   });
@@ -12,16 +12,16 @@ async function generateQuoteNo() {
   return `${prefix}${String(seq).padStart(4, '0')}`;
 }
 
-async function createQuote(data, userId) {
-  const quoteNo = await generateQuoteNo();
+async function createQuote(data, userId, db = prisma) {
+  const quoteNo = await generateQuoteNo(db);
   const validUntil = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
-  return prisma.quote.create({
+  return db.quote.create({
     data: { ...data, quoteNo, validUntil, createdById: userId || null },
     include: { client: { select: { company: true, code: true } }, createdBy: { select: { name: true } } },
   });
 }
 
-async function listQuotes({ clientCode, status, courier, fromDate, toDate, page = 1, limit = 50 }) {
+async function listQuotes({ clientCode, status, courier, fromDate, toDate, page = 1, limit = 50 }, db = prisma) {
   const where = {};
   if (clientCode) where.clientCode = clientCode;
   if (status) where.status = status;
@@ -33,8 +33,8 @@ async function listQuotes({ clientCode, status, courier, fromDate, toDate, page 
   }
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const [total, data] = await Promise.all([
-    prisma.quote.count({ where }),
-    prisma.quote.findMany({
+    db.quote.count({ where }),
+    db.quote.findMany({
       where, skip, take: parseInt(limit),
       orderBy: { createdAt: 'desc' },
       include: { client: { select: { company: true } } },
@@ -43,25 +43,24 @@ async function listQuotes({ clientCode, status, courier, fromDate, toDate, page 
   return { total, data, page: parseInt(page), limit: parseInt(limit) };
 }
 
-async function updateQuoteStatus(id, status) {
-  return prisma.quote.update({ where: { id: parseInt(id) }, data: { status } });
+async function updateQuoteStatus(id, status, db = prisma) {
+  return db.quote.update({ where: { id: parseInt(id) }, data: { status } });
 }
 
-async function getQuoteStats() {
+async function getQuoteStats(db = prisma) {
   const [total, byStatus, topCouriers, avgMargin, last30] = await Promise.all([
-    prisma.quote.count(),
-    prisma.quote.groupBy({ by: ['status'], _count: { id: true } }),
-    prisma.quote.groupBy({
+    db.quote.count(),
+    db.quote.groupBy({ by: ['status'], _count: { id: true } }),
+    db.quote.groupBy({
       by: ['courier'], _count: { id: true }, orderBy: { _count: { id: 'desc' } }, take: 5,
     }),
-    prisma.quote.aggregate({ _avg: { margin: true, profit: true } }),
-    prisma.quote.count({
+    db.quote.aggregate({ _avg: { margin: true, profit: true } }),
+    db.quote.count({
       where: { createdAt: { gte: new Date(Date.now() - 30 * 86400000) } },
     }),
   ]);
 
   const conversionRate = (() => {
-    const quoted = byStatus.find(s => s.status === 'QUOTED')?._count?.id || 0;
     const booked = byStatus.find(s => s.status === 'BOOKED')?._count?.id || 0;
     return total > 0 ? rnd((booked / total) * 100) : 0;
   })();

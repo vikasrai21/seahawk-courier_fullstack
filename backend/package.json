@@ -15,6 +15,7 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "db:seed": "node src/utils/seed.js",
+    "auth:bootstrap-owner": "node src/utils/bootstrap-owner.js",
     "auth:bootstrap-demo": "node src/utils/bootstrap-users.js --restore-demo",
     "auth:reset-admin": "node src/utils/bootstrap-users.js --reset-admin",
     "lint": "eslint src --ext .js",

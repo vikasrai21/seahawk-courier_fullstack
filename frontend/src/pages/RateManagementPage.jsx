@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Shield, AlertTriangle, CheckCircle, Plus, Edit3, Trash2, Loader, Clock, Package, X } from 'lucide-react';
+import { Shield, Plus, Edit3, Trash2, Loader, Clock, X } from 'lucide-react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader } from '../components/ui/PageHeader';

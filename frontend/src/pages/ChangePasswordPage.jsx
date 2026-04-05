@@ -1,7 +1,7 @@
 // ChangePasswordPage.jsx — Forced password change on first login
 // Also used for voluntary password changes from profile
 import { useState } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 
@@ -13,7 +13,7 @@ const REQUIREMENTS = [
 ];
 
 export default function ChangePasswordPage() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const isRequired = searchParams.get('required') === '1';

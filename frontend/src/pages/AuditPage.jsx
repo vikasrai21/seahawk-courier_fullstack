@@ -1,5 +1,3 @@
-import { useState } from 'react';
-import api from '../services/api';
 import { PageLoader, EmptyState } from '../components/ui/Loading';
 import { useFetch } from '../hooks/useFetch';
 import { PageHeader } from '../components/ui/PageHeader';

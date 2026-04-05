@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Package, ScanLine, CheckCircle2, AlertCircle, RefreshCw, Download } from 'lucide-react';
+import { ScanLine, CheckCircle2, AlertCircle, RefreshCw, Download } from 'lucide-react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import * as XLSX from 'xlsx';
 import api from '../services/api';
@@ -19,7 +19,9 @@ const playSuccess = () => {
     gain.connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + 0.1);
-  } catch(e){}
+  } catch (e) {
+    console.debug('Unable to play success tone', e);
+  }
 };
 
 const playError = () => {
@@ -36,7 +38,9 @@ const playError = () => {
     gain.connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + 0.3);
-  } catch(e){}
+  } catch (e) {
+    console.debug('Unable to play error tone', e);
+  }
 };
 
 export default function ScanAWBPage({ toast }) {
@@ -62,7 +66,9 @@ export default function ScanAWBPage({ toast }) {
   const stopCamera = async () => {
     try {
       await scannerRef.current?.reset();
-    } catch {}
+    } catch {
+      // Scanner reset can fail if the camera stream was never initialized.
+    }
 
     scannerRef.current = null;
     setCameraActive(false);

@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
-import { StatusBadge, formatStatusLabel, normalizeStatus } from '../../components/ui/StatusBadge';
+import { formatStatusLabel, normalizeStatus } from '../../components/ui/StatusBadge';
 
 const STATUS_STEPS = ['Booked', 'PickedUp', 'InTransit', 'OutForDelivery', 'Delivered'];
 

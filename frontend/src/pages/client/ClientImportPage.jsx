@@ -103,7 +103,13 @@ export default function ClientImportPage({ toast }) {
         {result && (
           <div className="card bg-green-50 border-green-100">
             <div className="font-semibold text-green-800">Import Summary</div>
-            <div className="text-sm text-green-700 mt-2">Imported: {result.imported || 0} · Duplicates skipped: {result.duplicates || 0}</div>
+            <div className="text-sm text-green-700 mt-2">
+              Rows saved: {result.imported || 0}
+              {' · '}
+              Operational shipments: {result.operationalCreated || 0}
+              {' · '}
+              Repeated AWBs linked: {result.duplicates || 0}
+            </div>
             {(result.errors || []).length > 0 && (
               <div className="mt-3 text-xs text-red-600 space-y-1">
                 {result.errors.map((err, idx) => <div key={idx}>{err.awb}: {err.error}</div>)}

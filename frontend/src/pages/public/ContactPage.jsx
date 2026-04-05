@@ -1,6 +1,5 @@
 // ContactPage.jsx — Contact us page as React component
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
 import PublicLayout from './PublicLayout';
 
 export default function ContactPage() {

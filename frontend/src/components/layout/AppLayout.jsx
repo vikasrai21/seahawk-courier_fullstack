@@ -69,8 +69,9 @@ const navGroups = [
   {
     label: 'Rates & Quotes',
     items: [
-      { to: '/app/rates',     label: 'Rate Calculator',  icon: Calculator },
-      { to: '/app/bulk',      label: 'Bulk Compare',     icon: GitCompare, isSecondary: true },
+      { to: '/app/rates',          label: 'Rate Calculator',  icon: Calculator },
+      { to: '/app/audit',          label: 'Audit',            icon: ScrollText, roles: ['OWNER'], isSecondary: true },
+      { to: '/app/bulk',           label: 'Bulk Compare',     icon: GitCompare, isSecondary: true },
       { to: '/app/rate-card', label: 'Rate Card PDF',    icon: CreditCard, isSecondary: true },
       { to: '/app/quotes',    label: 'Quote History',    icon: FileText, isSecondary: true },
       { to: '/app/whatsapp',  label: 'WhatsApp Rates',   icon: MessageCircle, badge: 'NEW', isSecondary: true },
@@ -86,14 +87,15 @@ const navGroups = [
 
 const adminItems = [
   { to: '/app/users',    label: 'Users',           icon: UserCircle, isSecondary: true },
-  { to: '/app/audit',    label: 'Audit Logs',      icon: ShieldAlert, isSecondary: true },
+  { to: '/app/audit-logs', label: 'Audit Logs',    icon: ShieldAlert, isSecondary: true },
   { to: '/app/rate-mgmt',label: 'Rate Management', icon: Settings2, isSecondary: true },
 ];
 
 // ── Nav item ───────────────────────────────────────────────────────────────
 function NavItem({ to, label, icon: Icon, badge, roles: itemRoles, isSecondary }) {
-  const { hasRole, isAdmin } = useAuth();
+  const { hasRole, isAdmin, isOwner } = useAuth();
   const { dark } = useTheme();
+  if (itemRoles?.includes('OWNER') && !isOwner) return null;
   if (itemRoles && !isAdmin && !hasRole(...itemRoles)) return null;
 
   return (
@@ -329,7 +331,7 @@ export function AppLayout({ children }) {
       }
     };
     
-    const handleNotification = (data) => {
+    const handleNotification = () => {
       setUnreadCount(c => c + 1);
     };
 

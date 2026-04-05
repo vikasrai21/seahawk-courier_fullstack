@@ -34,6 +34,7 @@ model User {
   pickupAssignments       PickupRequest[] @relation("AssignedAgent")
   refreshTokens           RefreshToken[]
   clientProfile           ClientUser?
+  importedRows            ShipmentImportRow[] @relation("ImportRowCreatedBy")
   @@index([email])
   @@map("users")
 }
@@ -84,6 +85,7 @@ model Client {
   pickups      PickupRequest[]
   transactions WalletTransaction[]
   clientUsers  ClientUser[]
+  importedRows ShipmentImportRow[]
   @@index([code])
   @@map("clients")
 }
@@ -139,6 +141,7 @@ model Shipment {
   invoiceItems   InvoiceItem[]
   trackingEvents TrackingEvent[]
   ndrEvents      NDREvent[]
+  importRows     ShipmentImportRow[]
   @@index([date])
   @@index([clientCode])
   @@index([status])
@@ -147,6 +150,43 @@ model Shipment {
   @@index([date, clientCode])
   @@index([courier, status])
   @@map("shipments")
+}
+
+model ShipmentImportRow {
+  id          Int      @id @default(autoincrement())
+  batchKey    String   @map("batch_key")
+  sourceFile  String?  @map("source_file")
+  sourceSheet String?  @map("source_sheet")
+  rowNo       Int?     @map("row_no")
+  date        String   @db.VarChar(10)
+  clientCode  String   @map("client_code") @db.VarChar(20)
+  awb         String   @db.VarChar(50)
+  consignee   String?
+  destination String?
+  phone       String?
+  pincode     String?
+  weight      Float    @default(0)
+  amount      Float    @default(0)
+  courier     String?
+  department  String?
+  service     String   @default("Standard")
+  status      String   @default("Booked")
+  ndrStatus   String?  @map("ndr_status")
+  remarks     String?
+  autoPriced  Boolean  @default(false) @map("auto_priced")
+  shipmentId  Int?     @map("shipment_id")
+  createdById Int?     @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  client    Client    @relation(fields: [clientCode], references: [code])
+  shipment  Shipment? @relation(fields: [shipmentId], references: [id])
+  createdBy User?     @relation("ImportRowCreatedBy", fields: [createdById], references: [id])
+  @@index([batchKey])
+  @@index([date])
+  @@index([clientCode])
+  @@index([awb])
+  @@index([courier])
+  @@index([status])
+  @@map("shipment_import_rows")
 }
 
 model TrackingEvent {

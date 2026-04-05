@@ -1,9 +1,9 @@
 import { SkeletonTable } from '../components/ui/Skeleton';
 import { useState } from 'react';
-import { Plus, Edit2, Trash2, Calculator, ChevronDown, ChevronUp, Zap } from 'lucide-react';
+import { Plus, Edit2, Trash2, Calculator, ChevronDown, ChevronUp } from 'lucide-react';
 import api from '../services/api';
 import { useFetch } from '../hooks/useFetch';
-import { PageLoader, EmptyState } from '../components/ui/Loading';
+import { EmptyState } from '../components/ui/Loading';
 import { Modal } from '../components/ui/Modal';
 
 const PRICING_TYPES = [
@@ -62,7 +62,9 @@ export default function ContractsPage({ toast }) {
     try {
       const res = await api.get(`/contracts/calculate?clientCode=${contract.clientCode}&courier=${contract.courier||''}&service=${contract.service||''}&weight=${calc.weight}`);
       setCalc(c => ({ ...c, result: res.data }));
-    } catch {}
+    } catch {
+      toast?.('Could not calculate sample contract price', 'error');
+    }
   };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));

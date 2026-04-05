@@ -36,7 +36,7 @@ function getTrend(current, previous) {
 }
 
 // ── Today Pulse Bar ───────────────────────────────────────────────────────
-function TodayPulse({ stats }) {
+function TodayPulse({ stats, label = 'Current Range' }) {
   const items = [
     { label: 'Bookings', value: stats?.Booked || 0, color: 'text-blue-500', bg: 'bg-blue-500/10' },
     { label: 'Out for Delivery', value: stats?.OutForDelivery || 0, color: 'text-amber-500', bg: 'bg-amber-500/10' },
@@ -48,7 +48,7 @@ function TodayPulse({ stats }) {
     <div className="flex flex-wrap items-center gap-4 bg-slate-900 shadow-lg border border-slate-800 rounded-2xl p-2 px-4 mb-6 shadow-slate-900/10">
       <div className="flex items-center gap-2 pr-4 border-r border-slate-800">
         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Today's Pulse</span>
+        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</span>
       </div>
       <div className="flex flex-1 items-center justify-around gap-4 py-1">
         {items.map((item) => (
@@ -112,30 +112,15 @@ function StatCard({ title, value, previous, format, icon: Icon, tone }) {
 }
 
 export default function DashboardStats({ overview, previousOverview, dateLabel }) {
-  const isDemo = Number(overview?.kpis?.totalShipments || 0) === 0;
-
-  let kpis = overview?.kpis || {};
-  let prev = previousOverview?.kpis || {};
-  let failedCurrent = Number(overview?.byStatus?.Failed || 0);
-  let failedPrevious = Number(previousOverview?.byStatus?.Failed || 0);
-  let todayStats = overview?.todayStats || overview?.byStatus || {};
-
-  if (isDemo) {
-    kpis = { totalShipments: 1420, delivered: 1250, totalRevenue: 854000 };
-    prev = { totalShipments: 1210, delivered: 1050, totalRevenue: 712000 };
-    failedCurrent = 42;
-    failedPrevious = 38;
-    todayStats = { Booked: 145, OutForDelivery: 82, Delivered: 310, Failed: 8, RTO: 3 };
-  }
+  const kpis = overview?.kpis || {};
+  const prev = previousOverview?.kpis || {};
+  const failedCurrent = Number(overview?.byStatus?.Failed || 0);
+  const failedPrevious = Number(previousOverview?.byStatus?.Failed || 0);
+  const todayStats = overview?.todayStats || overview?.byStatus || {};
 
   return (
     <div className="space-y-6 relative">
-      {isDemo && (
-        <div className="absolute -top-10 left-1/2 -translate-x-1/2 z-10 flex items-center justify-center">
-            <div className="bg-white/90 backdrop-blur-md px-4 py-1.5 rounded-full border border-orange-400 text-orange-600 text-xs font-black tracking-widest uppercase shadow-lg shadow-orange-500/10">Showing Sample Demo Data</div>
-        </div>
-      )}
-      <TodayPulse stats={todayStats} />
+      <TodayPulse stats={todayStats} label={dateLabel || 'Current Range'} />
       <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
         <StatCard title="Total Shipments" value={kpis.totalShipments || 0} previous={prev.totalShipments || 0} icon={Package} tone="orange" />
         <StatCard title="Delivered Rate" value={((kpis.delivered || 0) / (kpis.totalShipments || 1)) * 100} previous={((prev.delivered || 0) / (prev.totalShipments || 1)) * 100} format="percent" icon={Target} tone="green" />

@@ -24,7 +24,7 @@ const prismaMap = {
 };
 
 // ── Global error handler (must be last middleware) ────────────────────────
-function globalErrorHandler(err, req, res, next) {
+function globalErrorHandler(err, req, res, _next) {
   // Log everything — structured for searchability
   logger.error('Request error', {
     method:  req.method,

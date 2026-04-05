@@ -6,6 +6,7 @@ const prisma = require('../config/prisma');
 const config = require('../config');
 const logger = require('../utils/logger');
 const { AppError } = require('../middleware/errorHandler');
+const { isOwnerUser } = require('../utils/owner');
 
 const SALT_ROUNDS = 12;
 
@@ -66,14 +67,18 @@ async function login(email, password, meta = {}) {
 
   logger.info(`Login: ${user.email} [${user.role}]`);
 
-  const { password: _, clientProfile, ...safeUser } = user;
+  const clientProfile = user.clientProfile;
+  const safeUser = { ...user };
+  delete safeUser.password;
+  delete safeUser.clientProfile;
   return { 
     accessToken, 
     refreshToken, 
     user: { 
       ...safeUser, 
       clientCode: clientProfile?.clientCode || null,
-      walletBalance: clientProfile?.client?.walletBalance ?? 0
+      walletBalance: clientProfile?.client?.walletBalance ?? 0,
+      isOwner: isOwnerUser(user),
     } 
   };
 }
@@ -220,6 +225,7 @@ async function getAllUsers() {
   // Flatten clientCode to top level for convenience
   return users.map(u => ({
     ...u,
+    isOwner: isOwnerUser(u),
     clientCode: u.clientProfile?.clientCode ?? null,
     clientProfile: undefined,
   }));

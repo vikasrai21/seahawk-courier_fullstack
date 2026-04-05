@@ -1,8 +1,6 @@
 import { useState, useMemo } from 'react';
-import { Printer, Download, FileText, Users, X, ChevronDown } from 'lucide-react';
+import { Printer, X } from 'lucide-react';
 import api from '../services/api';
-
-const fmt = n => Number(n || 0).toFixed(2);
 
 // Proposal sell rates (must mirror rateEngine)
 const SELL_DOC_ECO = {
@@ -61,7 +59,7 @@ function calcSfcRate(zone, wkg, level = 'economy') {
   return Math.round((b + fsc) * (1 + GST) * 100) / 100;
 }
 
-export default function RateCardPage({ toast }) {
+export default function RateCardPage() {
   const [clients, setClients]           = useState([]);
   const [selClient, setSelClient]       = useState(null);
   const [clientSearch, setClientSearch] = useState('');
@@ -75,7 +73,9 @@ export default function RateCardPage({ toast }) {
 
   const loadClients = async () => {
     if (clients.length) return;
-    try { const r = await api.get('/clients'); setClients(r.data?.data || []); } catch {}
+    try { const r = await api.get('/clients'); setClients(r.data?.data || []); } catch {
+      // Client selection is optional for printing a generic rate card.
+    }
   };
 
   const filteredClients = clients.filter(c =>

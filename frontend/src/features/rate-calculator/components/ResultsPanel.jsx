@@ -28,11 +28,11 @@ const THEME = {
 };
 
 export default function ResultsPanel({
-  best, sortMode, fmt, fmtP, results, displayed,
-  odaOn, odaAmt, expanded, setExpanded,
-  getMarginWarning, svcLevel, customPrice, activeContract,
+  best, sortMode, fmt, fmtP, results, _displayed,
+  odaOn, _odaAmt, expanded, setExpanded,
+  _getMarginWarning, _svcLevel, _customPrice, _activeContract,
   pColor, setQuoteCourier, showAll, setShowAll,
-  targetMargin, fmtI,
+  _targetMargin, fmtI,
 }) {
   if (!results.length) return null;
 

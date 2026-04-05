@@ -14,10 +14,6 @@ const logger  = require('../utils/logger');
 const cache   = require('../utils/cache');
 const { fetchJsonWithRetry } = require('../utils/httpRetry');
 
-/* ── helpers ── */
-const fmt = (n) => `₹${Number(n||0).toLocaleString('en-IN')}`;
-const today = () => new Date().toISOString().split('T')[0];
-
 /* ════════════════════════════════════════════════════════════
    CARRIER CONFIG LOADER
    ════════════════════════════════════════════════════════════ */
@@ -419,9 +415,12 @@ async function fetchTracking(carrier, awb, options = {}) {
       if (cached) return cached;
     }
 
-    const cfg = await getCarrierConfig(carrier).catch(() => ({
-      apiUrl: '', apiKey: '', enabled: true, config: {},
-    }));
+    let cfg;
+    try {
+      cfg = getCarrierConfig(carrier);
+    } catch (err) {
+      cfg = { apiUrl: '', apiKey: '', enabled: true, config: {} };
+    }
     const tracking = await impl.fetchTracking(awb, cfg);
     if (tracking && useCache) {
       await cache.set(cacheKey, tracking, 300); // 5 minutes

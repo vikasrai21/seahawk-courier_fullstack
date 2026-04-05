@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, ExternalLink, RefreshCw, Filter, X, Package } from 'lucide-react';
+import { Search, ExternalLink, RefreshCw, X, Package } from 'lucide-react';
 import api from '../services/api';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { useFetch } from '../hooks/useFetch';
@@ -22,7 +22,7 @@ export default function TrackPage({ toast }) {
   const [statusFilter, setStatus]  = useState('');
   const [shipments,  setShipments] = useState([]);
   const [loading,    setLoading]   = useState(false);
-  const [autoLoad,   setAutoLoad]  = useState(true);
+  const autoLoad = true;
 
   const { data: clients } = useFetch('/clients');
 

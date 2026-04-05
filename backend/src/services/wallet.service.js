@@ -66,6 +66,51 @@ async function credit({ clientCode, amount, description, reference, paymentMode,
   });
 }
 
+async function creditShipmentRefund({ clientCode, awb, amount, reason }, db = prisma) {
+  const safeAmount = parseAmount(amount);
+  const refundPrefix = `Refund — AWB ${awb}`;
+
+  return db.$transaction(async (tx) => {
+    const existing = await tx.walletTransaction.findFirst({
+      where: {
+        clientCode,
+        type: 'CREDIT',
+        reference: awb || null,
+        status: 'SUCCESS',
+        description: { startsWith: refundPrefix },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (existing) {
+      const wallet = await tx.client.findUnique({
+        where: { code: clientCode },
+        select: { code: true, company: true, walletBalance: true },
+      });
+      return { wallet, txn: existing, skipped: true };
+    }
+
+    const updated = await tx.client.update({
+      where: { code: clientCode },
+      data: { walletBalance: { increment: safeAmount } },
+      select: { code: true, company: true, walletBalance: true },
+    });
+    const txn = await tx.walletTransaction.create({
+      data: {
+        clientCode,
+        type: 'CREDIT',
+        amount: safeAmount,
+        balance: updated.walletBalance,
+        description: `${refundPrefix} (${reason})`,
+        reference: awb || null,
+        paymentMode: 'SYSTEM_REFUND',
+        status: 'SUCCESS',
+      },
+    });
+    return { wallet: updated, txn, skipped: false };
+  });
+}
+
 // ── Debit (pay for shipment) ──────────────────────────────────────────────
 async function debit({ clientCode, amount, description, reference }) {
   const safeAmount = parseAmount(amount);
@@ -125,4 +170,4 @@ async function adjust({ clientCode, amount, description }) {
   });
 }
 
-module.exports = { getWallet, getBalance, getTransactions, credit, debit, adjust };
+module.exports = { getWallet, getBalance, getTransactions, credit, creditShipmentRefund, debit, adjust };

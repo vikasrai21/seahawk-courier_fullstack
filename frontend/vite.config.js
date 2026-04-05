@@ -28,7 +28,7 @@ export default defineConfig({
   },
 
   build: {
-    outDir: '../backend/public',
+    outDir: 'dist',
     emptyOutDir: true,
     rollupOptions: {
       output: {

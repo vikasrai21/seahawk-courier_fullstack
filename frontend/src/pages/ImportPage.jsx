@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Upload, FileSpreadsheet, CheckCircle, AlertCircle,
@@ -16,7 +16,7 @@ const FIELD_PATTERNS = {
   destination: [/^dest/i, /^city/i, /^to/i, /^location/i, /^place/i, /^pin/i],
   courier:     [/^courier/i, /^carrier/i, /^vendor/i, /^service.?provider/i, /^through/i],
   department:  [/^dept/i, /^department/i, /^division/i, /^branch/i, /^ref/i],
-  weight:      [/^wt/i, /^weight/i, /^kg/i, /^gross/i],
+  weight:      [/^wt/i, /^weight/i, /^kg/i, /^gross/i, /^we?g?h?t$/i],
   amount:      [/^amt/i, /^amount/i, /^charges?/i, /^rate/i, /^price/i, /^freight/i, /^bill/i, /^rs/i, /^₹/i, /^total/i],
   status:      [/^status/i, /^state/i, /^delivery.?status/i],
   remarks:     [/^remark/i, /^note/i, /^comment/i, /^narration/i, /^description/i],
@@ -42,7 +42,7 @@ function buildColumnMap(headers) {
   return { map, unmapped };
 }
 
-function excelDateToString(val) {
+function excelDateToString(val, ambiguousFormat = 'DMY') {
   if (typeof val === 'number') {
     try {
       const d = XLSX.SSF.parse_date_code(val);
@@ -51,10 +51,26 @@ function excelDateToString(val) {
   }
   if (typeof val === 'string') {
     // DD/MM/YYYY or DD-MM-YYYY
-    const m = val.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    const m = val.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/);
     if (m) {
+      const first = Number(m[1]);
+      const second = Number(m[2]);
       const y = m[3].length === 2 ? '20' + m[3] : m[3];
-      return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+      let month = second;
+      let day = first;
+
+      if (first <= 12 && second <= 12 && ambiguousFormat === 'MDY') {
+        month = first;
+        day = second;
+      } else if (first > 12 && second <= 12) {
+        day = first;
+        month = second;
+      } else if (second > 12 && first <= 12) {
+        month = first;
+        day = second;
+      }
+
+      return `${y}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     }
     // YYYY-MM-DD already
     if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
@@ -63,8 +79,44 @@ function excelDateToString(val) {
   return new Date().toISOString().split('T')[0];
 }
 
-function mapRows(rawRows, colMap) {
-  return rawRows.map(row => {
+function smartNormalizeDates(rows) {
+  const isoRows = rows.filter((row) => /^\d{4}-\d{2}-\d{2}$/.test(String(row.date || '')));
+  if (!isoRows.length) return rows;
+
+  const monthCounts = isoRows.reduce((acc, row) => {
+    const ym = row.date.slice(0, 7);
+    acc[ym] = (acc[ym] || 0) + 1;
+    return acc;
+  }, {});
+
+  const dominantMonth = Object.entries(monthCounts)
+    .sort((a, b) => b[1] - a[1])[0]?.[0];
+
+  if (!dominantMonth) return rows;
+  const dominantMonthNo = Number(dominantMonth.slice(5, 7));
+
+  return rows.map((row) => {
+    const m = String(row.date || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return row;
+
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const day = Number(m[3]);
+
+    if (row.date.slice(0, 7) === dominantMonth) return row;
+    if (month > 12 || day > 12) return row;
+    if (day !== dominantMonthNo) return row;
+
+    return {
+      ...row,
+      date: `${year}-${String(day).padStart(2, '0')}-${String(month).padStart(2, '0')}`,
+      _dateCorrected: true,
+    };
+  });
+}
+
+function mapRows(rawRows, colMap, dateFormat = 'DMY') {
+  const rows = rawRows.map(row => {
     const s = {};
     for (const [field, col] of Object.entries(colMap)) {
       if (col && row[col] !== undefined && row[col] !== '') {
@@ -72,7 +124,7 @@ function mapRows(rawRows, colMap) {
       }
     }
     // Sanitise
-    if (s.date)        s.date        = excelDateToString(s.date);
+    if (s.date)        s.date        = excelDateToString(s.date, dateFormat);
     else               s.date        = new Date().toISOString().split('T')[0];
     if (s.awb)         s.awb         = String(s.awb).trim();
     if (s.clientCode)  s.clientCode  = String(s.clientCode).trim().toUpperCase();
@@ -85,6 +137,8 @@ function mapRows(rawRows, colMap) {
     if (s.amount)      s.amount      = parseFloat(s.amount)  || 0;
     return s;
   }).filter(s => s.awb && String(s.awb).trim() !== '' && String(s.awb).trim() !== 'undefined');
+
+  return smartNormalizeDates(rows);
 }
 
 const PREVIEW_FIELDS = ['date','clientCode','awb','consignee','destination','courier','weight','amount','status'];
@@ -92,7 +146,7 @@ const PREVIEW_FIELDS = ['date','clientCode','awb','consignee','destination','cou
 export default function ImportPage({ toast }) {
   const [file,      setFile]      = useState(null);  // { name, rawRows, headers }
   const [colMap,    setColMap]    = useState({});
-  const [unmapped,  setUnmapped]  = useState([]);
+  const setUnmapped = useCallback(() => {}, []);
   const [preview,   setPreview]   = useState([]);
   const [mappedRows,setMapped]    = useState([]);
   const [result,    setResult]    = useState(null);
@@ -102,7 +156,41 @@ export default function ImportPage({ toast }) {
   const [sheetIdx,  setSheetIdx]  = useState(0);
   const [sheets,    setSheets]    = useState([]);
   const [rawWb,     setRawWb]     = useState(null);
+  const [dateFormat, setDateFormat] = useState('DMY');
   const fileRef = useRef();
+
+  const audit = useMemo(() => {
+    const awbCounts = new Map();
+    mappedRows.forEach((row) => {
+      const awb = String(row.awb || '').trim();
+      if (awb) awbCounts.set(awb, (awbCounts.get(awb) || 0) + 1);
+    });
+
+    const duplicateAwbs = [...awbCounts.entries()].filter(([, count]) => count > 1);
+    const monthCounts = mappedRows.reduce((acc, row) => {
+      const ym = /^\d{4}-\d{2}-\d{2}$/.test(String(row.date || '')) ? row.date.slice(0, 7) : 'unknown';
+      acc[ym] = (acc[ym] || 0) + 1;
+      return acc;
+    }, {});
+    const dominantMonth = Object.entries(monthCounts)
+      .filter(([month]) => month !== 'unknown')
+      .sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+    const correctedDates = mappedRows.filter((row) => row._dateCorrected).length;
+    const outsideDominant = dominantMonth
+      ? mappedRows.filter((row) => row.date?.slice(0, 7) !== dominantMonth).length
+      : 0;
+
+    return {
+      totalRows: mappedRows.length,
+      uniqueAwbs: awbCounts.size,
+      duplicateCount: duplicateAwbs.length,
+      duplicateSamples: duplicateAwbs.slice(0, 10),
+      monthCounts,
+      dominantMonth,
+      outsideDominant,
+      correctedDates,
+    };
+  }, [mappedRows]);
 
   const parseSheet = useCallback((wb, idx) => {
     const ws      = wb.Sheets[wb.SheetNames[idx]];
@@ -115,12 +203,12 @@ export default function ImportPage({ toast }) {
     setColMap(map);
     setUnmapped(ump);
 
-    const rows = mapRows(rawRows, map);
+    const rows = mapRows(rawRows, map, dateFormat);
     setMapped(rows);
     setPreview(rows.slice(0, 8));
     setError('');
     if (ump.length > 0 && Object.keys(map).length < 3) setShowMap(true);
-  }, []);
+  }, [dateFormat]);
 
   const parseFile = (f) => {
     setResult(null); setError(''); setFile(null); setPreview([]);
@@ -150,19 +238,32 @@ export default function ImportPage({ toast }) {
     setColMap(newMap);
     const rows = mapRows(
       XLSX.utils.sheet_to_json(rawWb.Sheets[rawWb.SheetNames[sheetIdx]], { defval: '' }),
-      newMap
+      newMap,
+      dateFormat
     );
     setMapped(rows);
     setPreview(rows.slice(0, 8));
   };
 
+  useEffect(() => {
+    if (!rawWb || !sheets.length) return;
+    const rows = mapRows(
+      XLSX.utils.sheet_to_json(rawWb.Sheets[rawWb.SheetNames[sheetIdx]], { defval: '' }),
+      colMap,
+      dateFormat
+    );
+    setMapped(rows);
+    setPreview(rows.slice(0, 8));
+  }, [dateFormat, rawWb, sheets, sheetIdx, colMap]);
+
   const handleImport = async () => {
     if (!mappedRows.length) return;
     setLoading(true);
     try {
-      const res = await api.post('/shipments/import', { shipments: mappedRows });
+      const shipments = mappedRows.map(({ _dateCorrected, ...row }) => row);
+      const res = await api.post('/shipments/import', { shipments });
       setResult(res.data);
-      toast?.(`✓ Imported ${res.data.imported} shipments!`, 'success');
+      toast?.(`✓ Imported ${res.data.imported} rows!`, 'success');
     } catch (err) {
       setError(err.message);
       toast?.(err.message, 'error');
@@ -190,7 +291,7 @@ export default function ImportPage({ toast }) {
         <Info className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
         <div className="text-sm text-blue-800">
           <p className="font-semibold mb-1">Your Excel columns are auto-detected.</p>
-          <p className="text-xs text-blue-600">Works with any column names — Date, AWB No, Docket No, Consignee, DEST, WT, AMOU, Couriers, etc. Duplicates are skipped automatically so you can import the same file multiple times safely.</p>
+          <p className="text-xs text-blue-600">Works with any column names — Date, AWB No, Docket No, Consignee, DEST, WT, AMOU, Couriers, etc. If amount is blank or zero, the system now auto-prices it from the active client contract during import.</p>
         </div>
       </div>
 
@@ -271,6 +372,14 @@ export default function ImportPage({ toast }) {
           {/* Manual mapping override */}
           {showMap && (
             <div className="mt-4 pt-4 border-t border-gray-100">
+              <div className="mb-4">
+                <label className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide block mb-1">Ambiguous date format</label>
+                <select className="input text-xs py-1.5 max-w-xs" value={dateFormat} onChange={(e) => setDateFormat(e.target.value)}>
+                  <option value="DMY">DD-MM-YYYY / DD-MM-YY</option>
+                  <option value="MDY">MM-DD-YYYY / MM-DD-YY</option>
+                </select>
+                <p className="mt-1 text-[11px] text-gray-400">Use this only when dates like 03-05-2026 could mean either 5 March or 3 May.</p>
+              </div>
               <p className="text-xs font-bold text-gray-600 mb-3 uppercase tracking-wide">
                 Manually assign columns (override auto-detection)
               </p>
@@ -288,6 +397,24 @@ export default function ImportPage({ toast }) {
                 ))}
               </div>
             </div>
+          )}
+        </div>
+      )}
+
+      {file && mappedRows.length > 0 && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
+          <div className="flex flex-wrap gap-4 text-sm text-amber-900">
+            <span>Total rows: <strong>{audit.totalRows}</strong></span>
+            <span>Unique AWBs: <strong>{audit.uniqueAwbs}</strong></span>
+            <span>Repeated AWBs in file: <strong>{audit.duplicateCount}</strong></span>
+            <span>Dominant month: <strong>{audit.dominantMonth || '—'}</strong></span>
+            <span>Dates auto-corrected: <strong>{audit.correctedDates}</strong></span>
+            <span>Rows outside dominant month: <strong>{audit.outsideDominant}</strong></span>
+          </div>
+          {audit.duplicateSamples.length > 0 && (
+            <p className="mt-2 text-xs text-amber-700">
+              Repeated AWB samples: {audit.duplicateSamples.map(([awb, count]) => `${awb}×${count}`).join(', ')}
+            </p>
           )}
         </div>
       )}
@@ -340,8 +467,10 @@ export default function ImportPage({ toast }) {
             <span className="font-bold text-green-800">Import complete!</span>
           </div>
           <div className="flex flex-wrap gap-4 text-sm">
-            <span className="text-green-700">✅ Imported: <strong>{result.imported}</strong></span>
-            <span className="text-yellow-700">⏭️ Duplicates skipped: <strong>{result.duplicates}</strong></span>
+            <span className="text-green-700">✅ Rows saved: <strong>{result.imported}</strong></span>
+            <span className="text-indigo-700">📦 Operational shipments: <strong>{result.operationalCreated || 0}</strong></span>
+            <span className="text-yellow-700">♻️ Repeated AWBs linked: <strong>{result.duplicates}</strong></span>
+            <span className="text-blue-700">💸 Auto-priced: <strong>{result.autoPriced || 0}</strong></span>
             {result.errors?.length > 0 && (
               <span className="text-red-700">❌ Errors: <strong>{result.errors.length}</strong></span>
             )}
