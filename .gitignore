@@ -58,3 +58,7 @@ backend/test_output*.txt
 backend/coverage*.txt
 backend/final_test_report.txt
 tmp_readxlsx.py
+
+# Personal and Sensitive Folders
+BILLS/
+RATE CARDS/
