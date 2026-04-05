@@ -1,9 +1,8 @@
-// src/tests/setup.js
-'use strict';
-
-// Basic global mocks
+const { _mockTx } = require('../config/__mocks__/prisma.js');
 const mockPrisma = require('../config/__mocks__/prisma.js');
+
 global.mockPrisma = mockPrisma;
+global.mockTx = _mockTx;
 
 global.fetch = vi.fn(async () => ({
   ok: true,
@@ -13,4 +12,4 @@ global.fetch = vi.fn(async () => ({
   arrayBuffer: async () => new ArrayBuffer(0),
 }));
 
-module.exports = { mockPrisma };
+module.exports = { mockPrisma, mockTx: _mockTx };
