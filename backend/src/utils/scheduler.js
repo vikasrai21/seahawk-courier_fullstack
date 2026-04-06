@@ -6,6 +6,7 @@ const logger = require('./logger');
 const config = require('../config');
 const { cleanupExpiredTokens } = require('../services/auth.service');
 const { syncTrackingEvents } = require('../services/carrier.service');
+const geocode = require('../services/geocode.service');
 
 // ── Tracking sync ──────────────────────────────────────────────────────────
 async function syncTracking() {
@@ -98,6 +99,25 @@ async function escalateStaleNDRs() {
   }
 }
 
+// ── Geo cache refresh for map pins ────────────────────────────────────────
+async function refreshGeoCache() {
+  try {
+    const recent = await prisma.shipment.findMany({
+      where: {
+        status: { notIn: ['Delivered', 'RTO', 'Cancelled'] },
+      },
+      select: { pincode: true, destination: true, updatedAt: true },
+      orderBy: { updatedAt: 'desc' },
+      take: 120,
+    });
+    const queries = recent.map((row) => row.pincode || row.destination).filter(Boolean);
+    const refreshed = await geocode.refreshGeoCache(queries);
+    logger.info(`Scheduler: geo cache refresh completed (${refreshed} new pins)`);
+  } catch (err) {
+    logger.error('Scheduler: geo cache refresh failed', { error: err.message });
+  }
+}
+
 // ── Start all scheduled jobs ──────────────────────────────────────────────
 function startScheduler() {
   // Tracking sync every 30 minutes
@@ -114,7 +134,10 @@ function startScheduler() {
   // NDR escalation check — daily at 9am
   cron.schedule('0 9 * * *', escalateStaleNDRs);
 
-  logger.info('Scheduler started: tracking sync (30m), token cleanup (3am), DB backup (2am), NDR check (9am)');
+  // Geo cache refresh — hourly
+  cron.schedule('15 * * * *', refreshGeoCache);
+
+  logger.info('Scheduler started: tracking sync (30m), token cleanup (3am), DB backup (2am), NDR check (9am), geo cache (hourly)');
 }
 
 module.exports = { startScheduler };

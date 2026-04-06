@@ -13,14 +13,15 @@ async function stats(req, res) {
   const baseWhere = { clientCode, date: { gte: startStr, lte: endStr } };
   const statusWhere = (statuses) => ({ ...baseWhere, status: { in: statuses } });
 
-  const [total, booked, inTransit, outForDelivery, delivered, exception, client, trendRows] = await Promise.all([
+  const [total, booked, inTransit, outForDelivery, delivered, rto, ndr, exception, trendRows] = await Promise.all([
     prisma.shipment.count({ where: baseWhere }),
     prisma.shipment.count({ where: statusWhere(['Booked']) }),
     prisma.shipment.count({ where: statusWhere(['InTransit']) }),
     prisma.shipment.count({ where: statusWhere(['OutForDelivery']) }),
     prisma.shipment.count({ where: statusWhere(['Delivered']) }),
+    prisma.shipment.count({ where: statusWhere(['RTO']) }),
+    prisma.shipment.count({ where: statusWhere(['NDR']) }),
     prisma.shipment.count({ where: statusWhere(['Delayed', 'NDR', 'RTO']) }),
-    prisma.client.findUnique({ where: { code: clientCode }, select: { walletBalance: true } }),
     prisma.shipment.groupBy({
       by: ['date'],
       where: baseWhere,
@@ -37,10 +38,11 @@ async function stats(req, res) {
       inTransit,
       outForDelivery,
       delivered,
+      rto,
+      ndr,
       exception,
       deliveredPct: total > 0 ? Number(((delivered / total) * 100).toFixed(1)) : 0,
     },
-    wallet: client?.walletBalance || 0,
     trend: trendRows.map((r) => ({ date: r.date, shipments: r._count.id })),
   });
 }
@@ -70,7 +72,25 @@ async function shipments(req, res) {
 
   const [total, shipmentsList] = await Promise.all([
     prisma.shipment.count({ where }),
-    prisma.shipment.findMany({ where, orderBy: [{ date: 'desc' }, { id: 'desc' }], skip, take: safeLimit }),
+    prisma.shipment.findMany({ 
+      where, 
+      orderBy: [{ date: 'desc' }, { id: 'desc' }], 
+      skip, 
+      take: safeLimit,
+      select: {
+        id: true,
+        date: true,
+        awb: true,
+        consignee: true,
+        destination: true,
+        pincode: true,
+        weight: true,
+        courier: true,
+        service: true,
+        status: true,
+        updatedAt: true
+      }
+    }),
   ]);
 
   R.ok(res, { shipments: shipmentsList, pagination: { total, page: safePage, limit: safeLimit }, range: { from: startStr, to: endStr } });

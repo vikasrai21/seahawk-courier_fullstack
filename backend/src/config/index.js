@@ -82,6 +82,12 @@ module.exports = {
 
   sentry: { dsn: optional('SENTRY_DSN') },
 
+  openai: {
+    apiKey: optional('OPENAI_API_KEY'),
+    model: optional('OPENAI_MODEL', 'gpt-5.2'),
+    baseUrl: optional('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
+  },
+
   backups: {
     s3Bucket: optional('BACKUP_S3_BUCKET'),
     s3Region: optional('BACKUP_S3_REGION', 'ap-south-1'),

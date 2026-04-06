@@ -3,6 +3,7 @@
 const prisma = require('../../config/prisma');
 const R = require('../../utils/response');
 const { resolveClientCode, parseRange, monthKey } = require('./shared');
+const geocode = require('../../services/geocode.service');
 
 async function mapShipments(req, res) {
   const clientCode = await resolveClientCode(req);
@@ -17,19 +18,33 @@ async function mapShipments(req, res) {
     include: { trackingEvents: { orderBy: { timestamp: 'desc' }, take: 1 } },
   });
 
-  R.ok(res, {
-    shipments: shipments.map((item) => ({
+  const geoMap = await geocode.geocodeShipments(
+    shipments.map((item) => ({
       id: item.id,
-      awb: item.awb,
-      status: item.status,
-      destination: item.destination,
       pincode: item.pincode,
-      consignee: item.consignee,
-      courier: item.courier,
-      updatedAt: item.updatedAt,
-      latestEvent: item.trackingEvents?.[0] || null,
+      destination: item.destination,
       locationHint: item.trackingEvents?.[0]?.location || item.destination || '',
     })),
+    { maxFetch: 6 }
+  );
+
+  R.ok(res, {
+    shipments: shipments.map((item) => {
+      const geo = geoMap.get(item.id) || null;
+      return {
+        id: item.id,
+        awb: item.awb,
+        status: item.status,
+        destination: item.destination,
+        pincode: item.pincode,
+        consignee: item.consignee,
+        courier: item.courier,
+        updatedAt: item.updatedAt,
+        latestEvent: item.trackingEvents?.[0] || null,
+        locationHint: item.trackingEvents?.[0]?.location || item.destination || '',
+        geo,
+      };
+    }),
     range: { from: startStr, to: endStr },
   });
 }

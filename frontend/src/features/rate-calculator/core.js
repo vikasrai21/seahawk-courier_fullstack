@@ -745,35 +745,52 @@ const AIR_SELL_MAP = {
   central_states: 'Rest of India', east_south: 'Rest of India', north_east: 'North East', port_blair: 'Port Blair',
 };
 
-function proposalSell(zone, w, shipType, level = 'economy') {
+function proposalSell(zone, w, shipType, level = 'economy', landedCost = 0) {
   const FSC = 0.25;
   const GST = 0.18;
   const src = level === 'premium' ? 'Proposal (Premium)' : 'Proposal (Economy)';
+
+  let result = null;
 
   if (shipType === 'doc') {
     const r = (level === 'premium' ? SELL_DOC_PREM : SELL_DOC_ECO)[zone.seahawkZone] || SELL_DOC_ECO['Rest of India'];
     const cw = ceil05(w);
     const b = cw <= 0.25 ? r.w250 : cw <= 0.5 ? r.w500 : r.w500 + Math.ceil((cw - 0.5) / 0.5) * r.addl;
     const fsc = rnd(b * FSC); const sub = b + fsc;
-    return { base: rnd(b), fsc, fscPct: '25%', gst: rnd(sub * GST), total: rnd(sub * (1 + GST)), source: src };
+    result = { base: rnd(b), fsc, fscPct: '25%', gst: rnd(sub * GST), total: rnd(sub * (1 + GST)), source: src };
   }
-  if (shipType === 'surface') {
+  else if (shipType === 'surface') {
     if (w < 3) return null;
     const r = (level === 'premium' ? SELL_SFC_PREM : SELL_SFC_ECO)[zone.seahawkZone] || SELL_SFC_ECO['Rest of India'];
     const cw = ceil1(w);
     const rate = cw <= 10 ? r.s3 : cw <= 25 ? r.s10 : cw <= 50 ? r.s25 : cw <= 100 ? r.s50 : r.s100;
     const b = Math.max(cw, 3) * rate; const fsc = rnd(b * FSC); const sub = b + fsc;
-    return { base: rnd(b), fsc, fscPct: '25%', gst: rnd(sub * GST), total: rnd(sub * (1 + GST)), source: src };
+    result = { base: rnd(b), fsc, fscPct: '25%', gst: rnd(sub * GST), total: rnd(sub * (1 + GST)), source: src };
   }
-  if (shipType === 'air') {
+  else if (shipType === 'air') {
     if (w < 3) return null;
     const r = SELL_AIR[AIR_SELL_MAP[zone.trackon] || 'Rest of India'] || SELL_AIR['Rest of India'];
     const cw = ceil1(w);
     const rate = cw < 5 ? r.lt5 : cw <= 10 ? r.t10 : cw <= 25 ? r.t25 : cw <= 50 ? r.t50 : r.g50;
     const b = Math.max(cw, 3) * rate; const fsc = rnd(b * FSC); const sub = b + fsc;
-    return { base: rnd(b), fsc, fscPct: '25%', gst: rnd(sub * GST), total: rnd(sub * (1 + GST)), source: 'Proposal (Air)' };
+    result = { base: rnd(b), fsc, fscPct: '25%', gst: rnd(sub * GST), total: rnd(sub * (1 + GST)), source: 'Proposal (Air)' };
   }
-  return null;
+
+  if (result && landedCost > 0) {
+    const minTarget = rnd(landedCost * 1.15); // Floor at 15% margin
+    if (result.total < minTarget) {
+      result.total = minTarget;
+      result.source = `${result.source} — Floor Applied`;
+      // Recalculate base/fsc/gst components roughly for the floor price
+      const sub = rnd(minTarget / (1 + GST));
+      result.gst = rnd(minTarget - sub);
+      const b = rnd(sub / (1 + FSC));
+      result.fsc = rnd(sub - b);
+      result.base = b;
+    }
+  }
+
+  return result;
 }
 
 const COURIERS = [

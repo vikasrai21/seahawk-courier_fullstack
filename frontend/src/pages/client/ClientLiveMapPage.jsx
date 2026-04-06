@@ -20,7 +20,6 @@ function coordinateToPosition(lat, lon) {
 
 export default function ClientLiveMapPage({ toast }) {
   const [rows, setRows] = useState([]);
-  const [geoRows, setGeoRows] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,27 +29,6 @@ export default function ClientLiveMapPage({ toast }) {
         const res = await api.get('/portal/map/shipments?range=30d');
         const shipments = res.data?.shipments || [];
         setRows(shipments);
-
-        const geocoded = await Promise.all(shipments.slice(0, 24).map(async (item) => {
-          const query = encodeURIComponent(item.pincode || item.locationHint || item.destination || '');
-          if (!query) return null;
-          try {
-            const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=in&limit=1&q=${query}`);
-            const data = await resp.json();
-            const point = data?.[0];
-            if (!point) return null;
-            return {
-              ...item,
-              lat: Number(point.lat),
-              lon: Number(point.lon),
-              label: point.display_name,
-            };
-          } catch {
-            return null;
-          }
-        }));
-
-        setGeoRows(geocoded.filter(Boolean));
       } catch (err) {
         toast?.(err.message || 'Failed to load live map', 'error');
       } finally {
@@ -67,6 +45,8 @@ export default function ClientLiveMapPage({ toast }) {
     }
     return [...summary.entries()];
   }, [rows]);
+
+  const geoRows = useMemo(() => rows.filter((row) => row.geo?.lat && row.geo?.lon), [rows]);
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7faff_0%,#eef4fd_100%)]">
@@ -127,10 +107,10 @@ export default function ClientLiveMapPage({ toast }) {
               <div style={{ position: 'absolute', left: 18, top: 18, color: '#0f172a', fontWeight: 900 }}>India Delivery Grid</div>
               {loading && <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#64748b' }}>Locating shipments…</div>}
               {!loading && geoRows.map((row) => {
-                const pos = coordinateToPosition(row.lat, row.lon);
+                const pos = coordinateToPosition(row.geo.lat, row.geo.lon);
                 return (
                   <div key={row.awb} style={{ position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -50%)' }}>
-                    <div title={`${row.awb} · ${row.destination || row.label}`} style={{ width: 16, height: 16, borderRadius: 999, background: STATUS_COLORS[row.status] || '#334155', boxShadow: `0 0 0 8px ${(STATUS_COLORS[row.status] || '#334155')}22` }} />
+                    <div title={`${row.awb} · ${row.destination || row.geo?.label || ''}`} style={{ width: 16, height: 16, borderRadius: 999, background: STATUS_COLORS[row.status] || '#334155', boxShadow: `0 0 0 8px ${(STATUS_COLORS[row.status] || '#334155')}22` }} />
                   </div>
                 );
               })}
@@ -149,7 +129,7 @@ export default function ClientLiveMapPage({ toast }) {
                     <div className="font-mono text-xs font-black text-slate-900">{row.awb}</div>
                     <span className="badge badge-blue">{row.status}</span>
                   </div>
-                  <div className="mt-2 text-sm font-black text-slate-900">{row.destination || row.label}</div>
+                  <div className="mt-2 text-sm font-black text-slate-900">{row.destination || row.geo?.label}</div>
                   <div className="mt-1 text-xs text-slate-500">{row.courier || 'Courier pending'} · {row.latestEvent?.location || 'Destination pin'}</div>
                 </div>
               ))}

@@ -3,8 +3,8 @@
 
 const mockDoc = {
   on: vi.fn(function(event, cb) {
-    if (event === 'end') setTimeout(cb, 10);
-    if (event === 'data') setTimeout(() => cb(Buffer.from('PDF_DATA')), 5);
+    if (event === 'data') cb(Buffer.from('PDF_DATA'));
+    if (event === 'end') cb();
     return this;
   }),
   page: { width: 300, height: 400 },

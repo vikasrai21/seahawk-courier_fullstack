@@ -21,6 +21,12 @@ import {
   walletDebitSchema,
   walletTransactionsQuerySchema,
 } from '../../validators/wallet.validator.js';
+import {
+  autoSuggestSchema,
+  bulkCalculateSchema,
+  verifySchema,
+} from '../../validators/rates.validator.js';
+import { bulkStatusSchema } from '../../validators/ops.validator.js';
 
 describe('validators', () => {
   it('parses shipment payloads and normalises values', () => {
@@ -78,5 +84,27 @@ describe('validators', () => {
     expect(walletDebitSchema.parse({ clientCode: 'sea', amount: 25 }).amount).toBe(25);
     expect(walletAdjustSchema.parse({ clientCode: 'sea', amount: 25, type: 'CREDIT', description: 'Manual topup' }).type).toBe('CREDIT');
     expect(walletTransactionsQuerySchema.parse({ page: '2', limit: '10' })).toMatchObject({ page: 2, limit: 10 });
+  });
+
+  it('validates rate calculator schemas', () => {
+    const auto = autoSuggestSchema.parse({ pincode: 110001, weight: '2', shipType: 'doc' });
+    expect(auto.weight).toBe(2);
+    expect(auto.pincode).toBe(110001);
+    expect(() => autoSuggestSchema.parse({ weight: 1 })).toThrow();
+
+    const bulk = bulkCalculateSchema.parse({ shipments: [{ state: 'Delhi', weight: 1.2 }] });
+    expect(bulk.shipments[0].weight).toBe(1.2);
+    expect(() => bulkCalculateSchema.parse({ shipments: [] })).toThrow();
+
+    const verified = verifySchema.parse({ lines: [{ awb: 'A1', weight: '1.5' }] });
+    expect(verified.lines[0].weight).toBe(1.5);
+    expect(() => verifySchema.parse({ lines: [] })).toThrow();
+  });
+
+  it('validates ops bulk status schema', () => {
+    const parsed = bulkStatusSchema.parse({ ids: ['1', '2'], status: 'InTransit' });
+    expect(parsed.ids).toEqual([1, 2]);
+    expect(parsed.status).toBe('InTransit');
+    expect(() => bulkStatusSchema.parse({ ids: [], status: 'Delivered' })).toThrow();
   });
 });

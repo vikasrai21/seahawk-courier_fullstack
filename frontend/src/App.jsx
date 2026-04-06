@@ -7,15 +7,13 @@ import { useToast } from './hooks/useToast';
 import { Toast } from './components/ui/Toast';
 import { AppLayout } from './components/layout/AppLayout';
 import { Spinner } from './components/ui/Loading';
+import ErrorBoundary from './components/ErrorBoundary';
 
 const ClientPortalPage = lazy(() => import('./pages/client/ClientPortalPage'));
-const ClientInvoicesPage = lazy(() => import('./pages/client/ClientInvoicesPage'));
-const ClientWalletPage = lazy(() => import('./pages/client/ClientWalletPage'));
 const ClientShipmentsPage = lazy(() => import('./pages/client/ClientShipmentsPage'));
 const ClientBulkTrackPage = lazy(() => import('./pages/client/ClientBulkTrackPage'));
 const ClientNDRPage = lazy(() => import('./pages/client/ClientNDRPage'));
 const ClientPickupPage = lazy(() => import('./pages/client/ClientPickupPage'));
-const ClientRateCalculatorPage = lazy(() => import('./pages/client/ClientRateCalculatorPage'));
 const ClientImportPage = lazy(() => import('./pages/client/ClientImportPage'));
 const ClientSupportTicketsPage = lazy(() => import('./pages/client/ClientSupportTicketsPage'));
 const ClientLiveMapPage = lazy(() => import('./pages/client/ClientLiveMapPage'));
@@ -116,7 +114,7 @@ function StaffRoute({ children }) {
 function ClientRoute({ children }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role !== 'CLIENT' && user.role !== 'ADMIN') return <Navigate to="/app" replace />;
+  if (user.role !== 'CLIENT') return <Navigate to="/app" replace />;
   return children;
 }
 
@@ -145,13 +143,10 @@ function AppRoutes() {
             <Route path="/login" element={<LoginPage />} />
 
             <Route path="/portal" element={<ClientRoute>{withToast(ClientPortalPage)}</ClientRoute>} />
-            <Route path="/portal/invoices" element={<ClientRoute>{withToast(ClientInvoicesPage)}</ClientRoute>} />
-            <Route path="/portal/wallet" element={<ClientRoute>{withToast(ClientWalletPage)}</ClientRoute>} />
             <Route path="/portal/shipments" element={<ClientRoute>{withToast(ClientShipmentsPage)}</ClientRoute>} />
             <Route path="/portal/bulk-track" element={<ClientRoute>{withToast(ClientBulkTrackPage)}</ClientRoute>} />
             <Route path="/portal/ndr" element={<ClientRoute>{withToast(ClientNDRPage)}</ClientRoute>} />
             <Route path="/portal/pickups" element={<ClientRoute>{withToast(ClientPickupPage)}</ClientRoute>} />
-            <Route path="/portal/rates" element={<ClientRoute>{withToast(ClientRateCalculatorPage)}</ClientRoute>} />
             <Route path="/portal/import" element={<ClientRoute>{withToast(ClientImportPage)}</ClientRoute>} />
             <Route path="/portal/support" element={<ClientRoute>{withToast(ClientSupportTicketsPage)}</ClientRoute>} />
             <Route path="/portal/map" element={<ClientRoute>{withToast(ClientLiveMapPage)}</ClientRoute>} />
@@ -182,7 +177,7 @@ function AppRoutes() {
                       <Route path="/invoices" element={withToast(InvoicesPage)} />
                       <Route path="/support" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(SupportTicketsPage)}</PrivateRoute>} />
                       <Route path="/reconciliation" element={withToast(ReconciliationPage)} />
-                      <Route path="/rates" element={<RateCalculatorPage />} />
+                      <Route path="/rates" element={<ErrorBoundary><RateCalculatorPage /></ErrorBoundary>} />
                       <Route path="/audit" element={<PrivateRoute ownerOnly>{withToast(OwnerAuditPage)}</PrivateRoute>} />
                       <Route path="/billing-verify" element={<Navigate to="/app/audit" replace />} />
                       <Route path="/bulk" element={withToast(BulkComparePage)} />

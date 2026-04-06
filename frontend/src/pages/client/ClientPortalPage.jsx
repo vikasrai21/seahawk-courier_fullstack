@@ -7,6 +7,7 @@ import { useSocket } from '../../context/SocketContext';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Modal } from '../../components/ui/Modal';
 import { SkeletonTable } from '../../components/ui/Skeleton';
+import { useDebounce } from '../../hooks/useDebounce';
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
@@ -160,11 +161,8 @@ const RANGE_OPTIONS = [
 const ACTIONS = [
   { to: '/portal/bulk-track', icon: '🔍', title: 'Bulk AWB Tracking', description: 'Search many shipments together and spot stuck parcels in one pass.', tone: 'blue', featured: true },
   { to: '/portal/map', icon: '🗺️', title: 'Live Shipment Map', description: 'Watch active shipments move in real time across your service lanes.', tone: 'teal', featured: true },
-  { to: '/portal/invoices', icon: '🧾', title: 'Download Invoices', description: 'Open GST invoices, exports, and receipt history for finance teams.', tone: 'orange' },
-  { to: '/portal/wallet', icon: '💳', title: 'Wallet & Payments', description: 'Review balance, top-ups, and recharge receipts without leaving the portal.', tone: 'purple' },
   { to: '/portal/pickups', icon: '📦', title: 'Raise Pickup Request', description: 'Schedule a pickup quickly when your dispatch team needs same-day action.', tone: 'green' },
   { to: '/portal/ndr', icon: '⚠️', title: 'NDR Self-Service', description: 'Resolve failed attempts, update remarks, and recover at-risk orders.', tone: 'rose' },
-  { to: '/portal/rates', icon: '💸', title: 'Rate Calculator', description: 'Quote shipments faster with courier and pricing comparisons.', tone: 'purple' },
   { to: '/portal/import', icon: '📤', title: 'Order Import', description: 'Upload bulk orders and get them into the shipment pipeline faster.', tone: 'amber' },
   { to: '/portal/pod', icon: '📸', title: 'Digital PODs', description: 'Access proof-of-delivery records without bouncing between screens.', tone: 'blue' },
   { to: '/portal/rto-intelligence', icon: '📊', title: 'RTO Intelligence', description: 'Understand return patterns and spot the lanes driving cost leakage.', tone: 'orange' },
@@ -182,6 +180,7 @@ export default function ClientPortalPage({ toast }) {
   const [stats, setStats] = useState(null);
   const [shipments, setShipments] = useState([]);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 300);
   const [statusFilter, setStatusFilter] = useState('');
   const [courierFilter, setCourierFilter] = useState('');
   const [ticketOpen, setTicketOpen] = useState(false);
@@ -197,6 +196,21 @@ export default function ClientPortalPage({ toast }) {
   const [dateTo, setDateTo] = useState('');
   const [performance, setPerformance] = useState(null);
   const [perfDays, setPerfDays] = useState(30);
+  const [intel, setIntel] = useState(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantInput, setAssistantInput] = useState('');
+  const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantMessages, setAssistantMessages] = useState([
+    { role: 'assistant', text: 'Hi! Ask me about shipments, NDRs, pickups, or support tickets.' },
+  ]);
+
+  const assistantSuggestions = [
+    'Show my latest shipments',
+    'Track AWB 123456',
+    'List NDRs that need action',
+    'Create a pickup for tomorrow',
+    'Raise a support ticket for delayed delivery',
+  ];
 
   const fetchPortalData = async () => {
     setLoading(true);
@@ -211,7 +225,7 @@ export default function ClientPortalPage({ toast }) {
       const statQ = query.toString();
       const shipmentQ = new URLSearchParams(query);
       shipmentQ.set('limit', '50');
-      if (search) shipmentQ.set('search', search);
+      if (debouncedSearch) shipmentQ.set('search', debouncedSearch);
       if (statusFilter) shipmentQ.set('status', statusFilter);
       if (courierFilter) shipmentQ.set('courier', courierFilter);
 
@@ -235,6 +249,46 @@ export default function ClientPortalPage({ toast }) {
       setPerformance(res.data || null);
     } catch (e) {
       toast?.(e.message || 'Failed to load performance dashboard', 'error');
+    }
+  };
+
+  const fetchIntelligence = async () => {
+    try {
+      const query = new URLSearchParams();
+      query.set('range', range);
+      query.set('limit', '12');
+      if (range === 'custom' && dateFrom && dateTo) {
+        query.set('date_from', dateFrom);
+        query.set('date_to', dateTo);
+      }
+      const res = await api.get(`/portal/intelligence?${query.toString()}`);
+      setIntel(res.data || null);
+    } catch (e) {
+      toast?.(e.message || 'Failed to load shipment intelligence', 'error');
+    }
+  };
+
+  const sendAssistant = async (payload = {}) => {
+    const messageText = payload.message || assistantInput.trim();
+    if (!messageText && !payload.action) return;
+
+    if (messageText) {
+      setAssistantMessages((prev) => [...prev, { role: 'user', text: messageText }]);
+    }
+    setAssistantInput('');
+    setAssistantBusy(true);
+    try {
+      const history = assistantMessages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
+      const res = await api.post('/portal/assistant', payload.action
+        ? { ...payload, message: messageText, history }
+        : { message: messageText, history }
+      );
+      const reply = res.data?.reply || 'Done.';
+      setAssistantMessages((prev) => [...prev, { role: 'assistant', text: reply, action: res.data?.action }]);
+    } catch (e) {
+      toast?.(e.message || 'Assistant failed to respond', 'error');
+    } finally {
+      setAssistantBusy(false);
     }
   };
 
@@ -287,7 +341,8 @@ export default function ClientPortalPage({ toast }) {
 
   useEffect(() => {
     fetchPortalData();
-  }, [range, dateFrom, dateTo, statusFilter, courierFilter]);
+    fetchIntelligence();
+  }, [range, dateFrom, dateTo, statusFilter, courierFilter, debouncedSearch]);
 
   useEffect(() => {
     fetchPerformance();
@@ -299,6 +354,7 @@ export default function ClientPortalPage({ toast }) {
     const refresh = () => {
       fetchPortalData();
       fetchPerformance();
+      fetchIntelligence();
     };
 
     socket.on('shipment:created', refresh);
@@ -336,17 +392,6 @@ export default function ClientPortalPage({ toast }) {
     navigate('/login');
   };
 
-  const filteredShipments = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return shipments;
-    return shipments.filter((s) => (
-      s.awb?.toLowerCase().includes(q)
-      || s.consignee?.toLowerCase().includes(q)
-      || s.destination?.toLowerCase().includes(q)
-      || s.courier?.toLowerCase().includes(q)
-    ));
-  }, [search, shipments]);
-
   const courierOptions = useMemo(() => {
     const set = new Set(shipments.map((s) => s.courier).filter(Boolean));
     return Array.from(set).sort();
@@ -365,6 +410,8 @@ export default function ClientPortalPage({ toast }) {
       day: String(row.date).slice(5),
     }));
   }, [performance]);
+
+  const intelItems = intel?.items || [];
 
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg,#f7faff 0%,#eef4fd 100%)', fontFamily: "'Inter', -apple-system, sans-serif" }}>
@@ -395,10 +442,14 @@ export default function ClientPortalPage({ toast }) {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-          <div style={{ position: 'relative', cursor: 'pointer', transition: 'transform 0.2s', className: 'hover:scale-110' }}>
+          <Link
+            to="/portal/notifications"
+            style={{ position: 'relative', cursor: 'pointer', transition: 'transform 0.2s' }}
+            title="Notification preferences"
+          >
             <span style={{ fontSize: 20 }}>🔔</span>
             <div style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, background: '#ef4444', borderRadius: '50%', border: '2px solid #fff' }} />
-          </div>
+          </Link>
           <div style={{ width: 1, height: 24, background: '#e2e8f0' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ textAlign: 'right' }}>
@@ -406,7 +457,7 @@ export default function ClientPortalPage({ toast }) {
               <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>Client Account</div>
             </div>
             <div 
-              style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #f97316, #fb923c)', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 14, boxShadow: '0 4px 12px rgba(249,115,22,0.2)', cursor: 'pointer', transition: 'transform 0.2s', className: 'hover:scale-105 active:scale-95' }}
+              style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #f97316, #fb923c)', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 14, boxShadow: '0 4px 12px rgba(249,115,22,0.2)', cursor: 'pointer', transition: 'transform 0.2s' }}
               onClick={handleLogout}
               title="Click to Sign Out"
             >
@@ -491,7 +542,7 @@ export default function ClientPortalPage({ toast }) {
                   {[
                     { label: 'Active Shipments', value: stats?.totals?.inTransit || 0, tone: '#38bdf8' },
                     { label: 'Delivered Success', value: `${stats?.totals?.deliveredPct || 0}%`, tone: '#4ade80' },
-                    { label: 'Wallet Ready', value: fmt(stats?.wallet), tone: '#f9a8d4' },
+                    { label: 'RTO Risk', value: stats?.totals?.rto || 0, tone: '#f9a8d4' },
                   ].map((item) => (
                     <div key={item.label} style={{ borderRadius: 16, padding: '12px 14px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(201,217,242,0.14)' }}>
                       <div style={{ fontSize: 10, color: '#a9bddc', fontWeight: 700, marginBottom: 4 }}>{item.label}</div>
@@ -544,7 +595,7 @@ export default function ClientPortalPage({ toast }) {
           <MetricCard icon="🚚" label="In Transit" value={stats?.totals?.inTransit || 0} hint="Moving" color="#f97316" />
           <MetricCard icon="🏁" label="Out For Delivery" value={stats?.totals?.outForDelivery || 0} hint="Near Delivery" color="#0ea5e9" />
           <MetricCard icon="✅" label="Delivered" value={stats?.totals?.delivered || 0} hint={`${stats?.totals?.deliveredPct || 0}% Success`} color="#0c7a52" />
-          <MetricCard icon="💰" label="Wallet Balance" value={fmt(stats?.wallet)} hint="Live" color="#9333ea" />
+          <MetricCard icon="⚠️" label="Returns/RTO" value={stats?.totals?.rto || 0} hint="At Risk" color="#ef4444" />
         </section>
 
         <section className="portal-top-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.08fr) minmax(0,.92fr)', gap: 16, marginBottom: 18 }}>
@@ -698,6 +749,68 @@ export default function ClientPortalPage({ toast }) {
           </div>
         </section>
 
+        <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,.8fr)', gap: 16, marginBottom: 18 }}>
+          <PortalPanel
+            eyebrow="Shipment Intelligence"
+            title="Risk Radar"
+            subtitle="Flags SLA breaches, stuck scans, and high RTO risk based on live tracking signals."
+          >
+            {intelItems.length === 0 ? (
+              <div style={{ padding: 14, color: '#64748b', fontSize: 13 }}>No critical risks detected in the selected range.</div>
+            ) : (
+              <div style={{ display: 'grid', gap: 10 }}>
+                {intelItems.map((item) => (
+                  <div key={item.id} style={{ border: '1px solid #e5edf8', borderRadius: 14, padding: 12, background: '#f8fbff' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                      <div style={{ fontFamily: 'monospace', fontWeight: 800, color: '#0f172a' }}>{item.awb}</div>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: '#c2410c' }}>{item.rtoRiskScore}% RTO risk</div>
+                    </div>
+                    <div style={{ marginTop: 6, fontSize: 12, color: '#475569' }}>
+                      {item.destination || 'Destination'} · {item.status} · {item.courier || 'Courier'}
+                    </div>
+                    <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {(item.flags || []).map((f) => (
+                        <span key={f} style={{ fontSize: 10, fontWeight: 800, padding: '4px 8px', borderRadius: 999, background: '#fff1e6', color: '#c2410c', border: '1px solid #ffd8bd' }}>
+                          {f.replace('_', ' ')}
+                        </span>
+                      ))}
+                      <span style={{ fontSize: 10, fontWeight: 800, padding: '4px 8px', borderRadius: 999, background: '#eef2ff', color: '#3730a3', border: '1px solid #c7d2fe' }}>
+                        {item.idleHours}h since scan
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </PortalPanel>
+
+          <PortalPanel
+            eyebrow="Summary"
+            title="Risk Breakdown"
+            subtitle="Quick view of exceptions that need attention."
+            tone="accent"
+          >
+            <div style={{ display: 'grid', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
+                <span>Flagged</span>
+                <span>{intel?.summary?.flagged || 0}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
+                <span>SLA Breach</span>
+                <span>{intel?.summary?.slaBreaches || 0}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
+                <span>Stuck in Scan</span>
+                <span>{intel?.summary?.stuckInScan || 0}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
+                <span>High RTO Risk</span>
+                <span>{intel?.summary?.highRtoRisk || 0}</span>
+              </div>
+            </div>
+          </PortalPanel>
+        </section>
+
         <section style={{ background: '#fff', border: '1px solid #e5edf8', borderRadius: 18, overflow: 'hidden', boxShadow: '0 8px 24px -14px rgba(11,31,58,0.2)' }}>
           <div style={{ padding: 16, borderBottom: '1px solid #edf2fa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
             <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#0f172a' }}>Shipments</h3>
@@ -730,7 +843,7 @@ export default function ClientPortalPage({ toast }) {
             <div style={{ padding: 20 }}>
               <SkeletonTable columns={8} rows={5} />
             </div>
-          ) : filteredShipments.length === 0 ? (
+          ) : shipments.length === 0 ? (
             <div style={{ padding: 28, textAlign: 'center', color: '#64748b' }}>
               <div style={{ fontSize: 36 }}>📭</div>
               <div style={{ marginTop: 8, fontWeight: 700 }}>No shipments found in this range.</div>
@@ -740,7 +853,7 @@ export default function ClientPortalPage({ toast }) {
               <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
                 <thead>
                   <tr style={{ background: 'linear-gradient(180deg,#f8fbff 0%,#fdfefe 100%)' }}>
-                    {['AWB', 'Date', 'Consignee', 'Destination', 'Courier', 'Weight', 'Amount', 'Status'].map((h) => (
+                    {['AWB', 'Date', 'Consignee', 'Destination', 'Courier', 'Weight', 'Status'].map((h) => (
                       <th key={h} style={{ textAlign: 'left', padding: '12px 14px', borderBottom: '1px solid #e5edf8', fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.12em', fontWeight: 800 }}>
                         {h}
                       </th>
@@ -748,7 +861,7 @@ export default function ClientPortalPage({ toast }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredShipments.map((s, i) => (
+                  {shipments.map((s, i) => (
                     <tr key={s.id} style={{ background: i % 2 ? '#fcfdff' : '#fff', borderBottom: '1px solid #eef3fb', transition: 'background 180ms ease' }}>
                       <td style={{ padding: '12px 14px', fontWeight: 800, color: '#0f172a', fontFamily: 'monospace' }}>{s.awb}</td>
                       <td style={{ padding: '12px 14px', color: '#475569' }}>{s.date}</td>
@@ -756,7 +869,6 @@ export default function ClientPortalPage({ toast }) {
                       <td style={{ padding: '12px 14px', color: '#475569' }}>{s.destination || '—'}</td>
                       <td style={{ padding: '12px 14px', color: '#475569' }}>{s.courier || '—'}</td>
                       <td style={{ padding: '12px 14px', color: '#475569' }}>{s.weight ? `${s.weight} kg` : '—'}</td>
-                      <td style={{ padding: '12px 14px', color: '#334155', fontWeight: 700 }}>{fmt(s.amount || 0)}</td>
                       <td style={{ padding: '12px 14px' }}><StatusBadge status={s.status} /></td>
                     </tr>
                   ))}
@@ -767,7 +879,7 @@ export default function ClientPortalPage({ toast }) {
 
           <div style={{ padding: 14, borderTop: '1px solid #edf2fa', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ fontSize: 12, color: '#64748b' }}>
-              Showing <strong style={{ color: '#334155' }}>{filteredShipments.length}</strong> shipments
+              Showing <strong style={{ color: '#334155' }}>{shipments.length}</strong> shipments
             </div>
             <Link to="/portal/shipments" style={{ textDecoration: 'none', color: '#e8580a', fontSize: 13, fontWeight: 800 }}>
               View all shipments →
@@ -775,6 +887,111 @@ export default function ClientPortalPage({ toast }) {
           </div>
         </section>
       </main>
+
+      <div style={{ position: 'fixed', right: 24, bottom: 24, zIndex: 50 }}>
+        {!assistantOpen ? (
+          <button
+            type="button"
+            onClick={() => setAssistantOpen(true)}
+            style={{
+              borderRadius: 999,
+              background: '#0f172a',
+              color: '#fff',
+              border: '1px solid #0f172a',
+              padding: '12px 16px',
+              fontSize: 12,
+              fontWeight: 800,
+              boxShadow: '0 14px 36px -20px rgba(15,23,42,0.6)',
+              cursor: 'pointer',
+            }}
+          >
+            Assistant
+          </button>
+        ) : (
+          <div style={{
+            width: 340,
+            maxHeight: 520,
+            background: '#fff',
+            border: '1px solid #e5edf8',
+            borderRadius: 18,
+            boxShadow: '0 18px 42px -30px rgba(11,31,58,0.35)',
+            display: 'grid',
+            gridTemplateRows: 'auto 1fr auto',
+            overflow: 'hidden',
+          }}>
+            <div style={{ padding: 12, borderBottom: '1px solid #edf2fa', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a' }}>Client Assistant</div>
+              <button type="button" onClick={() => setAssistantOpen(false)} style={{ border: 0, background: 'transparent', color: '#64748b', cursor: 'pointer' }}>Close</button>
+            </div>
+            <div style={{ padding: 12, overflowY: 'auto', display: 'grid', gap: 8 }}>
+              {assistantMessages.map((m, idx) => (
+                <div key={idx} style={{
+                  justifySelf: m.role === 'user' ? 'end' : 'start',
+                  background: m.role === 'user' ? '#0f172a' : '#f8fbff',
+                  color: m.role === 'user' ? '#fff' : '#0f172a',
+                  border: m.role === 'user' ? '1px solid #0f172a' : '1px solid #e5edf8',
+                  borderRadius: 12,
+                  padding: '8px 10px',
+                  fontSize: 12,
+                  whiteSpace: 'pre-wrap',
+                  maxWidth: '90%',
+                }}>
+                  {m.text}
+                  {m.action?.confirmRequired && (
+                    <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => sendAssistant({ action: m.action, confirm: true })}
+                        style={{ border: '1px solid #f7c9aa', background: '#fff3ec', borderRadius: 10, padding: '6px 8px', fontSize: 11, fontWeight: 800, color: '#c2410c', cursor: 'pointer' }}
+                      >
+                        Run Action
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                {assistantSuggestions.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => sendAssistant({ message: s })}
+                    style={{
+                      borderRadius: 999,
+                      border: '1px solid #dbe6f4',
+                      background: '#f8fbff',
+                      color: '#0f172a',
+                      fontSize: 11,
+                      fontWeight: 800,
+                      padding: '6px 10px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ padding: 10, borderTop: '1px solid #edf2fa', display: 'flex', gap: 8 }}>
+              <input
+                value={assistantInput}
+                onChange={(e) => setAssistantInput(e.target.value)}
+                placeholder="Ask about a shipment or request an action..."
+                style={{ flex: 1, borderRadius: 10, border: '1px solid #dbe6f4', padding: '8px 10px', fontSize: 12 }}
+                onKeyDown={(e) => { if (e.key === 'Enter') sendAssistant(); }}
+              />
+              <button
+                type="button"
+                onClick={() => sendAssistant()}
+                disabled={assistantBusy}
+                style={{ borderRadius: 10, border: '1px solid #0f172a', background: '#0f172a', color: '#fff', padding: '8px 10px', fontSize: 12, fontWeight: 800, cursor: assistantBusy ? 'not-allowed' : 'pointer' }}
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <Modal
         open={Boolean(ticketSuccess)}

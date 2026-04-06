@@ -11,49 +11,67 @@ export default function TypeLevelCard({
   premCount,
 }) {
   return (
-    <div className="rounded-[32px] border border-slate-200/60 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 p-6 shadow-sm backdrop-blur-xl relative overflow-hidden group">
-      <div className="flex items-center justify-between mb-4">
+    <div className="rate-section flex flex-col">
+      <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-           <div className={`w-8 h-8 rounded-xl flex items-center justify-center bg-purple-500/10 text-purple-500`}>
-              <Zap size={16} />
+           <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-indigo-500/10 text-indigo-600">
+              <Zap size={14} />
            </div>
-           <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none">Operational Mode</h3>
+           <div>
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Shipment type</h3>
+              <p className="text-xs text-slate-500">Mode and speed</p>
+           </div>
         </div>
       </div>
 
-      <div className="space-y-2 mb-6">
+      <div className="space-y-2 mb-4 flex-1">
         {[
-          { id: 'doc', icon: <FileText size={16} />, label: 'Document / Packet', desc: 'Express · Unit' },
-          { id: 'surface', icon: <Truck size={16} />, label: 'Surface Cargo', desc: 'Road · Weight' },
-          { id: 'air', icon: <Wind size={16} />, label: 'Air Priority', desc: 'Air · Weight' },
-        ].map((t) => (
-          <button
-            key={t.id}
-            onClick={() => { setType(t.id); setExpanded(null); setShowAll(false); }}
-            className={`w-full text-left px-4 py-3 rounded-2xl border transition-all flex items-center gap-3 relative overflow-hidden group/item ${
-              shipType === t.id
-                ? 'bg-slate-900 border-slate-800 text-white shadow-xl shadow-slate-900/10'
-                : 'bg-slate-100/50 dark:bg-slate-800/30 border-transparent text-slate-500 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
-            }`}
-          >
-            <span className={shipType === t.id ? 'text-blue-400' : 'text-slate-300'}>{t.icon}</span>
-            <div className="flex-1">
-              <p className="text-xs font-black uppercase tracking-tight">{t.label}</p>
-              <p className={`text-[9px] font-bold uppercase tracking-widest ${shipType === t.id ? 'text-slate-500' : 'text-slate-400'}`}>{t.desc}</p>
-            </div>
-            {shipType === t.id && (
-               <div className="w-1 h-1 rounded-full bg-blue-500 animate-pulse" />
-            )}
-          </button>
-        ))}
+          { id: 'doc', icon: <FileText size={18} />, label: 'Document / Packet', desc: 'Express · Unit Based' },
+          { id: 'surface', icon: <Truck size={18} />, label: 'Surface Cargo', desc: 'Road · Weight Based' },
+          { id: 'air', icon: <Wind size={18} />, label: 'Air Priority', desc: 'Air · Weight Based' },
+        ].map((t) => {
+          const active = shipType === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => { setType(t.id); setExpanded(null); setShowAll(false); }}
+              className={`w-full text-left px-3 py-2.5 rounded-lg border transition-all duration-300 flex items-center gap-3 relative overflow-hidden group/item ${
+                active
+                  ? 'bg-slate-900 border-slate-800 text-white'
+                  : 'bg-white/50 dark:bg-slate-800/20 border-slate-200 dark:border-slate-800 text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+              }`}
+            >
+              {active && <div className="absolute inset-0 bg-gradient-to-r from-blue-500/10 to-transparent opacity-50" />}
+              <span className={`transition-transform duration-500 ${active ? 'text-blue-400 scale-110' : 'text-slate-300 group-hover/item:scale-110'}`}>{t.icon}</span>
+              <div className="flex-1 relative z-10">
+                <p className="text-xs font-semibold mb-0.5">{t.label}</p>
+                <p className={`text-[11px] ${active ? 'text-slate-300' : 'text-slate-400'}`}>{t.desc}</p>
+              </div>
+              {active ? (
+                 <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
+                    <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                 </div>
+              ) : (
+                 <div className="w-5 h-5 rounded-full border border-slate-200 dark:border-slate-700 group-hover/item:border-slate-400 transition-colors" />
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
-         <div className="flex items-center gap-2 mb-3">
-            <Clock size={14} className="text-blue-500" />
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Velocity Filter</span>
+         <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+               <Clock size={14} className="text-blue-500" />
+               <span className="text-xs font-semibold text-slate-700">Service level</span>
+            </div>
+            <div className="flex items-center gap-3 text-[11px] text-slate-500">
+               <span>{ecoCount} normal</span>
+               <span>{premCount} priority</span>
+            </div>
          </div>
-         <div className="flex bg-slate-100 dark:bg-slate-900/50 p-1 rounded-2xl border border-slate-100 dark:border-slate-800">
+         
+         <div className="flex bg-slate-100/70 dark:bg-slate-900/60 p-1 rounded-lg border border-slate-200/50 dark:border-slate-800">
             {[
               ['all', 'Global'],
               ['economy', 'Normal'],
@@ -62,23 +80,13 @@ export default function TypeLevelCard({
               <button
                 key={id}
                 onClick={() => setSvcLevel(id)}
-                className={`flex-1 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                  svcLevel === id ? 'bg-white dark:bg-slate-800 text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+                className={`flex-1 py-2 rounded-md text-xs font-semibold transition-all duration-300 ${
+                  svcLevel === id ? 'bg-white dark:bg-slate-800 text-blue-600 ring-1 ring-slate-200/50 dark:ring-slate-700/50' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
                 }`}
               >
                 {label}
               </button>
             ))}
-         </div>
-         <div className="mt-3 flex items-center justify-between px-2">
-            <div className="flex items-center gap-1.5">
-               <div className="w-1 h-1 rounded-full bg-slate-400" />
-               <span className="text-[9px] font-bold text-slate-400 uppercase">{ecoCount} Normal</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-               <div className="w-1 h-1 rounded-full bg-blue-500" />
-               <span className="text-[9px] font-bold text-slate-400 uppercase">{premCount} Priority</span>
-            </div>
          </div>
       </div>
     </div>

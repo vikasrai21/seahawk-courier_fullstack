@@ -6,6 +6,7 @@ const auditor = require('../services/auditor.service');
 const R = require('../utils/response');
 const { validate } = require('../middleware/validate.middleware');
 const { autoSuggestSchema, bulkCalculateSchema, verifySchema } = require('../validators/rates.validator');
+const { intelligence } = require('../controllers/rates.intelligence');
 
 const SERVICE_CODE_TO_COURIER = {
   AR1: 'dtdc_exp',
@@ -139,6 +140,13 @@ router.post('/verify', ownerOnly, validate(verifySchema), async (req, res, next)
       lines: results,
       summary: { total, errors, mismatched, flagged },
     });
+  } catch (e) { next(e); }
+});
+
+// ── Lane intelligence for rate calculator ───────────────────────────────
+router.get('/intelligence', async (req, res, next) => {
+  try {
+    await intelligence(req, res);
   } catch (e) { next(e); }
 });
 

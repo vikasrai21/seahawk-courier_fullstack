@@ -3,25 +3,37 @@ import { Clock, MapPin, Box, Truck, User, Calendar, ShieldCheck } from 'lucide-r
 import { Modal } from '../ui/Modal';
 import { StatusBadge, normalizeStatus, formatStatusLabel } from '../ui/StatusBadge';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 const STEPS = ['Booked', 'PickedUp', 'InTransit', 'OutForDelivery', 'Delivered'];
 const fmt = n => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
-export default function TimelineModal({ shipment, onClose }) {
+export default function TimelineModal({ shipment, shipmentId, onClose }) {
+  const { user } = useAuth();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [shipmentData, setShipmentData] = useState(shipment);
+
+  const isClient = user?.role === 'CLIENT';
+  const targetId = shipment?.id || shipmentId;
 
   useEffect(() => {
-    api.get(`/shipments/${shipment.id}`)
-      .then(r => setEvents(r.trackingEvents || []))
+    if (!targetId) return;
+    setLoading(true);
+    api.get(`/shipments/${targetId}`)
+      .then(r => {
+        setEvents(r.trackingEvents || []);
+        if (!shipmentData) setShipmentData(r.data || r);
+      })
       .catch(() => setEvents([]))
       .finally(() => setLoading(false));
-  }, [shipment.id]);
+  }, [targetId]);
 
-  const currentIdx = STEPS.indexOf(normalizeStatus(shipment.status));
+  const displayShipment = shipmentData || shipment;
+  const currentIdx = STEPS.indexOf(normalizeStatus(displayShipment?.status || 'Booked'));
 
   return (
-    <Modal open onClose={onClose} title={`Shipment Journey — ${shipment.awb}`}>
+    <Modal open onClose={onClose} title={`Shipment Journey — ${displayShipment?.awb || '...'}`}>
       <div className="space-y-6">
         {/* Progress Bar */}
         <div className="relative flex items-center justify-between px-2 pt-2">
@@ -48,15 +60,15 @@ export default function TimelineModal({ shipment, onClose }) {
             <div className="flex items-center gap-2 mb-1 text-slate-400">
               <User size={12} /> <span className="text-[10px] font-bold uppercase tracking-wider">Consignee</span>
             </div>
-            <div className="text-xs font-black text-slate-800 dark:text-white truncate">{shipment.consignee}</div>
-            <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5"><MapPin size={10} /> {shipment.destination}</div>
+            <div className="text-xs font-black text-slate-800 dark:text-white truncate">{displayShipment?.consignee}</div>
+            <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5"><MapPin size={10} /> {displayShipment?.destination}</div>
           </div>
           <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
             <div className="flex items-center gap-2 mb-1 text-slate-400">
               <Truck size={12} /> <span className="text-[10px] font-bold uppercase tracking-wider">Courier</span>
             </div>
-            <div className="text-xs font-black text-slate-800 dark:text-white">{shipment.courier || 'TBD'}</div>
-            <div className="text-[10px] text-slate-500 uppercase tracking-tight mt-0.5">{shipment.service}</div>
+            <div className="text-xs font-black text-slate-800 dark:text-white">{displayShipment?.courier || 'TBD'}</div>
+            <div className="text-[10px] text-slate-500 uppercase tracking-tight mt-0.5">{displayShipment?.service}</div>
           </div>
         </div>
 
@@ -109,15 +121,17 @@ export default function TimelineModal({ shipment, onClose }) {
         <div className="pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-3 gap-2">
           <div className="text-center">
             <div className="text-[9px] font-bold text-slate-400 uppercase">Weight</div>
-            <div className="text-xs font-black text-slate-800 dark:text-white">{shipment.weight} kg</div>
+            <div className="text-xs font-black text-slate-800 dark:text-white">{displayShipment?.weight} kg</div>
           </div>
-          <div className="text-center">
-            <div className="text-[9px] font-bold text-slate-400 uppercase">Amount</div>
-            <div className="text-xs font-black text-slate-800 dark:text-white">{fmt(shipment.amount)}</div>
+          <div className="text-center border-x border-slate-50 dark:border-slate-800">
+            <div className="text-[9px] font-bold text-slate-400 uppercase">{isClient ? 'Route Type' : 'Amount'}</div>
+            <div className="text-xs font-black text-slate-800 dark:text-white">
+              {isClient ? (displayShipment?.service || 'Surface') : fmt(displayShipment?.amount)}
+            </div>
           </div>
           <div className="text-center">
             <div className="text-[9px] font-bold text-slate-400 uppercase">Date</div>
-            <div className="text-xs font-black text-slate-800 dark:text-white">{shipment.date}</div>
+            <div className="text-xs font-black text-slate-800 dark:text-white">{displayShipment?.date}</div>
           </div>
         </div>
       </div>

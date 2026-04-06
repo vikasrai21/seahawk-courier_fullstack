@@ -1,4 +1,4 @@
-import { Settings, Clock, Sparkles } from 'lucide-react';
+import { Settings, Clock, Sparkles, Sliders, Globe, Zap, X } from 'lucide-react';
 
 export default function HeaderPanel({
   showSettings,
@@ -11,63 +11,81 @@ export default function HeaderPanel({
   loadRecent,
 }) {
   return (
-    <>
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[linear-gradient(135deg,#0f172a_0%,#1e293b_100%)] flex items-center justify-center shadow-sm ring-1 ring-slate-200">
-              <Sparkles className="w-4 h-4 text-orange-300" />
-            </div>
-            <div>
-              <h1 className="text-xl font-semibold text-slate-900 tracking-tight">Rate Calculator</h1>
-              <p className="text-[11px] text-slate-500 font-medium -mt-0.5">Verified contract pricing across active courier partners</p>
-            </div>
-          </div>
-        </div>
-        <button
-          onClick={() => setShowSettings(!showSettings)}
-          className={`h-9 px-3 rounded-xl text-[11px] font-semibold flex items-center gap-1.5 transition-all ${showSettings ? 'bg-slate-900 text-white shadow-sm' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-900'}`}
-        >
-          <Settings className="w-3.5 h-3.5" />
-          Manage
-        </button>
-      </div>
-
+    <div className="reveal">
       {showSettings && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 mb-4 shadow-sm">
-          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Toggle Couriers</p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-1">
-            {couriers.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => toggleHide(c.id)}
-                className={`text-left px-2.5 py-1.5 rounded-lg text-[11px] flex items-center gap-2 transition-all ${
-                  hiddenIds.has(c.id) ? 'text-slate-300 line-through' : 'text-slate-700 hover:bg-slate-50'
-                }`}
+        <div className="card-premium overflow-hidden border-slate-800 bg-slate-950/90 backdrop-blur-3xl shadow-[0_32px_64px_-16px_rgba(0,0,0,0.5)]">
+           <div className="p-8 border-b border-slate-800 flex items-center justify-between bg-white/[0.02]">
+              <div className="flex items-center gap-4">
+                 <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center border border-blue-500/20">
+                    <Sliders size={24} />
+                 </div>
+                 <div>
+                    <h3 className="text-xl font-black text-white tracking-tight uppercase font-heading">Matrix Control</h3>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-0.5">Active Network Node Management</p>
+                 </div>
+              </div>
+              <button 
+                onClick={() => setShowSettings(false)}
+                className="p-2 rounded-xl hover:bg-white/5 text-slate-400 hover:text-white transition-all"
               >
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${hiddenIds.has(c.id) ? 'bg-slate-200' : c.level === 'premium' ? 'bg-violet-400' : 'bg-emerald-400'}`} />
-                <span className="truncate">{c.label}</span>
+                <X size={20} />
               </button>
-            ))}
-          </div>
+           </div>
+           
+           <div className="p-8">
+              <div className="flex items-center gap-3 mb-6">
+                 <Globe size={14} className="text-blue-500" />
+                 <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Courier Availability Delta</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                {couriers.map((c) => {
+                  const hidden = hiddenIds.has(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      onClick={() => toggleHide(c.id)}
+                      className={`group relative flex items-center gap-3 px-4 py-3 rounded-2xl border transition-all duration-300 ${
+                        hidden 
+                          ? 'bg-slate-900/40 border-transparent text-slate-600 grayscale opacity-40' 
+                          : 'bg-white/5 border-white/5 text-slate-300 hover:bg-white/10 hover:border-white/10 ring-1 ring-white/5 hover:ring-blue-500/30'
+                      }`}
+                    >
+                      <div className={`w-2 h-2 rounded-full shrink-0 transition-all duration-500 ${hidden ? 'bg-slate-700' : c.level === 'premium' ? 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.4)]' : 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.4)]'}`} />
+                      <span className={`text-[11px] font-black uppercase tracking-tight truncate ${hidden ? 'line-through' : ''}`}>{c.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+           </div>
+           
+           <div className="px-8 py-4 bg-white/[0.02] border-t border-slate-800 flex items-center justify-between">
+              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">System Matrix optimized for real-time engagement</span>
+              <div className="flex items-center gap-2">
+                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                 <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Telemetry Active</span>
+              </div>
+           </div>
         </div>
       )}
 
       {recent.length > 0 && !zone && (
-        <div className="flex flex-wrap items-center gap-1.5 mb-4">
-          <span className="text-[10px] text-slate-400 font-medium mr-1">Recent</span>
+        <div className="flex flex-wrap items-center gap-3 py-4 animate-in fade-in slide-in-from-left-4 duration-700">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900/5 dark:bg-white/5 border border-slate-200/50 dark:border-white/5 mr-2">
+             <Clock size={12} className="text-slate-400" />
+             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Recent Intelligence</span>
+          </div>
           {recent.map((r, i) => (
             <button
               key={i}
               onClick={() => loadRecent(r)}
-              className="text-[11px] bg-white border border-slate-200 rounded-full px-2.5 py-0.5 hover:border-slate-400 flex items-center gap-1 text-slate-500 transition-colors"
+              className="group flex items-center gap-2 px-4 py-1.5 rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 hover:border-blue-500/50 hover:bg-blue-50/50 dark:hover:bg-blue-500/5 transition-all text-xs font-bold text-slate-500 hover:text-blue-600 shadow-sm"
             >
-              <Clock className="w-2.5 h-2.5 opacity-40" />
+              <Zap size={10} className="text-slate-300 group-hover:text-blue-500 transition-colors" />
               {r.query}
             </button>
           ))}
         </div>
       )}
-    </>
+    </div>
   );
 }

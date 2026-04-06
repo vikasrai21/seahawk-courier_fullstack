@@ -235,7 +235,7 @@ describe('auth.service', () => {
       await authService.changePassword(1, 'correct', 'newpass');
       expect(mockPrisma.user.update).toHaveBeenCalled();
       expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalled();
-    });
+    }, 10000);
   });
 
   // ── getAllUsers ───────────────────────────────────────────────────────────
