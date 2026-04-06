@@ -4,6 +4,7 @@ import { fetchBufferWithRetry, fetchJsonWithRetry, fetchWithRetry } from '../../
 describe('httpRetry', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it('returns successful responses without retrying', async () => {
