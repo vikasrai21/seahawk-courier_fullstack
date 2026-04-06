@@ -127,16 +127,19 @@ export default function BulkComparePage({ toast }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
         {/* Input panel */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">📄 CSV Input</p>
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 animate-in fade-in slide-in-from-left-4 duration-500">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-6 h-6 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold">1</div>
+            <p className="text-xs font-bold text-slate-800 uppercase tracking-wider">Paste or Upload Data</p>
+          </div>
 
-          <div className="flex gap-2 mb-2">
+          <div className="flex flex-wrap items-center gap-3 mb-3">
             <button onClick={() => fileRef.current.click()}
-              className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold hover:border-slate-400">
-              <Upload className="w-3 h-3" />Upload CSV
+              className="flex items-center gap-2 bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-bold hover:border-slate-400 hover:shadow-sm transition-all focus:ring-2 focus:ring-slate-900">
+              <Upload className="w-3.5 h-3.5" /> Upload CSV File
             </button>
             <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleFile} />
-            <span className="text-xs text-gray-300 self-center">or paste below</span>
+            <span className="text-[10px] uppercase font-bold tracking-widest text-slate-400">or paste directly below</span>
           </div>
 
           <textarea
@@ -172,9 +175,20 @@ export default function BulkComparePage({ toast }) {
           )}
         </div>
 
+        {/* Empty state for unparsed */}
+        {!results && (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+            <div className="w-12 h-12 rounded-2xl bg-white shadow-sm flex items-center justify-center mb-4">
+              <Play className="w-5 h-5 text-slate-300" />
+            </div>
+            <p className="text-sm font-bold text-slate-600">Ready to Compare Rates</p>
+            <p className="text-xs text-slate-400 mt-1 max-w-[200px]">Upload a CSV and click parse to see your 17-courier comparison.</p>
+          </div>
+        )}
+
         {/* Summary */}
         {results && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 animate-in fade-in slide-in-from-right-4 duration-500">
             <div className="flex items-center justify-between mb-3">
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">📊 Summary</p>
               <button onClick={handleDownload}

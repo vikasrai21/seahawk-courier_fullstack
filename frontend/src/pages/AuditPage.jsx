@@ -10,7 +10,7 @@ const ACTION_COLORS = {
 
 export default function AuditPage() {
   const { data, loading } = useFetch('/audit?limit=100');
-  const logs = data || [];
+  const logs = data?.data || data || [];
 
   return (
     <div className="p-6">

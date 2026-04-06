@@ -133,6 +133,7 @@ app.use('/api/couriers',       require('./routes/courier.routes'));
 app.use('/api/carrier',        require('./routes/carrier.routes'));
 app.use('/api/webhooks',       require('./routes/webhook.routes'));
 app.use('/api/support',        require('./routes/support.routes'));
+app.use('/api/courier-invoices', require('./routes/courier-invoice.routes'));
 app.use('/api/docs',           require('./routes/docs.routes'));
 app.use('/api/pincodes',      require('./routes/pincode.routes'));
 

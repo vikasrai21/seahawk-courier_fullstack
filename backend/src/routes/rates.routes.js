@@ -2,26 +2,70 @@
 const router = require('express').Router();
 const { protect, adminOnly, ownerOnly } = require('../middleware/auth.middleware');
 const prisma = require('../config/prisma');
-const importLedger = require('../services/import-ledger.service');
-const { stateToZones, courierCost, proposalSell, COURIERS, getRateAge } = require('../utils/rateEngine');
+const auditor = require('../services/auditor.service');
 const R = require('../utils/response');
+const { validate } = require('../middleware/validate.middleware');
+const { autoSuggestSchema, bulkCalculateSchema, verifySchema } = require('../validators/rates.validator');
 
 const SERVICE_CODE_TO_COURIER = {
-  AR1: 'dtdc_2189_exp',
-  AR2: 'dtdc_2189_exp',
-  AC1: 'dtdc_2215_pep',
-  AC2: 'dtdc_2215_std',
-  AC3: 'dtdc_2215_pty',
-  SF1: 'dtdc_2189_sfc',
-  SF2: 'dtdc_2189_sfc',
-  DA1: 'dtdc_2189_air',
-  DA2: 'dtdc_2189_air',
+  AR1: 'dtdc_exp',
+  AR2: 'dtdc_exp',
+  AC1: 'dtdc_v71',
+  AC2: 'dtdc_d71',
+  AC3: 'dtdc_p7x',
+  SF1: 'dtdc_dsfc',
+  SF2: 'dtdc_dsfc',
+  DA1: 'dtdc_dair',
+  DA2: 'dtdc_dair',
 };
 
 const rnd = n => Math.round(n * 100) / 100;
 
 function normalizeText(value) {
   return String(value || '').trim().toLowerCase();
+}
+
+function normalizeServiceCode(value) {
+  const text = String(value || '').trim().toUpperCase();
+  if (!text) return '';
+  const aliases = {
+    AIR: 'DA1',
+    DAIR: 'DA1',
+    'D-AIR': 'DA1',
+    SFC: 'SF1',
+    SURFACE: 'SF1',
+    'D-SURFACE': 'SF1',
+    EXP: 'AR1',
+    EXPRESS: 'AR1',
+    PRI: 'AC3',
+    PRIORITY: 'AC3',
+    PEP: 'AC1',
+    STD: 'AC2',
+    STANDARD: 'AC2',
+  };
+  return aliases[text] || text;
+}
+
+async function resolveAuditLocation(line) {
+  let state = String(line?.state || line?.destinationState || '').trim();
+  let district = String(line?.district || line?.destinationDistrict || '').trim();
+  let city = String(line?.city || line?.destinationCity || line?.destination || '').trim();
+  const pincode = String(line?.pincode || line?.destinationPincode || '').trim();
+  let pinLookup = null;
+
+  if ((!state || !district || !city) && /^\d{6}$/.test(pincode)) {
+    try {
+      pinLookup = await lookupPincode(pincode);
+      const office = pinLookup?.postOffice || {};
+      state = state || String(office.State || '').trim();
+      district = district || String(office.District || '').trim();
+      city = city || String(office.Name || office.Division || '').trim();
+    } catch {
+      pinLookup = null;
+    }
+  }
+
+  return { state, district, city, pincode, pinLookup };
 }
 
 function pickBestImportMatch(matches, line) {
@@ -74,7 +118,7 @@ router.post('/calculate', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.post('/verify', ownerOnly, async (req, res, next) => {
+router.post('/verify', ownerOnly, validate(verifySchema), async (req, res, next) => {
   try {
     const { lines } = req.body;
     if (!Array.isArray(lines) || lines.length === 0) {
@@ -82,105 +126,24 @@ router.post('/verify', ownerOnly, async (req, res, next) => {
     }
 
     const results = await Promise.all(lines.map(async (line, index) => {
-      const serviceCode = String(line?.serviceCode || line?.service || '').trim().toUpperCase();
-      const courierId = line?.courierId || SERVICE_CODE_TO_COURIER[serviceCode];
-      if (!courierId) {
-        return { index, serviceCode, status: 'error', message: 'Missing or unknown serviceCode / courierId' };
-      }
-
-      const weight = Number(line?.weight || line?.kg || 0);
-      const state = String(line?.state || line?.destinationState || '').trim();
-      const district = String(line?.district || line?.destinationDistrict || '').trim();
-      const city = String(line?.city || line?.destinationCity || line?.destination || '').trim();
-      const zone = stateToZones(state, district, city);
-      const cost = courierCost(courierId, zone, weight, Number(line?.odaAmount || 0));
-      if (!cost) {
-        return { index, serviceCode, status: 'error', message: 'Unable to compute cost for this entry' };
-      }
-
-      const awb = String(line?.awb || '').trim();
-      const importMatches = awb ? await importLedger.findByAwb(awb, 10) : [];
-      const importMatch = pickBestImportMatch(importMatches, line);
-      const shipment = awb
-        ? await prisma.shipment.findUnique({
-            where: { awb },
-            select: { awb: true, amount: true, clientCode: true, courier: true, weight: true, destination: true, date: true },
-          })
-        : null;
-      const billed = line?.amount != null ? Number(line.amount) : null;
-      const diff = billed != null && cost.base != null ? Number((billed - cost.base).toFixed(2)) : null;
-      const chargedToClient = importMatch
-        ? Number(importMatch.amount || 0)
-        : shipment
-          ? Number(shipment.amount || 0)
-          : null;
-      const recoveryGap = billed != null && chargedToClient != null
-        ? Number((chargedToClient - billed).toFixed(2))
-        : null;
-      const flags = [];
-      if (awb && importMatches.length === 0 && !shipment) flags.push('AWB not found in database');
-      if (importMatches.length > 1) flags.push(`Multiple imported rows found (${importMatches.length})`);
-      if (importMatch && weight > 0 && Math.abs(Number(importMatch.weight || 0) - weight) > 0.05) flags.push('Weight mismatch vs imported row');
-      if (importMatch && city && normalizeText(importMatch.destination) && !normalizeText(importMatch.destination).includes(normalizeText(city))) flags.push('Destination mismatch vs imported row');
-      return {
-        index,
-        awb: awb || null,
-        destination: city || state || line?.destination || 'Unknown',
-        serviceCode,
-        courierId,
-        weight,
-        billed,
-        chargedToClient,
-        recoveryGap,
-        matchedImportCount: importMatches.length,
-        matchedImport: importMatch ? {
-          date: importMatch.date,
-          clientCode: importMatch.clientCode,
-          destination: importMatch.destination,
-          weight: Number(importMatch.weight || 0),
-          amount: Number(importMatch.amount || 0),
-          courier: importMatch.courier || '',
-          batchKey: importMatch.batchKey,
-        } : null,
-        dbShipment: shipment ? {
-          date: shipment.date,
-          clientCode: shipment.clientCode,
-          destination: shipment.destination,
-          weight: Number(shipment.weight || 0),
-          amount: Number(shipment.amount || 0),
-          courier: shipment.courier || '',
-        } : null,
-        flags,
-        expected: {
-          base: cost.base,
-          subtotal: cost.subtotal,
-          total: cost.total,
-          fsc: cost.fsc,
-          notes: cost.notes || [],
-          mcwApplied: cost.mcwApplied,
-        },
-        difference: diff,
-        zone,
-        status: 'ok',
-      };
+      const result = await auditor.verifyLineItem(line);
+      return { index, ...result };
     }));
 
     const total = results.length;
     const errors = results.filter(line => line.status !== 'ok').length;
     const mismatched = results.filter(line => line.status === 'ok' && typeof line.difference === 'number' && Math.abs(line.difference) > 1).length;
-    const underRecovered = results.filter(line => line.status === 'ok' && typeof line.recoveryGap === 'number' && line.recoveryGap < 0).length;
-    const unmatchedAwbs = results.filter(line => line.status === 'ok' && line.awb && !line.matchedImport && !line.dbShipment).length;
     const flagged = results.filter(line => line.status === 'ok' && Array.isArray(line.flags) && line.flags.length > 0).length;
 
     R.ok(res, {
       lines: results,
-      summary: { total, errors, mismatched, underRecovered, unmatchedAwbs, flagged },
+      summary: { total, errors, mismatched, flagged },
     });
   } catch (e) { next(e); }
 });
 
 // ── Bulk calculate — array of shipments ─────────────────────────────────
-router.post('/calculate/bulk', async (req, res, next) => {
+router.post('/calculate/bulk', validate(bulkCalculateSchema), async (req, res, next) => {
   try {
     const { shipments } = req.body; // [{ state, district, city, weight, shipType, awb, ref }]
     if (!Array.isArray(shipments) || shipments.length > 500) return R.error(res, 'Send 1-500 shipments');
@@ -279,6 +242,88 @@ router.post('/versions', adminOnly, async (req, res, next) => {
       data: { courier, effectiveDate, notes, dataJson: dataJson || {}, uploadedById: req.user.id },
     }));
   } catch(e){next(e);}
+});
+
+// ── Auto-suggest best couriers for a shipment (used by NewEntryPage) ──────
+router.post('/auto-suggest', validate(autoSuggestSchema), async (req, res, next) => {
+  try {
+    const { pincode, state, district, city, weight, shipType = 'doc', clientCode } = req.body;
+    if ((!state && !pincode) || !weight) return R.error(res, 'state/pincode and weight required');
+
+    let resolvedState = state || '';
+    let resolvedDistrict = district || '';
+    let resolvedCity = city || '';
+
+    // If pincode provided, try to resolve location
+    if (pincode && !state) {
+      const pinSvc = require('../services/pincode.service');
+      try {
+        const pinData = await pinSvc.lookup(pincode);
+        if (pinData?.postOffice) {
+          resolvedState = pinData.postOffice.State || '';
+          resolvedDistrict = pinData.postOffice.District || '';
+          resolvedCity = pinData.postOffice.Name || '';
+        }
+      } catch { /* fallthrough */ }
+    }
+
+    if (!resolvedState) return R.error(res, 'Could not determine location from pincode');
+
+    const zone = stateToZones(resolvedState, resolvedDistrict, resolvedCity);
+    const w = parseFloat(weight);
+    if (isNaN(w) || w <= 0) return R.error(res, 'Invalid weight');
+
+    // Get client contract if available
+    let contractSell = null;
+    if (clientCode) {
+      const today = new Date().toISOString().split('T')[0];
+      const contract = await prisma.contract.findFirst({
+        where: { clientCode, active: true, validFrom: { lte: today }, OR: [{ validTo: null }, { validTo: { gte: today } }] },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (contract) {
+        let base = contract.pricingType === 'PER_KG' ? w * contract.baseRate : contract.baseRate;
+        base = Math.max(base, contract.minCharge || 0);
+        const fsc = rnd(base * ((contract.fuelSurcharge || 0) / 100));
+        const sub = base + fsc;
+        const gst = rnd(sub * ((contract.gstPercent || 18) / 100));
+        contractSell = { total: rnd(sub + gst), base: rnd(base), fsc, gst, source: `Contract: ${contract.name}` };
+      }
+    }
+
+    const results = COURIERS
+      .filter(c => c.types.includes(shipType))
+      .map(c => {
+        const bk = courierCost(c.id, zone, w, 0);
+        if (!bk) return null;
+        const sell = contractSell || proposalSell(zone, w, shipType, c.level);
+        const sellTotal = sell?.total || 0;
+        const profit = sellTotal ? rnd(sellTotal - bk.total) : null;
+        const margin = sellTotal > 0 ? rnd((profit / sellTotal) * 100) : null;
+        return {
+          courierId: c.id, label: c.label, group: c.group, level: c.level,
+          cost: bk.total, sell: sellTotal, profit, margin,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => (b.profit || 0) - (a.profit || 0))
+      .slice(0, 3);
+
+    const best = results[0];
+    R.ok(res, {
+      zone: zone.seahawkZone,
+      location: `${resolvedDistrict}, ${resolvedState}`,
+      sellSource: contractSell ? contractSell.source : 'Proposal Rate Card',
+      suggestions: results,
+      recommended: best ? {
+        courier: best.label,
+        cost: best.cost,
+        sell: best.sell,
+        profit: best.profit,
+        margin: best.margin,
+      } : null,
+    });
+  } catch (e) { next(e); }
 });
 
 module.exports = router;

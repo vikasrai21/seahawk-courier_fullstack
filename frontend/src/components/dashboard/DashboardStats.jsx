@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDownRight, ArrowUpRight, IndianRupee, Package, Target, Truck } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, IndianRupee, Package, Target, Truck, TrendingUp, Percent, Clock } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 const fmtCurrency = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 const fmtNumber = (n) => Number(n || 0).toLocaleString('en-IN');
@@ -38,25 +39,25 @@ function getTrend(current, previous) {
 // ── Today Pulse Bar ───────────────────────────────────────────────────────
 function TodayPulse({ stats, label = 'Current Range' }) {
   const items = [
-    { label: 'Bookings', value: stats?.Booked || 0, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-    { label: 'Out for Delivery', value: stats?.OutForDelivery || 0, color: 'text-amber-500', bg: 'bg-amber-500/10' },
-    { label: 'Delivered', value: stats?.Delivered || 0, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-    { label: 'Failed/RTO', value: (stats?.Failed || 0) + (stats?.RTO || 0), color: 'text-rose-500', bg: 'bg-rose-500/10' },
+    { label: 'Bookings', value: stats?.Booked || stats?.todayBooked || 0, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-100' },
+    { label: 'Pending / Transit', value: stats?.OutForDelivery || 0, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-100' },
+    { label: 'Delivered', value: stats?.Delivered || stats?.todayDelivered || 0, color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-100' },
+    { label: 'Failed/RTO', value: (stats?.Failed || 0) + (stats?.RTO || 0), color: 'text-rose-600', bg: 'bg-rose-50 border-rose-100' },
   ];
 
   return (
-    <div className="flex flex-wrap items-center gap-4 bg-slate-900 shadow-lg border border-slate-800 rounded-2xl p-2 px-4 mb-6 shadow-slate-900/10">
-      <div className="flex items-center gap-2 pr-4 border-r border-slate-800">
-        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-        <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</span>
+    <div className="flex flex-wrap items-center gap-4 bg-white shadow-sm border border-slate-200/80 rounded-[20px] p-2.5 px-5 mb-6">
+      <div className="flex items-center gap-2.5 pr-5 border-r border-slate-200">
+        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
+        <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">{label}</span>
       </div>
       <div className="flex flex-1 items-center justify-around gap-4 py-1">
         {items.map((item) => (
           <div key={item.label} className="flex items-center gap-3">
-            <div className={`px-2 py-0.5 rounded-lg ${item.bg} ${item.color} text-[10px] font-black tabular-nums`}>
+            <div className={`px-2.5 py-1 rounded-xl border ${item.bg} ${item.color} text-[11px] font-black tabular-nums shadow-sm`}>
               {item.value}
             </div>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{item.label}</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-tight">{item.label}</span>
           </div>
         ))}
       </div>
@@ -64,68 +65,75 @@ function TodayPulse({ stats, label = 'Current Range' }) {
   );
 }
 
-function StatCard({ title, value, previous, format, icon: Icon, tone }) {
+function StatCard({ title, value, previous, format, icon: Icon, tone, subtitle }) {
   const trend = useMemo(() => getTrend(value, previous), [value, previous]);
   
   const toneMap = {
-    orange: { gradient: 'from-orange-500 to-amber-600 shadow-orange-500/30', text: 'text-white', title: 'text-orange-100', icon: 'bg-white/20 text-white', trendUp: 'bg-white/20 text-white', trendDown: 'bg-white/20 text-white', barValue: 'bg-white', barTrack: 'bg-black/10' },
-    blue:   { gradient: 'from-blue-600 to-indigo-600 shadow-blue-500/30', text: 'text-white', title: 'text-blue-100', icon: 'bg-white/20 text-white', trendUp: 'bg-emerald-400 bg-opacity-20 text-emerald-50', trendDown: 'bg-rose-400 bg-opacity-20 text-rose-50', barValue: 'bg-white', barTrack: 'bg-black/10' },
-    red:    { gradient: 'from-rose-500 to-red-600 shadow-rose-500/30', text: 'text-white', title: 'text-rose-100', icon: 'bg-white/20 text-white', trendUp: 'bg-white/20 text-white', trendDown: 'bg-white/20 text-white', barValue: 'bg-white', barTrack: 'bg-black/10' },
-    green:  { gradient: 'from-emerald-500 to-teal-600 shadow-emerald-500/30', text: 'text-white', title: 'text-emerald-100', icon: 'bg-white/20 text-white', trendUp: 'bg-white/20 text-white', trendDown: 'bg-white/20 text-white', barValue: 'bg-white', barTrack: 'bg-black/10' },
+    orange: 'text-orange-500 bg-orange-50 ring-orange-100/50',
+    blue:   'text-blue-500 bg-blue-50 ring-blue-100/50',
+    green:  'text-emerald-500 bg-emerald-50 ring-emerald-100/50',
+    purple: 'text-violet-500 bg-violet-50 ring-violet-100/50',
+    cyan:   'text-cyan-500 bg-cyan-50 ring-cyan-100/50',
+    red:    'text-rose-500 bg-rose-50 ring-rose-100/50'
   };
   const t = toneMap[tone] || toneMap.orange;
 
   return (
-    <div className={`group relative overflow-hidden rounded-3xl bg-gradient-to-br ${t.gradient} p-6 shadow-lg transition-transform hover:-translate-y-1`}>
-      <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-white/10 blur-xl" />
-      <div className="absolute -bottom-8 -left-8 h-24 w-24 rounded-full bg-black/5 blur-lg" />
-      
-      <div className="relative flex items-start justify-between">
-        <div className={`rounded-2xl ${t.icon} p-3 shadow-inner backdrop-blur-sm`}>
-          <Icon size={24} strokeWidth={2.5} />
+    <div className="group relative overflow-hidden rounded-[24px] bg-white border border-slate-200/70 p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition-all hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)] hover:-translate-y-0.5">
+      <div className="flex items-center justify-between">
+        <div className={`flex items-center justify-center w-11 h-11 rounded-2xl ring-1 ${t}`}>
+          <Icon size={22} strokeWidth={2.5} />
         </div>
-        <div className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[10px] font-black uppercase tracking-wider ${trend.up ? t.trendUp : t.trendDown} backdrop-blur-sm`}>
-          {trend.up ? <ArrowUpRight size={12} strokeWidth={3} /> : <ArrowDownRight size={12} strokeWidth={3} />}
+        <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${trend.up ? 'text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200/50' : 'text-rose-700 bg-rose-50 ring-1 ring-rose-200/50'}`}>
+          {trend.up ? <ArrowUpRight size={12} strokeWidth={2.5} /> : <ArrowDownRight size={12} strokeWidth={2.5} />}
           {trend.delta}%
         </div>
       </div>
-
-      <div className="relative mt-5">
-        <p className={`text-[10px] font-black uppercase tracking-[0.2em] ${t.title}`}>{title}</p>
-        <p className={`mt-2 text-4xl font-black tracking-tight ${t.text}`}>
+      
+      <div className="mt-5">
+        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{title}</p>
+        <p className="mt-1 text-2xl font-black text-slate-900 tracking-tight">
           <AnimatedNumber value={value} format={format} />
         </p>
-        <div className="mt-4 flex flex-col gap-1.5">
-          <div className="flex items-center justify-between">
-            <span className={`text-[9px] font-bold uppercase tracking-widest ${t.title}`}>vs previous</span>
-          </div>
-          <div className={`h-1 flex-1 rounded-full ${t.barTrack} overflow-hidden`}>
-            <div 
-              className={`h-full rounded-full transition-all duration-1000 ${t.barValue}`}
-              style={{ width: `${Math.min(100, Math.max(10, trend.delta * 2))}%` }}
-            />
-          </div>
-        </div>
+        {subtitle && (
+          <p className="mt-1.5 text-[11px] font-semibold text-slate-400">{subtitle}</p>
+        )}
       </div>
     </div>
   );
 }
 
-export default function DashboardStats({ overview, previousOverview, dateLabel }) {
+export default function DashboardStats({ overview, previousOverview, dateLabel, opsData }) {
+  const { isOwner } = useAuth();
   const kpis = overview?.kpis || {};
   const prev = previousOverview?.kpis || {};
   const failedCurrent = Number(overview?.byStatus?.Failed || 0);
   const failedPrevious = Number(previousOverview?.byStatus?.Failed || 0);
   const todayStats = overview?.todayStats || overview?.byStatus || {};
 
+  // Use ops data for intelligence fields if available
+  const ops = opsData?.overview || {};
+  const grossProfit = ops.grossProfit || 0;
+  const avgMargin = ops.avgMargin || 0;
+  const totalShipments = ops.totalShipments || kpis.totalShipments || 0;
+  const transitOut = (overview?.byStatus?.OutForDelivery || 0) + (overview?.byStatus?.InTransit || 0);
+
   return (
     <div className="space-y-6 relative">
-      <TodayPulse stats={todayStats} label={dateLabel || 'Current Range'} />
-      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="Total Shipments" value={kpis.totalShipments || 0} previous={prev.totalShipments || 0} icon={Package} tone="orange" />
-        <StatCard title="Delivered Rate" value={((kpis.delivered || 0) / (kpis.totalShipments || 1)) * 100} previous={((prev.delivered || 0) / (prev.totalShipments || 1)) * 100} format="percent" icon={Target} tone="green" />
-        <StatCard title="Failed Deliveries" value={failedCurrent} previous={failedPrevious} icon={Truck} tone="red" />
-        <StatCard title="Revenue" value={kpis.totalRevenue || 0} previous={prev.totalRevenue || 0} format="currency" icon={IndianRupee} tone="blue" />
+      <TodayPulse stats={{ ...todayStats, todayBooked: ops.todayBooked, todayDelivered: ops.todayDelivered }} label={dateLabel || 'Current Range'} />
+      <div className={`grid gap-5 md:grid-cols-2 xl:grid-cols-3 ${isOwner ? '2xl:grid-cols-6' : '2xl:grid-cols-4'}`}>
+        <StatCard title="Total Shipments" value={totalShipments || kpis.totalShipments || 0} previous={prev.totalShipments || 0} icon={Package} tone="orange" subtitle={`${fmtNumber(ops.weekShipments || 0)} this week`} />
+        
+        {isOwner && <StatCard title="Revenue" value={ops.monthRevenue || kpis.totalRevenue || 0} previous={prev.totalRevenue || 0} format="currency" icon={IndianRupee} tone="blue" subtitle={`₹${fmtNumber(ops.todayRevenue || 0)} today`} />}
+        {isOwner && <StatCard title="Gross Profit" value={grossProfit} previous={0} format="currency" icon={TrendingUp} tone="green" subtitle={`Estimated from invoices`} />}
+        {isOwner && <StatCard title="Avg Margin" value={avgMargin} previous={0} format="percent" icon={Percent} tone="purple" subtitle={`On ${fmtNumber(totalShipments)} shipments`} />}
+        
+        <StatCard title="Delivery Rate" value={((kpis.delivered || ops.deliveredCount || 0) / (totalShipments || 1)) * 100} previous={((prev.delivered || 0) / (prev.totalShipments || 1)) * 100} format="percent" icon={Target} tone="cyan" subtitle={`${fmtNumber(ops.deliveredCount || 0)} completed`} />
+        
+        {!isOwner && <StatCard title="Pending / Transit" value={transitOut} previous={0} icon={Clock} tone="blue" subtitle="Awaiting completion" />}
+        {!isOwner && <StatCard title="Booked Today" value={ops.todayBooked || todayStats.Booked || 0} previous={0} icon={Package} tone="purple" subtitle="New volume" />}
+        
+        <StatCard title="Failed / RTO" value={(ops.failedCount || failedCurrent) + (ops.rtoCount || 0)} previous={failedPrevious} icon={Truck} tone="red" subtitle={`${ops.rtoCount || 0} RTO + ${ops.failedCount || failedCurrent} failed`} />
       </div>
     </div>
   );

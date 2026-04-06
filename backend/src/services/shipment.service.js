@@ -46,7 +46,7 @@ function buildFilters({ client, courier, status, dateFrom, dateTo, q }) {
 
 async function getAll(filters = {}, page = 1, limit = 50) {
   const safePage = Math.max(1, parseInt(page, 10) || 1);
-  const safeLimit = Math.min(200, Math.max(10, parseInt(limit, 10) || 50));
+  const safeLimit = Math.min(5000, Math.max(10, parseInt(limit, 10) || 50));
   const where = buildFilters(filters);
   const skip  = (safePage - 1) * safeLimit;
   const [total, shipments] = await prisma.$transaction([

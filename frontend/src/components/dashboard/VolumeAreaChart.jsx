@@ -2,12 +2,12 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 
 const fmt = n => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
-export default function VolumeAreaChart({ data, dark }) {
+export default function VolumeAreaChart({ data, dark, hideRevenue }) {
   const T = {
     grid: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
     text: dark ? '#94a3b8' : '#475569',
     stop1: dark ? '#3b82f6' : '#2563eb',
-    stop2: dark ? '#8b5cf6' : '#7c3aed',
+    stop2: dark ? '#10b981' : '#059669',
   };
 
   return (
@@ -18,6 +18,10 @@ export default function VolumeAreaChart({ data, dark }) {
             <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor={T.stop1} stopOpacity={0.3}/>
               <stop offset="95%" stopColor={T.stop1} stopOpacity={0}/>
+            </linearGradient>
+            <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={T.stop2} stopOpacity={0.2}/>
+              <stop offset="95%" stopColor={T.stop2} stopOpacity={0}/>
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={T.grid} />
@@ -44,7 +48,10 @@ export default function VolumeAreaChart({ data, dark }) {
               fontSize: '12px',
               boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
             }}
-            formatter={(value, name) => [name === 'revenue' ? fmt(value) : value, name === 'revenue' ? 'Revenue' : 'Shipments']}
+            formatter={(value, name) => [
+              name === 'revenue' ? fmt(value) : value, 
+              name === 'revenue' ? 'Revenue' : 'Shipments'
+            ]}
           />
           <Area 
             type="monotone" 
@@ -54,7 +61,20 @@ export default function VolumeAreaChart({ data, dark }) {
             fillOpacity={1} 
             fill="url(#colorCount)" 
             animationDuration={1500}
+            name="count"
           />
+          {!hideRevenue && (
+            <Area 
+              type="monotone" 
+              dataKey="revenue" 
+              stroke={T.stop2} 
+              strokeWidth={2}
+              fillOpacity={1} 
+              fill="url(#colorRev)" 
+              animationDuration={1500}
+              name="revenue"
+            />
+          )}
         </AreaChart>
       </ResponsiveContainer>
     </div>

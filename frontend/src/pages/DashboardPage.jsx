@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PageHeader } from '../components/ui/PageHeader';
-import { LayoutDashboard, RefreshCw } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, PlusCircle, FileUp, ScanLine, Receipt, Calendar, Calculator, Zap, ArrowRight } from 'lucide-react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
@@ -61,7 +61,9 @@ function getPreviousRange(range, customFrom, customTo) {
 function secondsAgo(date) {
   if (!date) return '';
   const secs = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
-  return `${secs}s ago`;
+  if (secs < 60) return `${secs}s ago`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+  return `${Math.floor(secs / 3600)}h ago`;
 }
 
 function Filters({ range, onRangeChange, customFrom, customTo, onCustomFromChange, onCustomToChange }) {
@@ -91,6 +93,51 @@ function Filters({ range, onRangeChange, customFrom, customTo, onCustomFromChang
   );
 }
 
+// ── Smart Command Bar ─────────────────────────────────────────────────────
+const COMMANDS = [
+  { to: '/app/entry', label: 'New Shipment', icon: PlusCircle, desc: 'Create a new shipment entry', accent: true },
+  { to: '/app/import', label: 'Import CSV', icon: FileUp, desc: 'Bulk import shipments' },
+  { to: '/app/scan', label: 'Scan AWB', icon: ScanLine, desc: 'Scan barcode to find shipment' },
+  { to: '/app/rates', label: 'Rate Calculator', icon: Calculator, desc: 'Compare courier rates & profit' },
+  { to: '/app/invoices', label: 'Invoices', icon: Receipt, desc: 'Manage client invoices' },
+  { to: '/app/pickups', label: 'Pickups', icon: Calendar, desc: 'Schedule courier pickups' },
+];
+
+function SmartCommandBar({ user }) {
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Zap size={14} className="text-amber-500" />
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Quick Actions</span>
+        </div>
+        <span className="text-[10px] text-slate-400">Signed in as <strong className="text-slate-600 dark:text-slate-300">{user?.name || 'Team'}</strong></span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        {COMMANDS.map((cmd) => (
+          <Link
+            key={cmd.to}
+            to={cmd.to}
+            className={`group flex flex-col items-center gap-2 rounded-2xl border p-4 transition-all hover:-translate-y-0.5 hover:shadow-md ${
+              cmd.accent
+                ? 'border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50 hover:border-orange-300 dark:from-orange-900/20 dark:border-orange-800/50'
+                : 'border-slate-100 bg-slate-50/50 hover:border-slate-200 hover:bg-white dark:border-slate-800 dark:bg-slate-800/30 dark:hover:bg-slate-800/60'
+            }`}
+          >
+            <div className={`rounded-xl p-2.5 transition-colors ${
+              cmd.accent ? 'bg-orange-500/10 text-orange-600' : 'bg-slate-200/50 text-slate-500 group-hover:text-slate-700 dark:bg-slate-700/50 dark:text-slate-400'
+            }`}>
+              <cmd.icon size={18} strokeWidth={2.5} />
+            </div>
+            <span className={`text-xs font-bold ${cmd.accent ? 'text-orange-700 dark:text-orange-300' : 'text-slate-600 dark:text-slate-300'}`}>{cmd.label}</span>
+            <span className="text-[9px] text-slate-400 text-center leading-tight hidden sm:block">{cmd.desc}</span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const { user, isAdmin, hasRole } = useAuth();
   const { socket } = useSocket();
@@ -106,6 +153,7 @@ export default function DashboardPage() {
   const [activity, setActivity] = useState([]);
   const [shipments, setShipments] = useState([]);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [opsData, setOpsData] = useState(null);
   const [, setTick] = useState(Date.now());
 
   const currentRange = useMemo(() => getRange(range, customFrom, customTo), [range, customFrom, customTo]);
@@ -122,6 +170,8 @@ export default function DashboardPage() {
         api.get('/ops/pending-actions'),
         api.get('/ops/recent-activity?limit=8'),
         api.get(`/shipments?limit=8&dateFrom=${currentRange.dateFrom}&dateTo=${currentRange.dateTo}`),
+        // Fetch ops dashboard for intelligence data
+        api.get('/ops/dashboard'),
       ];
       if (canSeeOps) requests.push(api.get('/ops/rto-alerts'));
 
@@ -132,7 +182,8 @@ export default function DashboardPage() {
       if (results[3]?.status === 'fulfilled') setActions(results[3].value?.data || results[3].value);
       if (results[4]?.status === 'fulfilled') setActivity(results[4].value?.data || results[4].value || []);
       if (results[5]?.status === 'fulfilled') setShipments(results[5].value?.data?.shipments || results[5].value?.shipments || []);
-      if (results[6]?.status === 'fulfilled') setRtoAlerts(results[6].value?.data?.alerts || results[6].value?.alerts || []);
+      if (results[6]?.status === 'fulfilled') setOpsData(results[6].value?.data || results[6].value);
+      if (results[7]?.status === 'fulfilled') setRtoAlerts(results[7].value?.data?.alerts || results[7].value?.alerts || []);
       setLastUpdated(new Date());
     } finally {
       setLoading(false);
@@ -168,6 +219,9 @@ export default function DashboardPage() {
     };
   }, [socket, load]);
 
+  // Use ops recent shipments if available (they have client names)
+  const displayShipments = opsData?.recentShipments?.length ? opsData.recentShipments : shipments;
+
   return (
     <>
       <style>{`
@@ -179,19 +233,23 @@ export default function DashboardPage() {
       <div className="app-shell min-h-screen p-6 transition-colors duration-300">
         <div className="mx-auto max-w-7xl space-y-5">
           <PageHeader
-            title="Shipment Performance"
-            subtitle="Live counters, trend comparisons, and courier performance at a glance."
+            title="Command Center"
+            subtitle="Real-time business intelligence, performance analytics, and operational insights."
             icon={LayoutDashboard}
             actions={
               <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-[10px] font-bold text-emerald-600">LIVE</span>
+                </div>
                 <span className="badge badge-gray !px-3 !py-1.5 !rounded-full">
-                  Last updated {secondsAgo(lastUpdated)}
+                  {secondsAgo(lastUpdated)}
                 </span>
                 <button 
                   onClick={load} 
                   className="btn-primary pressable"
                 >
-                  <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+                  <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Sync
                 </button>
               </div>
             }
@@ -210,36 +268,22 @@ export default function DashboardPage() {
 
           {loading ? (
             <div className="space-y-5">
-              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
-              </div>
-              <div className="grid gap-5 xl:grid-cols-3">
-                {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-80 rounded-3xl" />)}
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+                {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)}
               </div>
               <div className="grid gap-5 xl:grid-cols-2">
-                <Skeleton className="h-72 rounded-3xl" />
-                <Skeleton className="h-72 rounded-3xl" />
+                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-80 rounded-3xl" />)}
               </div>
             </div>
           ) : (
             <div className="space-y-5">
-              <DashboardStats overview={overview} previousOverview={previousOverview} dateLabel={currentRange.label} />
-              <DashboardCharts overview={overview} courierAnalytics={couriers} rangeLabel={currentRange.label} />
-              <DashboardRecentShipments shipments={shipments} activity={activity} />
+              <DashboardStats overview={overview} previousOverview={previousOverview} dateLabel={currentRange.label} opsData={opsData} />
+              <DashboardCharts overview={overview} courierAnalytics={couriers} rangeLabel={currentRange.label} opsData={opsData} />
+              <DashboardRecentShipments shipments={displayShipments} activity={activity} />
             </div>
           )}
 
-          <div className="card interactive-lift">
-            <p className="section-eyebrow">Quick actions</p>
-            <div className="mt-4 flex flex-wrap gap-3">
-              <Link to="/app/entry" className="btn-indigo pressable">New Entry</Link>
-              <Link to="/app/import" className="btn-secondary pressable">Import Shipments</Link>
-              <Link to="/app/scan" className="btn-secondary pressable">Scan AWB</Link>
-              <Link to="/app/invoices" className="btn-secondary pressable">Invoices</Link>
-              <Link to="/app/pickups" className="btn-secondary pressable">Pickups</Link>
-            </div>
-            <p className="mt-4 text-xs text-slate-500">Signed in as {user?.name || 'Team member'}.</p>
-          </div>
+          <SmartCommandBar user={user} />
         </div>
       </div>
     </>

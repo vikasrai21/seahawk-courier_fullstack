@@ -7,6 +7,7 @@ import {
 import api from '../services/api';
 import { useTheme } from '../context/ThemeContext';
 import { useSocket } from '../context/SocketContext';
+import { useAuth } from '../context/AuthContext';
 
 // Modular Dashboard Components
 import KPI from '../components/dashboard/KPI';
@@ -14,6 +15,10 @@ import SCard from '../components/dashboard/SCard';
 import MiniBar from '../components/dashboard/MiniBar';
 import VolumeAreaChart from '../components/dashboard/VolumeAreaChart';
 import CourierPieChart from '../components/dashboard/CourierPieChart';
+
+import DashboardAlerts from '../components/dashboard/DashboardAlerts';
+import PulseFeed from '../components/dashboard/PulseFeed';
+import { useNavigate } from 'react-router-dom';
 
 const fmt  = n => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 0 })}`;
 const fmtP = n => `${Number(n || 0).toFixed(1)}%`;
@@ -56,9 +61,11 @@ function tokens(dark) {
 }
 
 export default function OperationsDashboard({ toast }) {
+  const { isOwner } = useAuth();
   const { dark } = useTheme();
   const T = tokens(dark);
   const { socket, connected } = useSocket();
+  const navigate = useNavigate();
 
   const [data,        setData]        = useState(null);
   const [rateHealth,  setRateHealth]  = useState([]);
@@ -74,7 +81,7 @@ export default function OperationsDashboard({ toast }) {
       setData(ops?.data || ops);
       setRateHealth(health?.data || health || []);
     } catch (e) {
-      toast?.('Failed to sync operations data', 'error');
+      toast?.('Transmission Failed: Logistics Node Offline', 'error');
     } finally {
       if (showLoading) setTimeout(() => setLoading(false), 400);
     }
@@ -103,11 +110,11 @@ export default function OperationsDashboard({ toast }) {
 
   if (loading && !data) return (
     <div style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: T.bg, color: T.textMid }}>
-      <div className="pulse" style={{ width: 64, height: 64, borderRadius: '50%', background: `linear-gradient(135deg, ${T.blue}, ${T.purple})`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20, boxShadow: `0 0 40px ${T.blue}40` }}>
+      <div className="pulse" style={{ width: 64, height: 64, borderRadius: '50%', background: `linear-gradient(135deg, ${T.blue}, ${T.purple})`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 24, boxShadow: `0 0 50px ${T.blue}40` }}>
         <RefreshCw size={32} color="#fff" className="spin" />
       </div>
-      <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text, margin: 0 }}>Synchronizing Dashboard</h2>
-      <p style={{ fontSize: 14, color: T.textDim, marginTop: 8 }}>Aggregating real-time logistics intelligence…</p>
+      <h2 style={{ fontSize: 20, fontWeight: 900, color: T.text, margin: 0, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Reconstructing Intelligence</h2>
+      <p style={{ fontSize: 13, color: T.textDim, marginTop: 10, fontWeight: 500 }}>Syncing global operational metrics...</p>
       <style>{`
         .spin { animation: spin 2s linear infinite; }
         .pulse { animation: pulse 2s ease-in-out infinite; }
@@ -119,20 +126,20 @@ export default function OperationsDashboard({ toast }) {
 
   if (!data) return (
     <div style={{ padding: 60, textAlign: 'center', background: T.bg, minHeight: '80vh' }}>
-      <div style={{ maxWidth: 400, margin: '0 auto', background: T.surface, padding: 40, borderRadius: 32, border: `1px solid ${T.border}`, backdropFilter: T.glass }}>
-        <AlertTriangle size={48} color={T.red} style={{ marginBottom: 20, opacity: 0.6 }} />
-        <h2 style={{ fontSize: 20, fontWeight: 800, color: T.text, marginBottom: 12 }}>Data Unavailable</h2>
-        <p style={{ fontSize: 14, color: T.textMid, lineHeight: 1.6, marginBottom: 24 }}>The operations engine could not retrieve the dashboard metrics at this time.</p>
-        <button onClick={() => load()} style={{ width: '100%', padding: '14px', background: `linear-gradient(90deg, ${T.blue}, ${T.purple})`, color: '#fff', border: 'none', borderRadius: 16, cursor: 'pointer', fontSize: 14, fontWeight: 800, boxShadow: '0 4px 15px rgba(59, 130, 246, 0.4)' }}>
-          Initialize Engine
+      <div style={{ maxWidth: 440, margin: '0 auto', background: T.surface, padding: 48, borderRadius: 36, border: `1px solid ${T.border}`, backdropFilter: T.glass, boxShadow: T.shadow }}>
+        <ShieldAlert size={56} color={T.red} style={{ marginBottom: 24, opacity: 0.8 }} />
+        <h2 style={{ fontSize: 22, fontWeight: 900, color: T.text, marginBottom: 12, letterSpacing: '-0.02em' }}>Intelligence Offline</h2>
+        <p style={{ fontSize: 14, color: T.textMid, lineHeight: 1.6, marginBottom: 32 }}>The logistics engine failed to aggregate real-time data. Check your network connection.</p>
+        <button onClick={() => load()} style={{ width: '100%', padding: '16px', background: `linear-gradient(135deg, ${T.blue}, ${T.purple})`, color: '#fff', border: 'none', borderRadius: 20, cursor: 'pointer', fontSize: 14, fontBlack: 900, textTransform: 'uppercase', letterSpacing: '0.1em', boxShadow: `0 10px 30px ${T.blue}40` }}>
+          Reinitialize Engine
         </button>
       </div>
     </div>
   );
 
-  const { overview, topClients, courierBreakdown, dailyTrend, recentShipments, quotes, reconciliation } = data;
+  const { overview, actions, courierBreakdown, dailyTrend, recentShipments, topClients, quotes, reconciliation } = data;
   const staleRates    = Array.isArray(rateHealth) ? rateHealth.filter(r => r.stale)    : [];
-  const criticalRates = Array.isArray(rateHealth) ? rateHealth.filter(r => r.critical) : [];
+  const rtoAlerts     = (courierBreakdown || []).filter(c => c.rtoRate > 15).sort((a,b) => b.rtoRate - a.rtoRate);
 
   const maxRevClient  = Math.max(...(topClients || []).map(c => c.revenue || 0), 1);
   const trendData     = dailyTrend || [];
@@ -150,84 +157,57 @@ export default function OperationsDashboard({ toast }) {
       <div style={{ position: 'relative', zIndex: 1, maxWidth: 1600, margin: '0 auto' }}>
         
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 32, flexWrap: 'wrap', gap: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 40, flexWrap: 'wrap', gap: 20 }}>
           <div className="fade-in">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
-              <Globe size={24} color={T.blue} />
-              <h1 style={{ fontSize: 28, fontWeight: 800, color: T.text, margin: 0, letterSpacing: '-0.04em' }}>
-                Operational Intelligence
-              </h1>
-            </div>
-            <p style={{ fontSize: 13, color: T.textMid, fontWeight: 500, letterSpacing: '0.01em' }}>
-              Real-time logistics monitoring & business performance analytics
+            <h1 style={{ fontSize: 32, fontWeight: 900, color: T.text, margin: 0, letterSpacing: '-0.05em', marginBottom: 4 }}>
+              Operational Intelligence
+            </h1>
+            <p style={{ fontSize: 13, color: T.textDim, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.15em' }}>
+              Real-time System Status • {connected ? 'Online' : 'Offline'}
             </p>
           </div>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ textAlign: 'right', paddingRight: 16, borderRight: `1px solid ${T.border}` }}>
-              <p style={{ fontSize: 10, color: T.textDim, textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.1em', marginBottom: 2 }}>System Status</p>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
-                <div style={{ width: 6, height: 6, borderRadius: '50%', background: connected ? T.green : T.red, boxShadow: `0 0 8px ${connected ? T.green : T.red}` }} />
-                <span style={{ fontSize: 12, fontWeight: 700, color: T.textMid }}>{connected ? 'Live' : 'Offline'}</span>
-              </div>
-            </div>
             <button onClick={() => load()} disabled={loading} style={{
-              display: 'flex', alignItems: 'center', gap: 8,
+              display: 'flex', alignItems: 'center', gap: 10,
               background: T.surface, border: `1px solid ${T.border}`,
-              color: T.text, padding: '12px 24px', borderRadius: 18,
-              fontSize: 13, fontWeight: 800, cursor: 'pointer',
+              color: T.text, padding: '14px 28px', borderRadius: 22,
+              fontSize: 12, fontWeight: 900, cursor: 'pointer',
+              textTransform: 'uppercase', letterSpacing: '0.1em',
               boxShadow: T.shadow, backdropFilter: T.glass,
-              transition: 'all 0.2s ease',
+              transition: 'all 0.3s ease',
             }}>
-              <RefreshCw size={15} style={{ animation: loading ? 'spin 1.5s linear infinite' : 'none' }} />
-              Sync Data
+              <RefreshCw size={15} style={{ animation: loading ? 'spin 1.5s linear infinite' : 'none' }} className={loading ? '' : 'refresh-icon'} />
+              Sync Engine
             </button>
           </div>
         </div>
 
-        {/* Alerts Row */}
-        {(criticalRates.length > 0 || staleRates.length > 0) && (
-          <div className="fade-in-up" style={{
-            background: criticalRates.length > 0 ? 'rgba(239,68,68,0.08)' : 'rgba(245,158,11,0.08)',
-            border: `1px solid ${criticalRates.length > 0 ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'}`,
-            borderRadius: 20, padding: '16px 20px', marginBottom: 28,
-            display: 'flex', alignItems: 'center', gap: 16, backdropFilter: 'blur(4px)',
-          }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: criticalRates.length > 0 ? 'rgba(239,68,68,0.15)' : 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <AlertTriangle size={20} color={criticalRates.length > 0 ? T.red : T.yellow} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 15, fontWeight: 800, color: criticalRates.length > 0 ? T.red : T.yellow, margin: 0 }}>
-                {criticalRates.length > 0 ? "CRITICAL: RATE REVISION REQUIRED" : "STALE DATA DETECTED"}
-              </p>
-              <p style={{ fontSize: 13, color: T.textMid, margin: '2px 0 0', fontWeight: 500 }}>
-                {criticalRates.length > 0 ? `${criticalRates.length} courier versions are severely outdated (>180 days).` : `${staleRates.length} rate datasets require verification (>90 days).`}
-              </p>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {(criticalRates.length > 0 ? criticalRates : staleRates).slice(0,3).map(r => (
-                <span key={r.partner} style={{ fontSize: 11, padding: '6px 12px', borderRadius: 12, fontWeight: 700, background: 'rgba(255,255,255,0.05)', color: T.text, border: `1px solid ${T.border}` }}>
-                  {r.partner}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Neural Pulse News Feed */}
+        <PulseFeed data={data} isOwner={isOwner} />
+
+        {/* Actionable Notifications Panel */}
+        <DashboardAlerts 
+          actions={actions} 
+          rtoAlerts={rtoAlerts} 
+          navigate={navigate} 
+        />
+
 
         {/* Primary KPIs Row */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginBottom: 20 }}>
           <KPI label="Today's Volume"   value={fmtN(overview?.todayShipments)}  icon={Package}      accent={T.blue}   sub={`${fmtN(overview?.weekShipments)} this week`}             trend={shipTrend} dark={dark} />
-          <KPI label="Projected Revenue" value={fmt(overview?.todayRevenue)}      icon={IndianRupee}  accent={T.green}  sub={`${fmt(overview?.monthRevenue)} monthly total`}                          dark={dark} />
+          {isOwner && <KPI label="Projected Revenue" value={fmt(overview?.todayRevenue)}      icon={IndianRupee}  accent={T.green}  sub={`${fmt(overview?.monthRevenue)} monthly total`}                          dark={dark} />}
           <KPI label="Active Log"       value={fmtN(overview?.pendingCount)}     icon={Activity}       accent={T.cyan}   sub="Pending carrier pickup/transit"                                            dark={dark} />
-          <KPI label="Delivery Success"  value={fmtP(overview?.deliveryRate)}     icon={CheckCircle}  accent={T.purple} sub={`${fmtN(overview?.deliveredCount)} completed this month`} dark={dark} />
+          <KPI label="Delivery Success"  value={fmtP(overview?.deliveryRate)}     icon={CheckCircle2 || CheckCircle}  accent={T.purple} sub={`${fmtN(overview?.deliveredCount)} completed this month`} dark={dark} />
         </div>
 
         {/* Analytics Section with Recharts */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 24, marginBottom: 32 }}>
           
-          <SCard title="Volume & Revenue Velocity" icon={TrendingUp} iconColor={T.blue} dark={dark} delay="0.1s">
+          <SCard title={isOwner ? "Volume & Revenue Velocity" : "Shipment Volume Trend"} icon={TrendingUp} iconColor={T.blue} dark={dark} delay="0.1s">
             {trendData.length === 0 ? <p style={{ fontSize: 13, color: T.textDim, textAlign: 'center', padding: '40px 0' }}>Analyzing historical trends...</p> : (
-              <VolumeAreaChart data={trendData} dark={dark} />
+              <VolumeAreaChart data={trendData} dark={dark} hideRevenue={!isOwner} />
             )}
           </SCard>
 
@@ -241,8 +221,9 @@ export default function OperationsDashboard({ toast }) {
             {(!topClients || topClients.length === 0) ? <p style={{ fontSize: 13, color: T.textDim, textAlign: 'center', padding: '40px 0' }}>Ranking business partners...</p> : (
               <div style={{ paddingTop: 8 }}>
                 {topClients.map((c, i) => (
-                  <MiniBar key={i} label={c.company} value={c.revenue} max={maxRevClient} dark={dark}
-                    icon={Users} color={[T.purple, T.blue, T.cyan, T.green][i % 4]} />
+                  <MiniBar key={i} label={c.company} value={isOwner ? c.revenue : c.count} max={isOwner ? maxRevClient : Math.max(...topClients.map(x => x.count), 1)} dark={dark}
+                    icon={isOwner ? IndianRupee : Package} color={[T.purple, T.blue, T.cyan, T.green][i % 4]} 
+                    suffix={isOwner ? "" : " units"} />
                 ))}
               </div>
             )}
@@ -265,7 +246,7 @@ export default function OperationsDashboard({ toast }) {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: T.surfaceHi }}>
-                  {['Date','AWB','Consignee','Destination','Courier','Value','Status'].map(h => (
+                  {['Date','AWB','Consignee','Destination','Courier',isOwner ? 'Value' : 'Weight','Status'].map(h => (
                     <th key={h} style={{ padding: '16px 24px', textAlign: 'left', fontSize: 11, fontWeight: 800, color: T.textMid, textTransform: 'uppercase', letterSpacing: '0.12em', borderBottom: `2px solid ${T.border}` }}>{h}</th>
                   ))}
                 </tr>
@@ -283,7 +264,9 @@ export default function OperationsDashboard({ toast }) {
                         <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{s.courier}</span>
                       </div>
                     </td>
-                    <td style={{ padding: '18px 24px', fontWeight: 800, color: T.text, fontSize: 14 }}>{fmt(s.amount)}</td>
+                    <td style={{ padding: '18px 24px', fontWeight: 800, color: T.text, fontSize: 14 }}>
+                      {isOwner ? fmt(s.amount) : `${s.weight || 0} kg`}
+                    </td>
                     <td style={{ padding: '18px 24px' }}>
                       <span style={{
                         padding: '6px 14px', borderRadius: 12, fontSize: 11, fontWeight: 800, 
@@ -301,9 +284,9 @@ export default function OperationsDashboard({ toast }) {
 
         {/* Additional Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginTop: 24, marginBottom: 40 }}>
-           <KPI label="Quotes Finalized" value={fmtN(quotes?.total || 0)} icon={Zap} accent={T.orange} sub={`Avg profitability ${fmtP(quotes?.avgMargin)}`} dark={dark} />
+           <KPI label="Quotes Finalized" value={fmtN(quotes?.total || 0)} icon={Zap} accent={T.orange} sub={isOwner ? `Avg profitability ${fmtP(quotes?.avgMargin)}` : "Registered Quotes"} dark={dark} />
            <KPI label="Invoiced Assets" value={fmtN(reconciliation?.totalInvoices || 0)} icon={Shield} accent={T.textMid} sub="Matched carrier invoices" dark={dark} />
-           <KPI label="Avg Performance" value={fmt(quotes?.avgProfit || 0)} icon={TrendingUp} accent={T.green} sub="Target profit per shipment" dark={dark} />
+           {isOwner && <KPI label="Avg Performance" value={fmt(quotes?.avgProfit || 0)} icon={TrendingUp} accent={T.green} sub="Target profit per shipment" dark={dark} />}
            <KPI label="Rate Authority" value={fmtN(rateHealth?.length || 0)} icon={Calculator} accent={T.blue} sub={`${staleRates.length} versions pending update`} dark={dark} />
         </div>
 

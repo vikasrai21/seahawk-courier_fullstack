@@ -15,7 +15,7 @@ const { bulkStatusSchema } = require('../validators/ops.validator');
 
 router.use(protect, staffOnly);
 
-// ── POST /api/ops/bulk-status ─────────────────────────────────────────────
+// ── POST /api/ops/bulk-status — bulk update shipment statuses ─────────────
 router.post('/bulk-status', validate(bulkStatusSchema), async (req, res) => {
   const { ids, status } = req.body;
   if (!Array.isArray(ids) || !ids.length) return R.error(res, 'ids array required', 400);
@@ -30,6 +30,7 @@ router.post('/bulk-status', validate(bulkStatusSchema), async (req, res) => {
       if (!shipment) { failed++; continue; }
       const canonicalStatus = stateMachine.normalizeStatus(status);
 
+      // Enforce state machine
       stateMachine.assertValidTransition(shipment.status, canonicalStatus);
 
       if (stateMachine.normalizeStatus(shipment.status) === canonicalStatus) {
@@ -42,10 +43,12 @@ router.post('/bulk-status', validate(bulkStatusSchema), async (req, res) => {
         data:  { status: canonicalStatus, updatedById: req.user?.id },
       });
 
+      // Log tracking event
       await prisma.trackingEvent.create({
         data: { shipmentId: parseInt(id), awb: shipment.awb, status: canonicalStatus, description: `Bulk status update to ${canonicalStatus}`, source: 'MANUAL' },
       }).catch(() => {});
 
+      // Wallet refund on RTO/Cancel
       if (stateMachine.shouldRefund(canonicalStatus) && shipment.amount > 0) {
         await walletSvc.creditShipmentRefund({
           clientCode: shipment.clientCode,
@@ -68,7 +71,7 @@ router.post('/bulk-status', validate(bulkStatusSchema), async (req, res) => {
     `${updated} shipments updated to ${status}${failed ? `, ${failed} failed` : ''}`);
 });
 
-// ── GET /api/ops/pending-actions ──────────────────────────────────────────
+// ── GET /api/ops/pending-actions — dashboard pending actions widget ────────
 router.get('/pending-actions', async (req, res) => {
   try {
     const today = new Date().toISOString().split('T')[0];
@@ -81,10 +84,15 @@ router.get('/pending-actions', async (req, res) => {
       rtoShipments,
       overdueShipments,
     ] = await Promise.all([
+      // NDRs with no action taken
       prisma.nDREvent.count({ where: { action: 'PENDING' } }),
+      // Draft invoices older than 3 days
       prisma.invoice.count({ where: { status: 'DRAFT', createdAt: { lt: new Date(Date.now() - 3 * 86400000) } } }),
+      // Pickups scheduled for today
       prisma.pickupRequest.count({ where: { scheduledDate: today, status: 'PENDING' } }),
+      // RTO shipments needing attention (older than 3 days)
       prisma.shipment.count({ where: { status: 'RTO', updatedAt: { lt: new Date(Date.now() - 3 * 86400000) } } }),
+      // Shipments in transit for more than 7 days
       prisma.shipment.count({ where: { status: 'InTransit', date: { lte: sevenDaysAgo } } }),
     ]);
 
@@ -93,7 +101,7 @@ router.get('/pending-actions', async (req, res) => {
   } catch (err) { R.error(res, err.message); }
 });
 
-// ── GET /api/ops/courier-manifest ─────────────────────────────────────────
+// ── GET /api/ops/courier-manifest — end of day courier manifest ───────────
 router.get('/courier-manifest', async (req, res) => {
   try {
     const date = req.query.date || new Date().toISOString().split('T')[0];
@@ -104,6 +112,7 @@ router.get('/courier-manifest', async (req, res) => {
       orderBy: [{ courier: 'asc' }, { id: 'asc' }],
     });
 
+    // Group by courier
     const byCourier = {};
     for (const s of shipments) {
       const c = s.courier || 'Unassigned';
@@ -124,7 +133,7 @@ router.get('/courier-manifest', async (req, res) => {
   } catch (err) { R.error(res, err.message); }
 });
 
-// ── GET /api/ops/client-comparison ────────────────────────────────────────
+// ── GET /api/ops/client-comparison — month over month per client ──────────
 router.get('/client-comparison', requireRole('ADMIN', 'OPS_MANAGER'), async (req, res) => {
   try {
     const now  = new Date();
@@ -144,6 +153,7 @@ router.get('/client-comparison', requireRole('ADMIN', 'OPS_MANAGER'), async (req
       prisma.shipment.groupBy({ by: ['clientCode'], where: { date: { gte: lastFrom, lte: lastTo } }, _count: { id: true }, _sum: { amount: true } }),
     ]);
 
+    // Get client details
     const allCodes = [...new Set([...thisMonth.map(r => r.clientCode), ...lastMonth.map(r => r.clientCode)])];
     const clients  = await prisma.client.findMany({ where: { code: { in: allCodes } }, select: { code: true, company: true } });
     const clientMap = Object.fromEntries(clients.map(c => [c.code, c.company]));
@@ -170,7 +180,7 @@ router.get('/client-comparison', requireRole('ADMIN', 'OPS_MANAGER'), async (req
   } catch (err) { R.error(res, err.message); }
 });
 
-// ── GET /api/ops/rto-alerts ───────────────────────────────────────────────
+// ── GET /api/ops/rto-alerts — couriers with high RTO rates ────────────────
 router.get('/rto-alerts', async (req, res) => {
   try {
     const thirtyDays = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
@@ -191,7 +201,7 @@ router.get('/rto-alerts', async (req, res) => {
   } catch (err) { R.error(res, err.message); }
 });
 
-// ── GET /api/ops/recent-activity ──────────────────────────────────────────
+// ── GET /api/ops/recent-activity — global activity feed ───────────────────
 router.get('/recent-activity', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 15;
@@ -213,7 +223,7 @@ router.get('/recent-activity', async (req, res) => {
   } catch (err) { R.error(res, err.message); }
 });
 
-// ── GET /api/ops/profit-summary ──────────────────────────────────────────
+// ── GET /api/ops/profit-summary — profit/margin overview ─────────────────
 router.get('/profit-summary', requireRole('ADMIN', 'OPS_MANAGER'), async (req, res) => {
   try {
     const { dateFrom, dateTo } = req.query;
@@ -224,8 +234,10 @@ router.get('/profit-summary', requireRole('ADMIN', 'OPS_MANAGER'), async (req, r
       if (dateTo)   where.date.lte = dateTo;
     }
 
+    // Revenue = amount charged to clients
     const revenue = await prisma.shipment.aggregate({ where, _sum: { amount: true, weight: true }, _count: { id: true } });
 
+    // Per-courier breakdown
     const byCourier = await prisma.shipment.groupBy({
       by: ['courier'], where: { ...where, courier: { not: null } },
       _sum: { amount: true }, _count: { id: true },
@@ -242,22 +254,19 @@ router.get('/profit-summary', requireRole('ADMIN', 'OPS_MANAGER'), async (req, r
   } catch (err) { R.error(res, err.message); }
 });
 
-// ── GET /api/ops/dashboard — consolidated analytics with intelligence ─────
+// ── GET /api/ops/dashboard — consolidated analytics ───────────────────────
 router.get('/dashboard', async (req, res) => {
   try {
     const now = new Date();
     const today = now.toISOString().split('T')[0];
     const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString().split('T')[0];
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0];
     const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 
     const [
       todayCount, weekCount, todayRev, monthRev,
       pendingCount, monthDelivered, monthTotal,
       courierData, clientData, dailyData, recentShipments,
-      quoteStats, reconStats,
-      delayedByDays, monthCostData, rtoCount, failedCount,
-      todayDelivered, todayBooked
+      quoteStats, reconStats
     ] = await Promise.all([
       prisma.shipment.count({ where: { date: today } }),
       prisma.shipment.count({ where: { date: { gte: sevenDaysAgo } } }),
@@ -268,20 +277,10 @@ router.get('/dashboard', async (req, res) => {
       prisma.shipment.count({ where: { date: { gte: monthStart } } }),
       prisma.shipment.groupBy({ by: ['courier'], where: { date: { gte: monthStart }, courier: { not: null } }, _sum: { amount: true }, _count: { id: true }, orderBy: { _sum: { amount: 'desc' } } }),
       prisma.shipment.groupBy({ by: ['clientCode'], where: { date: { gte: monthStart } }, _sum: { amount: true }, _count: { id: true }, orderBy: { _sum: { amount: 'desc' } }, take: 10 }),
-      prisma.shipment.groupBy({ by: ['date'], where: { date: { gte: thirtyDaysAgo } }, _count: { id: true }, _sum: { amount: true }, orderBy: { date: 'asc' } }),
-      prisma.shipment.findMany({ where: { date: { gte: sevenDaysAgo } }, take: 15, orderBy: { createdAt: 'desc' }, include: { client: { select: { company: true } } } }),
-      prisma.quote.aggregate({ _count: { id: true }, _avg: { profit: true, margin: true }, _sum: { profit: true } }),
+      prisma.shipment.groupBy({ by: ['date'], where: { date: { gte: sevenDaysAgo } }, _count: { id: true }, _sum: { amount: true }, orderBy: { date: 'asc' } }),
+      prisma.shipment.findMany({ where: { date: { gte: sevenDaysAgo } }, take: 15, orderBy: { createdAt: 'desc' } }),
+      prisma.quote.aggregate({ _count: { id: true }, _avg: { profit: true, margin: true } }),
       prisma.courierInvoice.count({ where: { status: 'SUCCESS' } }),
-      // Delayed shipments by courier (in transit > 7 days)
-      prisma.shipment.groupBy({ by: ['courier'], where: { status: 'InTransit', date: { lte: sevenDaysAgo }, courier: { not: null } }, _count: { id: true }, orderBy: { _count: { id: 'desc' } } }),
-      // Cost estimate from courier invoices this month
-      prisma.courierInvoice.aggregate({ where: { createdAt: { gte: new Date(monthStart) } }, _sum: { totalAmount: true } }),
-      // RTO & Failed counts
-      prisma.shipment.count({ where: { status: 'RTO', date: { gte: monthStart } } }),
-      prisma.shipment.count({ where: { status: 'Failed', date: { gte: monthStart } } }),
-      // Today specifics
-      prisma.shipment.count({ where: { status: 'Delivered', date: today } }),
-      prisma.shipment.count({ where: { status: 'Booked', date: today } }),
     ]);
 
     // Enrich client data
@@ -289,45 +288,26 @@ router.get('/dashboard', async (req, res) => {
     const clients = await prisma.client.findMany({ where: { code: { in: clientCodes } }, select: { code: true, company: true } });
     const clientMap = Object.fromEntries(clients.map(c => [c.code, c.company]));
 
-    // Profit calculations
-    const totalRevenue = monthRev._sum.amount || 0;
-    const estimatedCost = monthCostData._sum.totalAmount || Math.round(totalRevenue * 0.72);
-    const grossProfit = totalRevenue - estimatedCost;
-    const avgMargin = totalRevenue > 0 ? ((grossProfit / totalRevenue) * 100) : 0;
-
     const responseData = {
       overview: {
         todayShipments: todayCount,
         weekShipments: weekCount,
         todayRevenue: todayRev._sum.amount || 0,
-        monthRevenue: totalRevenue,
+        monthRevenue: monthRev._sum.amount || 0,
         pendingCount,
         deliveredCount: monthDelivered,
-        deliveryRate: monthTotal > 0 ? parseFloat((monthDelivered / monthTotal * 100).toFixed(1)) : 0,
-        // Intelligence fields
-        estimatedCost,
-        grossProfit,
-        avgMargin: parseFloat(avgMargin.toFixed(1)),
-        rtoCount,
-        failedCount,
-        totalShipments: monthTotal,
-        todayDelivered,
-        todayBooked,
+        deliveryRate: monthTotal > 0 ? (monthDelivered / monthTotal * 100) : 0,
       },
       courierBreakdown: courierData.map(c => ({ courier: c.courier, revenue: c._sum.amount || 0, count: c._count.id })),
       topClients: clientData.map(c => ({ code: c.clientCode, company: clientMap[c.clientCode] || c.clientCode, revenue: c._sum.amount || 0, count: c._count.id })),
       dailyTrend: dailyData.map(d => ({ date: d.date, count: d._count.id, revenue: d._sum.amount || 0 })),
       recentShipments: recentShipments.map(s => ({
-        id: s.id, date: s.date, awb: s.awb, consignee: s.consignee,
-        destination: s.destination, courier: s.courier, amount: s.amount,
-        status: s.status, clientName: s.client?.company || s.clientCode,
+        id: s.id, date: s.date, awb: s.awb, consignee: s.consignee, destination: s.destination, courier: s.courier, amount: s.amount, status: s.status
       })),
-      delayedByCourier: (delayedByDays || []).map(d => ({ courier: d.courier, count: d._count.id })),
       quotes: {
         total: quoteStats._count.id || 0,
-        avgProfit: parseFloat((quoteStats._avg.profit || 0).toFixed(2)),
-        avgMargin: parseFloat((quoteStats._avg.margin || 0).toFixed(1)),
-        totalProfit: quoteStats._sum.profit || 0,
+        avgProfit: quoteStats._avg.profit || 0,
+        avgMargin: quoteStats._avg.margin || 0,
       },
       reconciliation: {
         totalInvoices: reconStats,

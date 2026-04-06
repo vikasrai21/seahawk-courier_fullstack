@@ -171,7 +171,7 @@ function AppRoutes() {
                       <Route path="/ops" element={withToast(OperationsDashboard)} />
                       <Route path="/entry" element={withToast(NewEntryPage)} />
                       <Route path="/import" element={withToast(ImportPage)} />
-                      <Route path="/all" element={withToast(AllShipmentsPage)} />
+                      <Route path="/all" element={<Navigate to="/app/shipments" replace />} />
                       <Route path="/pending" element={withToast(PendingPage)} />
                       <Route path="/track" element={withToast(TrackPage)} />
                       <Route path="/daily" element={withToast(DailySheetPage)} />

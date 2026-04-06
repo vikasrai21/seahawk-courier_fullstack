@@ -3,6 +3,8 @@ import { Plus, CheckCircle, Keyboard, ChevronRight, MapPin, Loader2, AlertCircle
 import api from '../services/api';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { PageHeader } from '../components/ui/PageHeader';
+import AutoRateSuggestion from '../components/shipment/AutoRateSuggestion';
+
 
 const COURIERS  = ['BlueDart','DTDC','FedEx','DHL','Delhivery','Ecom Express','XpressBees','Shadowfax','Other'];
 const STATUSES  = ['Booked','InTransit','OutForDelivery','Delivered','Delayed','RTO','Cancelled'];
@@ -191,6 +193,19 @@ export default function NewEntryPage({ toast }) {
             </select>
           </FieldCell>
         </div>
+
+        {/* Smart Rate Suggestion */}
+        <AutoRateSuggestion
+          pincode={form.pincode}
+          weight={form.weight}
+          clientCode={form.clientCode}
+          shipType={form.service === 'Express' || form.service === 'Priority' ? 'exp' : 'doc'}
+          onSelectCourier={(courier) => {
+            const match = COURIERS.find(c => c.toLowerCase().includes(courier.toLowerCase().split(' ')[0]));
+            if (match) set('courier', match);
+          }}
+          onSelectAmount={(amount) => set('amount', String(amount))}
+        />
 
         {/* Step 3: Logistics & Billing */}
         <div className="grid grid-cols-2 md:grid-cols-5 divide-y md:divide-y-0 md:divide-x divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800">

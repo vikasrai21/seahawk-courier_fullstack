@@ -16,7 +16,7 @@ function tokens(dark) {
   };
 }
 
-export default function MiniBar({ label, value, max, color, dark, icon: Icon }) {
+export default function MiniBar({ label, value, max, color, dark, icon: Icon, suffix = "" }) {
   const T = tokens(dark);
   const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
   
@@ -34,7 +34,7 @@ export default function MiniBar({ label, value, max, color, dark, icon: Icon }) 
           </span>
         </div>
         <span style={{ fontSize: 13, fontWeight: 800, color: T.text }}>
-          {fmt(value)}
+          {suffix ? `${Number(value || 0).toLocaleString('en-IN')}${suffix}` : fmt(value)}
         </span>
       </div>
       <div style={{ 

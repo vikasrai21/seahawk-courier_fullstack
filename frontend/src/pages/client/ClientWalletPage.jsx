@@ -1,26 +1,31 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { 
+  PiggyBank, 
+  CreditCard, 
+  Zap, 
+  ArrowUpCircle, 
+  ArrowDownCircle, 
+  Receipt, 
+  TrendingUp,
+  History,
+  ArrowLeft,
+  ChevronRight,
+  ShieldCheck,
+  FileDown
+} from 'lucide-react';
 import api from '../../services/api';
 import { PageLoader } from '../../components/ui/Loading';
 import { EmptyState } from '../../components/ui/EmptyState';
+import TransactionList from '../../components/wallet/TransactionList';
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
-
-function WalletStat({ label, value, hint, tone }) {
-  return (
-    <div className="rounded-2xl border p-4 shadow-sm" style={{ background: '#fff', borderColor: '#e5edf8' }}>
-      <div className="text-[11px] font-extrabold uppercase tracking-[0.14em]" style={{ color: tone }}>{label}</div>
-      <div className="mt-2 text-2xl font-black text-slate-900">{value}</div>
-      <div className="mt-2 text-xs text-slate-500">{hint}</div>
-    </div>
-  );
-}
 
 export default function ClientWalletPage({ toast }) {
   const [wallet, setWallet] = useState(null);
   const [txns, setTxns] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [amount, setAmount] = useState(1000);
+  const [amount, setAmount] = useState(2500);
   const [toppingUp, setToppingUp] = useState(false);
 
   const triggerBlobDownload = (blob, filename) => {
@@ -34,7 +39,8 @@ export default function ClientWalletPage({ toast }) {
     window.URL.revokeObjectURL(url);
   };
 
-  const load = () => {
+  const load = useCallback(() => {
+    setLoading(true);
     api.get('/portal/wallet')
       .then((r) => {
         setWallet(r.data?.wallet);
@@ -42,20 +48,11 @@ export default function ClientWalletPage({ toast }) {
       })
       .catch((e) => toast?.(e.message, 'error'))
       .finally(() => setLoading(false));
-  };
+  }, [toast]);
 
   useEffect(() => {
     load();
-  }, []);
-
-  const loadRazorpayScript = () => new Promise((resolve) => {
-    if (window.Razorpay) return resolve(true);
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.body.appendChild(script);
-  });
+  }, [load]);
 
   const startTopup = async () => {
     if (!wallet?.code || !Number.isFinite(Number(amount)) || Number(amount) < 100) {
@@ -78,22 +75,27 @@ export default function ClientWalletPage({ toast }) {
           razorpay_order_id: payload.order?.id,
           razorpay_payment_id: `devpay_${Date.now()}`,
         });
-        toast?.('Wallet topped up in dev mode', 'success');
+        toast?.('Neural Funding: Simulation Successful', 'success');
         load();
         return;
       }
 
-      const ok = await loadRazorpayScript();
-      if (!ok || !window.Razorpay) {
-        throw new Error('Unable to load Razorpay checkout');
-      }
+      const scriptData = await new Promise((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.body.appendChild(script);
+      });
+
+      if (!scriptData) throw new Error('Payment gateway initialisation failed');
 
       const razorpay = new window.Razorpay({
         key: payload.key,
         amount: payload.order?.amount,
-        currency: payload.order?.currency || 'INR',
-        name: 'Sea Hawk Courier',
-        description: 'Wallet top-up',
+        currency: 'INR',
+        name: 'Sea Hawk Logistics',
+        description: `Wallet Funding — ${wallet.company || wallet.code}`,
         order_id: payload.order?.id,
         handler: async (response) => {
           await api.post('/wallet/recharge/verify', {
@@ -101,14 +103,14 @@ export default function ClientWalletPage({ toast }) {
             amount: Number(amount),
             ...response,
           });
-          toast?.('Wallet topped up successfully', 'success');
+          toast?.('Funds Engaged Successfully', 'success');
           load();
         },
-        theme: { color: '#0b1f3a' },
+        theme: { color: '#0f172a' },
       });
       razorpay.open();
     } catch (e) {
-      toast?.(e.message || 'Wallet top-up failed', 'error');
+      toast?.(e.message || 'Payment engine error', 'error');
     } finally {
       setToppingUp(false);
     }
@@ -117,144 +119,132 @@ export default function ClientWalletPage({ toast }) {
   const downloadReceipt = async (txn) => {
     try {
       const blob = await api.get(`/portal/wallet/transactions/${txn.id}/receipt`, { responseType: 'blob' });
-      triggerBlobDownload(blob, `wallet-receipt-${txn.receiptNo || txn.id}.pdf`);
+      triggerBlobDownload(blob, `receipt-${txn.id}.pdf`);
     } catch (e) {
-      toast?.(e.message || 'Failed to download receipt', 'error');
+      toast?.(e.message || 'Receipt fetch error', 'error');
     }
   };
 
   if (loading) return <PageLoader />;
 
-  const creditCount = txns.filter((t) => t.type === 'CREDIT').length;
-  const debitCount = txns.filter((t) => t.type !== 'CREDIT').length;
-
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7faff_0%,#eef4fd_100%)]">
-      <header className="border-b border-slate-200/70 bg-white/90 px-6 py-4 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Link to="/portal" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-500 transition hover:text-slate-700">← Portal</Link>
-            <div>
-              <div className="text-sm font-black text-slate-900">Wallet & Payments</div>
-              <div className="text-xs font-semibold uppercase tracking-[0.12em] text-orange-500">Client Finance Desk</div>
-            </div>
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 pb-12">
+      {/* Premium Compact Header */}
+      <header className="border-b border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl sticky top-0 z-50 px-6 py-3">
+        <div className="mx-auto flex max-w-7xl items-center justify-between">
+          <div className="flex items-center gap-4">
+             <Link to="/portal" className="p-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-slate-500 hover:text-slate-900 dark:hover:text-white transition-all">
+                <ArrowLeft size={18} />
+             </Link>
+             <div>
+                <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none mb-1">Financial Desk</h4>
+                <div className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-tight">Wallet Control Center</div>
+             </div>
           </div>
-          <Link to="/portal/invoices" className="rounded-xl border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-extrabold uppercase tracking-[0.08em] text-orange-700">
-            Open Invoices
-          </Link>
+          <div className="flex items-center gap-3">
+             <Link to="/portal/invoices" className="hidden sm:flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest hover:text-blue-500 transition-colors">
+                <FileDown size={14} /> Settlement History
+             </Link>
+             <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
+             <div className="text-[11px] font-black text-blue-600 bg-blue-50 dark:bg-blue-500/10 px-3 py-1 rounded-lg uppercase tracking-widest border border-blue-100 dark:border-blue-500/20">
+                LTD #{wallet?.code}
+             </div>
+          </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-6xl p-6 space-y-6">
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_340px]">
-          <div className="overflow-hidden rounded-[28px] border border-slate-200/60 bg-[linear-gradient(145deg,#0f2748_0%,#123563_55%,#174576_100%)] p-6 text-white shadow-[0_22px_50px_-30px_rgba(15,39,72,0.9)]">
-            <div className="inline-flex rounded-full border border-sky-200/20 bg-sky-300/10 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-sky-100">
-              Wallet Snapshot
-            </div>
-            <h1 className="mt-4 max-w-xl text-3xl font-black leading-tight">Keep dispatch moving with a cleaner view of balance, receipts, and recharge activity.</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-200">
-              Add funds, track credits and debits, and pull GST receipts without leaving the client portal.
-            </p>
-            <div className="mt-6 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-white/10 bg-white/8 p-4">
-                <div className="text-xs font-semibold text-slate-300">Available Balance</div>
-                <div className="mt-2 text-3xl font-black">{fmt(wallet?.walletBalance)}</div>
+      <div className="mx-auto max-w-7xl p-6 lg:p-8 space-y-8 animate-in fade-in duration-700">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+           {/* LEFT: Balance & Recharge Command Center */}
+           <div className="lg:col-span-4 space-y-6">
+              {/* Main Balance Card (Glassmorphic Deep Blue) */}
+              <div className="rounded-[40px] bg-slate-900 border border-slate-800 p-8 shadow-2xl shadow-slate-900/40 relative overflow-hidden group">
+                 <div className="absolute right-0 top-0 w-64 h-64 bg-blue-500/10 blur-[80px] pointer-events-none group-hover:bg-blue-500/20 transition-all duration-1000" />
+                 <div className="flex items-center gap-3 mb-10 relative z-10">
+                    <div className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-blue-500 animate-pulse">
+                       <Zap size={20} />
+                    </div>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Liquid Capital</span>
+                 </div>
+                 <div className="text-5xl font-black text-white tabular-nums tracking-tighter mb-2 relative z-10">{fmt(wallet?.walletBalance)}</div>
+                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest relative z-10">Available credit for bookings</p>
+                 
+                 <div className="mt-8 flex items-center gap-3 relative z-10">
+                    <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                       <div className="h-full bg-blue-500 w-[70%]" />
+                    </div>
+                    <span className="text-[10px] font-black text-slate-400 uppercase">Buffer: OK</span>
+                 </div>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/8 p-4">
-                <div className="text-xs font-semibold text-slate-300">Credits Logged</div>
-                <div className="mt-2 text-3xl font-black">{creditCount}</div>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/8 p-4">
-                <div className="text-xs font-semibold text-slate-300">Debits Logged</div>
-                <div className="mt-2 text-3xl font-black">{debitCount}</div>
-              </div>
-            </div>
-          </div>
 
-          <div className="rounded-[26px] border border-orange-200 bg-[linear-gradient(180deg,#fff8f2_0%,#ffffff_100%)] p-5 shadow-[0_18px_40px_-28px_rgba(194,65,12,0.45)]">
-            <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-500">Recharge Wallet</div>
-            <div className="mt-2 text-2xl font-black text-slate-900">Top up in seconds</div>
-            <p className="mt-2 text-sm leading-6 text-slate-500">Use Razorpay for quick balance adds and keep booking flow uninterrupted.</p>
-            <div className="mt-5 space-y-3">
-              <label className="block">
-                <span className="mb-2 block text-xs font-bold uppercase tracking-[0.1em] text-slate-500">Amount</span>
-                <input className="input" type="number" min="100" step="100" value={amount} onChange={(e) => setAmount(e.target.value)} />
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {[1000, 2500, 5000].map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => setAmount(preset)}
-                    className="rounded-xl border border-orange-200 bg-white px-3 py-2 text-sm font-bold text-orange-700 transition hover:bg-orange-50"
-                  >
-                    {fmt(preset)}
-                  </button>
-                ))}
+              {/* Quick Recharge Card */}
+              <div className="rounded-[32px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
+                 <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 mb-6">Neural Funding Bolt</h4>
+                 <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-2">
+                       {[1000, 2500, 5000].map((p) => (
+                         <button key={p} onClick={() => setAmount(p)} className={`py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all ${+amount === p ? 'bg-slate-900 border-slate-800 text-white shadow-xl shadow-slate-900/10' : 'bg-slate-50 dark:bg-slate-800/50 border-transparent text-slate-500 hover:bg-slate-100'}`}>
+                            {fmt(p)}
+                         </button>
+                       ))}
+                    </div>
+                    <div className="relative">
+                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-black text-slate-300">₹</span>
+                       <input type="number" min="100" className="w-full bg-slate-50 dark:bg-slate-800/50 border-none rounded-2xl pl-10 pr-4 py-4 text-2xl font-black text-slate-800 dark:text-white tabular-nums placeholder:text-slate-200" placeholder="0" value={amount} onChange={(e) => setAmount(e.target.value)} />
+                    </div>
+                    <button onClick={startTopup} disabled={toppingUp} className="w-full py-4 bg-blue-600 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-3xl shadow-xl shadow-blue-600/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50 group/btn active:scale-95">
+                       <Zap size={14} className={toppingUp ? 'animate-pulse' : 'group-hover/btn:animate-bounce'} />
+                       {toppingUp ? 'Engaging Flow…' : 'Top Up Wallet'}
+                    </button>
+                    <p className="text-[9px] text-center font-bold text-slate-400 uppercase tracking-widest mt-2">🔐 Encrypted via Razorpay Secured Stack</p>
+                 </div>
               </div>
-              <button className="w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-extrabold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70" onClick={startTopup} disabled={toppingUp}>
-                {toppingUp ? 'Processing…' : 'Add Funds'}
-              </button>
-            </div>
-          </div>
-        </section>
+           </div>
 
-        <section className="grid gap-4 md:grid-cols-3">
-          <WalletStat label="Client Code" value={wallet?.code || '—'} hint="Mapped to your billing account" tone="#2563eb" />
-          <WalletStat label="Company" value={wallet?.company || '—'} hint="Billing entity shown on receipts" tone="#f97316" />
-          <WalletStat label="Ledger Entries" value={txns.length} hint="Complete transaction history below" tone="#7c3aed" />
-        </section>
+           {/* RIGHT: Detailed Ledger & Visuals */}
+           <div className="lg:col-span-8 space-y-8">
+              {/* Info Widgets Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                 <div className="p-6 rounded-[32px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-5">
+                    <div className="w-12 h-12 rounded-[20px] bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                       <ShieldCheck size={24} />
+                    </div>
+                    <div>
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Billing Entity</p>
+                       <p className="text-sm font-black text-slate-800 dark:text-white truncate max-w-[180px] uppercase">{wallet?.company || 'Verified Account'}</p>
+                    </div>
+                 </div>
+                 <div className="p-6 rounded-[32px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm flex items-center gap-5 group">
+                    <div className="w-12 h-12 rounded-[20px] bg-blue-500/10 text-blue-500 flex items-center justify-center group-hover:rotate-12 transition-transform">
+                       <TrendingUp size={24} />
+                    </div>
+                    <div>
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Delta Tracking</p>
+                       <p className="text-sm font-black text-slate-800 dark:text-white uppercase">{txns.length} Settlements active</p>
+                    </div>
+                 </div>
+              </div>
 
-        <section className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_18px_42px_-32px_rgba(15,23,42,0.38)]">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
-            <div>
-              <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-500">Ledger</div>
-              <h2 className="mt-1 text-lg font-black text-slate-900">Transaction history</h2>
-              <p className="mt-1 text-sm text-slate-500">Credits, debits, balance after each entry, and downloadable GST receipts.</p>
-            </div>
-          </div>
-          {txns.length === 0 ? (
-            <div className="p-8">
-              <EmptyState icon="💸" title="No transactions yet" message="Once wallet activity starts, credits and debits will appear here." />
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[860px] text-sm">
-                <thead className="bg-slate-50 border-b">
-                  <tr>
-                    {['Date', 'Type', 'Description', 'Amount', 'Balance', 'Receipt'].map((h) => (
-                      <th key={h} className="px-4 py-3 text-left text-[11px] font-extrabold uppercase tracking-[0.1em] text-slate-500">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {txns.map((t, index) => (
-                    <tr key={t.id} className={index % 2 ? 'bg-slate-50/40' : 'bg-white'}>
-                      <td className="px-4 py-3 text-xs text-slate-500">{new Date(t.createdAt).toLocaleDateString('en-IN')}</td>
-                      <td className="px-4 py-3">
-                        <span className={`badge badge-${t.type === 'CREDIT' ? 'green' : 'red'}`}>{t.type}</span>
-                      </td>
-                      <td className="px-4 py-3 font-medium text-slate-700">{t.description}</td>
-                      <td className={`px-4 py-3 font-extrabold ${t.type === 'CREDIT' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {t.type === 'CREDIT' ? '+' : '-'}{fmt(t.amount)}
-                      </td>
-                      <td className="px-4 py-3 font-semibold text-slate-700">{fmt(t.balance)}</td>
-                      <td className="px-4 py-3 text-xs">
-                        {t.type === 'CREDIT' ? (
-                          <button className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 font-bold text-sky-700 transition hover:bg-sky-100" onClick={() => downloadReceipt(t)}>
-                            GST Receipt
-                          </button>
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+              {/* Real-time Sub-ledger */}
+              <div className="space-y-4">
+                 <div className="flex items-center justify-between px-2">
+                    <div className="flex items-center gap-3">
+                       <History size={16} className="text-slate-400" />
+                       <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Activity Sub-ledger</h3>
+                    </div>
+                    <div className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[9px] font-black text-slate-500 uppercase tracking-widest">
+                       Audited Record
+                    </div>
+                 </div>
+                 
+                 <div className="rounded-[40px] border border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 p-2 shadow-sm backdrop-blur-sm overflow-hidden min-h-[400px]">
+                    <div className="p-4">
+                       <TransactionList transactions={txns} loading={loading} />
+                    </div>
+                 </div>
+              </div>
+           </div>
+        </div>
       </div>
     </div>
   );

@@ -1,19 +1,37 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Calendar, MapPin, Package, RefreshCw, Plus, User, X } from 'lucide-react';
+import { 
+  Calendar, 
+  MapPin, 
+  Package, 
+  RefreshCw, 
+  Plus, 
+  User, 
+  X, 
+  Clock, 
+  ChevronRight, 
+  LayoutGrid, 
+  Activity,
+  ShieldCheck,
+  ArrowRight,
+  TrendingUp,
+  AlertTriangle
+} from 'lucide-react';
 import api from '../services/api';
 import { Modal } from '../components/ui/Modal';
 import { EmptyState } from '../components/ui/EmptyState';
 import { useAuth } from '../context/AuthContext';
+import { PageHeader } from '../components/ui/PageHeader';
+import { StatusBadge } from '../components/ui/StatusBadge';
 
-const STATUS_COLORS = {
-  PENDING:   { bg:'bg-yellow-50',  text:'text-yellow-700',  border:'border-yellow-200' },
-  CONFIRMED: { bg:'bg-blue-50',    text:'text-blue-700',    border:'border-blue-200'   },
-  ASSIGNED:  { bg:'bg-purple-50',  text:'text-purple-700',  border:'border-purple-200' },
-  COMPLETED: { bg:'bg-green-50',   text:'text-green-700',   border:'border-green-200'  },
-  CANCELLED: { bg:'bg-gray-50',    text:'text-gray-400',    border:'border-gray-200'   },
+const STATUS_CONFIG = {
+  PENDING:   { label: 'Pending',   color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' },
+  CONFIRMED: { label: 'Confirmed', color: 'bg-blue-500/10 text-blue-500 border-blue-500/20'     },
+  ASSIGNED:  { label: 'Assigned',  color: 'bg-purple-500/10 text-purple-500 border-purple-500/20' },
+  COMPLETED: { label: 'Completed', color: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20' },
+  CANCELLED: { label: 'Cancelled', color: 'bg-rose-500/10 text-rose-500 border-rose-500/20'       },
 };
 
-const SLOT_ICONS = { Morning:'🌅', Afternoon:'☀️', Evening:'🌆' };
+const SLOT_ICONS = { Morning: '🌅', Afternoon: '☀️', Evening: '🌆' };
 
 export default function PickupSchedulerPage({ toast }) {
   const { isAdmin, hasRole } = useAuth();
@@ -32,7 +50,7 @@ export default function PickupSchedulerPage({ toast }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const p = new URLSearchParams({ page, limit:25,
+      const p = new URLSearchParams({ page, limit: 25,
         ...(filter     && { status: filter }),
         ...(dateFilter && { date:   dateFilter }),
       });
@@ -42,13 +60,12 @@ export default function PickupSchedulerPage({ toast }) {
       ]);
       setPickups(r1.data?.pickups || r1.data || []);
       setStats(r2.data);
-    } catch(e) { toast?.(e.message,'error'); }
+    } catch(e) { toast?.(e.message, 'error'); }
     finally { setLoading(false); }
-  }, [page, filter, dateFilter]);
+  }, [page, filter, dateFilter, toast]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    // Load agents (users with OPS_MANAGER or STAFF role)
     api.get('/auth/users?role=STAFF').then(r => setAgents(r.data||[])).catch(()=>{});
   }, []);
 
@@ -56,218 +73,277 @@ export default function PickupSchedulerPage({ toast }) {
     try {
       await api.patch(`/pickups/${id}`, { status });
       setPickups(p => p.map(x => x.id===id ? {...x, status} : x));
-      toast?.('Status updated','success');
+      toast?.(`Pickup ${status} Successfully`, 'success');
       if (selected?.id === id) setSelected(s => ({...s, status}));
-    } catch(e) { toast?.(e.message,'error'); }
+    } catch(e) { toast?.(e.message, 'error'); }
   };
 
   const assignAgent = async (id, agentId) => {
     try {
       await api.patch(`/pickups/${id}`, { assignedAgentId: agentId, status:'ASSIGNED' });
       load();
-      toast?.('Agent assigned','success');
+      toast?.('Agent Dispatched', 'success');
       setSelected(null);
-    } catch(e) { toast?.(e.message,'error'); }
+    } catch(e) { toast?.(e.message, 'error'); }
   };
 
   return (
-    <div className="p-4 md:p-6">
-      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">Pickup Scheduler</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Manage and assign pickup requests</p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowNew(true)} className="btn-primary btn-sm gap-1.5">
-            <Plus className="w-3.5 h-3.5" /> Schedule Pickup
-          </button>
-          <button onClick={load} className="btn-secondary btn-sm gap-1.5">
-            <RefreshCw className="w-3.5 h-3.5" /> Refresh
-          </button>
-        </div>
-      </div>
+    <div className="mx-auto max-w-[1400px] p-6 lg:p-8 space-y-8 animate-in fade-in duration-700">
+      <PageHeader 
+        title="Industrial Pickup Master" 
+        subtitle="Manage last-mile field operations and agent dispatch workflows." 
+        icon={Calendar}
+        actions={
+          <div className="flex gap-2">
+             <button onClick={() => setShowNew(true)} className="px-5 py-2.5 bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-2xl shadow-xl shadow-slate-900/10 flex items-center gap-2 hover:bg-black transition-all active:scale-95">
+                <Plus size={16} /> New Engagement
+             </button>
+             <button onClick={load} className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-slate-600 transition-all">
+                <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+             </button>
+          </div>
+        }
+      />
 
-      {/* Stats */}
+      {/* Analytics Strip */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {[
-            { label:'Total',     val:stats.total,     color:'gray'   },
-            { label:'Pending',   val:stats.pending,   color:'yellow' },
-            { label:'Confirmed', val:stats.confirmed, color:'blue'   },
-            { label:'Completed', val:stats.completed, color:'green'  },
-            { label:'Cancelled', val:stats.cancelled, color:'red'    },
-          ].map(({ label, val, color }) => (
-            <div key={label} className="bg-white rounded-xl border border-gray-100 p-3 shadow-sm text-center">
-              <p className="text-xs text-gray-500">{label}</p>
-              <p className={`text-xl font-black text-${color}-600 mt-0.5`}>{val ?? 0}</p>
+            { label:'Engagement Flow', val:stats.total,     icon: LayoutGrid, color:'blue'   },
+            { label:'Pending Flux',   val:stats.pending,   icon: Clock,      color:'amber'  },
+            { label:'Confirmed',      val:stats.confirmed, icon: CheckCircle2, color:'emerald' },
+            { label:'Completed',      val:stats.completed, icon: TrendingUp,  color:'emerald' },
+            { label:'Cancelled',      val:stats.cancelled, icon: X,           color:'rose'   },
+          ].map(({ label, val, icon: Icon, color }) => (
+            <div key={label} className="bg-white dark:bg-slate-900/50 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow">
+               <div className={`w-10 h-10 rounded-xl bg-${color}-500/10 text-${color}-500 flex items-center justify-center shrink-0 border border-${color}-500/20`}>
+                  <Icon size={18} />
+               </div>
+               <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</p>
+                  <p className="text-xl font-black text-slate-900 dark:text-white mt-0.5 tabular-nums">{val ?? 0}</p>
+               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Filters */}
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-3 mb-4 flex gap-2 flex-wrap items-center">
-        {['','PENDING','CONFIRMED','ASSIGNED','COMPLETED','CANCELLED'].map(v => (
-          <button key={v}
-            onClick={() => { setFilter(v); setPage(1); }}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
-              filter===v ? 'bg-navy-600 text-white border-navy-600' : 'bg-white text-gray-500 border-gray-200 hover:border-navy-400'
-            }`}>
-            {v || 'All'}
-          </button>
-        ))}
-        <input type="date" className="input text-sm h-8 w-36 ml-auto"
-          value={dateFilter} onChange={e=>setDate(e.target.value)}
-          placeholder="Filter by date"/>
-        {dateFilter && (
-          <button onClick={()=>setDate('')} className="btn-secondary btn-sm gap-1">
-            <X className="w-3 h-3"/>
-          </button>
-        )}
+      {/* High-Velocity Filters */}
+      <div className="flex flex-col lg:flex-row items-center justify-between gap-4 p-4 rounded-[32px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
+         <div className="flex gap-2 flex-wrap">
+            {['','PENDING','CONFIRMED','ASSIGNED','COMPLETED','CANCELLED'].map(v => (
+              <button 
+                key={v}
+                onClick={() => { setFilter(v); setPage(1); }}
+                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                  filter === v ? 'bg-slate-900 border-slate-900 text-white shadow-xl shadow-slate-900/10' : 'bg-slate-50 dark:bg-slate-800/50 border-transparent text-slate-500 hover:bg-slate-100'
+                }`}
+              >
+                {v || 'All Network'}
+              </button>
+            ))}
+         </div>
+         <div className="flex items-center gap-3 w-full lg:w-auto">
+            <div className="relative flex-1 lg:flex-none lg:w-56">
+               <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+               <input 
+                 type="date" 
+                 className="w-full bg-slate-50 dark:bg-slate-800/50 border-none rounded-xl pl-10 pr-4 py-2.5 text-xs font-black uppercase tracking-widest text-slate-700"
+                 value={dateFilter} 
+                 onChange={e=>setDate(e.target.value)}
+               />
+            </div>
+            {dateFilter && (
+              <button onClick={()=>setDate('')} className="p-2.5 rounded-xl bg-orange-500 text-white shadow-lg shadow-orange-500/20">
+                 <X size={16} />
+              </button>
+            )}
+         </div>
       </div>
 
-      {/* Cards grid */}
+      {/* Grid of Tactical Pickup Cards */}
       {loading ? (
-        <div className="flex justify-center py-12"><RefreshCw className="w-6 h-6 animate-spin text-gray-300"/></div>
+        <div className="flex flex-col items-center justify-center py-24 text-slate-400">
+           <RefreshCw className="w-10 h-10 animate-spin mb-4 text-blue-500" />
+           <span className="text-[11px] font-black uppercase tracking-[0.3em]">Synching Network Ops</span>
+        </div>
       ) : pickups.length === 0 ? (
-        <EmptyState icon="📅" title="No pickups scheduled" message="No pickup requests match the current filter. Create one using the button above." />
+        <EmptyState icon="📦" title="Quiet Channel" message="No pickups active in the current filter loop." />
       ) : (
-        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {pickups.map(p => {
-            const sc = STATUS_COLORS[p.status] || STATUS_COLORS.PENDING;
+            const conf = STATUS_CONFIG[p.status] || STATUS_CONFIG.PENDING;
             return (
-              <div key={p.id}
-                className={`bg-white border rounded-xl p-4 shadow-sm cursor-pointer hover:shadow-md transition-all ${sc.border}`}
-                onClick={() => setSelected(p)}>
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <div>
-                    <span className="font-mono text-xs font-bold text-navy-700">{p.requestNo || p.refNo}</span>
-                    <div className={`inline-flex ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold ${sc.bg} ${sc.text}`}>
-                      {p.status}
-                    </div>
-                  </div>
-                  <span className="text-lg">{SLOT_ICONS[p.timeSlot] || '📦'}</span>
+              <div 
+                key={p.id}
+                onClick={() => setSelected(p)}
+                className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[32px] p-6 shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all duration-500 cursor-pointer group"
+              >
+                <div className="flex items-start justify-between mb-6">
+                   <div className="flex flex-col">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">REQ ID</span>
+                      <span className="text-sm font-black text-slate-900 dark:text-white font-mono tracking-tight">{p.requestNo || p.refNo}</span>
+                   </div>
+                   <div className={`px-3 py-1 rounded-full border text-[9px] font-black uppercase tracking-widest ${conf.color}`}>
+                      {conf.label}
+                   </div>
                 </div>
 
-                <div className="space-y-1 mb-3">
-                  <div className="flex items-start gap-1.5 text-xs text-gray-600">
-                    <MapPin className="w-3 h-3 mt-0.5 shrink-0 text-orange-400"/>
-                    <span className="truncate">{p.pickupAddress || p.contactAddress}, {p.pickupCity}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                    <Calendar className="w-3 h-3 shrink-0 text-blue-400"/>
-                    <span>{p.scheduledDate || p.pickupDate} · {p.timeSlot}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                    <User className="w-3 h-3 shrink-0 text-gray-400"/>
-                    <span>{p.contactName || p.pickupContact} · {p.contactPhone || p.pickupPhone}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                    <Package className="w-3 h-3 shrink-0 text-gray-400"/>
-                    <span>{p.packageType} · {(p.weightGrams/1000).toFixed(3)}kg · {p.pieces} pc</span>
-                  </div>
+                <div className="space-y-4 mb-8">
+                   <div className="flex items-start gap-4">
+                      <div className="w-8 h-8 rounded-xl bg-orange-500/5 flex items-center justify-center shrink-0 border border-orange-500/10">
+                         <MapPin size={14} className="text-orange-500" />
+                      </div>
+                      <div className="flex-1">
+                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Tactical Pickup Point</p>
+                         <p className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{p.pickupAddress || p.contactAddress}</p>
+                         <p className="text-[10px] font-medium text-slate-400">{p.pickupCity} ({p.pickupPin})</p>
+                      </div>
+                   </div>
+
+                   <div className="flex items-center gap-4">
+                      <div className="w-8 h-8 rounded-xl bg-blue-500/5 flex items-center justify-center shrink-0 border border-blue-500/10">
+                         <Clock size={14} className="text-blue-500" />
+                      </div>
+                      <div className="flex-1">
+                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Execution Slot</p>
+                         <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{p.scheduledDate || p.pickupDate} · {p.timeSlot}</p>
+                      </div>
+                      <span className="text-xl grayscale group-hover:grayscale-0 transition-all">{SLOT_ICONS[p.timeSlot] || '📦'}</span>
+                   </div>
                 </div>
 
-                {p.assignedAgent && (
-                  <div className="text-xs text-purple-600 bg-purple-50 rounded-lg px-2 py-1">
-                    👤 {p.assignedAgent.name}
-                  </div>
-                )}
+                <div className="pt-6 border-t border-slate-50 dark:border-slate-800 flex items-center justify-between">
+                   <div className="flex items-center gap-3">
+                      <div className="w-7 h-7 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-400">
+                         <User size={14} />
+                      </div>
+                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest truncate max-w-[120px]">{p.contactName || p.pickupContact}</span>
+                   </div>
+                   
+                   {p.assignedAgent ? (
+                      <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-purple-500/5 border border-purple-500/10">
+                         <Activity size={10} className="text-purple-500 animate-pulse" />
+                         <span className="text-[9px] font-black text-purple-600 uppercase tracking-widest">{p.assignedAgent.name}</span>
+                      </div>
+                   ) : (
+                      <div className="flex items-center gap-2 text-slate-300 text-[9px] font-black uppercase tracking-widest">
+                         No Agent <ArrowRight size={10} />
+                      </div>
+                   )}
+                </div>
               </div>
             );
           })}
         </div>
       )}
 
-      {/* Detail Modal */}
+      {/* Detail Intelligence Modal */}
       {selected && (
-        <Modal title={`Pickup — ${selected.requestNo || selected.refNo}`} onClose={()=>setSelected(null)}>
-          <PickupDetailPanel
-            pickup={selected}
-            agents={agents}
-            canAssign={canAssign}
-            onUpdateStatus={updateStatus}
-            onAssignAgent={assignAgent}
-            toast={toast}
-          />
+        <Modal title={`Deployment Protocol — ${selected.requestNo || selected.refNo}`} onClose={()=>setSelected(null)} wide>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+             <div className="space-y-6">
+                <div className="flex items-center gap-4 p-5 rounded-[32px] bg-slate-900 border border-slate-800">
+                   <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-blue-500">
+                      <Zap size={24} />
+                   </div>
+                   <div className="flex-1">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">System Operational State</p>
+                      <div className="flex items-center gap-3">
+                         <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border ${STATUS_CONFIG[selected.status].color}`}>
+                            {selected.status}
+                         </span>
+                         <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Logged via {selected.channel || 'CLIENT_PORTAL'}</span>
+                      </div>
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-1">
+                   <DetailRow label="Client / Consignor" value={selected.contactName || selected.pickupContact} />
+                   <DetailRow label="Engagement Pulse" value={selected.contactPhone || selected.pickupPhone} />
+                   <DetailRow label="Primary Address" value={`${selected.pickupAddress}, ${selected.pickupCity} ${selected.pickupPin}`} />
+                   <DetailRow label="Mass Metrics" value={`${(selected.weightGrams/1000).toFixed(3)}kg / ${selected.pieces}pc`} />
+                   <DetailRow label="Service Network" value={selected.preferredCarrier || selected.serviceType || 'Standard'} />
+                   <DetailRow label="Network Node" value={selected.service || 'Default'} />
+                   {selected.notes && <DetailRow label="Neural Notes" value={selected.notes} highlight />}
+                </div>
+             </div>
+
+             <div className="space-y-6">
+                <div className="p-6 rounded-[32px] bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800">
+                   <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4">Command Actions</h4>
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {selected.status === 'PENDING' && (
+                        <button onClick={() => updateStatus(selected.id,'CONFIRMED')} className="px-4 py-3 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-blue-600/10 hover:bg-blue-700 transition-all flex items-center justify-center gap-2 group/btn">
+                           Confirm Flight <ChevronRight size={14} className="group-hover/btn:translate-x-1" />
+                        </button>
+                      )}
+                      {['PENDING','CONFIRMED','ASSIGNED'].includes(selected.status) && (
+                        <button onClick={() => updateStatus(selected.id,'CANCELLED')} className="px-4 py-3 bg-white dark:bg-slate-900 border border-rose-500/30 text-rose-500 text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-rose-500 hover:text-white transition-all">
+                           Engage Cancel
+                        </button>
+                      )}
+                      {selected.status === 'ASSIGNED' && (
+                        <button onClick={() => updateStatus(selected.id,'COMPLETED')} className="sm:col-span-2 px-4 py-4 bg-emerald-600 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-2xl shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all active:scale-95">
+                           Finalize Dispatch Node
+                        </button>
+                      )}
+                   </div>
+                </div>
+
+                {canAssign && ['PENDING','CONFIRMED'].includes(selected.status) && agents.length > 0 && (
+                   <div className="p-6 rounded-[32px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
+                      <div className="flex items-center justify-between mb-4">
+                         <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Rider Deployment</h4>
+                         <div className="flex items-center gap-1.5">
+                            <div className="w-1 h-1 rounded-full bg-emerald-500" />
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{agents.length} Ready</span>
+                         </div>
+                      </div>
+                      <div className="flex flex-col gap-3">
+                         <div className="relative">
+                            <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                            <select 
+                              className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl pl-12 pr-6 py-4 text-[11px] font-black uppercase tracking-widest text-slate-700 dark:text-slate-200 appearance-none"
+                              onChange={(e) => {
+                                 if (e.target.value) assignAgent(selected.id, +e.target.value);
+                              }}
+                            >
+                               <option value="">Select Field Agent</option>
+                               {agents.map(a => <option key={a.id} value={a.id}>{a.name.toUpperCase()}</option>)}
+                            </select>
+                         </div>
+                         <div className="flex items-start gap-3 p-3 rounded-2xl bg-amber-500/5 border border-amber-500/10">
+                            <AlertTriangle size={14} className="text-amber-500 shrink-0 mt-0.5" />
+                            <p className="text-[9px] font-bold text-amber-700 leading-relaxed uppercase tracking-wider">
+                               Assigning an agent will automatically transition this node to "ASSIGNED" status and trigger a notification burst.
+                            </p>
+                         </div>
+                      </div>
+                   </div>
+                )}
+             </div>
+          </div>
         </Modal>
       )}
 
-      {/* New Pickup Modal */}
+      {/* New Engagement Console */}
       {showNew && (
-        <Modal title="Schedule New Pickup" onClose={()=>setShowNew(false)}>
-          <CreatePickupForm
-            toast={toast}
-            onSaved={() => { setShowNew(false); load(); }}
-            onClose={() => setShowNew(false)}
-          />
+        <Modal title="Deployment Configuration" onClose={()=>setShowNew(false)}>
+          <CreatePickupForm toast={toast} onSaved={() => { setShowNew(false); load(); }} onClose={() => setShowNew(false)} />
         </Modal>
       )}
     </div>
   );
 }
 
-function PickupDetailPanel({ pickup: p, agents, canAssign, onUpdateStatus, onAssignAgent }) {
-  const [agentId, setAgentId] = useState('');
-  const sc = STATUS_COLORS[p.status] || STATUS_COLORS.PENDING;
-
-  const Row = ({ label, val }) => val ? (
-    <div className="flex justify-between text-sm py-1 border-b border-gray-50">
-      <span className="text-gray-400 text-xs font-semibold uppercase tracking-wide">{label}</span>
-      <span className="text-gray-700 font-medium text-right max-w-[55%]">{val}</span>
-    </div>
-  ) : null;
-
+function DetailRow({ label, value, highlight }) {
   return (
-    <div className="space-y-4">
-      <div className={`inline-flex px-3 py-1 rounded-full text-xs font-bold ${sc.bg} ${sc.text}`}>{p.status}</div>
-
-      <div className="space-y-0.5">
-        <Row label="Contact"     val={`${p.contactName||p.pickupContact} · ${p.contactPhone||p.pickupPhone}`}/>
-        <Row label="Pickup"      val={`${p.pickupAddress}, ${p.pickupCity} ${p.pickupPin}`}/>
-        <Row label="Delivery"    val={p.deliveryAddress ? `${p.deliveryAddress}, ${p.deliveryCity}` : null}/>
-        <Row label="Package"     val={`${p.packageType} · ${(p.weightGrams/1000).toFixed(3)}kg · ${p.pieces}pc`}/>
-        <Row label="Service"     val={p.service || p.serviceType}/>
-        <Row label="Carrier"     val={p.preferredCarrier}/>
-        <Row label="Scheduled"   val={`${p.scheduledDate||p.pickupDate} · ${p.timeSlot}`}/>
-        <Row label="Created"     val={new Date(p.createdAt).toLocaleDateString('en-IN')}/>
-        {p.notes && <Row label="Notes" val={p.notes}/>}
-      </div>
-
-      {/* Status actions */}
-      <div className="flex gap-2 flex-wrap">
-        {p.status === 'PENDING' && (
-          <button onClick={() => onUpdateStatus(p.id,'CONFIRMED')} className="btn-primary btn-sm flex-1">
-            ✓ Confirm Pickup
-          </button>
-        )}
-        {['PENDING','CONFIRMED','ASSIGNED'].includes(p.status) && (
-          <button onClick={() => onUpdateStatus(p.id,'CANCELLED')} className="btn-secondary btn-sm text-red-500">
-            Cancel
-          </button>
-        )}
-        {p.status === 'ASSIGNED' && (
-          <button onClick={() => onUpdateStatus(p.id,'COMPLETED')} className="btn-primary btn-sm flex-1 bg-green-600 hover:bg-green-700">
-            ✅ Mark Completed
-          </button>
-        )}
-      </div>
-
-      {/* Assign agent */}
-      {canAssign && ['PENDING','CONFIRMED'].includes(p.status) && agents.length > 0 && (
-        <div className="border-t pt-3">
-          <p className="text-xs font-semibold text-gray-500 mb-2">Assign Agent</p>
-          <div className="flex gap-2">
-            <select className="input text-sm flex-1" value={agentId} onChange={e=>setAgentId(e.target.value)}>
-              <option value="">— Select agent —</option>
-              {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-            <button disabled={!agentId} onClick={() => onAssignAgent(p.id, +agentId)} className="btn-primary btn-sm">
-              Assign
-            </button>
-          </div>
-        </div>
-      )}
+    <div className="flex items-center justify-between py-3 border-b border-slate-50 dark:border-slate-800/50 group/row">
+       <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{label}</span>
+       <span className={`text-[11px] font-black uppercase tracking-tight text-right max-w-[60%] transition-colors ${highlight ? 'text-blue-500' : 'text-slate-800 dark:text-slate-200 group-hover/row:text-blue-600'}`}>
+          {value || 'NULL_DATA'}
+       </span>
     </div>
   );
 }
@@ -286,57 +362,86 @@ function CreatePickupForm({ toast, onSaved, onClose }) {
 
   const save = async () => {
     if (!form.contactName || !form.contactPhone || !form.pickupAddress || !form.scheduledDate) {
-      toast?.('Fill in required fields','error'); return;
+      toast?.('Deployment: Validation Error','error'); return;
     }
     setSaving(true);
     try {
       await api.post('/pickups', form);
-      toast?.('Pickup scheduled','success');
+      toast?.('Engagement Synchronized','success');
       onSaved();
     } catch(e) { toast?.(e.message,'error'); }
     finally { setSaving(false); }
   };
 
-  const F = ({ label, req, children }) => (
-    <div><label className="form-label">{label}{req && <span className="text-red-400"> *</span>}</label>{children}</div>
+  const Field = ({ label, req, children }) => (
+    <div className="animate-in fade-in slide-in-from-bottom-2 duration-500">
+       <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">{label}{req && <span className="text-rose-500 ml-1">*</span>}</label>
+       {children}
+    </div>
   );
 
   return (
-    <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
-      <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Pickup Details</p>
-      <div className="grid grid-cols-2 gap-2">
-        <F label="Contact Name" req><input className="input text-sm" value={form.contactName} onChange={e=>setForm(f=>({...f,contactName:e.target.value}))}/></F>
-        <F label="Phone" req><input className="input text-sm" value={form.contactPhone} onChange={e=>setForm(f=>({...f,contactPhone:e.target.value}))}/></F>
+    <div className="space-y-6 max-h-[75vh] overflow-y-auto pr-2 custom-scrollbar">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Field label="Contact Identifier" req>
+           <input className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-xs font-black uppercase tracking-tight text-slate-800 dark:text-white" value={form.contactName} onChange={e=>setForm(f=>({...f,contactName:e.target.value}))}/>
+        </Field>
+        <Field label="Engagement Pulse (Phone)" req>
+           <input className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-xs font-black uppercase tracking-tight text-slate-800 dark:text-white" value={form.contactPhone} onChange={e=>setForm(f=>({...f,contactPhone:e.target.value}))}/>
+        </Field>
       </div>
-      <F label="Pickup Address" req><textarea className="input text-sm" rows={2} value={form.pickupAddress} onChange={e=>setForm(f=>({...f,pickupAddress:e.target.value}))}/></F>
-      <div className="grid grid-cols-2 gap-2">
-        <F label="City" req><input className="input text-sm" value={form.pickupCity} onChange={e=>setForm(f=>({...f,pickupCity:e.target.value}))}/></F>
-        <F label="PIN Code" req><input className="input text-sm" value={form.pickupPin} onChange={e=>setForm(f=>({...f,pickupPin:e.target.value}))}/></F>
-      </div>
+      
+      <Field label="Pickup Geometry (Full Address)" req>
+         <textarea className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-[28px] px-6 py-4 text-xs font-black uppercase tracking-tight text-slate-700 dark:text-white min-h-[100px]" rows={2} value={form.pickupAddress} onChange={e=>setForm(f=>({...f,pickupAddress:e.target.value}))}/>
+      </Field>
 
-      <p className="text-xs font-bold text-gray-500 uppercase tracking-wider pt-1">Package</p>
-      <div className="grid grid-cols-3 gap-2">
-        <F label="Type"><select className="input text-sm" value={form.packageType} onChange={e=>setForm(f=>({...f,packageType:e.target.value}))}>
-          {['Document','Parcel','Fragile','Bulk / Cargo'].map(t=><option key={t}>{t}</option>)}
-        </select></F>
-        <F label="Weight (g)"><input type="number" className="input text-sm" value={form.weightGrams} onChange={e=>setForm(f=>({...f,weightGrams:+e.target.value}))}/></F>
-        <F label="Pieces"><input type="number" className="input text-sm" value={form.pieces} onChange={e=>setForm(f=>({...f,pieces:+e.target.value}))}/></F>
-      </div>
-
-      <p className="text-xs font-bold text-gray-500 uppercase tracking-wider pt-1">Schedule</p>
-      <div className="grid grid-cols-2 gap-2">
-        <F label="Date" req><input type="date" className="input text-sm" value={form.scheduledDate} onChange={e=>setForm(f=>({...f,scheduledDate:e.target.value}))}/></F>
-        <F label="Time Slot"><select className="input text-sm" value={form.timeSlot} onChange={e=>setForm(f=>({...f,timeSlot:e.target.value}))}>
-          {['Morning','Afternoon','Evening'].map(t=><option key={t}>{t}</option>)}
-        </select></F>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Target City" req>
+           <input className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-xs font-black uppercase tracking-tight text-slate-800 dark:text-white" value={form.pickupCity} onChange={e=>setForm(f=>({...f,pickupCity:e.target.value}))}/>
+        </Field>
+        <Field label="Zone Pincode" req>
+           <input className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-xs font-black uppercase tracking-tight text-slate-800 dark:text-white" value={form.pickupPin} onChange={e=>setForm(f=>({...f,pickupPin:e.target.value}))}/>
+        </Field>
       </div>
 
-      <F label="Notes"><textarea className="input text-sm" rows={2} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></F>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <Field label="Mass Type">
+           <select className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white appearance-none" value={form.packageType} onChange={e=>setForm(f=>({...f,packageType:e.target.value}))}>
+              {['Document','Parcel','Fragile','Bulk / Cargo'].map(t=><option key={t}>{t.toUpperCase()}</option>)}
+           </select>
+        </Field>
+        <Field label="Weight Flux (G)">
+           <input type="number" className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-[11px] font-black text-slate-800 dark:text-white" value={form.weightGrams} onChange={e=>setForm(f=>({...f,weightGrams:+e.target.value}))}/>
+        </Field>
+        <Field label="Array Count">
+           <input type="number" className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-[11px] font-black text-slate-800 dark:text-white" value={form.pieces} onChange={e=>setForm(f=>({...f,pieces:+e.target.value}))}/>
+        </Field>
+      </div>
 
-      <div className="flex gap-2 pt-2">
-        <button onClick={onClose} className="btn-secondary flex-1">Cancel</button>
-        <button onClick={save} disabled={saving} className="btn-primary flex-1">
-          {saving ? 'Scheduling…' : '📦 Schedule Pickup'}
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="Deployment Date" req>
+           <input type="date" className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white" value={form.scheduledDate} onChange={e=>setForm(f=>({...f,scheduledDate:e.target.value}))}/>
+        </Field>
+        <Field label="Velocity Window">
+           <select className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white appearance-none" value={form.timeSlot} onChange={e=>setForm(f=>({...f,timeSlot:e.target.value}))}>
+              {['Morning','Afternoon','Evening'].map(t=><option key={t}>{t.toUpperCase()}</option>)}
+           </select>
+        </Field>
+      </div>
+
+      <Field label="Neural Notes (System Instruction)">
+         <textarea className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-[28px] px-5 py-4 text-[10px] font-black uppercase tracking-tight text-slate-700 dark:text-white min-h-[80px]" rows={2} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/>
+      </Field>
+
+      <div className="flex gap-4 pt-4 sticky bottom-0 bg-white dark:bg-slate-900 pb-2">
+        <button onClick={onClose} className="flex-1 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 hover:text-slate-600 transition-all">Abort</button>
+        <button 
+          onClick={save} 
+          disabled={saving} 
+          className="flex-[2] py-5 bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-[24px] shadow-xl shadow-slate-900/10 active:scale-95 transition-all flex items-center justify-center gap-3"
+        >
+          {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Package size={16} />}
+          {saving ? 'Synchronizing…' : 'Execute Engagement'}
         </button>
       </div>
     </div>

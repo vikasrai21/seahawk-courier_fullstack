@@ -1,32 +1,32 @@
 import React from 'react';
 
 const COURIER_CONFIG = {
-  BlueDart: { bg: '#eef2ff', color: '#1e40af', border: '#bfdbfe', icon: 'BD' },
-  DTDC:     { bg: '#fff1f2', color: '#be123c', border: '#fecdd3', icon: 'DT' },
-  Delhivery:{ bg: '#f8fafc', color: '#0f172a', border: '#e2e8f0', icon: 'DL' },
-  FedEx:    { bg: '#f5f3ff', color: '#5b21b6', border: '#ddd6fe', icon: 'FX' },
-  DHL:      { bg: '#fefce8', color: '#854d0e', border: '#fef08a', icon: 'DH' },
-  'Ecom Express': { bg: '#ecfdf5', color: '#065f46', border: '#d1fae5', icon: 'EX' },
-  XpressBees:     { bg: '#fff7ed', color: '#9a3412', border: '#ffedd5', icon: 'XB' },
-  Shadowfax:      { bg: '#f0f9ff', color: '#075985', border: '#bae6fd', icon: 'SF' },
+  BlueDart: { bg: 'rgba(30,58,138,0.08)', color: '#1e40af', dot: '#3b82f6', icon: 'BD' },
+  DTDC:     { bg: 'rgba(190,18,60,0.08)', color: '#be123c', dot: '#e11d48', icon: 'DT' },
+  Delhivery:{ bg: 'rgba(15,23,42,0.08)', color: '#334155', dot: '#64748b', icon: 'DL' },
+  FedEx:    { bg: 'rgba(91,33,182,0.08)', color: '#5b21b6', dot: '#8b5cf6', icon: 'FX' },
+  DHL:      { bg: 'rgba(133,77,14,0.08)', color: '#854d0e', dot: '#eab308', icon: 'DH' },
+  'Ecom Express': { bg: 'rgba(6,95,70,0.08)', color: '#065f46', dot: '#10b981', icon: 'EX' },
+  XpressBees:     { bg: 'rgba(154,52,18,0.08)', color: '#9a3412', dot: '#f97316', icon: 'XB' },
+  Shadowfax:      { bg: 'rgba(7,89,133,0.08)', color: '#075985', dot: '#0ea5e9', icon: 'SF' },
 };
 
 export function CourierBadge({ name, className = '' }) {
-  const config = COURIER_CONFIG[name] || { bg: '#f1f5f9', color: '#475569', border: '#e2e8f0', icon: '??' };
+  const config = COURIER_CONFIG[name] || { bg: 'rgba(71,85,105,0.08)', color: '#475569', dot: '#94a3b8', icon: '??' };
   
   return (
-    <div className={`inline-flex items-center gap-2 ${className}`}>
+    <div className={`inline-flex items-center gap-2 group ${className}`}>
       <div 
+        className="w-6 h-6 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-center text-[7px] font-black tracking-tighter shadow-sm transition-all group-hover:scale-110"
         style={{ 
           backgroundColor: config.bg, 
-          color: config.color, 
-          borderColor: config.border 
+          color: config.color,
+          borderColor: config.dot + '33'
         }}
-        className="w-6 h-6 rounded-lg border flex items-center justify-center text-[8px] font-black tracking-tighter shadow-sm"
       >
         {config.icon}
       </div>
-      <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{name || 'Unknown'}</span>
+      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 tracking-tight">{name || 'Guest Carrier'}</span>
     </div>
   );
 }

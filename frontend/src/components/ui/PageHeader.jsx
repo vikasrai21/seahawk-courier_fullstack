@@ -20,23 +20,23 @@ export function PageHeader({ title, subtitle, breadcrumbs = [], actions, icon: I
         </div>
       )}
 
-      <div className="shk-page-header__row">
-        <div className="shk-page-header__copy">
-          <div className="shk-page-header__title-row">
+      <div className="shk-page-header__row flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+        <div className="shk-page-header__copy min-w-[300px] flex-1">
+          <div className="shk-page-header__title-row flex items-center gap-4 mb-2">
             {Icon && (
-              <div className="shk-page-header__icon">
-                <Icon size={18} color="#f97316" />
+              <div className="shk-page-header__icon shrink-0">
+                <Icon size={20} color="#f97316" />
               </div>
             )}
-            <h1 className="shk-page-header__title">{title}</h1>
+            <h1 className="shk-page-header__title text-2xl lg:text-3xl font-black">{title}</h1>
           </div>
           {subtitle && (
-            <p className="shk-page-header__subtitle">{subtitle}</p>
+            <p className="shk-page-header__subtitle text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed">{subtitle}</p>
           )}
         </div>
 
         {actions && (
-          <div className="shk-page-header__actions animate-fade">{actions}</div>
+          <div className="shk-page-header__actions flex-wrap lg:justify-end gap-3">{actions}</div>
         )}
       </div>
 

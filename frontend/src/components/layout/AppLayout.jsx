@@ -45,8 +45,8 @@ const navGroups = [
     label: 'Shipments',
     items: [
       { to: '/app/scan',      label: 'Scan AWB',            icon: ScanLine, badge: 'NEW', roles: ['ADMIN','OPS_MANAGER','STAFF'] },
-      { to: '/app/shipments', label: 'Shipment Dashboard',  icon: Layers },
-      { to: '/app/all',       label: 'All Shipments',       icon: Package },
+      { to: '/app/shipments', label: 'Shipments',           icon: Layers },
+
       { to: '/app/pending',   label: 'Pending',             icon: Clock, isSecondary: true },
       { to: '/app/track',     label: 'Track',               icon: Search, isSecondary: true },
       { to: '/app/ndr',       label: 'NDR Management',      icon: ShieldAlert, isSecondary: true },
