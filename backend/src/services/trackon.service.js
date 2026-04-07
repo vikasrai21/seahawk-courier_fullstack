@@ -2,52 +2,85 @@
 const logger = require('../utils/logger');
 const { fetchJsonWithRetry } = require('../utils/httpRetry');
 
-const API_KEY = process.env.TRACKON_API_KEY;
-
 function isConfigured() {
-  return !!API_KEY;
+  const appKey = process.env.TRACKON_APP_KEY || process.env.TRACKON_API_KEY;
+  const userId = process.env.TRACKON_USER_ID || process.env.TRACKON_CUSTOMER_ID || process.env.TRACKON_CLIENT_ID;
+  const password = process.env.TRACKON_PASSWORD;
+  return !!(appKey && userId && password);
 }
 
-// Trackon tracking endpoint placeholder
 async function getTracking(awb) {
+  const appKey = process.env.TRACKON_APP_KEY || process.env.TRACKON_API_KEY;
+  const userId = process.env.TRACKON_USER_ID || process.env.TRACKON_CUSTOMER_ID || process.env.TRACKON_CLIENT_ID;
+  const password = process.env.TRACKON_PASSWORD;
+  const baseUrl = process.env.TRACKON_TRACKING_API_URL || process.env.TRACKON_API_URL || 'https://api.trackon.in';
+
   if (!isConfigured()) {
-    logger.warn('[Trackon] API key not set');
-    throw new Error('Trackon API key is not configured. Please add TRACKON_API_KEY to your environment variables.');
+    logger.warn('[Trackon] credentials not set');
+    throw new Error('Trackon credentials are not configured. Add TRACKON_APP_KEY/TRACKON_USER_ID/TRACKON_PASSWORD.');
   }
 
   try {
-    // Example: Actual URL and headers will depend on the Trackon API documentation
-    const data = await fetchJsonWithRetry(`https://some-trackon-api.com/track?awb=${awb}&key=${API_KEY}`, {
-      headers: { 'Content-Type': 'application/json' },
+    const query = new URLSearchParams({
+      AWBNo: String(awb || ''),
+      AppKey: String(appKey),
+      userID: String(userId),
+      Password: String(password),
+    });
+    const data = await fetchJsonWithRetry(`${baseUrl}/CrmApi/t1/AWBTrackingCustomer?${query.toString()}`, {
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
     }, { attempts: 3, timeoutMs: 8000 });
-    
-    // Placeholder response mapping. You will need to map this exactly like Delhivery
-    // after reading their API docs.
-    const statusMapping = {
-       'DLVD': 'Delivered',
-       'IN TRANSIT': 'InTransit',
-       'OUT FOR DELIVERY': 'OutForDelivery',
-       'RTO': 'RTO',
-       'BOOKED': 'Booked'
-    };
+
+    const summary = data?.summaryTrack || {};
+    const details = Array.isArray(data?.lstDetails) ? data.lstDetails : [];
+    const latest = details[0] || summary || {};
 
     return {
       awb,
       courier:      'Trackon',
-      status:       statusMapping[data.status] || 'InTransit', // map strictly to your schema
-      rawStatus:    data.status || '',
-      statusDetail: data.instructions || '',
-      origin:       data.origin || '',
-      destination:  data.destination || '',
-      expectedDate: data.expectedDate || null,
-      deliveredAt:  data.deliveryDate || null,
-      recipient:    data.consignee || '',
-      events:       [] // Trackon typically provides an array of scans here
+      status:       mapTrackonStatus(`${latest.TRACKING_CODE || ''} ${latest.CURRENT_STATUS || ''}`),
+      rawStatus:    latest.CURRENT_STATUS || '',
+      statusDetail: latest.CURRENT_STATUS || '',
+      origin:       summary.ORIGIN || '',
+      destination:  summary.DESTINATION || '',
+      expectedDate: null,
+      deliveredAt:  null,
+      recipient:    '',
+      events: details.map((e) => ({
+        status: mapTrackonStatus(`${e.TRACKING_CODE || ''} ${e.CURRENT_STATUS || ''}`),
+        location: e.CURRENT_CITY || '',
+        description: e.CURRENT_STATUS || '',
+        timestamp: parseTrackonTimestamp(e.EVENTDATE, e.EVENTTIME),
+        rawData: e,
+      })),
     };
   } catch (err) {
     logger.error(`[Trackon] getTracking: ${err.message}`);
     return null;
   }
+}
+
+function mapTrackonStatus(raw) {
+  const s = String(raw || '').toUpperCase().trim();
+  if (s.startsWith('DRS') || s.includes('OUT FOR')) return 'OutForDelivery';
+  if (s.startsWith('DDU') || s.includes('DELIVER')) return 'Delivered';
+  if (s.startsWith('DNU') || s.includes('UNDELIVER') || s.includes('ATMP')) return 'Failed';
+  if (s.startsWith('R') && (s.includes('RTO') || s.includes('RSET') || s.includes('RMFT') || s.includes('RHO') || s.includes('RIS'))) return 'RTO';
+  if (s.startsWith('BOK') || s.includes('BOOK') || s.includes('PICK UP')) return 'Booked';
+  if (s.includes('TRANSIT') || s.includes('MFT') || s.includes('CDIN') || s.includes('INSCAN')) return 'InTransit';
+  return 'InTransit';
+}
+
+function parseTrackonTimestamp(eventDate, eventTime) {
+  const dateText = String(eventDate || '').trim();
+  const timeText = String(eventTime || '00:00:00').trim();
+  if (!dateText) return new Date();
+  const m = dateText.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return new Date();
+  const [, dd, mm, yyyy] = m;
+  const iso = `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${timeText.length === 5 ? `${timeText}:00` : timeText}`;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? new Date() : d;
 }
 
 module.exports = { isConfigured, getTracking };

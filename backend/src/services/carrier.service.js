@@ -1,7 +1,7 @@
 /* ============================================================
    carrier.service.js — Feature #1: Courier API Integration
    
-   Supports: Delhivery, DTDC, BlueDart (live APIs)
+   Supports: Delhivery, DTDC, Trackon, BlueDart (live APIs)
    FedEx, DHL (stub — require paid API keys)
    
    Each carrier implements: createShipment, fetchTracking, cancelShipment
@@ -12,7 +12,7 @@
 const prisma  = require('../config/prisma');
 const logger  = require('../utils/logger');
 const cache   = require('../utils/cache');
-const { fetchJsonWithRetry } = require('../utils/httpRetry');
+const { fetchJsonWithRetry, fetchWithRetry } = require('../utils/httpRetry');
 
 /* ════════════════════════════════════════════════════════════
    CARRIER CONFIG LOADER
@@ -40,6 +40,28 @@ function getCarrierConfig(carrier) {
       apiKey:    process.env.DTDC_API_KEY,
       apiUrl:    process.env.DTDC_API_URL || 'http://blktapi.dtdc.com',
       config:    { customerCode: process.env.DTDC_CUSTOMER_CODE },
+    },
+    Trackon: {
+      carrier:   'Trackon',
+      enabled:   !!(process.env.TRACKON_APP_KEY || process.env.TRACKON_API_KEY)
+              && !!(process.env.TRACKON_USER_ID || process.env.TRACKON_CUSTOMER_ID || process.env.TRACKON_CLIENT_ID)
+              && !!process.env.TRACKON_PASSWORD,
+      apiKey:    process.env.TRACKON_APP_KEY || process.env.TRACKON_API_KEY,
+      apiUrl:    process.env.TRACKON_TRACKING_API_URL || process.env.TRACKON_API_URL || 'https://api.trackon.in',
+      config:    {
+        appKey: process.env.TRACKON_APP_KEY || process.env.TRACKON_API_KEY || '',
+        userId: process.env.TRACKON_USER_ID || process.env.TRACKON_CUSTOMER_ID || process.env.TRACKON_CLIENT_ID || '',
+        password: process.env.TRACKON_PASSWORD || '',
+        bookingUrl: process.env.TRACKON_BOOKING_API_URL || 'http://trackon.in:5455',
+        customerCode: process.env.TRACKON_CUSTOMER_CODE || '',
+        pickupCustCode: process.env.TRACKON_PICKUP_CUST_CODE || '',
+        pickupCustName: process.env.TRACKON_PICKUP_CUST_NAME || process.env.TRACKON_PICKUP_NAME || 'Sea Hawk Courier & Cargo',
+        pickupAddr: process.env.TRACKON_PICKUP_ADDR || 'Shop 6 & 7, Rao Lal Singh Market',
+        pickupCity: process.env.TRACKON_PICKUP_CITY || 'Gurugram',
+        pickupState: process.env.TRACKON_PICKUP_STATE || 'Haryana',
+        pickupPincode: process.env.TRACKON_PICKUP_PINCODE || '122015',
+        pickupPhone: process.env.TRACKON_PICKUP_PHONE || '9911565523',
+      },
     },
     BlueDart: {
       carrier:   'BlueDart',
@@ -235,6 +257,122 @@ const dtdc = {
 };
 
 /* ════════════════════════════════════════════════════════════
+   TRACKON
+   Required: TRACKON_API_KEY (+ TRACKON_CUSTOMER_ID when provided)
+   ════════════════════════════════════════════════════════════ */
+const trackon = {
+
+  async createShipment(data, cfg) {
+    const serialNo = String(data.serialNo || Date.now()).slice(-6);
+    const address = String(data.deliveryAddress || data.destination || '').trim();
+    const [addressLine1, ...addressRest] = address.split(',').map(s => s.trim()).filter(Boolean);
+    const serviceType = getTrackonServiceType(data);
+    const typeOfService = String(data.typeOfService || data.service || 'AIR').toUpperCase();
+    const payload = {
+      Appkey: cfg.config?.appKey,
+      userId: cfg.config?.userId,
+      password: cfg.config?.password,
+      SerialNo: serialNo,
+      RefNo: String(data.orderRef || data.awb || ''),
+      ActionType: String(data.actionType || 'Book'),
+      CustomerCode: String(data.clientCode || cfg.config?.customerCode || ''),
+      ClientName: String(data.consignee || ''),
+      AddressLine1: String(addressLine1 || address || ''),
+      AddressLine2: String(addressRest.join(', ') || data.deliveryState || ''),
+      City: String(data.deliveryCity || data.destinationCity || ''),
+      PinCode: String(data.pin || data.deliveryPin || ''),
+      MobileNo: String(data.phone || data.mobile || '9999999999'),
+      Email: String(data.email || 'ops@seahawkcourier.com'),
+      DocType: String(data.docType || (data.isDox ? 'D' : 'N')).toUpperCase() === 'D' ? 'D' : 'N',
+      TypeOfService: typeOfService,
+      Weight: Number((Number(data.weightGrams || 0) / 1000).toFixed(3)) || Number(data.weight || 0.5),
+      InvoiceValue: Number(data.declaredValue || 0).toFixed(3),
+      NoOfPieces: String(Number(data.pieces || 1)),
+      ItemName: String(data.contents || data.itemName || 'Shipment'),
+      Remark: String(data.notes || ''),
+      PickupCustCode: String(data.pickupCustCode || cfg.config?.pickupCustCode || ''),
+      PickupCustName: String(data.pickupName || cfg.config?.pickupCustName || ''),
+      PickupAddr: String(data.pickupAddress || cfg.config?.pickupAddr || ''),
+      PickupCity: String(data.pickupCity || cfg.config?.pickupCity || ''),
+      PickupState: String(data.pickupState || cfg.config?.pickupState || ''),
+      PickupPincode: String(data.pickupPincode || cfg.config?.pickupPincode || ''),
+      PickupPhone: String(data.pickupPhone || cfg.config?.pickupPhone || ''),
+      ServiceType: serviceType,
+    };
+
+    const res = await _postJsonOrText(
+      `${cfg.config?.bookingUrl}/CrmApi/Crm/UploadPickupRequestWithoutDockNo`,
+      payload,
+      { 'Content-Type': 'application/json; charset=utf-8' }
+    );
+
+    const awb = extractTrackonAwb(res);
+    if (!awb) {
+      const errText = typeof res === 'string' ? res : JSON.stringify(res || {});
+      throw new Error(`Trackon booking failed: ${errText.slice(0, 200)}`);
+    }
+
+    return {
+      awb,
+      carrier: 'Trackon',
+      trackUrl: `http://trackon.in/Trackon/pub/mainHtml.pub?awbs=${encodeURIComponent(awb)}`,
+      labelUrl: null,
+      raw: res,
+    };
+  },
+
+  async fetchTracking(awb, cfg) {
+    const query = new URLSearchParams({
+      AWBNo: String(awb || ''),
+      AppKey: cfg.config?.appKey || '',
+      userID: cfg.config?.userId || '',
+      Password: cfg.config?.password || '',
+    });
+    const res = await _get(
+      `${cfg.apiUrl}/CrmApi/t1/AWBTrackingCustomer?${query.toString()}`,
+      { 'Content-Type': 'application/json; charset=utf-8' }
+    );
+
+    const summary = res?.summaryTrack || {};
+    const scans = Array.isArray(res?.lstDetails) ? res.lstDetails : [];
+    const events = scans.map((e) => ({
+      status: mapTrackonStatus(`${e.TRACKING_CODE || ''} ${e.CURRENT_STATUS || ''}`),
+      location: e.CURRENT_CITY || '',
+      description: e.CURRENT_STATUS || '',
+      timestamp: parseTrackonTimestamp(e.EVENTDATE, e.EVENTTIME),
+      source: 'CARRIER_API',
+      rawData: e,
+    }));
+
+    if (events.length === 0 && (summary.CURRENT_STATUS || summary.TRACKING_CODE)) {
+      events.push({
+        status: mapTrackonStatus(`${summary.TRACKING_CODE || ''} ${summary.CURRENT_STATUS || ''}`),
+        location: summary.CURRENT_CITY || '',
+        description: summary.CURRENT_STATUS || '',
+        timestamp: parseTrackonTimestamp(summary.EVENTDATE, summary.EVENTTIME),
+        source: 'CARRIER_API',
+        rawData: summary,
+      });
+    }
+
+    const latestRaw = summary.CURRENT_STATUS || scans?.[0]?.CURRENT_STATUS || '';
+    const latestCode = summary.TRACKING_CODE || scans?.[0]?.TRACKING_CODE || '';
+    return {
+      status: events[0]?.status || mapTrackonStatus(`${latestCode} ${latestRaw}`) || 'InTransit',
+      statusText: latestRaw || '',
+      origin: summary.ORIGIN || null,
+      destination: summary.DESTINATION || null,
+      events,
+    };
+  },
+
+  async cancelShipment(awb, cfg) {
+    // Trackon booking API v2.02 docs shared for this project do not define cancellation API.
+    throw new Error(`Trackon cancellation API is not available in current credentials/doc set for AWB ${awb}`);
+  },
+};
+
+/* ════════════════════════════════════════════════════════════
    BLUEDART
    Official API: https://www.bluedart.com/web/guest/api
    Required: BlueDart API license key
@@ -392,7 +530,7 @@ const dhl = {
 /* ════════════════════════════════════════════════════════════
    CARRIER ROUTER
    ════════════════════════════════════════════════════════════ */
-const CARRIERS = { Delhivery: delhivery, DTDC: dtdc, BlueDart: bluedart, FedEx: fedex, DHL: dhl };
+const CARRIERS = { Delhivery: delhivery, DTDC: dtdc, Trackon: trackon, BlueDart: bluedart, FedEx: fedex, DHL: dhl };
 
 async function createShipment(carrier, data) {
   const impl = CARRIERS[carrier];
@@ -506,6 +644,21 @@ function mapDTDCStatus(raw) {
   if (s.includes('RTO')) return 'RTO';
   return 'InTransit';
 }
+function mapTrackonStatus(raw) {
+  const s = String(raw || '').toUpperCase().trim();
+  if (s.startsWith('DDU') || s.includes('DDUB') || s.includes('DDUF') || s.includes('DDUA')) return 'Delivered';
+  if (s.startsWith('DRS') || s.includes('OUT FOR DELIVERY')) return 'OutForDelivery';
+  if (s.startsWith('DNU') || s.includes('UNDELIVER') || s.includes('ATMP')) return 'Failed';
+  if (s.startsWith('RTO') || s.startsWith('RSET') || s.startsWith('RMFT') || s.startsWith('RHOD') || s.startsWith('RHON') || s.startsWith('RHO') || s.startsWith('RIS')) return 'RTO';
+  if (s.startsWith('BOK') || s.includes('BOOKED') || s.includes('PICK UP')) return 'Booked';
+  if (s.includes('OUT FOR') || s.includes('OFD')) return 'OutForDelivery';
+  if (s.includes('DELIVER')) return 'Delivered';
+  if (s.includes('TRANSIT') || s.includes('INSCAN') || s.includes('DISPATCH')) return 'InTransit';
+  if (s.includes('BOOK') || s.includes('PICK')) return 'Booked';
+  if (s.includes('RTO') || s.includes('RETURN')) return 'RTO';
+  if (s.includes('FAIL') || s.includes('UNDELIVER')) return 'Failed';
+  return 'InTransit';
+}
 function mapBluedartStatus(raw) {
   const s = raw.toUpperCase();
   if (s === 'DL' || s.includes('DELIVER')) return 'Delivered';
@@ -541,6 +694,79 @@ async function _post(url, body, headers = {}, bodyType = 'json') {
     headers: { 'Content-Type': contentType, ...headers },
     body:    reqBody,
   }, { attempts: 3, timeoutMs: 12000 });
+}
+
+async function _postJsonOrText(url, body, headers = {}, bodyType = 'json') {
+  let reqBody, contentType;
+  if (bodyType === 'form') {
+    reqBody = Object.entries(body).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&');
+    contentType = 'application/x-www-form-urlencoded';
+  } else {
+    reqBody = JSON.stringify(body);
+    contentType = 'application/json';
+  }
+
+  const response = await fetchWithRetry(url, {
+    method: 'POST',
+    headers: { 'Content-Type': contentType, ...headers },
+    body: reqBody,
+  }, { attempts: 3, timeoutMs: 12000 });
+
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
+function extractTrackonAwb(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    const match = raw.match(/\b\d{10,15}\b/);
+    return match ? match[0] : null;
+  }
+
+  const candidateKeys = ['docketNo', 'DocketNo', 'awb', 'AWB', 'Docket No', 'DocketNo.'];
+  for (const key of candidateKeys) {
+    const val = raw[key];
+    if (val && /\d{10,15}/.test(String(val))) {
+      const m = String(val).match(/\d{10,15}/);
+      if (m) return m[0];
+    }
+  }
+
+  const match = JSON.stringify(raw).match(/\b\d{10,15}\b/);
+  return match ? match[0] : null;
+}
+
+function parseTrackonTimestamp(eventDate, eventTime) {
+  const dateText = String(eventDate || '').trim();
+  const timeText = String(eventTime || '00:00:00').trim();
+  if (!dateText) return new Date();
+
+  const m = dateText.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return new Date();
+
+  const [, dd, mm, yyyy] = m;
+  const iso = `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${timeText.length === 5 ? `${timeText}:00` : timeText}`;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? new Date() : d;
+}
+
+function getTrackonServiceType(data = {}) {
+  const fromInput = String(data.serviceType || '').trim();
+  if (fromInput) return fromInput;
+
+  const awb = String(data.awb || '');
+  if (awb.startsWith('50')) return 'Parcel';
+  if (awb.startsWith('10')) return 'Standard';
+  if (awb.startsWith('20')) return 'Prime';
+  if (awb.startsWith('80')) return 'Roadx';
+  if (awb.startsWith('60')) return 'Tecex';
+  if (awb.startsWith('62')) return 'Vtexp';
+  if (awb.startsWith('40')) return 'Smexp';
+  return 'Standard';
 }
 
 module.exports = {

@@ -107,7 +107,7 @@ async function enqueueBulkTrackingSync() {
   const active = await prisma.shipment.findMany({
     where: {
       status:  { notIn: ['Delivered', 'RTO', 'Cancelled'] },
-      courier: { in: ['Delhivery', 'DTDC', 'BlueDart', 'FedEx', 'DHL'] },
+      courier: { in: ['Delhivery', 'DTDC', 'Trackon', 'BlueDart', 'FedEx', 'DHL'] },
     },
     select: { id: true, awb: true, courier: true },
     take:   500,

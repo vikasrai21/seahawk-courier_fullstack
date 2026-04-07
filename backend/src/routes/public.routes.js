@@ -8,6 +8,7 @@ const cache = require('../utils/cache');
 const { fetchJsonWithRetry } = require('../utils/httpRetry');
 const rateLimit = require('express-rate-limit');
 const { publicTrackingLimiter } = require('../middleware/rateLimiter');
+const config = require('../config');
 
 const publicLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, message: { success: false, message: 'Too many requests.' } });
 const bookingLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, message: { success: false, message: 'Too many booking requests. Try again later.' } });
@@ -95,12 +96,40 @@ async function trackDelhivery(awb) {
 }
 
 async function trackTrackon(awb) {
-  const key = process.env.TRACKON_API_KEY;
-  if (!key) return null;
+  const appKey = process.env.TRACKON_APP_KEY || process.env.TRACKON_API_KEY;
+  const userId = process.env.TRACKON_USER_ID || process.env.TRACKON_CUSTOMER_ID || process.env.TRACKON_CLIENT_ID;
+  const password = process.env.TRACKON_PASSWORD;
+  const baseUrl = process.env.TRACKON_TRACKING_API_URL || process.env.TRACKON_API_URL || 'https://api.trackon.in';
+  if (!appKey || !userId || !password) return null;
   try {
-    const json = await fetchJsonWithRetry(`https://trackonweb.com/track-api/?awb=${awb}&apikey=${key}`, {}, { attempts: 3, timeoutMs: 8000 });
-    if (!json || json.error) return null;
-    return { courier: 'TRACKON', status: json.status || 'InTransit', consignee: json.consignee || '', destination: json.destination || '', events: (json.events || json.scans || []).map(s => ({ status: s.status || s.scan, location: s.location || s.city, timestamp: s.time || s.date, description: s.remarks || '' })) };
+    const query = new URLSearchParams({
+      AWBNo: String(awb || ''),
+      AppKey: String(appKey),
+      userID: String(userId),
+      Password: String(password),
+    });
+    const json = await fetchJsonWithRetry(`${baseUrl}/CrmApi/t1/AWBTrackingCustomer?${query.toString()}`, {
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    }, { attempts: 3, timeoutMs: 8000 });
+    if (!json || json.ResponseStatus?.Message === 'FAILED') return null;
+
+    const summary = json.summaryTrack || {};
+    const events = Array.isArray(json.lstDetails)
+      ? json.lstDetails.map(s => ({
+          status: s.CURRENT_STATUS || '',
+          location: s.CURRENT_CITY || '',
+          timestamp: `${s.EVENTDATE || ''} ${s.EVENTTIME || ''}`.trim(),
+          description: s.TRACKING_CODE || '',
+        }))
+      : [];
+
+    return {
+      courier: 'TRACKON',
+      status: summary.CURRENT_STATUS || events[0]?.status || 'InTransit',
+      consignee: '',
+      destination: summary.DESTINATION || '',
+      events,
+    };
   } catch (e) { logger.warn('Trackon tracking failed', { awb, error: e.message }); return null; }
 }
 
@@ -222,7 +251,7 @@ router.post('/pickup-request', bookingLimiter, async (req, res) => {
     });
 
     // WhatsApp message to admin
-    const adminPhone = (process.env.ADMIN_WHATSAPP || '919911565523').replace(/\D/g, '');
+    const adminPhone = String(config.app?.adminWhatsapp || '').replace(/\D/g, '');
     const waMsg = `🚨 *NEW PICKUP REQUEST* — Sea Hawk\n\n` +
       `📋 *Ref:* ${requestNo}\n` +
       `👤 *${name}*${company ? ` (${company})` : ''}\n` +

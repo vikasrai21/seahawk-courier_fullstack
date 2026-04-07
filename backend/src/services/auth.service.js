@@ -9,6 +9,8 @@ const { AppError } = require('../middleware/errorHandler');
 const { isOwnerUser } = require('../utils/owner');
 
 const SALT_ROUNDS = 12;
+const MAX_FAILED_LOGIN_ATTEMPTS = parseInt(process.env.LOGIN_LOCK_MAX || '5', 10);
+const LOGIN_LOCK_MINUTES = parseInt(process.env.LOGIN_LOCK_MINUTES || '15', 10);
 
 function sanitise(str) {
   if (!str || typeof str !== 'string') return str;
@@ -48,17 +50,41 @@ async function storeRefreshToken(userId, token, meta = {}) {
 
 async function login(email, password, meta = {}) {
   const normalised = email.toLowerCase().trim();
+  const now = new Date();
   const user = await prisma.user.findUnique({ 
     where: { email: normalised },
     include: { clientProfile: { include: { client: { select: { walletBalance: true } } } } }
   });
+
+  if (user?.lockedUntil && user.lockedUntil > now) {
+    throw new AppError('Account temporarily locked due to repeated failed logins. Please try again later.', 429);
+  }
 
   // Always compare to prevent timing attacks
   const dummyHash = '$2a$12$invalidhashtopreventtimingattacks.padding.xx';
   const valid = await bcrypt.compare(password, user?.password || dummyHash);
 
   if (!user || !valid || !user.active) {
+    if (user && !valid) {
+      const attempts = (user.loginAttempts || 0) + 1;
+      const lockNow = attempts >= MAX_FAILED_LOGIN_ATTEMPTS;
+      const lockedUntil = lockNow ? new Date(now.getTime() + LOGIN_LOCK_MINUTES * 60 * 1000) : null;
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          loginAttempts: lockNow ? 0 : attempts,
+          lockedUntil,
+        },
+      });
+    }
     throw new AppError('Invalid email or password.', 401);
+  }
+
+  if (user.loginAttempts || user.lockedUntil) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { loginAttempts: 0, lockedUntil: null },
+    });
   }
 
   const accessToken = signAccess(user);
@@ -79,6 +105,7 @@ async function login(email, password, meta = {}) {
       clientCode: clientProfile?.clientCode || null,
       walletBalance: clientProfile?.client?.walletBalance ?? 0,
       isOwner: isOwnerUser(user),
+      mustChangePassword: !!user.mustChangePassword,
     } 
   };
 }
@@ -173,8 +200,9 @@ async function createUser({ name, email, password, role, branch, clientCode }) {
       password: hashed,
       role: role || 'STAFF',
       branch: sanitise(branch),
+      mustChangePassword: true,
     },
-    select: { id: true, name: true, email: true, role: true, branch: true, active: true, createdAt: true },
+    select: { id: true, name: true, email: true, role: true, branch: true, active: true, mustChangePassword: true, createdAt: true },
   });
 
   // If CLIENT, create the ClientUser bridge record
@@ -208,7 +236,15 @@ async function changePassword(userId, currentPassword, newPassword) {
   const valid = await bcrypt.compare(currentPassword, user.password);
   if (!valid) throw new AppError('Current password is incorrect.', 400);
   const hashed = await bcrypt.hash(newPassword, SALT_ROUNDS);
-  await prisma.user.update({ where: { id: userId }, data: { password: hashed } });
+  await prisma.user.update({
+    where: { id: userId },
+    data: {
+      password: hashed,
+      mustChangePassword: false,
+      loginAttempts: 0,
+      lockedUntil: null,
+    },
+  });
   await revokeAllUserTokens(userId);
   logger.info(`Password changed: userId=${userId}`);
 }
@@ -217,7 +253,7 @@ async function getAllUsers() {
   const users = await prisma.user.findMany({
     select: {
       id: true, name: true, email: true, role: true,
-      branch: true, active: true, createdAt: true,
+      branch: true, active: true, mustChangePassword: true, createdAt: true,
       clientProfile: { select: { clientCode: true } },
     },
     orderBy: { createdAt: 'asc' },

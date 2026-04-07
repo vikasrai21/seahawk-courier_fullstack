@@ -3,11 +3,77 @@
 const prisma  = require('../config/prisma');
 const logger  = require('../utils/logger');
 const config  = require('../config');
+const appBaseUrl = String(config.app?.publicBaseUrl || '').replace(/\/+$/, '');
+const supportPhone = config.app?.supportPhone || '+91 99115 65523';
 
 const DEFAULT_PREFS = {
-  whatsapp: { outForDelivery: true, delivered: true },
-  email: { ndr: true, rto: true, pod: true },
+  whatsapp: {
+    booked: false,
+    inTransit: false,
+    outForDelivery: true,
+    delivered: true,
+  },
+  email: {
+    booked: false,
+    inTransit: false,
+    outForDelivery: false,
+    delivered: true,
+    ndr: true,
+    rto: true,
+    pod: true,
+  },
 };
+
+const MOVEMENT_STATUS_PREF_KEYS = {
+  Booked: 'booked',
+  InTransit: 'inTransit',
+  OutForDelivery: 'outForDelivery',
+  Delivered: 'delivered',
+};
+
+function buildMovementWhatsAppMessage(status, awb) {
+  const trackUrl = `${appBaseUrl}/track/${encodeURIComponent(awb)}`;
+  if (status === 'Booked') {
+    return `📦 Your shipment (AWB: ${awb}) has been booked successfully with Sea Hawk Courier.\n\nTrack: ${trackUrl}\n\nFor support: ${supportPhone}`;
+  }
+  if (status === 'InTransit') {
+    return `🚛 Your shipment (AWB: ${awb}) is now in transit.\n\nTrack live updates: ${trackUrl}\n\n— Sea Hawk Courier`;
+  }
+  if (status === 'OutForDelivery') {
+    return `🚚 Your shipment (AWB: ${awb}) is out for delivery today. Please be available to receive it.\n\nTrack: ${trackUrl}\n\n— Sea Hawk Courier`;
+  }
+  return `✅ Your shipment (AWB: ${awb}) has been delivered successfully. Thank you for choosing Sea Hawk Courier!\n\nFor any queries call: ${supportPhone}`;
+}
+
+function buildMovementEmailPayload({ status, awb, consignee, company }) {
+  const trackUrl = `${appBaseUrl}/track/${encodeURIComponent(awb)}`;
+  if (status === 'Booked') {
+    return {
+      subject: `Shipment Booked — AWB ${awb}`,
+      text: `Dear ${company},\n\nShipment AWB ${awb} (${consignee || 'Consignee'}) has been booked successfully.\nTrack: ${trackUrl}\n\n— Sea Hawk Courier`,
+      html: `<p>Dear <strong>${company}</strong>,</p><p>Shipment AWB <strong>${awb}</strong>${consignee ? ` for <strong>${consignee}</strong>` : ''} has been booked successfully.</p><p><a href="${trackUrl}">Track shipment</a></p><p>— Sea Hawk Courier</p>`,
+    };
+  }
+  if (status === 'InTransit') {
+    return {
+      subject: `Shipment In Transit — AWB ${awb}`,
+      text: `Dear ${company},\n\nShipment AWB ${awb} (${consignee || 'Consignee'}) is now in transit.\nTrack: ${trackUrl}\n\n— Sea Hawk Courier`,
+      html: `<p>Dear <strong>${company}</strong>,</p><p>Shipment AWB <strong>${awb}</strong>${consignee ? ` for <strong>${consignee}</strong>` : ''} is now in transit.</p><p><a href="${trackUrl}">Track shipment</a></p><p>— Sea Hawk Courier</p>`,
+    };
+  }
+  if (status === 'OutForDelivery') {
+    return {
+      subject: `Out For Delivery — AWB ${awb}`,
+      text: `Dear ${company},\n\nShipment AWB ${awb} (${consignee || 'Consignee'}) is out for delivery.\nTrack: ${trackUrl}\n\n— Sea Hawk Courier`,
+      html: `<p>Dear <strong>${company}</strong>,</p><p>Shipment AWB <strong>${awb}</strong>${consignee ? ` for <strong>${consignee}</strong>` : ''} is out for delivery.</p><p><a href="${trackUrl}">Track shipment</a></p><p>— Sea Hawk Courier</p>`,
+    };
+  }
+  return {
+    subject: `Delivered — AWB ${awb}`,
+    text: `Dear ${company},\n\nShipment AWB ${awb} (${consignee || 'Consignee'}) has been delivered.\nTrack: ${trackUrl}\n\nFor support: ${supportPhone}\n\n— Sea Hawk Courier`,
+    html: `<p>Dear <strong>${company}</strong>,</p><p>Shipment AWB <strong>${awb}</strong>${consignee ? ` for <strong>${consignee}</strong>` : ''} has been delivered.</p><p><a href="${trackUrl}">Track shipment history</a></p><p>For support: ${supportPhone}</p><p>— Sea Hawk Courier</p>`,
+  };
+}
 
 async function getClientNotificationPreferences(clientCode) {
   if (!clientCode) return DEFAULT_PREFS;
@@ -94,46 +160,62 @@ async function sendWhatsApp(phone, message) {
 async function notifyStatusChange(shipment) {
   const { awb, status, consignee, phone, clientCode } = shipment;
   const prefs = await getClientNotificationPreferences(clientCode);
+  const movementPrefKey = MOVEMENT_STATUS_PREF_KEYS[status];
+  let client = null;
+  const getClient = async () => {
+    if (client !== null) return client;
+    if (!clientCode) return null;
+    client = await prisma.client.findUnique({
+      where: { code: clientCode },
+      select: { email: true, company: true },
+    });
+    return client;
+  };
 
-  // Notify consignee via WhatsApp when out for delivery or delivered
-  if (
-    phone &&
-    (
-      (status === 'OutForDelivery' && prefs.whatsapp?.outForDelivery) ||
-      (status === 'Delivered' && prefs.whatsapp?.delivered)
-    )
-  ) {
-    let msg;
-    if (status === 'OutForDelivery') {
-      msg = `🚚 Your shipment (AWB: ${awb}) is out for delivery today. Please be available to receive it.\n\nTrack: https://seahawk-courierfullstack-production.up.railway.app/track/${awb}\n\n— Sea Hawk Courier`;
-    } else {
-      msg = `✅ Your shipment (AWB: ${awb}) has been delivered successfully. Thank you for choosing Sea Hawk Courier!\n\nFor any queries call: +91 99115 65523`;
+  if (movementPrefKey && phone && prefs.whatsapp?.[movementPrefKey]) {
+    await sendWhatsApp(phone, buildMovementWhatsAppMessage(status, awb));
+  }
+
+  if (movementPrefKey && clientCode && prefs.email?.[movementPrefKey]) {
+    const c = await getClient();
+    if (c?.email) {
+      const payload = buildMovementEmailPayload({
+        status,
+        awb,
+        consignee,
+        company: c.company || 'Customer',
+      });
+      await sendEmail({
+        to: c.email,
+        subject: payload.subject,
+        text: payload.text,
+        html: payload.html,
+      });
     }
-    await sendWhatsApp(phone, msg);
   }
 
   // Notify RTO to client via email
   if (status === 'RTO' && clientCode && prefs.email?.rto) {
-    const client = await prisma.client.findUnique({ where: { code: clientCode }, select: { email: true, company: true } });
-    if (client?.email) {
+    const c = await getClient();
+    if (c?.email) {
       await sendEmail({
-        to: client.email,
+        to: c.email,
         subject: `RTO Alert — AWB ${awb}`,
-        text: `Dear ${client.company},\n\nShipment AWB ${awb} (${consignee}) has been marked as Return to Origin (RTO).\n\nPlease log in to your portal to take action.\n\n— Sea Hawk Courier`,
-        html: `<p>Dear <strong>${client.company}</strong>,</p><p>Shipment AWB <strong>${awb}</strong> addressed to <strong>${consignee}</strong> has been marked as <strong>Return to Origin (RTO)</strong>.</p><p>Please <a href="https://seahawk-courierfullstack-production.up.railway.app/portal">log in to your portal</a> to take action.</p><p>— Sea Hawk Courier</p>`,
+        text: `Dear ${c.company},\n\nShipment AWB ${awb} (${consignee}) has been marked as Return to Origin (RTO).\n\nPlease log in to your portal to take action.\n\n— Sea Hawk Courier`,
+        html: `<p>Dear <strong>${c.company}</strong>,</p><p>Shipment AWB <strong>${awb}</strong> addressed to <strong>${consignee}</strong> has been marked as <strong>Return to Origin (RTO)</strong>.</p><p>Please <a href="${appBaseUrl}/portal">log in to your portal</a> to take action.</p><p>— Sea Hawk Courier</p>`,
       });
     }
   }
 
   // Notify on NDR
   if (status === 'NDR' && clientCode && prefs.email?.ndr) {
-    const client = await prisma.client.findUnique({ where: { code: clientCode }, select: { email: true, company: true } });
-    if (client?.email) {
+    const c = await getClient();
+    if (c?.email) {
       await sendEmail({
-        to: client.email,
+        to: c.email,
         subject: `Delivery Attempt Failed — AWB ${awb}`,
-        text: `Dear ${client.company},\n\nDelivery attempt for AWB ${awb} (${consignee}) has failed. Please update delivery instructions in your portal.\n\n— Sea Hawk Courier`,
-        html: `<p>Dear <strong>${client.company}</strong>,</p><p>Delivery attempt for AWB <strong>${awb}</strong> addressed to <strong>${consignee}</strong> has failed.</p><p>Please <a href="https://seahawk-courierfullstack-production.up.railway.app/portal">update delivery instructions</a>.</p><p>— Sea Hawk Courier</p>`,
+        text: `Dear ${c.company},\n\nDelivery attempt for AWB ${awb} (${consignee}) has failed. Please update delivery instructions in your portal.\n\n— Sea Hawk Courier`,
+        html: `<p>Dear <strong>${c.company}</strong>,</p><p>Delivery attempt for AWB <strong>${awb}</strong> addressed to <strong>${consignee}</strong> has failed.</p><p>Please <a href="${appBaseUrl}/portal">update delivery instructions</a>.</p><p>— Sea Hawk Courier</p>`,
       });
     }
   }
@@ -155,13 +237,14 @@ async function sendPODEmail(shipment, pdfUrl) {
 }
 
 // ── Welcome email for new client portal user ──────────────────────────────
-async function sendWelcomeEmail(user, tempPassword) {
+async function sendWelcomeEmail(user, _tempPassword) {
   if (!user.email) return;
+  const loginUrl = `${appBaseUrl}/login`;
   await sendEmail({
     to: user.email,
     subject: 'Welcome to Sea Hawk Client Portal',
-    html: `<p>Dear <strong>${user.name}</strong>,</p><p>Your client portal account has been created.</p><p>Login: <a href="https://seahawk-courierfullstack-production.up.railway.app/login">https://seahawk-courierfullstack-production.up.railway.app/login</a></p><p>Email: ${user.email}<br>Temporary password: <strong>${tempPassword}</strong></p><p>Please change your password after first login.</p><p>— Sea Hawk Courier</p>`,
-    text: `Welcome ${user.name}! Your portal login: ${user.email} / ${tempPassword}. Change password after first login.`,
+    html: `<p>Dear <strong>${user.name}</strong>,</p><p>Your client portal account has been created.</p><p>Login: <a href="${loginUrl}">${loginUrl}</a></p><p>Email: ${user.email}</p><p>Your temporary password has been shared by your account administrator via a secure channel.</p><p>Please change your password after first login.</p><p>— Sea Hawk Courier</p>`,
+    text: `Welcome ${user.name}! Your portal login is ${user.email}. Your temporary password has been shared separately via a secure channel. Please change your password after first login.`,
   });
 }
 

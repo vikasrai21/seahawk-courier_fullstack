@@ -29,6 +29,9 @@ describe('carrier.service', () => {
     
     process.env.DTDC_API_KEY = 'test-key';
     process.env.DTDC_CUSTOMER_CODE = 'TEST_CUST'; // CRITICAL
+    process.env.TRACKON_APP_KEY = 'trackon-app-key';
+    process.env.TRACKON_USER_ID = 'trackon-user';
+    process.env.TRACKON_PASSWORD = 'trackon-pass';
     
     process.env.BLUEDART_LICENSE_KEY = 'test-key';
     process.env.BLUEDART_LOGIN_ID = 'test-login';
@@ -72,6 +75,16 @@ describe('carrier.service', () => {
       const result = await carrierService.createShipment('BlueDart', mockData);
       expect(result.awb).toBe('BD789');
     });
+
+    it('creates a shipment via Trackon', async () => {
+      mockHttp.fetchWithRetry.mockResolvedValueOnce({
+        text: vi.fn().mockResolvedValue(JSON.stringify({ docketNo: '500055555555' }))
+      });
+
+      const result = await carrierService.createShipment('Trackon', mockData);
+      expect(result.awb).toBe('500055555555');
+      expect(result.carrier).toBe('Trackon');
+    });
   });
 
   describe('fetchTracking', () => {
@@ -85,8 +98,31 @@ describe('carrier.service', () => {
         }]
       });
 
-      const result = await carrierService.fetchTracking('Delhivery', 'AWB123');
+      const result = await carrierService.fetchTracking('Delhivery', 'AWB123', { bypassCache: true });
       expect(result.status).toBe('Delivered');
+    });
+
+    it('fetches tracking info for Trackon and maps status', async () => {
+      mockHttp.fetchJsonWithRetry.mockResolvedValueOnce({
+        summaryTrack: {
+          CURRENT_STATUS: 'OUT FOR DELIVERY',
+          TRACKING_CODE: 'DRSG',
+          CURRENT_CITY: 'Gurugram',
+        },
+        lstDetails: [
+          {
+            CURRENT_STATUS: 'OUT FOR DELIVERY',
+            CURRENT_CITY: 'Gurugram',
+            EVENTDATE: '07/04/2026',
+            EVENTTIME: '10:00:00',
+            TRACKING_CODE: 'DRSG',
+          },
+        ],
+      });
+
+      const result = await carrierService.fetchTracking('Trackon', 'TRK111', { bypassCache: true });
+      expect(result.status).toBe('OutForDelivery');
+      expect(result.events.length).toBe(1);
     });
   });
 

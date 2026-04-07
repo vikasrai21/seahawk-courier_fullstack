@@ -20,10 +20,16 @@ async function updateNotificationPreferences(req, res) {
 
   const prefs = {
     whatsapp: {
+      booked: Boolean(req.body?.whatsapp?.booked),
+      inTransit: Boolean(req.body?.whatsapp?.inTransit),
       outForDelivery: Boolean(req.body?.whatsapp?.outForDelivery),
       delivered: Boolean(req.body?.whatsapp?.delivered),
     },
     email: {
+      booked: Boolean(req.body?.email?.booked),
+      inTransit: Boolean(req.body?.email?.inTransit),
+      outForDelivery: Boolean(req.body?.email?.outForDelivery),
+      delivered: Boolean(req.body?.email?.delivered),
       ndr: Boolean(req.body?.email?.ndr),
       rto: Boolean(req.body?.email?.rto),
       pod: Boolean(req.body?.email?.pod),

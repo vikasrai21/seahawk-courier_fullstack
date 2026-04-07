@@ -24,7 +24,7 @@ module.exports = {
   db: { url: required('DATABASE_URL') },
 
   jwt: {
-    secret:           required('JWT_SECRET', 16),
+    secret:           required('JWT_SECRET', 32),
     accessExpiresIn:  optional('JWT_ACCESS_EXPIRES', '15m'),
     refreshSecret:    optional('JWT_REFRESH_SECRET', required('JWT_SECRET') + '_refresh'),
     refreshExpiresIn: optional('JWT_REFRESH_EXPIRES', '30d'),
@@ -59,6 +59,14 @@ module.exports = {
   carriers: {
     delhivery: { key: optional('DELHIVERY_API_KEY'), url: optional('DELHIVERY_API_URL', 'https://track.delhivery.com') },
     dtdc:      { key: optional('DTDC_API_KEY'),      customerCode: optional('DTDC_CUSTOMER_CODE') },
+    trackon: {
+      appKey: optional('TRACKON_APP_KEY', optional('TRACKON_API_KEY')),
+      userId: optional('TRACKON_USER_ID', optional('TRACKON_CUSTOMER_ID', optional('TRACKON_CLIENT_ID'))),
+      password: optional('TRACKON_PASSWORD'),
+      trackingUrl: optional('TRACKON_TRACKING_API_URL', optional('TRACKON_API_URL', 'https://api.trackon.in')),
+      bookingUrl: optional('TRACKON_BOOKING_API_URL', 'http://trackon.in:5455'),
+      customerCode: optional('TRACKON_CUSTOMER_CODE'),
+    },
     bluedart:  { key: optional('BLUEDART_LICENSE_KEY'), loginId: optional('BLUEDART_LOGIN_ID') },
     razorpay:  { keyId: optional('RAZORPAY_KEY_ID'), secret: optional('RAZORPAY_KEY_SECRET') },
   },
@@ -103,6 +111,12 @@ module.exports = {
   docs: {
     enabled: optional('API_DOCS_ENABLED', 'true') !== 'false',
     public: optional('API_DOCS_PUBLIC', env !== 'production' ? 'true' : 'false') === 'true',
+  },
+
+  app: {
+    publicBaseUrl: optional('PUBLIC_BASE_URL', 'http://localhost:5173'),
+    supportPhone: optional('SUPPORT_PHONE', '+91 99115 65523'),
+    adminWhatsapp: optional('ADMIN_WHATSAPP', '919911565523'),
   },
 
   webhooks: {

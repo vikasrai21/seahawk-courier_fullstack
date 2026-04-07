@@ -13,12 +13,16 @@ const STAFF = ['ADMIN','OPS_MANAGER','STAFF'];
 
 // ── Carrier config status (env-based, no DB) ──────────────────────────────
 router.get('/configs', authenticate, requireRole(['ADMIN']), (req, res) => {
-  const carriers = ['Delhivery','DTDC','BlueDart','FedEx','DHL'];
+  const carriers = ['Delhivery','DTDC','Trackon','BlueDart','FedEx','DHL'];
   const configs  = carriers.map(c => ({
     carrier:  c,
     enabled:  !!process.env[`${c.toUpperCase().replace(' ','_')}_API_KEY`] ||
               !!process.env[`DELHIVERY_API_KEY`] && c === 'Delhivery' ||
               !!process.env[`DTDC_CUSTOMER_CODE`] && c === 'DTDC' ||
+              !!(process.env[`TRACKON_APP_KEY`] || process.env[`TRACKON_API_KEY`]) &&
+              !!(process.env[`TRACKON_USER_ID`] || process.env[`TRACKON_CUSTOMER_ID`] || process.env[`TRACKON_CLIENT_ID`]) &&
+              !!process.env[`TRACKON_PASSWORD`] &&
+              c === 'Trackon' ||
               !!process.env[`BLUEDART_LICENSE_KEY`] && c === 'BlueDart',
     note: 'Configured via environment variables',
   }));

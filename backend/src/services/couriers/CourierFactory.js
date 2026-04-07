@@ -225,84 +225,133 @@ class BlueDartProvider extends ICourierProvider {
 // ─────────────────────────────────────────────────────────────
 class TrackonProvider extends ICourierProvider {
   get name()    { return 'Trackon'; }
-  get enabled() { return !!process.env.TRACKON_CUSTOMER_ID && !!process.env.TRACKON_API_KEY; }
-  get baseUrl() { return process.env.TRACKON_API_URL || 'https://trackon.in/api'; }
+  get enabled() {
+    return !!(process.env.TRACKON_APP_KEY || process.env.TRACKON_API_KEY)
+      && !!(process.env.TRACKON_USER_ID || process.env.TRACKON_CUSTOMER_ID || process.env.TRACKON_CLIENT_ID)
+      && !!process.env.TRACKON_PASSWORD;
+  }
+  get baseUrl() { return process.env.TRACKON_TRACKING_API_URL || process.env.TRACKON_API_URL || 'https://api.trackon.in'; }
+  get bookingUrl() { return process.env.TRACKON_BOOKING_API_URL || 'http://trackon.in:5455'; }
 
-  _headers() {
+  _auth() {
     return {
-      'customerId': process.env.TRACKON_CUSTOMER_ID,
-      'apiKey':     process.env.TRACKON_API_KEY,
-      'Content-Type': 'application/json',
+      appKey: process.env.TRACKON_APP_KEY || process.env.TRACKON_API_KEY || '',
+      userId: process.env.TRACKON_USER_ID || process.env.TRACKON_CUSTOMER_ID || process.env.TRACKON_CLIENT_ID || '',
+      password: process.env.TRACKON_PASSWORD || '',
     };
   }
 
   async createShipment(payload) {
-    const { awb, consignee, phone, deliveryAddress, deliveryCity, deliveryState, pincode, weight, codAmount } = payload;
-    const res = await fetch(`${this.baseUrl}/booking/create`, {
-      method: 'POST', headers: this._headers(), signal: AbortSignal.timeout(15000),
+    const { awb, consignee, phone, deliveryAddress, deliveryCity, pincode, weight, pieces, serviceType, orderRef } = payload;
+    const auth = this._auth();
+    const res = await fetch(`${this.bookingUrl}/CrmApi/Crm/UploadPickupRequestWithoutDockNo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      signal: AbortSignal.timeout(15000),
       body: JSON.stringify({
-        docketNo:        awb,
-        consigneeName:   consignee,
-        consigneePhone:  phone,
-        consigneeAddr:   deliveryAddress,
-        consigneeCity:   deliveryCity,
-        consigneeState:  deliveryState,
-        consigneePincode: String(pincode),
-        actualWeight:    weight || 0.5,
-        codAmount:       codAmount || 0,
-        paymentMode:     codAmount > 0 ? 'COD' : 'PREPAID',
-        noOfPcs:         1,
-        serviceType:     'D', // D = Door delivery
+        Appkey: auth.appKey,
+        userId: auth.userId,
+        password: auth.password,
+        SerialNo: String(Date.now()).slice(-6),
+        RefNo: String(orderRef || awb || ''),
+        ActionType: 'Book',
+        CustomerCode: String(process.env.TRACKON_CUSTOMER_CODE || ''),
+        ClientName: String(consignee || ''),
+        AddressLine1: String(deliveryAddress || ''),
+        AddressLine2: '',
+        City: String(deliveryCity || ''),
+        PinCode: String(pincode || ''),
+        MobileNo: String(phone || '9999999999'),
+        Email: String(payload.email || 'ops@seahawkcourier.com'),
+        DocType: payload.isDox ? 'D' : 'N',
+        TypeOfService: String(payload.typeOfService || payload.service || 'AIR').toUpperCase(),
+        Weight: Number(weight || 0.5).toFixed(3),
+        InvoiceValue: Number(payload.declaredValue || 0).toFixed(3),
+        NoOfPieces: String(Number(pieces || 1)),
+        ItemName: String(payload.productName || payload.contents || 'Shipment'),
+        Remark: String(payload.notes || ''),
+        PickupCustCode: String(process.env.TRACKON_PICKUP_CUST_CODE || ''),
+        PickupCustName: String(process.env.TRACKON_PICKUP_CUST_NAME || process.env.TRACKON_PICKUP_NAME || 'Sea Hawk Courier & Cargo'),
+        PickupAddr: String(process.env.TRACKON_PICKUP_ADDR || 'Shop 6 & 7, Rao Lal Singh Market'),
+        PickupCity: String(process.env.TRACKON_PICKUP_CITY || 'Gurugram'),
+        PickupState: String(process.env.TRACKON_PICKUP_STATE || 'Haryana'),
+        PickupPincode: String(process.env.TRACKON_PICKUP_PINCODE || '122015'),
+        PickupPhone: String(process.env.TRACKON_PICKUP_PHONE || '9911565523'),
+        ServiceType: String(serviceType || 'Standard'),
       }),
     });
     if (!res.ok) throw new Error(`Trackon API error: ${res.status}`);
-    const data = await res.json();
-    if (!data.success) throw new Error(data.message || 'Trackon booking failed');
-    return { awb, labelUrl: data.labelUrl || null, courier: 'Trackon' };
+    const text = await res.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch { data = text; }
+    const match = String(typeof data === 'string' ? data : JSON.stringify(data)).match(/\b\d{10,15}\b/);
+    if (!match) throw new Error(typeof data === 'string' ? data : 'Trackon booking failed');
+    return { awb: match[0], labelUrl: null, courier: 'Trackon' };
   }
 
   async trackShipment(awb) {
-    const res = await fetch(`${this.baseUrl}/tracking/${awb}`, { headers: this._headers(), signal: AbortSignal.timeout(10000) });
+    const auth = this._auth();
+    const query = new URLSearchParams({
+      AWBNo: String(awb || ''),
+      AppKey: auth.appKey,
+      userID: auth.userId,
+      Password: auth.password,
+    });
+    const res = await fetch(`${this.baseUrl}/CrmApi/t1/AWBTrackingCustomer?${query.toString()}`, {
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      signal: AbortSignal.timeout(10000),
+    });
     if (!res.ok) throw new Error(`Trackon tracking failed: ${res.status}`);
     const data = await res.json();
-    const scans = data?.scans || data?.trackingDetails || [];
+    const summary = data?.summaryTrack || {};
+    const scans = Array.isArray(data?.lstDetails) ? data.lstDetails : [];
     return {
-      status: data?.currentStatus || 'Unknown',
+      status: summary.CURRENT_STATUS || 'Unknown',
       events: scans.map(s => ({
-        status:    s.status || s.scanType || '',
-        location:  s.location || s.city || '',
-        description: s.remarks || s.description || '',
-        timestamp: s.scanTime ? new Date(s.scanTime) : new Date(),
+        status: s.CURRENT_STATUS || '',
+        location: s.CURRENT_CITY || '',
+        description: s.TRACKING_CODE || '',
+        timestamp: toTrackonDate(s.EVENTDATE, s.EVENTTIME),
       })),
     };
   }
 
-  async cancelShipment(awb) {
-    const res = await fetch(`${this.baseUrl}/booking/cancel`, {
-      method: 'POST', headers: this._headers(), signal: AbortSignal.timeout(10000),
-      body: JSON.stringify({ docketNo: awb }),
-    });
-    const data = await res.json();
-    return { success: data.success, message: data.message };
+  async cancelShipment(_awb) {
+    return { success: false, message: 'Trackon cancellation API is not available in current integration docs.' };
   }
 
   async getLabel(awb) {
-    return { url: `${this.baseUrl}/label/${awb}`, type: 'url' };
+    return { url: `http://trackon.in/Trackon/pub/mainHtml.pub?awbs=${encodeURIComponent(awb)}`, type: 'url' };
   }
 
   async calculateRate({ originPin, destPin, weight, cod }) {
-    const res = await fetch(`${this.baseUrl}/rate/calculate`, {
-      method: 'POST', headers: this._headers(), signal: AbortSignal.timeout(10000),
-      body: JSON.stringify({ fromPin: originPin, toPin: destPin, weight: weight || 0.5, codAmount: cod || 0 }),
-    });
-    return res.json();
+    // No rate endpoint in the provided Trackon API docs; use internal estimate.
+    const w = parseFloat(weight) || 0.5;
+    const c = Number(cod || 0) > 0 ? 40 : 0;
+    return {
+      total: Math.round((30 + Math.max(0, w - 0.5) * 22 + c) * 1.18),
+      currency: 'INR',
+      estimated: true,
+      originPin,
+      destPin,
+    };
   }
 
   async checkServiceability(originPin, destPin) {
-    const res = await fetch(`${this.baseUrl}/serviceability?fromPin=${originPin}&toPin=${destPin}`, { headers: this._headers(), signal: AbortSignal.timeout(10000) });
-    const data = await res.json();
-    return { courier: 'Trackon', serviceable: !!data?.serviceable, destPin };
+    // API docs shared do not define this endpoint; keep optimistic until Trackon publishes serviceability API.
+    return { courier: 'Trackon', serviceable: true, originPin, destPin, estimated: true };
   }
+}
+
+function toTrackonDate(eventDate, eventTime) {
+  const dateText = String(eventDate || '').trim();
+  const timeText = String(eventTime || '00:00:00').trim();
+  const m = dateText.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return new Date();
+  const [, dd, mm, yyyy] = m;
+  const iso = `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${timeText.length === 5 ? `${timeText}:00` : timeText}`;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? new Date() : d;
 }
 
 // ─────────────────────────────────────────────────────────────

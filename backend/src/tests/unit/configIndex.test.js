@@ -6,7 +6,7 @@ async function loadConfig(env = {}) {
   const nextEnv = {
     NODE_ENV: 'test',
     DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/seahawk',
-    JWT_SECRET: 'super-secret-token-123',
+    JWT_SECRET: 'super-secret-token-with-32-chars!!',
     ...env,
   };
 
@@ -67,7 +67,7 @@ describe('config/index', () => {
     expect(config.isProd).toBe(true);
     expect(config.port).toBe(4002);
     expect(config.db.url).toContain('postgres://');
-    expect(config.jwt.refreshSecret).toBe('super-secret-token-123_refresh');
+    expect(config.jwt.refreshSecret).toBe('super-secret-token-with-32-chars!!_refresh');
     expect(config.cors.origin).toEqual(['https://a.example.com', 'https://b.example.com']);
     expect(config.cookie).toEqual(expect.objectContaining({ secure: true, sameSite: 'none' }));
     expect(config.email).toEqual(expect.objectContaining({ host: 'smtp.example.com', port: 465, user: 'mailer' }));
@@ -95,6 +95,6 @@ describe('config/index', () => {
   });
 
   it('throws when required env vars are missing or invalid', async () => {
-    await expect(loadConfig({ JWT_SECRET: 'short' })).rejects.toThrow('[CONFIG] JWT_SECRET must be at least 16 chars');
+    await expect(loadConfig({ JWT_SECRET: 'short' })).rejects.toThrow('[CONFIG] JWT_SECRET must be at least 32 chars');
   });
 });
