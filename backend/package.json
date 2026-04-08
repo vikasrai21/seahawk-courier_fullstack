@@ -4,7 +4,7 @@
   "description": "Seahawk Courier & Cargo — Production Backend",
   "main": "server.js",
   "scripts": {
-    "start": "npx prisma migrate resolve --applied \"20260319143343_phase3_client_portal\" && npx prisma migrate deploy && node server.js",
+    "start": "node server.js",
     "dev": "cross-env NODE_ENV=development nodemon server.js",
     "build": "npx prisma generate",
     "test": "vitest run",
