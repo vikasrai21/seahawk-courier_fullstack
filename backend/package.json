@@ -4,7 +4,7 @@
   "description": "Seahawk Courier & Cargo — Production Backend",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "npx prisma db push --accept-data-loss && node server.js",
     "dev": "cross-env NODE_ENV=development nodemon server.js",
     "build": "npx prisma generate",
     "test": "vitest run",
