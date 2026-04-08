@@ -30,6 +30,10 @@ vi.mock('../../services/delhivery.service', () => ({ default: { getTracking: vi.
 vi.mock('../../services/trackon.service', () => ({ default: { getTracking: vi.fn() } }));
 vi.mock('../../services/dtdc.service', () => ({ default: { getTracking: vi.fn() } }));
 vi.mock('../../services/wallet.service', () => ({ default: { creditShipmentRefund: vi.fn() }, creditShipmentRefund: vi.fn() }));
+vi.mock('../../services/queue.service', () => ({
+  default: { enqueueTrackingSync: vi.fn() },
+  enqueueTrackingSync: vi.fn(),
+}));
 vi.mock('../../middleware/errorHandler', () => ({
   AppError: class AppError extends Error {
     constructor(message, statusCode) { super(message); this.statusCode = statusCode; this.isOperational = true; }
@@ -46,9 +50,22 @@ vi.mock('../../services/stateMachine', () => ({
 }));
 
 const shipmentService = await import('../../services/shipment.service.js');
+const queueService = await import('../../services/queue.service.js');
+const importLedgerService = await import('../../services/import-ledger.service.js');
+const contractService = await import('../../services/contract.service.js');
+const trackonService = await import('../../services/trackon.service.js');
+const dtdcService = await import('../../services/dtdc.service.js');
 
 describe('shipment.service', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.spyOn(importLedgerService, 'ensureTable').mockResolvedValue(undefined);
+    vi.spyOn(importLedgerService, 'insertRow').mockResolvedValue(undefined);
+    vi.spyOn(contractService, 'getActiveContractsByClientCodes').mockResolvedValue({});
+    vi.spyOn(contractService, 'selectBestContract').mockReturnValue(null);
+    vi.spyOn(contractService, 'calculatePriceFromContract').mockReturnValue(null);
+    mockPrisma.$queryRawUnsafe = vi.fn().mockResolvedValue([{}]);
+  });
 
   // ── getAll ──────────────────────────────────────────────────────
   describe('getAll', () => {
@@ -96,6 +113,109 @@ describe('shipment.service', () => {
       mockPrisma.shipment.delete.mockResolvedValue({ id: 1 });
       const result = await shipmentService.remove(1);
       expect(result.id).toBe(1);
+    });
+  });
+
+  describe('bulkImport', () => {
+    it('auto-detects courier and queues tracking sync for imported active shipments', async () => {
+      mockPrisma.client.upsert.mockResolvedValue({});
+      mockPrisma.shipment.findUnique.mockResolvedValue(null);
+      mockPrisma.shipment.create.mockResolvedValue({
+        id: 42,
+        awb: 'Z66077871',
+        courier: 'DTDC',
+        status: 'Booked',
+      });
+
+      const result = await shipmentService.bulkImport([
+        {
+          awb: 'Z66077871',
+          clientCode: 'sea',
+          consignee: 'john',
+          destination: 'pune',
+          weight: 1,
+          amount: 0,
+          courier: '',
+          service: 'Standard',
+          status: '',
+        },
+      ], 7);
+
+      expect(mockPrisma.shipment.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          courier: 'DTDC',
+          status: 'Booked',
+        }),
+      }));
+      expect(queueService.enqueueTrackingSync).toHaveBeenCalledWith(42, 'Z66077871', 'DTDC');
+      expect(result.trackingQueued).toBe(1);
+    });
+  });
+
+  describe('scanAwbAndUpdate', () => {
+    it('creates a placeholder capture when live tracking is unavailable in capture mode', async () => {
+      vi.spyOn(trackonService.default, 'getTracking').mockResolvedValue(null);
+      mockPrisma.shipment.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.shipment.findUnique.mockResolvedValueOnce(null);
+      mockPrisma.shipment.create.mockResolvedValue({
+        id: 91,
+        awb: '200062288907',
+        courier: 'Trackon',
+        status: 'Booked',
+        client: null,
+      });
+
+      const result = await shipmentService.scanAwbAndUpdate('200062288907', 5, 'AUTO', {
+        captureOnly: true,
+        source: 'scanner',
+      });
+
+      expect(mockPrisma.shipment.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          awb: '200062288907',
+          courier: 'Trackon',
+          remarks: 'SCAN_CAPTURED: Intake awaiting tracking sync',
+          status: 'Booked',
+        }),
+      }));
+      expect(result.meta).toEqual(expect.objectContaining({
+        source: 'captured_placeholder',
+        trackingUnavailable: true,
+        existed: false,
+      }));
+    });
+
+    it('reuses an existing shipment in capture mode when tracking is unavailable', async () => {
+      vi.spyOn(dtdcService.default, 'getTracking').mockResolvedValue(null);
+      mockPrisma.shipment.findUnique
+        .mockResolvedValueOnce({ id: 10, awb: 'Z66077871', status: 'Booked' })
+        .mockResolvedValueOnce({ id: 10, awb: 'Z66077871', remarks: '', client: null });
+      mockPrisma.shipment.update.mockResolvedValue({
+        id: 10,
+        awb: 'Z66077871',
+        courier: 'DTDC',
+        status: 'Booked',
+        remarks: 'SCAN_CAPTURED: Intake awaiting tracking sync',
+        client: null,
+      });
+
+      const result = await shipmentService.scanAwbAndUpdate('Z66077871', 8, 'DTDC', {
+        captureOnly: true,
+        source: 'scanner',
+      });
+
+      expect(mockPrisma.shipment.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { awb: 'Z66077871' },
+        data: expect.objectContaining({
+          courier: 'DTDC',
+          updatedById: 8,
+        }),
+      }));
+      expect(result.meta).toEqual(expect.objectContaining({
+        source: 'local_existing',
+        trackingUnavailable: true,
+        existed: true,
+      }));
     });
   });
 });

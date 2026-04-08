@@ -124,6 +124,33 @@ describe('carrier.service', () => {
       expect(result.status).toBe('OutForDelivery');
       expect(result.events.length).toBe(1);
     });
+
+    it('fetches tracking info for DTDC and maps status from the v4 API shape', async () => {
+      mockHttp.fetchJsonWithRetry.mockResolvedValueOnce({
+        statusFlag: true,
+        status: 'SUCCESS',
+        trackHeader: {
+          strStatus: 'Delivered',
+          strOrigin: 'Delhi',
+          strDestination: 'Noida',
+          strRemarks: 'Received by John',
+        },
+        trackDetails: [
+          {
+            strAction: 'Delivered',
+            strOrigin: 'Noida Branch',
+            strActionDate: '29052025',
+            strActionTime: '1143',
+            sTrRemarks: 'Delivered',
+          },
+        ],
+      });
+
+      const result = await carrierService.fetchTracking('DTDC', 'D123456789', { bypassCache: true });
+      expect(result.status).toBe('Delivered');
+      expect(result.destination).toBe('Noida');
+      expect(result.events.length).toBe(1);
+    });
   });
 
   describe('syncTrackingEvents', () => {

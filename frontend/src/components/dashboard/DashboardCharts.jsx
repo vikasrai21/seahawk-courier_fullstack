@@ -55,33 +55,54 @@ function ChartShell({ title, icon: Icon, insight, tone = 'default', children }) 
   );
 }
 
-export default function DashboardCharts({ overview, courierAnalytics, rangeLabel, opsData }) {
+export default function DashboardCharts({ overview, courierAnalytics, rangeLabel, opsData, smartRevenue }) {
   const { isOwner } = useAuth();
   
   const statusData = Object.entries(overview?.byStatus || {})
     .map(([name, value]) => ({ name, value: Number(value || 0) }))
     .filter((item) => item.value > 0);
 
+  // Use smart revenue daily trend if available (provides calculated revenue), otherwise fallback to overview
+  const smartTrendInfo = smartRevenue?.dailyTrend?.reduce((acc, d) => {
+    acc[d.date] = d.revenue;
+    return acc;
+  }, {}) || {};
+
   const trendData = (overview?.dailyTrend || opsData?.dailyTrend || []).map(d => ({ ...d, label: d.date }));
 
-  const courierData = courierAnalytics?.couriers?.slice(0, 5).map((item) => ({
-    name: item.courier || 'Unknown',
-    deliveryRate: item.deliveryRate || 0,
-    count: item.total || 0,
-    revenue: item.revenue || 0,
-  })) || [];
+  // Build courier data: use smart revenue calculated figures for revenue
+  const smartByCourier = (smartRevenue?.byCourier || []).reduce((map, c) => {
+    map[c.courier] = { smartRevenue: c.revenue, smartCount: c.count };
+    return map;
+  }, {});
+
+  const courierData = courierAnalytics?.couriers?.slice(0, 8).map((item) => {
+    const smart = smartByCourier[item.courier] || {};
+    return {
+      name: item.courier || 'Unknown',
+      deliveryRate: item.deliveryRate || 0,
+      count: smart.smartCount || item.total || 0,
+      revenue: smart.smartRevenue || item.revenue || 0,
+      hasSmartRevenue: !!smart.smartRevenue,
+    };
+  }) || [];
 
   // Delay data from ops
   const delayData = (opsData?.delayedByCourier || []).slice(0, 8);
   const totalDelayed = delayData.reduce((sum, d) => sum + d.count, 0);
 
   // Revenue vs Cost from daily trend (estimate cost at ~72% of revenue)
-  const revCostData = trendData.map(d => ({
-    label: d.label || d.date,
-    revenue: d.revenue || 0,
-    cost: Math.round((d.revenue || 0) * 0.72),
-    profit: Math.round((d.revenue || 0) * 0.28),
-  }));
+  const revCostData = trendData.map(d => {
+    const label = d.label || d.date;
+    // Prefer smart calculated revenue if available for the specific date
+    const finalRevenue = smartTrendInfo[label] || d.revenue || 0;
+    return {
+      label,
+      revenue: finalRevenue,
+      cost: Math.round(finalRevenue * 0.72),
+      profit: Math.round(finalRevenue * 0.28),
+    };
+  });
 
   const totalShipments = Number(overview?.kpis?.totalShipments || opsData?.overview?.totalShipments || 0);
   const maxTrend = trendData.reduce((best, item) => Math.max(best, item.count || 0), 0);
@@ -212,7 +233,12 @@ export default function DashboardCharts({ overview, courierAnalytics, rangeLabel
                 <tr className="border-b border-slate-100 dark:border-slate-800">
                   <th className="text-left py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Carrier Partner</th>
                   <th className="text-center py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Shipments</th>
-                  {isOwner && <th className="text-center py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Revenue</th>}
+                  {isOwner && <th className="text-center py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <span>Calculated Revenue</span>
+                      <span className="inline-flex items-center rounded-full bg-violet-100 px-1.5 py-0.5 text-[8px] font-black text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">AI</span>
+                    </div>
+                  </th>}
                   <th className="text-right py-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Success Rate</th>
                 </tr>
               </thead>
@@ -230,7 +256,7 @@ export default function DashboardCharts({ overview, courierAnalytics, rangeLabel
                     </td>
                     {isOwner && (
                       <td className="py-4 text-center">
-                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300 tabular-nums">₹{Number(c.revenue || 0).toLocaleString('en-IN')}</span>
+                        <span className={`text-xs font-bold tabular-nums ${c.hasSmartRevenue ? 'text-emerald-700 dark:text-emerald-400' : 'text-slate-700 dark:text-slate-300'}`}>₹{Number(c.revenue || 0).toLocaleString('en-IN')}</span>
                       </td>
                     )}
                     <td className="py-4 text-right">

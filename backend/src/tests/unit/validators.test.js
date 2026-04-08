@@ -54,7 +54,7 @@ describe('validators', () => {
     const client = clientSchema.parse({ code: 'sea', company: 'Sea Hawk', email: null });
     const contract = contractSchema.parse({ clientCode: 'sea', name: 'Std' });
 
-    expect(imported.shipments[0]).toMatchObject({ clientCode: 'MISC', amount: 0, status: 'Delivered' });
+    expect(imported.shipments[0]).toMatchObject({ clientCode: 'MISC', amount: 0, status: 'Booked' });
     expect(client.code).toBe('SEA');
     expect(client.email).toBe('');
     expect(contract.clientCode).toBe('SEA');

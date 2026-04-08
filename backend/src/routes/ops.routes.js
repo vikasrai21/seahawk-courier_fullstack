@@ -12,8 +12,48 @@ const walletSvc = require('../services/wallet.service');
 const { auditLog } = require('../utils/audit');
 const logger = require('../utils/logger');
 const { bulkStatusSchema } = require('../validators/ops.validator');
+const adminAssistant = require('../services/adminAssistant.service');
 
 router.use(protect, staffOnly);
+
+// ── POST /api/ops/assistant/chat — SkyAI internal ops assistant ───────────
+router.post('/assistant/chat', requireRole('ADMIN', 'OPS_MANAGER', 'OWNER'), async (req, res) => {
+  try {
+    const { message, history = [] } = req.body;
+    if (!message?.trim()) return R.error(res, 'message is required', 400);
+    if (message.length > 500) return R.error(res, 'message too long', 400);
+
+    const { reply, action } = await adminAssistant.chat({ message: message.trim(), history });
+
+    let data = null;
+    let finalReply = reply;
+    if (action?.requiresData) {
+      data = await adminAssistant.resolveAction(action);
+      finalReply = adminAssistant.summarizeAction(action, data) || reply;
+    } else if (action?.type === 'GET_OVERVIEW') {
+      data = await adminAssistant.resolveAction(action);
+      finalReply = adminAssistant.summarizeAction(action, data) || reply;
+    }
+
+    R.ok(res, { reply: finalReply, action, data });
+  } catch (err) {
+    logger.error(`SkyAI route error: ${err.message}`);
+    R.error(res, 'AI assistant error', 500);
+  }
+});
+
+// ── POST /api/ops/assistant/execute — run a confirmed action ─────────────
+router.post('/assistant/execute', requireRole('ADMIN', 'OPS_MANAGER', 'OWNER'), async (req, res) => {
+  try {
+    const { action } = req.body;
+    if (!action?.type) return R.error(res, 'action is required', 400);
+    const data = await adminAssistant.resolveAction(action);
+    R.ok(res, { data });
+  } catch (err) {
+    logger.error(`SkyAI execute error: ${err.message}`);
+    R.error(res, 'Action execution error', 500);
+  }
+});
 
 // ── POST /api/ops/bulk-status ─────────────────────────────────────────────
 router.post('/bulk-status', validate(bulkStatusSchema), async (req, res) => {

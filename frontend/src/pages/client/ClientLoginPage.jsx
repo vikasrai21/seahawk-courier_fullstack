@@ -12,7 +12,8 @@ export default function ClientLoginPage() {
 
   // If already logged in as CLIENT, go to portal
   useEffect(() => {
-    if (user?.role === 'CLIENT') navigate('/portal', { replace: true });
+    if (user?.mustChangePassword) navigate('/change-password?required=1', { replace: true });
+    else if (user?.role === 'CLIENT') navigate('/portal', { replace: true });
     else if (user) navigate('/app', { replace: true });
   }, [user]);
 
@@ -22,7 +23,9 @@ export default function ClientLoginPage() {
     setLoading(true);
     try {
       const loggedIn = await login(form.email, form.password);
-      if (loggedIn.role === 'CLIENT') {
+      if (loggedIn?.mustChangePassword) {
+        navigate('/change-password?required=1', { replace: true });
+      } else if (loggedIn.role === 'CLIENT') {
         navigate('/portal', { replace: true });
       } else {
         // Staff/Admin who accidentally hit this page

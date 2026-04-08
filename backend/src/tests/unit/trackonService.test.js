@@ -85,6 +85,15 @@ describe('trackon.service', () => {
       fetchSpy.mockResolvedValue({ summaryTrack: { CURRENT_STATUS: 'BOOKED', TRACKING_CODE: 'BOKN' } });
       result = await svc.getTracking('AWB4');
       expect(result.status).toBe('Booked');
+
+      fetchSpy.mockResolvedValue({
+        summaryTrack: {
+          CURRENT_STATUS: 'DELIVERY MANIFEST PREPARED FOR IND. AREA NIT (FARIDABAD)',
+          TRACKING_CODE: 'DRBG'
+        }
+      });
+      result = await svc.getTracking('AWB5');
+      expect(result.status).toBe('InTransit');
     });
 
     it('returns null on API error', async () => {

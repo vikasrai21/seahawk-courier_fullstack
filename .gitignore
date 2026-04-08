@@ -62,3 +62,6 @@ tmp_readxlsx.py
 # Personal and Sensitive Folders
 BILLS/
 RATE CARDS/
+
+# Sensitive local document artifacts
+/*.pdf

@@ -13,6 +13,7 @@ const prisma  = require('../config/prisma');
 const logger  = require('../utils/logger');
 const cache   = require('../utils/cache');
 const { fetchJsonWithRetry, fetchWithRetry } = require('../utils/httpRetry');
+const dtdcTrackingSvc = require('./dtdc.service');
 
 /* ════════════════════════════════════════════════════════════
    CARRIER CONFIG LOADER
@@ -227,24 +228,24 @@ const dtdc = {
   },
 
   async fetchTracking(awb, cfg) {
-    const res = await _post(
-      `${cfg.apiUrl}/secure/gettracking`,
-      { awb_no: awb, access_token: cfg.apiKey },
-      { 'Content-Type': 'application/json' }
-    );
+    const tracking = await dtdcTrackingSvc.getTracking(awb);
+    if (!tracking) return null;
 
-    if (!res?.shipment_track_activities) return null;
-
-    const events = res.shipment_track_activities.map(e => ({
-      status:      mapDTDCStatus(e.act_type || ''),
-      location:    e.origin || '',
-      description: e.activity || '',
-      timestamp:   e.act_time ? new Date(e.act_time) : new Date(),
-      source:      'CARRIER_API',
-      rawData:     e,
-    }));
-
-    return { status: events[0]?.status || 'InTransit', events };
+    return {
+      status: tracking.status || 'InTransit',
+      statusText: tracking.statusDetail || tracking.rawStatus || '',
+      origin: tracking.origin || null,
+      destination: tracking.destination || null,
+      expectedDate: tracking.expectedDate || null,
+      events: (tracking.events || []).map((event) => ({
+        status: event.status || 'InTransit',
+        location: event.location || '',
+        description: event.description || '',
+        timestamp: event.timestamp || new Date(),
+        source: 'CARRIER_API',
+        rawData: event.rawData || {},
+      })),
+    };
   },
 
   async cancelShipment(awb, cfg) {
@@ -652,7 +653,7 @@ function mapTrackonStatus(raw) {
   if (s.startsWith('RTO') || s.startsWith('RSET') || s.startsWith('RMFT') || s.startsWith('RHOD') || s.startsWith('RHON') || s.startsWith('RHO') || s.startsWith('RIS')) return 'RTO';
   if (s.startsWith('BOK') || s.includes('BOOKED') || s.includes('PICK UP')) return 'Booked';
   if (s.includes('OUT FOR') || s.includes('OFD')) return 'OutForDelivery';
-  if (s.includes('DELIVER')) return 'Delivered';
+  if (s.includes('DELIVERED') || /\bDELIVER\b/.test(s)) return 'Delivered';
   if (s.includes('TRANSIT') || s.includes('INSCAN') || s.includes('DISPATCH')) return 'InTransit';
   if (s.includes('BOOK') || s.includes('PICK')) return 'Booked';
   if (s.includes('RTO') || s.includes('RETURN')) return 'RTO';

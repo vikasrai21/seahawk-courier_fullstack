@@ -81,7 +81,8 @@ export default function LoginPage() {
     setError(''); setLoading(true);
     try {
       const user = await login(email.trim(), password);
-      if (user?.role === 'CLIENT') navigate('/portal', { replace: true });
+      if (user?.mustChangePassword) navigate('/change-password?required=1', { replace: true });
+      else if (user?.role === 'CLIENT') navigate('/portal', { replace: true });
       else navigate('/app', { replace: true });
     } catch (err) {
       setError(err.message || 'Invalid email or password');

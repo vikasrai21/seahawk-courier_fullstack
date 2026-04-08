@@ -8,6 +8,7 @@
 'use strict';
 
 const logger      = require('../utils/logger');
+const prisma      = require('../config/prisma');
 
 /* ════════════════════════════════════════════════════════════
    CARRIER RATE DEFINITIONS
@@ -145,10 +146,13 @@ async function compareRates({ weightKg, zone, shipType = 'standard', isInternati
   // Sort by price
   const sorted = results.sort((a, b) => a.total - b.total);
 
+  // Fetch historical SLA reliability score (RTO % and delayed delivery %)
+  const historicalSla = await fetchCourierSLA();
+
   // Flag cheapest and fastest
   const cheapest = sorted[0];
   const fastest  = [...results].sort((a, b) => a.estimatedDays - b.estimatedDays)[0];
-  const bestVal  = _bestValue(sorted);
+  const bestVal  = _bestValue(sorted, historicalSla);
 
   sorted.forEach(r => {
     r.isCheapest  = r === cheapest  || (r.carrier === cheapest.carrier  && r.mode === cheapest.mode);
@@ -167,18 +171,61 @@ async function compareRates({ weightKg, zone, shipType = 'standard', isInternati
   };
 }
 
-/* Score = cheapness + speed combined */
-function _bestValue(sorted) {
+/* Score = cheapness + speed + historical SLA combined */
+function _bestValue(sorted, slaStats = {}) {
   const maxPrice = Math.max(...sorted.map(r => r.total));
   const maxDays  = Math.max(...sorted.map(r => r.estimatedDays));
   let best = null, bestScore = -Infinity;
+  
   for (const r of sorted) {
     const priceScore = 1 - (r.total / maxPrice);
     const speedScore = 1 - (r.estimatedDays / maxDays);
-    const score = priceScore * 0.6 + speedScore * 0.4;
+    
+    // Default reliability is 0.8 if no data. Higher is better.
+    const reliability = slaStats[r.carrier] || 0.8;
+    
+    // Formula: 50% Price, 30% Speed, 20% Historical Reliability
+    const score = (priceScore * 0.5) + (speedScore * 0.3) + (reliability * 0.2);
+    
     if (score > bestScore) { bestScore = score; best = r; }
   }
   return best;
+}
+
+/* Helper to fetch SLA metrics smoothly */
+async function fetchCourierSLA() {
+  try {
+    const counts = await prisma.shipment.groupBy({
+      by: ['courier', 'status'],
+      where: { courier: { not: null } },
+      _count: { status: true }
+    });
+    
+    const courierStats = {};
+    for (const c of counts) {
+      if (!c.courier) continue;
+      if (!courierStats[c.courier]) courierStats[c.courier] = { total: 0, bad: 0 };
+      
+      courierStats[c.courier].total += c._count.status;
+      if (['RTO Delivered', 'RTO Initiated', 'Destroyed', 'Lost'].includes(c.status)) {
+        courierStats[c.courier].bad += c._count.status;
+      }
+    }
+
+    const slaMap = {};
+    for (const [courier, stats] of Object.entries(courierStats)) {
+      if (stats.total < 10) {
+        slaMap[courier] = 0.8; // default
+      } else {
+        const failureRate = stats.bad / stats.total;
+        slaMap[courier] = 1.0 - failureRate; // 0.95 SLA means 5% RTO
+      }
+    }
+    return slaMap;
+  } catch (err) {
+    logger.warn(`Failed to fetch Courier SLA tracking: ${err.message}`);
+    return {};
+  }
 }
 
 /* ── Get rate for a specific carrier+mode (for quoting) ── */

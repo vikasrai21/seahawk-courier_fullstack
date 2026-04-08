@@ -16,6 +16,7 @@ import { useState, useEffect } from 'react';
 import { usePWA } from '../../hooks/usePWA';
 import { ShortcutsHelp } from '../ui/ShortcutsHelp';
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts';
+import { SkyAIWidget } from '../ai/SkyAIWidget';
 
 // ── Design tokens (must match DashboardPage) ───────────────────────────────
 const C = {
@@ -567,6 +568,9 @@ export function AppLayout({ children }) {
           {children}
         </main>
       </div>
+
+      {/* SkyAI — Floating AI Ops Assistant (admin/owner/ops only) */}
+      <SkyAIWidget />
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700;800&family=Syne:wght@700;800&display=swap');

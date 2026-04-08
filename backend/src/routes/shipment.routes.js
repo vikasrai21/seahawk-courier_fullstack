@@ -19,6 +19,7 @@ router.get('/:id',            ctrl.getOne);
 router.post('/',              validate(shipmentSchema),       ctrl.create);
 router.post('/import',        requireRole('ADMIN', 'OPS_MANAGER'), importJsonParser, validate(importSchema), ctrl.bulkImport);
 router.post('/scan',          requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), validate(scanAwbSchema), ctrl.scanAwb);
+router.post('/scan-image',    requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), importJsonParser, ctrl.scanImage);
 router.post('/scan-bulk',     requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), validate(scanAwbBulkSchema), ctrl.scanAwbBulk);
 router.put('/:id',            validate(updateShipmentSchema), ctrl.update);
 router.patch('/:id/status',   validate(statusUpdateSchema),   ctrl.patchStatus);

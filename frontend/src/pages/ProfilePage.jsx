@@ -3,6 +3,8 @@ import { Lock, User, Mail, Building, CheckCircle } from 'lucide-react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
+const STRONG_PASSWORD_REGEX = /^(?=.*[A-Z])(?=.*[0-9])(?=.*[^A-Za-z0-9]).{8,}$/;
+
 export default function ProfilePage({ toast }) {
   const { user } = useAuth();
   const [form, setForm] = useState({ currentPassword:'', newPassword:'', confirmPassword:'' });
@@ -16,8 +18,8 @@ export default function ProfilePage({ toast }) {
     if (form.newPassword !== form.confirmPassword) {
       toast?.('New passwords do not match', 'error'); return;
     }
-    if (form.newPassword.length < 6) {
-      toast?.('Password must be at least 6 characters', 'error'); return;
+    if (!STRONG_PASSWORD_REGEX.test(form.newPassword)) {
+      toast?.('Use at least 8 characters including uppercase, number, and special character', 'error'); return;
     }
     setSaving(true);
     try {
@@ -66,7 +68,7 @@ export default function ProfilePage({ toast }) {
           </div>
           <div>
             <h2 className="font-bold text-gray-900">Change Password</h2>
-            <p className="text-xs text-gray-500">Choose a strong password with at least 6 characters</p>
+            <p className="text-xs text-gray-500">Use 8+ characters with uppercase, number, and special character</p>
           </div>
         </div>
 
@@ -84,7 +86,7 @@ export default function ProfilePage({ toast }) {
           </div>
           <div>
             <label className="label">New Password</label>
-            <input type="password" className="input" placeholder="At least 6 characters"
+            <input type="password" className="input" placeholder="8+ chars, uppercase, number, special"
               value={form.newPassword} onChange={e => set('newPassword', e.target.value)} required />
           </div>
           <div>

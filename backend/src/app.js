@@ -78,6 +78,8 @@ const baseJsonParser = express.json({
 app.use((req, res, next) => {
   // Import route gets a bigger route-specific parser inside shipment.routes.
   if (req.method === 'POST' && req.originalUrl.startsWith('/api/shipments/import')) return next();
+  if (req.method === 'POST' && req.originalUrl.startsWith('/api/shipments/scan-image')) return next();
+  if (req.method === 'POST' && req.originalUrl.startsWith('/api/public/integrations/excel/import')) return next();
   return baseJsonParser(req, res, next);
 });
 

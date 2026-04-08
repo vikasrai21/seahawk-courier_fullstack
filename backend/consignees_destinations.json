@@ -1,0 +1,340 @@
+{
+  "destinations": [
+    "HYDERABAD",
+    "KARNAL",
+    "PANCHKULA",
+    "VARANASI",
+    "KANPUR",
+    "JODHPUR",
+    "AMRITSAR",
+    "LUDHIANA",
+    "NEW DELHI",
+    "JALANDHAR",
+    "RAJGARH",
+    "COIMBATORE",
+    "LUCKNOW",
+    "JHARKHAND",
+    "MUMBAI",
+    "BADDI",
+    "NAGPUR",
+    "RUDERPUR",
+    "BAWAL",
+    "RAJPURA",
+    "BHIWADI",
+    "MADURAI",
+    "AGRA",
+    "BARELLY",
+    "KOTA",
+    "DEHRADUN",
+    "ROHTAK",
+    "ALLAHABAD",
+    "JAIPUR",
+    "CHENNAI",
+    "COCHIN",
+    "AMBALA",
+    "THANE",
+    "GHAZIABAD",
+    "ERNAKULAM",
+    "KOLKOTTA",
+    "MOHALI",
+    "TAMIL NADU",
+    "CHINA",
+    "PUNE",
+    "RATNAGIRI",
+    "ROORKEE",
+    "PATIALA",
+    "RANCHI",
+    "ZIRAKPUR",
+    "FARIDABAD",
+    "KANCHEEPURAM",
+    "MORADABAD",
+    "BANGALORE",
+    "WEST BANGAL",
+    "DAVANGERE",
+    "AHMEDABAD",
+    "BIHAR",
+    "UNNAO",
+    "HARIDWAR",
+    "NOIDA",
+    "BURDWAN",
+    "JHANSHI",
+    "SHIMLA",
+    "BHATINDA",
+    "BULANDHAHER",
+    "VADODARA",
+    "SAMBAL",
+    "INDORE",
+    "SOLAPUR",
+    "SRINAGAR",
+    "KERALA",
+    "AP",
+    "CUTTACK",
+    "DEOGHAR",
+    "DINDUGAL",
+    "MATHURA",
+    "CHANDIGARH",
+    "BHUBNESWAR",
+    "MEERUT",
+    "UDAIPUR",
+    "DHULE",
+    "JAMSHEDPUR",
+    "BHARUCH",
+    "HISSAR",
+    "GURGAON",
+    "JABALPUR",
+    "RAIPUR",
+    "BELGAUM",
+    "PONTA SAHIB",
+    "BHIWANDI",
+    "JAMMU",
+    "TELENGANA",
+    "SANGRUR",
+    "SRIGANGANAGAR",
+    "GUJRAT",
+    "BEGUSARAI",
+    "NASHIK",
+    "HOSUR",
+    "GUWAHATI",
+    "SOLAN",
+    "BARNALA",
+    "TRIPURA",
+    "GWALIOR",
+    "PALAMPUR",
+    "KHURJA",
+    "TRICHY",
+    "ASANSOL",
+    "RATANGIRI",
+    "BAREILLY",
+    "UDHAM SINGH",
+    "PANIPAT",
+    "IMPHAL",
+    "ANANANTPUR",
+    "SONIPAT",
+    "ALIGARH",
+    "GANDHINAGAR",
+    "SAGAR",
+    "SURAT",
+    "BENGAL",
+    "BHOPAL",
+    "RAJKOT",
+    "BAHRUCH",
+    "KOLKATA",
+    "KOTTAYAM",
+    "PATHANKOT",
+    "KAITHAL",
+    "JAMNAGAR",
+    "VIRANGAUM",
+    "AJMER",
+    "PUNJAB",
+    "PURI",
+    "NAGALAND",
+    "GORAKHPUR",
+    "MALERKOTLA",
+    "DIMAPUR",
+    "GHAZAIBAD",
+    "SITARGANJ",
+    "AURANGABAD"
+  ],
+  "samples": [
+    {
+      "consignee": "VILAS VADLA",
+      "destination": "HYDERABAD"
+    },
+    {
+      "consignee": "RANJAN KUMAR",
+      "destination": "KARNAL"
+    },
+    {
+      "consignee": "MANJEET KAUR",
+      "destination": "KARNAL"
+    },
+    {
+      "consignee": "SURAJ ARUN",
+      "destination": "PANCHKULA"
+    },
+    {
+      "consignee": "PRAKASH MEHTA",
+      "destination": "VARANASI"
+    },
+    {
+      "consignee": "GAURAV BHATT",
+      "destination": "KANPUR"
+    },
+    {
+      "consignee": "YASH SURGICALS",
+      "destination": "JODHPUR"
+    },
+    {
+      "consignee": "AMANDEEP",
+      "destination": "AMRITSAR"
+    },
+    {
+      "consignee": "SATDEEP CYCLE",
+      "destination": "LUDHIANA"
+    },
+    {
+      "consignee": "ARICOM ENTERPRISES",
+      "destination": "NEW DELHI"
+    },
+    {
+      "consignee": "GOGNA TWEZZER",
+      "destination": "JALANDHAR"
+    },
+    {
+      "consignee": "AASHI",
+      "destination": "NEW DELHI"
+    },
+    {
+      "consignee": "AMISHA SONTAKKE",
+      "destination": "RAJGARH"
+    },
+    {
+      "consignee": "RUBY SINGH",
+      "destination": "NEW DELHI"
+    },
+    {
+      "consignee": "RUBY SINGH",
+      "destination": "NEW DELHI"
+    },
+    {
+      "consignee": "SAI SARAN HEALTH",
+      "destination": "COIMBATORE"
+    },
+    {
+      "consignee": "ASHWANI KUMAR",
+      "destination": "LUCKNOW"
+    },
+    {
+      "consignee": "SHASHI PAUL",
+      "destination": "JHARKHAND"
+    },
+    {
+      "consignee": "DHIRU BHAI",
+      "destination": "MUMBAI"
+    },
+    {
+      "consignee": "ARNAV THAKUR",
+      "destination": "BADDI"
+    },
+    {
+      "consignee": "BAMDI CHANDU",
+      "destination": "NAGPUR"
+    },
+    {
+      "consignee": "J K SEATS",
+      "destination": "RUDERPUR"
+    },
+    {
+      "consignee": "UNO",
+      "destination": "BAWAL"
+    },
+    {
+      "consignee": "NISHTAHA SETHI",
+      "destination": "RAJPURA"
+    },
+    {
+      "consignee": "SAKSHI",
+      "destination": "BHIWADI"
+    },
+    {
+      "consignee": "SAI SARAN HEALTH",
+      "destination": "COIMBATORE"
+    },
+    {
+      "consignee": "ASHWANI KUMAR",
+      "destination": "LUCKNOW"
+    },
+    {
+      "consignee": "J M HEALTH",
+      "destination": "MADURAI"
+    },
+    {
+      "consignee": "AMANDEEP",
+      "destination": "AMRITSAR"
+    },
+    {
+      "consignee": "ASHWANI KUMAR",
+      "destination": "AGRA"
+    },
+    {
+      "consignee": "OM VIR",
+      "destination": "BARELLY"
+    },
+    {
+      "consignee": "DEEPAK SHARMA",
+      "destination": "KOTA"
+    },
+    {
+      "consignee": "HARENDER NAYAL",
+      "destination": "DEHRADUN"
+    },
+    {
+      "consignee": "SANDEEP KUMAR",
+      "destination": "ROHTAK"
+    },
+    {
+      "consignee": "SURAJ ARUN",
+      "destination": "PANCHKULA"
+    },
+    {
+      "consignee": "VIJAY KUMAR",
+      "destination": "ALLAHABAD"
+    },
+    {
+      "consignee": "YASH SURGICALS",
+      "destination": "JODHPUR"
+    },
+    {
+      "consignee": "ABHISHEK",
+      "destination": "JAIPUR"
+    },
+    {
+      "consignee": "RAGHURAMAN",
+      "destination": "CHENNAI"
+    },
+    {
+      "consignee": "ANEESH MALI",
+      "destination": "COCHIN"
+    },
+    {
+      "consignee": "AMANDEEP S",
+      "destination": "AMBALA"
+    },
+    {
+      "consignee": "SHAHSHANK",
+      "destination": "THANE"
+    },
+    {
+      "consignee": "SHIVAM PANDEY",
+      "destination": "GHAZIABAD"
+    },
+    {
+      "consignee": "LEO JOHN SIMON",
+      "destination": "ERNAKULAM"
+    },
+    {
+      "consignee": "HAURAM",
+      "destination": "KOLKOTTA"
+    },
+    {
+      "consignee": "PUNAM GUPTA",
+      "destination": "MOHALI"
+    },
+    {
+      "consignee": "LASKHMI",
+      "destination": "TAMIL NADU"
+    },
+    {
+      "consignee": "IVS",
+      "destination": "NEW DELHI"
+    },
+    {
+      "consignee": "HARRY",
+      "destination": "CHINA"
+    },
+    {
+      "consignee": "SHREE PAL",
+      "destination": "PUNE"
+    }
+  ]
+}

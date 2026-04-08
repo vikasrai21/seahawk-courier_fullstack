@@ -63,7 +63,7 @@ async function getTracking(awb) {
 function mapTrackonStatus(raw) {
   const s = String(raw || '').toUpperCase().trim();
   if (s.startsWith('DRS') || s.includes('OUT FOR')) return 'OutForDelivery';
-  if (s.startsWith('DDU') || s.includes('DELIVER')) return 'Delivered';
+  if (s.startsWith('DDU') || s.includes('DELIVERED') || /\bDELIVER\b/.test(s)) return 'Delivered';
   if (s.startsWith('DNU') || s.includes('UNDELIVER') || s.includes('ATMP')) return 'Failed';
   if (s.startsWith('R') && (s.includes('RTO') || s.includes('RSET') || s.includes('RMFT') || s.includes('RHO') || s.includes('RIS'))) return 'RTO';
   if (s.startsWith('BOK') || s.includes('BOOK') || s.includes('PICK UP')) return 'Booked';

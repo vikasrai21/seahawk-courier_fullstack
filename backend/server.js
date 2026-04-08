@@ -28,6 +28,17 @@ async function startServer() {
   try {
     await prisma.$connect();
     logger.info('Database connected successfully.');
+
+    // Auto-bootstrap owner if missing (great for clean Railway setups)
+    const ownerExists = await prisma.user.findFirst({ where: { role: 'ADMIN' } });
+    if (!ownerExists) {
+      const email = String(process.env.OWNER_EMAIL || require('./src/utils/owner').DEFAULT_OWNER_EMAIL).trim().toLowerCase();
+      const password = await require('bcryptjs').hash(String(process.env.OWNER_PASSWORD || 'Owner@12345'), 12);
+      await prisma.user.create({
+        data: { name: 'Setup Owner', email, branch: 'HQ', role: 'ADMIN', active: true, password }
+      });
+      logger.info(`Auto-bootstrapped owner account for ${email}`);
+    }
   } catch (err) {
     logger.error('Failed to connect to database. Exiting.', { error: err.message });
     process.exit(1);

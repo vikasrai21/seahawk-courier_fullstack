@@ -10,15 +10,18 @@ const initWorkers = () => {
   }
 
   const worker = new Worker('bulk-scan', async (job) => {
-    const { awbs, userId, courier } = job.data;
+    const { awbs, userId, courier, captureOnly } = job.data;
     const results = { successful: [], failed: [] };
     
     let processed = 0;
     
     for (const awb of awbs) {
       try {
-        const data = await scanAwbAndUpdate(awb, userId, courier);
-        results.successful.push({ awb, data: data.shipment });
+        const data = await scanAwbAndUpdate(awb, userId, courier, {
+          captureOnly: !!captureOnly,
+          source: 'scanner_bulk',
+        });
+        results.successful.push({ awb, data: data.shipment, meta: data.meta || {} });
       } catch (err) {
         results.failed.push({ awb, error: err.message });
       }

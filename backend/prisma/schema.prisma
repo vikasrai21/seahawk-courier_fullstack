@@ -134,6 +134,9 @@ model Shipment {
   ndrStatus   String?  @map("ndr_status")
   remarks     String?
   labelUrl    String?  @map("label_url")
+  riskScore   Float?   @map("risk_score")
+  riskFactors Json?    @map("risk_factors")
+  marginAlert Boolean  @default(false) @map("margin_alert")
   createdById Int?     @map("created_by_id")
   updatedById Int?     @map("updated_by_id")
   createdAt   DateTime @default(now()) @map("created_at")

@@ -3,15 +3,22 @@ const express = require('express');
 const router = express.Router();
 const prisma = require('../config/prisma');
 const logger = require('../utils/logger');
+const crypto = require('crypto');
 const { detectCourier, getCourierInfo } = require('../utils/awbDetect');
 const cache = require('../utils/cache');
 const { fetchJsonWithRetry } = require('../utils/httpRetry');
 const rateLimit = require('express-rate-limit');
 const { publicTrackingLimiter } = require('../middleware/rateLimiter');
 const config = require('../config');
+const shipmentSvc = require('../services/shipment.service');
+const { importSchema } = require('../validators/shipment.validator');
+const { auditLog } = require('../utils/audit');
+const dtdcSvc = require('../services/dtdc.service');
 
 const publicLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, message: { success: false, message: 'Too many requests.' } });
 const bookingLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, message: { success: false, message: 'Too many booking requests. Try again later.' } });
+const integrationLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 120, message: { success: false, message: 'Too many integration requests.' } });
+const importJsonParser = express.json({ limit: config.bodyLimits.importJson });
 
 // ── GET /api/public/health ─────────────────────────────────────────────────
 router.get('/health', (_req, res) => {
@@ -53,17 +60,22 @@ async function trackInHouse(awb) {
 
 // ── Courier API stubs ──────────────────────────────────────────────────────
 async function trackDTDC(awb) {
-  const key = process.env.DTDC_API_KEY, customerCode = process.env.DTDC_CUSTOMER_CODE;
-  if (!key || !customerCode) return null;
+  if (!dtdcSvc.isConfigured()) return null;
   try {
-    const json = await fetchJsonWithRetry('https://blktracksvc.dtdc.com/dtdc-api/rest/JSONCnTrk/getShpCnTrk', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'API_KEY': key },
-      body: JSON.stringify({ custCode: customerCode, trackFor: awb }),
-    }, { attempts: 3, timeoutMs: 8000 });
-    if (!json || json.errorMessage) return null;
-    const data = json.scans?.[0] || json;
-    return { courier: 'DTDC', status: data.status || data.scanStatus || 'InTransit', consignee: data.consigneeName || '', destination: data.destination || '', events: (json.scans || []).map(s => ({ status: s.scanStatus || s.status, location: s.scanLocation || s.location, timestamp: s.scanDateTime || s.date, description: s.remarks || '' })) };
+    const data = await dtdcSvc.getTracking(awb);
+    if (!data) return null;
+    return {
+      courier: 'DTDC',
+      status: data.status || 'InTransit',
+      consignee: data.recipient || '',
+      destination: data.destination || '',
+      events: (data.events || []).map((event) => ({
+        status: event.status,
+        location: event.location,
+        timestamp: event.timestamp,
+        description: event.description || '',
+      })),
+    };
   } catch (e) { logger.warn('DTDC tracking failed', { awb, error: e.message }); return null; }
 }
 
@@ -211,6 +223,67 @@ router.get('/detect/:awb', (req, res) => {
   const detection = detectCourier(awb);
   const info = detection ? getCourierInfo(detection.courier) : null;
   res.json({ success: true, data: { ...detection, courierInfo: info } });
+});
+
+// ── POST /api/public/integrations/excel/import ────────────────────────────
+// API-key protected endpoint for Power Automate / Apps Script sync jobs.
+router.post('/integrations/excel/import', integrationLimiter, importJsonParser, async (req, res) => {
+  const configuredKey = String(config.integrations?.syncApiKey || '').trim();
+  if (!configuredKey) {
+    return res.status(503).json({
+      success: false,
+      message: 'Integration key is not configured on server. Set INTEGRATION_SYNC_API_KEY.',
+    });
+  }
+
+  const provided = String(
+    req.get('x-sync-key')
+    || req.get('x-api-key')
+    || req.query.key
+    || ''
+  ).trim();
+
+  const isValid = provided.length === configuredKey.length
+    && crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(configuredKey));
+
+  if (!isValid) {
+    return res.status(401).json({ success: false, message: 'Invalid integration key.' });
+  }
+
+  const parsed = importSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid shipment payload.',
+      errors: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+    });
+  }
+
+  try {
+    const result = await shipmentSvc.bulkImport(parsed.data.shipments, null);
+    await auditLog({
+      userId: null,
+      userEmail: 'integration@system',
+      action: 'INTEGRATION_IMPORT',
+      entity: 'SHIPMENT',
+      newValue: {
+        importedRows: result.imported,
+        operationalCreated: result.operationalCreated,
+        duplicateAwbs: result.duplicates,
+        batchKey: result.batchKey,
+      },
+      ip: req.ip,
+    });
+
+    return res.json({
+      success: true,
+      message: `Imported ${result.imported} rows`,
+      data: result,
+    });
+  } catch (err) {
+    logger.error('Integration import failed', { error: err.message, ip: req.ip });
+    return res.status(500).json({ success: false, message: 'Integration import failed.' });
+  }
 });
 
 // ── POST /api/public/pickup-request ───────────────────────────────────────

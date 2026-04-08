@@ -11,6 +11,7 @@ import DashboardStats from '../components/dashboard/DashboardStats';
 import DashboardAlerts from '../components/dashboard/DashboardAlerts';
 import DashboardCharts from '../components/dashboard/DashboardCharts';
 import DashboardRecentShipments from '../components/dashboard/DashboardRecentShipments';
+import SmartRevenueTable from '../components/dashboard/SmartRevenueTable';
 
 const RANGE_OPTIONS = [
   { key: 'today', label: 'Today' },
@@ -154,6 +155,7 @@ export default function DashboardPage() {
   const [shipments, setShipments] = useState([]);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [opsData, setOpsData] = useState(null);
+  const [smartRevenue, setSmartRevenue] = useState(null);
   const [, setTick] = useState(Date.now());
 
   const currentRange = useMemo(() => getRange(range, customFrom, customTo), [range, customFrom, customTo]);
@@ -172,6 +174,8 @@ export default function DashboardPage() {
         api.get(`/shipments?limit=8&dateFrom=${currentRange.dateFrom}&dateTo=${currentRange.dateTo}`),
         // Fetch ops dashboard for intelligence data
         api.get('/ops/dashboard'),
+        // Smart revenue intelligence
+        api.get(`/analytics/smart-revenue?dateFrom=${currentRange.dateFrom}&dateTo=${currentRange.dateTo}`),
       ];
       if (canSeeOps) requests.push(api.get('/ops/rto-alerts'));
 
@@ -183,7 +187,8 @@ export default function DashboardPage() {
       if (results[4]?.status === 'fulfilled') setActivity(results[4].value?.data || results[4].value || []);
       if (results[5]?.status === 'fulfilled') setShipments(results[5].value?.data?.shipments || results[5].value?.shipments || []);
       if (results[6]?.status === 'fulfilled') setOpsData(results[6].value?.data || results[6].value);
-      if (results[7]?.status === 'fulfilled') setRtoAlerts(results[7].value?.data?.alerts || results[7].value?.alerts || []);
+      if (results[7]?.status === 'fulfilled') setSmartRevenue(results[7].value?.data || results[7].value);
+      if (results[8]?.status === 'fulfilled') setRtoAlerts(results[8].value?.data?.alerts || results[8].value?.alerts || []);
       setLastUpdated(new Date());
     } finally {
       setLoading(false);
@@ -277,8 +282,9 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="space-y-5">
-              <DashboardStats overview={overview} previousOverview={previousOverview} dateLabel={currentRange.label} opsData={opsData} />
-              <DashboardCharts overview={overview} courierAnalytics={couriers} rangeLabel={currentRange.label} opsData={opsData} />
+              <DashboardStats overview={overview} previousOverview={previousOverview} dateLabel={currentRange.label} opsData={opsData} smartRevenue={smartRevenue} />
+              <SmartRevenueTable dateFrom={currentRange.dateFrom} dateTo={currentRange.dateTo} />
+              <DashboardCharts overview={overview} courierAnalytics={couriers} rangeLabel={currentRange.label} opsData={opsData} smartRevenue={smartRevenue} />
               <DashboardRecentShipments shipments={displayShipments} activity={activity} />
             </div>
           )}

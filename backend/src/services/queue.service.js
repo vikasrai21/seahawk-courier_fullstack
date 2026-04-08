@@ -33,12 +33,22 @@ if (!REDIS_URL) {
   logger.info('Redis not configured; BullMQ disabled and in-memory queue will be used');
 }
 
-const connection = bullMQAvailable ? {
-  host: new URL(REDIS_URL).hostname,
-  port: parseInt(new URL(REDIS_URL).port) || 6379,
-  password: new URL(REDIS_URL).password || undefined,
-  tls: REDIS_URL.startsWith('rediss') ? {} : undefined,
-} : null;
+let connection = null;
+if (bullMQAvailable && REDIS_URL) {
+  try {
+    const url = new URL(REDIS_URL);
+    connection = {
+      host: url.hostname,
+      port: parseInt(url.port) || 6379,
+      password: url.password || undefined,
+      username: url.username || undefined,
+      tls: REDIS_URL.startsWith('rediss') ? { rejectUnauthorized: false } : undefined,
+    };
+  } catch (err) {
+    logger.error('Failed to parse REDIS_URL for BullMQ', { error: err.message });
+    bullMQAvailable = false;
+  }
+}
 
 /* ════════════════════════════════════════════════════════════
    QUEUE DEFINITIONS

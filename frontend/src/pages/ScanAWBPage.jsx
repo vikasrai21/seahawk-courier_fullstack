@@ -1,25 +1,40 @@
+
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { 
-  ScanLine, 
-  CheckCircle2, 
-  AlertCircle, 
-  RefreshCw, 
-  Download, 
-  Zap, 
-  Camera, 
-  X, 
-  Clipboard, 
+import {
+  ScanLine,
+  CheckCircle2,
+  AlertCircle,
+  RefreshCw,
+  Download,
+  Zap,
+  X,
+  Clipboard,
   Package,
   History,
   Info,
   ShieldCheck,
-  ChevronRight
+  ChevronRight,
+  FileSpreadsheet,
+  Upload,
+  Copy,
+  ExternalLink,
+  Repeat,
+  Database,
+  Radar,
+  WifiOff,
+  QrCode,
+  Save,
+  Edit,
+  Table,
 } from 'lucide-react';
-import { BrowserMultiFormatReader } from '@zxing/browser';
+import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
+import { BrowserMultiFormatReader } from '@zxing/browser';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { StatusBadge } from '../components/ui/StatusBadge';
+import { generateQRCodeDataURL } from '../utils/qrcode';
 
 const playSuccess = () => {
   try {
@@ -31,9 +46,13 @@ const playSuccess = () => {
     osc.frequency.exponentialRampToValueAtTime(1200, ctx.currentTime + 0.1);
     gain.gain.setValueAtTime(0.1, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.start(); osc.stop(ctx.currentTime + 0.1);
-  } catch (e) { console.debug('Success tone failed', e); }
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+  } catch (e) {
+    console.debug('Success tone failed', e);
+  }
 };
 
 const playError = () => {
@@ -46,88 +65,369 @@ const playError = () => {
     osc.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + 0.3);
     gain.gain.setValueAtTime(0.2, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
-    osc.connect(gain); gain.connect(ctx.destination);
-    osc.start(); osc.stop(ctx.currentTime + 0.3);
-  } catch (e) { console.debug('Error tone failed', e); }
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.3);
+  } catch (e) {
+    console.debug('Error tone failed', e);
+  }
 };
 
+const findAwbColumn = (row = {}) => {
+  const keys = Object.keys(row);
+  return keys.find((key) => /^(awb|airwaybill|tracking|trackingnumber|cnno|consignment|docket)$/i.test(String(key).replace(/\s+/g, '')));
+};
+
+const extractAwbsFromSheet = (sheet) => {
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+  if (!rows.length) return [];
+
+  const awbColumn = findAwbColumn(rows[0]);
+  if (awbColumn) {
+    return rows
+      .map((row) => String(row[awbColumn] || '').trim())
+      .filter(Boolean);
+  }
+
+  return rows
+    .flatMap((row) => Object.values(row))
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .filter((value) => /^(?:\d{12,14}|[A-Z]{1,2}\d{8,10})$/i.test(value));
+};
+
+const getCaptureTone = (scan) => {
+  const source = scan?.meta?.source;
+  if (source === 'captured_placeholder') return 'Captured';
+  if (source === 'local_existing') return 'Local Match';
+  return 'Live Sync';
+};
+
+const buildScanEntry = (awb, courier, shipment, meta = {}, error = null) => ({
+  awb,
+  courier: shipment?.courier || courier,
+  status: error ? 'error' : 'success',
+  data: shipment,
+  meta,
+  error,
+  timestamp: new Date(),
+});
+
 export default function ScanAWBPage({ toast }) {
+  const navigate = useNavigate();
   const { isAdmin, hasRole } = useAuth();
   const canScan = isAdmin || hasRole('OPS_MANAGER') || hasRole('STAFF');
   const [awb, setAwb] = useState('');
   const [bulkText, setBulkText] = useState('');
   const [scanMode, setScanMode] = useState('single');
-  const [courier, setCourier] = useState('Delhivery');
+  const [courier, setCourier] = useState('AUTO');
   const [loading, setLoading] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [recentScans, setRecentScans] = useState([]);
-  const [lastFeedback, setLastFeedback] = useState(null); // 'success' | 'error'
+  const [capturedShipment, setCapturedShipment] = useState(null);
+  const [capturedMeta, setCapturedMeta] = useState(null);
+  const [lastFeedback, setLastFeedback] = useState(null);
+  const [continuousScan, setContinuousScan] = useState(true);
+  const [smartAssist, setSmartAssist] = useState(true);
+  const [spreadsheetName, setSpreadsheetName] = useState('');
+  // ── Mobile Bridge State ──────────────────────────────────────────────
+  const [showMobileModal, setShowMobileModal] = useState(false);
+  const [mobilePIN, setMobilePIN] = useState('');
+  const [mobileStatus, setMobileStatus] = useState('idle'); // idle | waiting | connected | disconnected
+  const [mobileScanCount, setMobileScanCount] = useState(0);
+  const [mobileQRData, setMobileQRData] = useState('');
+  const { socket, connected: socketConnected } = useSocket();
+  const [reviewScan, setReviewScan] = useState(null);
+  const [reviewForm, setReviewForm] = useState({ clientCode: '', consignee: '', destination: '', weight: 0, amount: 0 });
+  const [savingReview, setSavingReview] = useState(false);
   const inputRef = useRef(null);
+  const spreadsheetInputRef = useRef(null);
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
+  const scanBusyRef = useRef(false);
+  const scanLockUntilRef = useRef(0);
+  const lastDecodedRef = useRef('');
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
-
-  const stopCamera = useCallback(async () => {
-    try { await scannerRef.current?.reset(); } catch {}
-    scannerRef.current = null;
-    setCameraActive(false);
+  useEffect(() => {
+    inputRef.current?.focus();
   }, []);
 
-  useEffect(() => () => { stopCamera(); }, [stopCamera]);
-
   const triggerFeedback = (type) => {
-     setLastFeedback(type);
-     setTimeout(() => setLastFeedback(null), 1000);
+    setLastFeedback(type);
+    setTimeout(() => setLastFeedback(null), 1000);
   };
 
-  const processSingleScan = async (rawAwb) => {
-      const currentAwb = String(rawAwb || '').trim();
-      if (!currentAwb) return;
-      setLoading(true);
-      setAwb('');
-      try {
-        const res = await api.post('/shipments/scan', { awb: currentAwb, courier });
-        playSuccess();
-        triggerFeedback('success');
-        setRecentScans(prev => [
-          { awb: currentAwb, courier, status: 'success', data: res.data.shipment, timestamp: new Date() },
-          ...prev
-        ].slice(0, 50));
-      } catch (err) {
-        playError();
-        triggerFeedback('error');
-        setRecentScans(prev => [
-          { awb: currentAwb, courier, status: 'error', error: err.message, timestamp: new Date() },
-          ...prev
-        ].slice(0, 50));
-      } finally {
-        setLoading(false);
-        setTimeout(() => inputRef.current?.focus(), 100);
+  const stopCamera = async () => {
+    try {
+      await scannerRef.current?.reset();
+    } catch (err) {
+      console.debug('Camera reset failed', err);
+    }
+    scannerRef.current = null;
+    scanBusyRef.current = false;
+    scanLockUntilRef.current = 0;
+    lastDecodedRef.current = '';
+    setCameraActive(false);
+  };
+
+  useEffect(() => () => {
+    stopCamera();
+  }, []);
+
+  const addRecentScan = (entry) => {
+    setRecentScans((prev) => [entry, ...prev].slice(0, 100));
+  };
+
+  // ── Mobile Bridge: create session & listen for remote scans ──────────
+  const startMobileSession = useCallback(() => {
+    if (!socket || !socketConnected) {
+      toast?.('WebSocket not connected. Please refresh.', 'error');
+      return;
+    }
+    socket.emit('scanner:create-session', (response) => {
+      if (response?.success) {
+        const pin = response.pin;
+        setMobilePIN(pin);
+        setMobileStatus('waiting');
+        setMobileScanCount(0);
+        // Generate QR code with mobile scanner URL
+        const baseUrl = window.location.origin;
+        const scannerUrl = `${baseUrl}/mobile-scanner/${pin}`;
+        try {
+          setMobileQRData(generateQRCodeDataURL(scannerUrl, 280));
+        } catch {
+          setMobileQRData('');
+        }
+        setShowMobileModal(true);
+      } else {
+        toast?.('Could not create scan session', 'error');
       }
+    });
+  }, [socket, socketConnected, toast]);
+
+  const endMobileSession = useCallback(() => {
+    socket?.emit('scanner:end-session');
+    setMobileStatus('idle');
+    setMobilePIN('');
+    setMobileQRData('');
+    setShowMobileModal(false);
+  }, [socket]);
+
+  // Listen for mobile bridge socket events
+  useEffect(() => {
+    if (!socket) return;
+
+    const onPhoneConnected = ({ pin }) => {
+      setMobileStatus('connected');
+      playSuccess();
+      toast?.('📱 Mobile phone connected! Start scanning barcodes.', 'success');
+    };
+
+    const onPhoneDisconnected = ({ totalScans }) => {
+      setMobileStatus('disconnected');
+      toast?.(`📱 Phone disconnected. ${totalScans} scans completed.`, 'warning');
+    };
+
+    const onRemoteScan = async ({ awb, imageBase64, scanNumber }) => {
+      if (!awb) return;
+      setMobileScanCount(scanNumber || ((c) => c + 1));
+      // Process the scan exactly like a local scan
+      await processSingleScan(awb, imageBase64);
+      // Send feedback back to phone
+      const lastScan = recentScans[0];
+      socket.emit('scanner:scan-processed', {
+        pin: mobilePIN,
+        awb,
+        status: lastScan?.status || 'success',
+        clientCode: lastScan?.meta?.clientSuggestion?.suggestedClientCode || '',
+        clientName: lastScan?.meta?.clientSuggestion?.suggestedClientName || '',
+      });
+    };
+
+    socket.on('scanner:phone-connected', onPhoneConnected);
+    socket.on('scanner:phone-disconnected', onPhoneDisconnected);
+    socket.on('scanner:remote-scan', onRemoteScan);
+
+    return () => {
+      socket.off('scanner:phone-connected', onPhoneConnected);
+      socket.off('scanner:phone-disconnected', onPhoneDisconnected);
+      socket.off('scanner:remote-scan', onRemoteScan);
+    };
+  }, [socket, mobilePIN]);
+
+  const captureCurrentFrame = () => {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) return null;
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.min(1280, video.videoWidth);
+      canvas.height = Math.round((canvas.width / video.videoWidth) * video.videoHeight);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL('image/jpeg', 0.6).split(',')[1] || null;
+    } catch (_err) {
+      return null;
+    }
   };
 
-  const startCamera = async () => {
+  const processSingleScan = async (rawAwb, imageBase64 = null) => {
+    const currentAwb = String(rawAwb || '').trim();
+    if (!currentAwb) return;
+
+    setLoading(true);
+    setAwb(currentAwb);
     setCameraError('');
+
+    try {
+      const payload = await api.post('/shipments/scan', {
+        awb: currentAwb,
+        courier,
+        captureOnly: true,
+        ...(smartAssist && imageBase64 ? { imageBase64 } : {}),
+      });
+      const result = payload?.data || {};
+      const shipment = result.shipment || null;
+      const meta = result.meta || {};
+      playSuccess();
+      triggerFeedback('success');
+      setCapturedShipment(shipment);
+      setCapturedMeta(meta);
+
+      if (scanMode === 'single' || imageBase64) {
+        // Drop into Active Review Mode for one-by-one checking
+        const suggestedCode = meta?.clientSuggestion?.suggestedClientCode || shipment?.clientCode || 'MISC';
+        setReviewForm({
+          clientCode: suggestedCode,
+          consignee: shipment?.consignee || '',
+          destination: shipment?.destination || '',
+          weight: shipment?.weight || 0,
+          amount: shipment?.amount || 0,
+        });
+        setReviewScan({ awb: currentAwb, courier, shipment, meta });
+        toast?.(`Captured ${currentAwb} - Ready for review`, 'info');
+      } else {
+        // Bulk bypasses review block to just queue them
+        addRecentScan(buildScanEntry(currentAwb, courier, shipment, meta));
+      }
+    } catch (err) {
+      playError();
+      triggerFeedback('error');
+      setCameraError(err.message || 'Scan failed');
+      addRecentScan(buildScanEntry(currentAwb, courier, null, {}, err.message || 'Scan failed'));
+    } finally {
+      setLoading(false);
+      if (!reviewScan) setTimeout(() => inputRef.current?.focus(), 120);
+    }
+  };
+
+  const saveActiveReview = async (e) => {
+    if (e) e.preventDefault();
+    if (!reviewScan || !reviewScan.shipment?.id) return;
+    
+    setSavingReview(true);
+    try {
+      const payload = await api.put(`/shipments/${reviewScan.shipment.id}`, {
+        clientCode: reviewForm.clientCode,
+        consignee: reviewForm.consignee,
+        destination: reviewForm.destination,
+        weight: parseFloat(reviewForm.weight) || 0,
+        amount: parseFloat(reviewForm.amount) || 0
+      });
+      
+      const updatedShipment = payload.data;
+      if (updatedShipment) {
+        playSuccess();
+        toast?.(`Verified & Saved: ${reviewScan.awb}`, 'success');
+        addRecentScan(buildScanEntry(reviewScan.awb, reviewScan.courier, updatedShipment, reviewScan.meta));
+        
+        // Let the phone know it successfully finished
+        if (mobileStatus === 'connected') {
+           socket.emit('scanner:scan-processed', {
+             pin: mobilePIN,
+             awb: reviewScan.awb,
+             status: 'success',
+             clientCode: reviewForm.clientCode,
+             clientName: updatedShipment.client?.company || reviewForm.clientCode,
+           });
+        }
+        
+        setReviewScan(null);
+        setTimeout(() => inputRef.current?.focus(), 120);
+      }
+    } catch (err) {
+      toast?.(err.message || 'Failed to save review', 'error');
+    } finally {
+      setSavingReview(false);
+    }
+  };
+
+  const startCameraScan = async () => {
+    setCameraError('');
+
     try {
       await stopCamera();
-      const reader = new BrowserMultiFormatReader();
-      scannerRef.current = reader;
-      await reader.decodeFromVideoDevice(undefined, videoRef.current, async (result, error) => {
+      const scanner = new BrowserMultiFormatReader();
+      scannerRef.current = scanner;
+      setCameraActive(true);
+
+      await scanner.decodeFromVideoDevice(undefined, videoRef.current, async (result, err) => {
         if (result) {
-          const scannedAwb = result.getText();
-          await stopCamera();
-          setAwb(scannedAwb);
-          await processSingleScan(scannedAwb);
-        } else if (error && error.name !== 'NotFoundException') {
-          setCameraError(error.message || 'Sensor failure');
+          const scannedValue = String(result.getText() || '').trim();
+          const now = Date.now();
+          if (!scannedValue) return;
+          if (scanBusyRef.current) return;
+          if (now < scanLockUntilRef.current && scannedValue === lastDecodedRef.current) return;
+
+          scanBusyRef.current = true;
+          scanLockUntilRef.current = now + 1800;
+          lastDecodedRef.current = scannedValue;
+
+          if (!continuousScan) {
+            await stopCamera();
+          }
+
+          const frameBase64 = smartAssist ? captureCurrentFrame() : null;
+          await processSingleScan(scannedValue, frameBase64);
+          if (continuousScan) {
+            scanBusyRef.current = false;
+          }
+          return;
+        }
+
+        if (err && err.name !== 'NotFoundException') {
+          setCameraError(err.message || 'Unable to read barcode from camera');
         }
       });
-      setCameraActive(true);
     } catch (err) {
-      setCameraError(err.message || 'Camera access denied');
+      setCameraError(err.message || 'Camera access failed');
       await stopCamera();
+    }
+  };
+  const handleSpreadsheetUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    event.target.value = '';
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+      const awbs = [...new Set(extractAwbsFromSheet(firstSheet))];
+
+      if (!awbs.length) {
+        toast?.('No AWB column or valid AWB values found in the sheet.', 'error');
+        return;
+      }
+
+      setScanMode('bulk');
+      setSpreadsheetName(file.name);
+      setBulkText(awbs.join('\n'));
+      toast?.(`Loaded ${awbs.length} AWBs from ${file.name}`, 'success');
+    } catch (err) {
+      toast?.(err.message || 'Could not read the spreadsheet.', 'error');
     }
   };
 
@@ -135,252 +435,832 @@ export default function ScanAWBPage({ toast }) {
     e.preventDefault();
     if (scanMode === 'single') {
       await processSingleScan(awb);
-    } else {
-      const awbList = bulkText.split(/[\n,]+/).map(a => a.trim()).filter(Boolean);
-      if (!awbList.length) return;
-      setLoading(true);
-      setBulkText('');
-      try {
-        const res = await api.post('/shipments/scan-bulk', { awbs: awbList, courier });
-        if (res.data.jobId) {
-          toast(`Bulk Engine: Processing Job Node #${res.data.jobId}`, 'success');
-          setRecentScans([{ awb: 'BULK_BATCH_NODE', status: 'success', data: { status: 'Processing', consignee: 'Internal Queue', destination: 'Worker' }, timestamp: new Date() }, ...recentScans]);
-          return;
-        }
+      return;
+    }
+
+    const awbList = [...new Set(bulkText.split(/[\n,]+/).map((item) => item.trim()).filter(Boolean))];
+    if (!awbList.length) return;
+
+    setLoading(true);
+    setCameraError('');
+
+    try {
+      const payload = await api.post('/shipments/scan-bulk', {
+        awbs: awbList,
+        courier,
+        captureOnly: true,
+      });
+      const result = payload?.data || {};
+
+      if (result.jobId) {
+        toast?.(`Bulk scan queued as job #${result.jobId}`, 'success');
+        addRecentScan(buildScanEntry('BULK_QUEUE', courier, {
+          awb: `JOB-${result.jobId}`,
+          courier,
+          consignee: 'Background queue',
+          destination: 'Processing',
+          status: 'Booked',
+        }, { source: 'bulk_queue', existed: false, trackingUnavailable: false }));
+        return;
+      }
+
+      const successes = (result.successful || []).map((scan) => buildScanEntry(
+        scan.awb,
+        courier,
+        scan.data,
+        scan.meta || {},
+      ));
+      const failed = (result.failed || []).map((scan) => buildScanEntry(scan.awb, courier, null, {}, scan.error));
+
+      if (successes[0]?.data) {
+        setCapturedShipment(successes[0].data);
+        setCapturedMeta(successes[0].meta || null);
+      }
+
+      if (successes.length) {
         playSuccess();
         triggerFeedback('success');
-        const newScans = (res.data.successful || []).map(s => ({ awb: s.awb, courier, status: 'success', data: s.data, timestamp: new Date() }));
-        const failed = (res.data.failed || []).map(f => ({ awb: f.awb, courier, status: 'error', error: f.error, timestamp: new Date() }));
-        setRecentScans(prev => [...newScans, ...failed, ...prev].slice(0, 100));
-      } catch (err) {
-        toast(err.message, 'error');
-        triggerFeedback('error');
-      } finally {
-        setLoading(false);
       }
+      if (failed.length && !successes.length) {
+        playError();
+        triggerFeedback('error');
+      }
+
+      setRecentScans((prev) => [...successes, ...failed, ...prev].slice(0, 120));
+      toast?.(`Processed ${successes.length} AWBs${failed.length ? `, ${failed.length} need attention` : ''}`, failed.length ? 'warning' : 'success');
+    } catch (err) {
+      playError();
+      triggerFeedback('error');
+      toast?.(err.message || 'Bulk scan failed', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (!canScan) return <div className="p-12 text-center text-[10px] font-black uppercase tracking-[0.3em] text-rose-500">Access Denied: Operational Clearance Required</div>;
+  const exportIntakeBatch = () => {
+    const rows = recentScans
+      .filter((scan) => scan.status === 'success')
+      .map((scan, index) => {
+        const dateStr = scan.data?.date || new Date().toISOString().slice(0, 10);
+        const parts = dateStr.split('-');
+        const formattedDate = parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateStr;
+        return {
+          'S.NO': index + 1,
+          'DATE': formattedDate,
+          'Clients': scan.data?.clientCode || 'MISC',
+          'Awb No': scan.awb,
+          'CONSIGNEE': scan.data?.consignee || '',
+          'DESTINATION': scan.data?.destination || '',
+          'WEIGHT': Number(scan.data?.weight || 0).toFixed(3),
+          'AMOU': '',
+          'COURIERS': (scan.data?.courier || scan.courier || '').toUpperCase(),
+          'ORDER NO': '',
+          'VALUE': scan.data?.amount ? Number(scan.data.amount) : '',
+        };
+      });
+
+    if (!rows.length) {
+      toast?.('There are no successful captures to export yet.', 'error');
+      return;
+    }
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'SCAN_INTAKE');
+    XLSX.writeFile(wb, `scan-intake-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const copyTabularLedger = () => {
+    const verifiedScans = recentScans.filter((scan) => scan.status === 'success');
+    if (!verifiedScans.length) {
+      toast?.('No verified scans to copy', 'warning');
+      return;
+    }
+    const headers = ['S.NO', 'DATE', 'Clients', 'Awb No', 'CONSIGNEE', 'DESTINATION', 'WEIGHT', 'AMOU', 'COURIERS', 'ORDER NO', 'VALUE'];
+    const rows = verifiedScans.map((s, index) => {
+      const dateStr = s.data?.date || new Date().toISOString().slice(0, 10);
+      const parts = dateStr.split('-');
+      const formattedDate = parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateStr;
+      
+      return [
+        index + 1,
+        formattedDate,
+        s.data?.clientCode || 'MISC',
+        s.awb,
+        s.data?.consignee || '',
+        s.data?.destination || '',
+        Number(s.data?.weight || 0).toFixed(3),
+        '',
+        (s.data?.courier || s.courier || '').toUpperCase(),
+        '',
+        s.data?.amount ? Number(s.data.amount) : ''
+      ];
+    });
+    const tsv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
+    navigator.clipboard?.writeText(tsv);
+    toast?.(`Copied ${rows.length} rows to clipboard! Ready to paste into Excel.`, 'success');
+  };
+
+  const exportFaults = () => {
+    const failed = recentScans
+      .filter((scan) => scan.status === 'error')
+      .map((scan) => ({
+        AWB: scan.awb,
+        Courier: scan.courier,
+        Error: scan.error,
+        Time: scan.timestamp.toLocaleString(),
+      }));
+
+    if (!failed.length) {
+      toast?.('No failed scans to export right now.', 'error');
+      return;
+    }
+
+    const ws = XLSX.utils.json_to_sheet(failed);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'SCAN_ERRORS');
+    XLSX.writeFile(wb, `scan-errors-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
+  const assignClient = async (clientCode) => {
+    if (!capturedShipment?.id || !clientCode) return;
+    try {
+      const payload = await api.put(`/shipments/${capturedShipment.id}`, { clientCode });
+      const updated = payload?.data || null;
+      if (!updated) return;
+      setCapturedShipment(updated);
+      setCapturedMeta((prev) => ({
+        ...(prev || {}),
+        clientSuggestion: {
+          ...(prev?.clientSuggestion || {}),
+          suggestedClientCode: clientCode,
+          suggestedClientName: updated?.client?.company || prev?.clientSuggestion?.suggestedClientName || clientCode,
+          needsConfirmation: false,
+          autoAssigned: true,
+        },
+      }));
+      setRecentScans((prev) => prev.map((scan) => {
+        if (scan.awb !== updated.awb) return scan;
+        return {
+          ...scan,
+          data: { ...(scan.data || {}), ...updated },
+          meta: {
+            ...(scan.meta || {}),
+            clientSuggestion: {
+              ...(scan.meta?.clientSuggestion || {}),
+              suggestedClientCode: clientCode,
+              suggestedClientName: updated?.client?.company || clientCode,
+              needsConfirmation: false,
+              autoAssigned: true,
+            },
+          },
+        };
+      }));
+      toast?.(`Client mapped: ${clientCode}`, 'success');
+    } catch (err) {
+      toast?.(err.message || 'Could not assign client', 'error');
+    }
+  };
+
+  const successfulCaptures = recentScans.filter((scan) => scan.status === 'success').length;
+  const pendingSync = recentScans.filter((scan) => scan.meta?.trackingUnavailable).length;
+
+  if (!canScan) {
+    return <div className="p-12 text-center text-[10px] font-black uppercase tracking-[0.3em] text-rose-500">Access Denied: Operational Clearance Required</div>;
+  }
 
   return (
     <div className={`min-h-screen transition-all duration-300 ${lastFeedback === 'success' ? 'bg-emerald-500/10' : lastFeedback === 'error' ? 'bg-rose-500/10' : 'bg-slate-50 dark:bg-slate-950'}`}>
-      <div className="mx-auto max-w-4xl p-6 lg:p-12 space-y-8 animate-in fade-in duration-700">
-        
-        {/* Header Command Strip */}
-        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-           <div className="flex items-center gap-4 text-center md:text-left">
-              <div className={`w-14 h-14 rounded-[22px] flex items-center justify-center transition-all duration-300 ${loading ? 'bg-blue-500 animate-spin text-white shadow-xl shadow-blue-500/20' : 'bg-slate-900 text-white shadow-xl shadow-slate-900/10'}`}>
-                 <ScanLine size={28} />
-              </div>
-              <div>
-                 <h1 className="text-2xl font-black text-slate-800 dark:text-white leading-none tracking-tight">Rapid Terminal</h1>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5 flex items-center gap-2 justify-center md:justify-start">
-                    <Zap size={12} className="text-blue-500 animate-pulse" /> High-Velocity AWB Engagement
-                 </p>
-              </div>
-           </div>
-           
-           <div className="flex bg-slate-200/50 dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800">
-              <button 
-                onClick={() => { setScanMode('single'); setTimeout(() => inputRef.current?.focus(), 50); }}
-                className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${scanMode === 'single' ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                 Quantum Mono
-              </button>
-              <button 
-                onClick={() => setScanMode('bulk')}
-                className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${scanMode === 'bulk' ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                 Batch Array
-              </button>
-           </div>
+      <div className="mx-auto max-w-6xl p-6 lg:p-12 space-y-8 animate-in fade-in duration-700">
+        <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-6">
+          <div className="flex items-center gap-4 text-center md:text-left">
+            <div className={`w-14 h-14 rounded-[22px] flex items-center justify-center transition-all duration-300 ${loading ? 'bg-blue-500 animate-spin text-white shadow-xl shadow-blue-500/20' : 'bg-slate-900 text-white shadow-xl shadow-slate-900/10'}`}>
+              <ScanLine size={28} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-black text-slate-800 dark:text-white leading-none tracking-tight">Rapid Terminal</h1>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5 flex items-center gap-2 justify-center md:justify-start">
+                <Zap size={12} className="text-blue-500 animate-pulse" /> Scan, capture, sync, and export from one intake screen
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 w-full xl:w-auto">
+            <MetricCard icon={<Database size={14} />} label="Successful" value={successfulCaptures} tone="emerald" />
+            <MetricCard icon={<Radar size={14} />} label="Pending Sync" value={pendingSync} tone="amber" />
+            <MetricCard icon={<History size={14} />} label="Recent Buffer" value={recentScans.length} tone="blue" />
+            <MetricCard icon={<FileSpreadsheet size={14} />} label="Excel Ready" value={spreadsheetName ? 'Loaded' : 'Idle'} tone="violet" />
+          </div>
         </div>
 
-        {/* Scanner Deck */}
-        <div className="rounded-[40px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 shadow-sm relative overflow-hidden group">
-           <div className="absolute right-0 top-0 w-64 h-64 bg-blue-500/5 blur-[80px] pointer-events-none group-hover:bg-blue-500/10 transition-all duration-1000" />
-           
-           <form onSubmit={handleScan} className="flex flex-col gap-6 relative z-10">
-              <div className="flex flex-col lg:flex-row gap-4">
-                 <div className="lg:w-64">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">Network Node</label>
-                    <div className="relative">
-                       <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-500" />
-                       <select 
-                         className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl pl-12 pr-4 py-4 text-sm font-black text-slate-800 dark:text-white appearance-none uppercase tracking-widest"
-                         value={courier}
-                         onChange={(e) => setCourier(e.target.value)}
-                         disabled={loading}
-                       >
-                          <option value="Delhivery">Delhivery Alpha</option>
-                          <option value="Trackon">Trackon Prime</option>
-                          <option value="DTDC">DTDC Global</option>
-                       </select>
-                    </div>
-                 </div>
+        <div className="grid grid-cols-1 2xl:grid-cols-[1.55fr_0.95fr] gap-8">
+          <div className="rounded-[40px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-8 shadow-sm relative overflow-hidden group">
+            <div className="absolute right-0 top-0 w-64 h-64 bg-blue-500/5 blur-[80px] pointer-events-none group-hover:bg-blue-500/10 transition-all duration-1000" />
 
-                 <div className="flex-1">
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">
-                       {scanMode === 'single' ? 'Terminal Entry' : 'Array Input (CSV/Excel)'}
-                    </label>
-                    {scanMode === 'single' ? (
-                       <div className="relative group/input">
-                          <input
-                            ref={inputRef}
-                            className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-6 py-4 text-3xl font-black text-slate-800 dark:text-white font-mono placeholder:text-slate-200 tabular-nums focus:ring-2 focus:ring-blue-500/10 transition-all"
-                            placeholder="000000000000"
-                            value={awb}
-                            onChange={(e) => setAwb(e.target.value)}
-                            disabled={loading}
-                            autoFocus
-                          />
-                          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                             <button
-                               type="button"
-                               onClick={cameraActive ? stopCamera : startCamera}
-                               className={`p-3 rounded-xl transition-all ${cameraActive ? 'bg-rose-500 text-white animate-pulse' : 'bg-white dark:bg-slate-700 text-slate-400 hover:text-blue-500 shadow-sm'}`}
-                               disabled={loading}
-                             >
-                                {cameraActive ? <X size={20} /> : <Camera size={20} />}
-                             </button>
-                             <button type="submit" className="hidden" />
-                          </div>
-                       </div>
-                    ) : (
-                       <div className="relative">
-                          <Clipboard className="absolute left-4 top-4 w-4 h-4 text-slate-300" />
-                          <textarea
-                            className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl pl-12 pr-6 py-4 text-xs font-bold text-slate-700 dark:text-slate-300 font-mono min-h-[160px] focus:ring-2 focus:ring-blue-500/10 transition-all"
-                            placeholder="Paste multiple AWBs here (Line separated)..."
-                            value={bulkText}
-                            onChange={(e) => setBulkText(e.target.value)}
-                            disabled={loading}
-                          />
-                       </div>
+            <form onSubmit={handleScan} className="flex flex-col gap-6 relative z-10">
+              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+                <div className="flex bg-slate-200/50 dark:bg-slate-900 p-1 rounded-2xl border border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScanMode('single');
+                      setTimeout(() => inputRef.current?.focus(), 50);
+                    }}
+                    className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${scanMode === 'single' ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    Live Scan
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setScanMode('bulk')}
+                    className={`px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${scanMode === 'bulk' ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                  >
+                    Excel Batch
+                  </button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => spreadsheetInputRef.current?.click()}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-slate-100 dark:bg-slate-800 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-200 transition hover:bg-slate-200 dark:hover:bg-slate-700"
+                  >
+                    <Upload size={14} /> Load Excel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={exportIntakeBatch}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500/10 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-emerald-600 transition hover:bg-emerald-500/15"
+                  >
+                    <Download size={14} /> Export Intake
+                  </button>
+                  <input
+                    type="file"
+                    ref={spreadsheetInputRef}
+                    className="hidden"
+                    accept=".xlsx,.xls,.csv"
+                    onChange={handleSpreadsheetUpload}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 xl:grid-cols-[240px_1fr] gap-4">
+                <div>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">Courier Mode</label>
+                  <div className="relative">
+                    <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-500" />
+                    <select
+                      className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl pl-12 pr-4 py-4 text-sm font-black text-slate-800 dark:text-white appearance-none uppercase tracking-widest"
+                      value={courier}
+                      onChange={(e) => setCourier(e.target.value)}
+                      disabled={loading}
+                    >
+                      <option value="AUTO">Smart Auto-Detect</option>
+                      <option value="Delhivery">Delhivery</option>
+                      <option value="Trackon">Trackon</option>
+                      <option value="DTDC">DTDC</option>
+                    </select>
+                  </div>
+                </div>
+
+                {scanMode === 'single' ? (
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">AWB Input</label>
+                    <div className="relative group/input">
+                      <input
+                        ref={inputRef}
+                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-6 py-4 text-3xl font-black text-slate-800 dark:text-white font-mono placeholder:text-slate-200 tabular-nums focus:ring-2 focus:ring-blue-500/10 transition-all"
+                        placeholder="Scan or type AWB"
+                        value={awb}
+                        onChange={(e) => setAwb(e.target.value)}
+                        disabled={loading}
+                        autoFocus
+                      />
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={startMobileSession}
+                          className={`p-3 rounded-xl transition-all ${mobileStatus === 'connected' ? 'bg-blue-500 text-white animate-pulse shadow-lg shadow-blue-500/30' : 'bg-white dark:bg-slate-700 text-slate-400 hover:text-blue-500 shadow-sm'}`}
+                          disabled={loading}
+                          title={mobileStatus === 'connected' ? 'Mobile phone connected — scanning remotely' : 'Connect mobile phone camera'}
+                        >
+                          <Smartphone size={20} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={cameraActive ? stopCamera : startCameraScan}
+                          className={`p-3 rounded-xl transition-all ${cameraActive ? 'bg-emerald-500 text-white animate-pulse' : 'bg-white dark:bg-slate-700 text-slate-400 hover:text-emerald-500 shadow-sm'}`}
+                          disabled={loading}
+                          title={cameraActive ? 'Stop live camera scanner' : 'Scan barcode with camera'}
+                        >
+                          <ScanLine size={20} />
+                        </button>
+                        <button type="submit" className="hidden" />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">Batch Input</label>
+                    <div className="relative">
+                      <Clipboard className="absolute left-4 top-4 w-4 h-4 text-slate-300" />
+                      <textarea
+                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl pl-12 pr-6 py-4 text-xs font-bold text-slate-700 dark:text-slate-300 font-mono min-h-[180px] focus:ring-2 focus:ring-blue-500/10 transition-all"
+                        placeholder="Paste AWBs here or load an Excel sheet with an AWB column..."
+                        value={bulkText}
+                        onChange={(e) => setBulkText(e.target.value)}
+                        disabled={loading}
+                      />
+                    </div>
+                    {spreadsheetName && (
+                      <div className="mt-3 inline-flex items-center gap-2 rounded-2xl bg-violet-500/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-violet-600">
+                        <FileSpreadsheet size={12} /> {spreadsheetName}
+                      </div>
                     )}
-                 </div>
+                  </div>
+                )}
               </div>
 
               {cameraActive && (
-                <div className="rounded-3xl overflow-hidden border-4 border-slate-900 bg-black relative group/camera">
-                   <video ref={videoRef} className="w-full max-h-96 object-cover" muted playsInline />
-                   <div className="absolute inset-0 pointer-events-none border-[40px] border-black/40 flex items-center justify-center">
-                      <div className="w-64 h-32 border-2 border-white/50 rounded-xl relative">
-                         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-px bg-rose-500/50 animate-[scan_2s_infinite]" />
-                      </div>
-                   </div>
+                <div className="rounded-3xl overflow-hidden border-4 border-slate-900 bg-black relative">
+                  <video ref={videoRef} className="w-full max-h-[360px] object-cover" muted playsInline />
+                  <div className="absolute inset-x-6 top-6 rounded-2xl bg-black/60 backdrop-blur-sm px-4 py-3 text-white flex items-center justify-between gap-4">
+                    <div>
+                      <h3 className="font-black tracking-widest uppercase text-xs">Live Barcode Scan</h3>
+                      <p className="text-slate-300 text-[11px]">Continuous scan keeps the camera open so ops can capture parcel after parcel.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={stopCamera}
+                      className="p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-colors"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                    <div className="w-[78%] h-28 rounded-3xl border-2 border-emerald-400/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" />
+                  </div>
                 </div>
               )}
 
               {cameraError && (
-                 <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-rose-500/10 text-rose-500 text-[10px] font-black uppercase tracking-widest border border-rose-500/20">
-                    <AlertCircle size={14} /> {cameraError}
-                 </div>
+                <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-rose-500/10 text-rose-500 text-[10px] font-black uppercase tracking-widest border border-rose-500/20">
+                  <AlertCircle size={14} /> {cameraError}
+                </div>
               )}
 
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                 <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-2">
-                       <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Scanner Ready</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Manual Input: ON</span>
-                    </div>
-                 </div>
-                 
-                 <button 
-                   type="submit"
-                   disabled={loading || (scanMode === 'single' ? !awb.trim() : !bulkText.trim())}
-                   className="w-full sm:w-auto px-10 py-5 bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.3em] rounded-[22px] shadow-xl shadow-slate-900/20 active:scale-95 transition-all flex items-center justify-center gap-4 group/btn"
-                 >
-                    {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ScanLine size={20} className="group-hover/btn:scale-125 transition-transform" />}
-                    {scanMode === 'single' ? 'Engage AWB' : 'Execute Batch Push'}
-                 </button>
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex flex-wrap items-center gap-3 lg:gap-6">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Barcode-first intake</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setContinuousScan((prev) => !prev)}
+                    className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-[10px] font-black uppercase tracking-widest transition ${continuousScan ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300'}`}
+                  >
+                    <Repeat size={12} /> {continuousScan ? 'Continuous ON' : 'Continuous OFF'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSmartAssist((prev) => !prev)}
+                    className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-[10px] font-black uppercase tracking-widest transition ${smartAssist ? 'bg-blue-500/10 text-blue-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300'}`}
+                  >
+                    <Zap size={12} /> {smartAssist ? 'AI Assist ON' : 'AI Assist OFF'}
+                  </button>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Barcode first + OCR hints + smart client mapping</span>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading || (scanMode === 'single' ? !awb.trim() : !bulkText.trim())}
+                  className="w-full sm:w-auto px-10 py-5 bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.3em] rounded-[22px] shadow-xl shadow-slate-900/20 active:scale-95 transition-all flex items-center justify-center gap-4 group/btn"
+                >
+                  {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ScanLine size={20} className="group-hover/btn:scale-125 transition-transform" />}
+                  {scanMode === 'single' ? 'Capture AWB' : 'Capture Batch'}
+                </button>
               </div>
-           </form>
+            </form>
+          </div>
+
+          {/* RIGHT COLUMN: Review Panel OR Info Board */}
+          <div className="space-y-5">
+            {reviewScan ? (
+              <div className="rounded-[40px] bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/50 p-6 sm:p-8 shadow-2xl relative overflow-hidden ring-4 ring-emerald-500/20 animate-in slide-in-from-right-4">
+                <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 blur-[80px] pointer-events-none" />
+                <div className="flex items-center gap-3 mb-6 relative z-10">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30">
+                    <Edit size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-black text-slate-900 dark:text-white">Active Review</h3>
+                    <p className="text-[10px] uppercase font-black tracking-[0.2em] text-emerald-600">Please verify extracted details</p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl mb-6 flex items-center justify-between border border-slate-100 dark:border-slate-700">
+                   <div>
+                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">AWB</span>
+                     <div className="text-lg font-black font-mono text-slate-900 dark:text-white">{reviewScan.awb}</div>
+                   </div>
+                   <div className="text-right">
+                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Courier</span>
+                     <div className="text-lg font-black text-blue-500">{reviewScan.courier}</div>
+                   </div>
+                </div>
+
+                <form onSubmit={saveActiveReview} className="space-y-4 relative z-10">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block mb-1">Assigned Client</label>
+                      <input 
+                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white uppercase focus:ring-2 focus:ring-emerald-500/50"
+                        value={reviewForm.clientCode}
+                        onChange={(e) => setReviewForm(p => ({ ...p, clientCode: e.target.value.toUpperCase() }))}
+                        disabled={savingReview}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block mb-1">Consignee Name</label>
+                      <input 
+                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white uppercase focus:ring-2 focus:ring-emerald-500/50"
+                        value={reviewForm.consignee}
+                        onChange={(e) => setReviewForm(p => ({ ...p, consignee: e.target.value.toUpperCase() }))}
+                        disabled={savingReview}
+                        autoFocus
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block mb-1">Destination Details (City & Pincode)</label>
+                      <input 
+                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white uppercase focus:ring-2 focus:ring-emerald-500/50"
+                        value={reviewForm.destination}
+                        onChange={(e) => setReviewForm(p => ({ ...p, destination: e.target.value.toUpperCase() }))}
+                        disabled={savingReview}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block mb-1">Weight (kg)</label>
+                      <input 
+                        type="number" step="0.01" min="0"
+                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white tabular-nums focus:ring-2 focus:ring-emerald-500/50"
+                        value={reviewForm.weight || ''}
+                        onChange={(e) => setReviewForm(p => ({ ...p, weight: e.target.value }))}
+                        disabled={savingReview}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block mb-1">Declared Value (₹)</label>
+                      <input 
+                        type="number" min="0"
+                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white tabular-nums focus:ring-2 focus:ring-emerald-500/50"
+                        value={reviewForm.amount || ''}
+                        onChange={(e) => setReviewForm(p => ({ ...p, amount: e.target.value }))}
+                        disabled={savingReview}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setReviewScan(null)}
+                      className="px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
+                      disabled={savingReview}
+                    >
+                      Discard
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingReview}
+                      className="px-8 py-3 rounded-xl bg-emerald-500 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-emerald-500/30 hover:bg-emerald-400 transition-colors flex items-center gap-2"
+                    >
+                      {savingReview ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save size={16} />}
+                      Save & Verify
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              <div className="rounded-[32px] bg-gradient-to-br from-blue-50 to-white dark:from-blue-950/20 dark:to-slate-900 border border-blue-200/60 dark:border-blue-900/50 p-6 shadow-sm">
+                <div className="flex items-center justify-between gap-4 mb-5">
+                  <div>
+                    <div className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-600">Intake Board</div>
+                    <div className="text-xl font-black text-slate-900 dark:text-white mt-1">Ready for input</div>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 px-4 py-6 text-[11px] font-bold text-slate-400">
+                  Scan an AWB, point your mobile camera, or load an Excel batch to instantly start extracting.
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-[32px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Excel Bridge</div>
+                  <div className="text-base font-black text-slate-900 dark:text-white mt-1">Yes, this can work with Excel too</div>
+                </div>
+                <FileSpreadsheet size={18} className="text-violet-500" />
+              </div>
+              <div className="space-y-3 text-[12px] text-slate-600 dark:text-slate-300">
+                <p>Load a client spreadsheet with an <span className="font-black">AWB</span> column, scan missing parcels live, and export the whole capture batch back into Excel whenever ops needs it.</p>
+                <p>The better long-term model is still database-first, but this page now plays nicely with your Excel workflow instead of fighting it.</p>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Interaction Ledger */}
         <div className="space-y-4">
-           <div className="flex items-center justify-between px-4">
-              <div className="flex items-center gap-3">
-                 <History size={16} className="text-slate-400" />
-                 <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Tactical Scan Log</h3>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-2">
+            <div className="flex items-center gap-3">
+              <History size={16} className="text-slate-400" />
+              <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Tactical Scan Log</h3>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={exportIntakeBatch}
+                className="text-[9px] font-black text-emerald-600 uppercase tracking-widest hover:underline flex items-center gap-2"
+              >
+                <Download size={12} /> Export Intake
+              </button>
+              {recentScans.some((scan) => scan.status === 'error') && (
+                <button
+                  type="button"
+                  onClick={exportFaults}
+                  className="text-[9px] font-black text-rose-500 uppercase tracking-widest hover:underline flex items-center gap-2"
+                >
+                  <Download size={12} /> Export Faults
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {recentScans.length === 0 ? (
+              <div className="md:col-span-2 p-12 rounded-[40px] border-2 border-dashed border-slate-200 dark:border-slate-800 text-center flex flex-col items-center">
+                <Package size={48} className="text-slate-100 mb-4" />
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">No scans yet. The intake buffer is standing by.</p>
               </div>
-              {recentScans.some(s => s.status === 'error') && (
-                 <button 
-                   onClick={() => {
-                     const failed = recentScans.filter(s => s.status === 'error').map(s => ({ AWB: s.awb, Courier: s.courier, Error: s.error, Time: s.timestamp.toLocaleString() }));
-                     const ws = XLSX.utils.json_to_sheet(failed);
-                     const wb = XLSX.utils.book_new();
-                     XLSX.utils.book_append_sheet(wb, ws, "FAILED_DELTA");
-                     XLSX.writeFile(wb, "LOGISTICS_ERROR_REPORT.xlsx");
-                   }}
-                   className="text-[9px] font-black text-rose-500 uppercase tracking-widest hover:underline flex items-center gap-2"
-                 >
-                    <Download size={12} /> Export Faults
-                 </button>
-              )}
-           </div>
+            ) : (
+              recentScans.map((scan, idx) => (
+                <div key={`${scan.awb}-${idx}`} className="rounded-3xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm hover:shadow-xl transition-all duration-500 group/log overflow-hidden relative">
+                  {scan.status === 'success' && <div className="absolute right-[-20px] top-[-20px] w-16 h-16 bg-emerald-500/5 rounded-full blur-xl group-hover/log:bg-emerald-500/10 transition-all" />}
 
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {recentScans.length === 0 ? (
-                <div className="md:col-span-2 p-12 rounded-[40px] border-2 border-dashed border-slate-200 dark:border-slate-800 text-center flex flex-col items-center">
-                   <Package size={48} className="text-slate-100 mb-4" />
-                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">No activity in buffer. Terminal standby.</p>
-                </div>
-              ) : (
-                recentScans.map((scan, idx) => (
-                  <div key={idx} className="rounded-3xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 shadow-sm hover:shadow-xl transition-all duration-500 group/log overflow-hidden relative">
-                     {scan.status === 'success' && <div className="absolute right-[-20px] top-[-20px] w-16 h-16 bg-emerald-500/5 rounded-full blur-xl group-hover/log:bg-emerald-500/10 transition-all" />}
-                     
-                     <div className="flex items-start justify-between mb-4 relative z-10">
-                        <div className="flex items-center gap-3">
-                           <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${scan.status === 'success' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
-                              {scan.status === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-                           </div>
-                           <div>
-                              <div className="text-xs font-black text-slate-800 dark:text-white font-mono tracking-tight uppercase">{scan.awb}</div>
-                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{scan.courier} Node</div>
-                           </div>
+                  <div className="flex items-start justify-between mb-4 relative z-10">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${scan.status === 'success' ? 'bg-emerald-500/10 text-emerald-500' : 'bg-rose-500/10 text-rose-500'}`}>
+                        {scan.status === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
+                      </div>
+                      <div>
+                        <div className="text-xs font-black text-slate-800 dark:text-white font-mono tracking-tight uppercase">{scan.awb}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{scan.courier} Node</span>
+                          {scan.status === 'success' && (
+                            <span className={`rounded-full px-2 py-1 text-[8px] font-black uppercase tracking-[0.24em] ${scan.meta?.trackingUnavailable ? 'bg-amber-500/10 text-amber-600' : 'bg-emerald-500/10 text-emerald-600'}`}>
+                              {getCaptureTone(scan)}
+                            </span>
+                          )}
                         </div>
-                        <span className="text-[9px] font-bold text-slate-300 tabular-nums">{scan.timestamp.toLocaleTimeString()}</span>
-                     </div>
-
-                     {scan.status === 'success' && scan.data ? (
-                       <div className="grid grid-cols-2 gap-4 relative z-10 pt-4 border-t border-slate-50 dark:border-slate-800">
-                          <LogStat icon={<Package size={12}/>} label="Consignee" value={scan.data.consignee || 'Unknown'} />
-                          <LogStat icon={<Zap size={12}/>} label="Current Flux" value={scan.data.status} highlight />
-                          <div className="col-span-2 pt-2">
-                             <StatusBadge status={scan.data.status} />
-                          </div>
-                       </div>
-                     ) : (
-                       <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-900/10 text-rose-500 text-[10px] font-bold italic relative z-10">
-                          <Info size={12} /> {scan.error || 'Engagement failure on network layer.'}
-                       </div>
-                     )}
-                     
-                     <div className="absolute bottom-0 right-0 p-2 opacity-0 group-hover/log:opacity-100 transition-opacity">
-                        <ChevronRight size={14} className="text-slate-200" />
-                     </div>
+                      </div>
+                    </div>
+                    <span className="text-[9px] font-bold text-slate-300 tabular-nums">{scan.timestamp.toLocaleTimeString()}</span>
                   </div>
-                ))
-              )}
-           </div>
+
+                  {scan.status === 'success' && scan.data ? (
+                    <div className="grid grid-cols-2 gap-4 relative z-10 pt-4 border-t border-slate-50 dark:border-slate-800">
+                      <LogStat icon={<Package size={12} />} label="Consignee" value={scan.data.consignee || 'Unknown'} />
+                      <LogStat icon={<Info size={12} />} label="Destination" value={scan.data.destination || 'Unknown'} />
+                      <LogStat icon={<Zap size={12} />} label="Status" value={scan.data.status || 'Booked'} highlight />
+                      <LogStat icon={<Database size={12} />} label="Tracking" value={scan.meta?.trackingUnavailable ? 'Pending sync' : 'Live'} />
+                      <div className="col-span-2 pt-2 flex items-center justify-between gap-3">
+                        <StatusBadge status={scan.data.status || 'Booked'} />
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/track/${scan.awb}`)}
+                          className="inline-flex items-center gap-2 rounded-2xl bg-slate-100 dark:bg-slate-800 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-200"
+                        >
+                          <ExternalLink size={11} /> Open Track
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-900/10 text-rose-500 text-[10px] font-bold italic relative z-10">
+                      <Info size={12} /> {scan.error || 'Engagement failure on network layer.'}
+                    </div>
+                  )}
+
+                  <div className="absolute bottom-0 right-0 p-2 opacity-0 group-hover/log:opacity-100 transition-opacity">
+                    <ChevronRight size={14} className="text-slate-200" />
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* ── Excel Ledger View (The Tabular Copiable Table) ────────────────── */}
+        {recentScans.length > 0 && (
+          <div className="pt-12 animate-in slide-in-from-bottom-8 duration-700">
+             <div className="flex items-center justify-between mb-4 px-2">
+               <div className="flex items-center gap-3">
+                 <Table size={18} className="text-slate-500" />
+                 <div>
+                   <h3 className="text-sm font-black uppercase tracking-[0.2em] text-slate-800 dark:text-white">Daily Ledger View</h3>
+                   <p className="text-[10px] font-bold text-slate-400 tracking-wider">Tabular format ready for your Excel sheets</p>
+                 </div>
+               </div>
+               <button
+                 onClick={copyTabularLedger}
+                 className="flex items-center gap-2 bg-slate-900 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest shadow-xl shadow-slate-900/10 hover:bg-emerald-600 transition-colors"
+               >
+                 <Copy size={14} /> Copy to Excel
+               </button>
+             </div>
+             
+             <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-x-auto shadow-sm">
+               <table className="w-full text-left border-collapse min-w-[800px]">
+                 <thead>
+                   <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800">
+                     <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">S.NO</th>
+                     <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">DATE</th>
+                     <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Clients</th>
+                     <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Awb No</th>
+                     <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">CONSIGNEE</th>
+                     <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">DESTINATION</th>
+                     <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">WEIGHT</th>
+                     <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">AMOU</th>
+                     <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 whitespace-nowrap">COURIERS</th>
+                     <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">ORDER NO</th>
+                     <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">VALUE</th>
+                   </tr>
+                 </thead>
+                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                   {recentScans.filter((s) => s.status === 'success' || s.status === 'error').map((scan, idx) => {
+                     const dateStr = scan.data?.date || new Date().toISOString().slice(0, 10);
+                     const parts = dateStr.split('-');
+                     const formattedDate = parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateStr;
+                     return (
+                     <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group">
+                       <td className="px-5 py-3 text-xs font-bold text-slate-400">{idx + 1}</td>
+                       <td className="px-5 py-3 text-xs font-bold text-slate-700 whitespace-nowrap">{formattedDate}</td>
+                       <td className="px-5 py-3 text-[10px] font-black text-slate-700 uppercase">{scan.data?.clientCode || 'MISC'}</td>
+                       <td className="px-5 py-3 font-mono text-xs font-black text-slate-900">{scan.awb}</td>
+                       <td className="px-5 py-3 text-xs font-bold text-slate-600 truncate max-w-[150px] uppercase">{scan.data?.consignee || '-'}</td>
+                       <td className="px-5 py-3 text-xs font-bold text-slate-700 uppercase">{scan.data?.destination || '-'}</td>
+                       <td className="px-5 py-3 text-xs font-bold tabular-nums text-right text-slate-600">{Number(scan.data?.weight || 0).toFixed(3)}</td>
+                       <td className="px-5 py-3 text-xs font-bold tabular-nums text-right text-slate-400">-</td>
+                       <td className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase whitespace-nowrap">{(scan.data?.courier || scan.courier || '').toUpperCase()}</td>
+                       <td className="px-5 py-3 text-xs font-bold text-slate-400">-</td>
+                       <td className="px-5 py-3 text-xs font-bold tabular-nums text-right text-slate-600">{scan.data?.amount ? scan.data.amount : '-'}</td>
+                     </tr>
+                   )})}
+                 </tbody>
+               </table>
+             </div>
+          </div>
+        )}
+
+        {/* ── Mobile Bridge QR Modal ──────────────────────────────────── */}
+        {showMobileModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={(e) => { if (e.target === e.currentTarget) endMobileSession(); }}>
+            <div className="bg-white dark:bg-slate-900 rounded-[40px] p-8 max-w-md w-full mx-4 shadow-2xl border border-slate-200 dark:border-slate-800 relative overflow-hidden">
+              {/* Glow */}
+              <div className="absolute -top-20 -right-20 w-60 h-60 rounded-full bg-blue-500/10 blur-[60px] pointer-events-none" />
+              <div className="absolute -bottom-20 -left-20 w-60 h-60 rounded-full bg-violet-500/10 blur-[60px] pointer-events-none" />
+
+              <div className="relative z-10">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${mobileStatus === 'connected' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 animate-pulse' : 'bg-gradient-to-br from-blue-500 to-violet-600 text-white shadow-lg shadow-blue-500/20'}`}>
+                      {mobileStatus === 'connected' ? <Wifi size={22} /> : <Smartphone size={22} />}
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-slate-900 dark:text-white">Connect Mobile</h3>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                        {mobileStatus === 'connected' ? '✅ Phone connected' : mobileStatus === 'disconnected' ? '📱 Phone disconnected' : 'Waiting for phone...'}
+                      </p>
+                    </div>
+                  </div>
+                  <button onClick={endMobileSession} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 transition">
+                    <X size={18} />
+                  </button>
+                </div>
+
+                {/* QR Code */}
+                {mobileStatus !== 'connected' && (
+                  <div className="flex flex-col items-center gap-4 mb-6">
+                    <div className="p-4 bg-white rounded-3xl shadow-inner border border-slate-100">
+                      {mobileQRData ? (
+                        <img src={mobileQRData} alt="Scan this QR code with your phone" className="w-56 h-56" />
+                      ) : (
+                        <div className="w-56 h-56 flex items-center justify-center text-slate-300">
+                          <QrCode size={80} />
+                        </div>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 text-center max-w-xs">
+                      Scan this QR code with your phone camera, or open your browser and go to:
+                    </p>
+                    <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800 rounded-2xl text-[11px] font-mono font-bold text-blue-500 text-center break-all">
+                      {window.location.origin}/mobile-scanner/{mobilePIN}
+                    </div>
+                  </div>
+                )}
+
+                {/* PIN display */}
+                <div className="flex flex-col items-center gap-3 mb-6">
+                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Or enter PIN manually</span>
+                  <div className="flex items-center gap-3 px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl">
+                    <span className="text-4xl font-black font-mono tracking-[0.4em] text-slate-900 dark:text-white">{mobilePIN}</span>
+                    <button
+                      type="button"
+                      onClick={() => { navigator.clipboard?.writeText(mobilePIN); toast?.('PIN copied!', 'success'); }}
+                      className="p-2 rounded-xl bg-white dark:bg-slate-700 text-slate-400 hover:text-blue-500 shadow-sm transition"
+                    >
+                      <Copy size={16} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Connection status */}
+                {mobileStatus === 'connected' && (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-center gap-3 px-4 py-4 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
+                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-lg shadow-emerald-500/50" />
+                      <span className="text-sm font-black text-emerald-600 uppercase tracking-widest">Phone is scanning</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 text-center">
+                        <div className="text-2xl font-black text-slate-900 dark:text-white">{mobileScanCount}</div>
+                        <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">Remote Scans</div>
+                      </div>
+                      <div className="rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 text-center">
+                        <div className="text-2xl font-black text-emerald-500">{successfulCaptures}</div>
+                        <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">Captured</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {mobileStatus === 'disconnected' && (
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="flex items-center gap-2 px-4 py-3 bg-amber-500/10 rounded-2xl text-amber-600 text-xs font-bold">
+                      <WifiOff size={14} /> Phone disconnected. Scan QR again to reconnect.
+                    </div>
+                    <button onClick={startMobileSession} className="px-6 py-3 rounded-2xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-blue-500/20">
+                      Generate New Code
+                    </button>
+                  </div>
+                )}
+
+                {/* How it works */}
+                <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div>
+                      <div className="w-8 h-8 mx-auto mb-2 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center text-xs font-black">1</div>
+                      <p className="text-[9px] font-bold text-slate-400">Scan QR with phone</p>
+                    </div>
+                    <div>
+                      <div className="w-8 h-8 mx-auto mb-2 rounded-xl bg-violet-500/10 text-violet-500 flex items-center justify-center text-xs font-black">2</div>
+                      <p className="text-[9px] font-bold text-slate-400">Phone scans barcode</p>
+                    </div>
+                    <div>
+                      <div className="w-8 h-8 mx-auto mb-2 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center text-xs font-black">3</div>
+                      <p className="text-[9px] font-bold text-slate-400">Result on desktop</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MetricCard({ icon, label, value, tone = 'blue' }) {
+  const toneClasses = {
+    emerald: 'bg-emerald-500/10 text-emerald-600',
+    amber: 'bg-amber-500/10 text-amber-600',
+    blue: 'bg-blue-500/10 text-blue-600',
+    violet: 'bg-violet-500/10 text-violet-600',
+  };
+
+  return (
+    <div className="rounded-3xl border border-slate-200/80 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-[9px] font-black uppercase tracking-[0.24em] text-slate-400">{label}</div>
+          <div className="mt-2 text-xl font-black text-slate-900 dark:text-white">{value}</div>
+        </div>
+        <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${toneClasses[tone] || toneClasses.blue}`}>
+          {icon}
         </div>
       </div>
-      
-      {/* Neural Feedback Overlay */}
-      <style>{`
-         @keyframes scan {
-           0% { top: 0; }
-           50% { top: 100%; }
-           100% { top: 0; }
-         }
-      `}</style>
     </div>
   );
 }
@@ -388,13 +1268,13 @@ export default function ScanAWBPage({ toast }) {
 function LogStat({ icon, label, value, highlight }) {
   return (
     <div>
-       <div className="flex items-center gap-1.5 mb-1">
-          <span className="text-slate-300">{icon}</span>
-          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">{label}</span>
-       </div>
-       <div className={`text-[11px] font-black truncate uppercase ${highlight ? 'text-blue-500' : 'text-slate-600 dark:text-slate-400'}`}>
-          {value || 'N/A'}
-       </div>
+      <div className="flex items-center gap-1.5 mb-1">
+        <span className="text-slate-300">{icon}</span>
+        <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">{label}</span>
+      </div>
+      <div className={`text-[11px] font-black truncate uppercase ${highlight ? 'text-blue-500' : 'text-slate-600 dark:text-slate-400'}`}>
+        {value || 'N/A'}
+      </div>
     </div>
   );
 }

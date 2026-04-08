@@ -271,6 +271,57 @@ Key route groups:
 
 ---
 
+## Live Excel / Sheet Sync (No Local Script)
+
+Use this when your Excel is on another computer and your backend is on Railway.
+
+1. Set this backend env var:
+`INTEGRATION_SYNC_API_KEY=<long-random-secret>`
+
+2. Use this endpoint from Power Automate / Google Apps Script:
+`POST /api/public/integrations/excel/import`
+
+3. Send header:
+`x-sync-key: <INTEGRATION_SYNC_API_KEY>`
+
+4. Request body format:
+```json
+{
+  "shipments": [
+    {
+      "date": "2026-04-07",
+      "clientCode": "ABC",
+      "awb": "123456789012",
+      "consignee": "John",
+      "destination": "Mumbai",
+      "weight": 1.2,
+      "amount": 120,
+      "courier": "Trackon",
+      "department": "OPS",
+      "service": "Standard",
+      "status": "Booked",
+      "remarks": ""
+    }
+  ]
+}
+```
+
+5. Import behavior:
+- If `courier` is blank, Seahawk tries to auto-detect it from the AWB.
+- Imported active shipments are queued for background tracking sync immediately after import.
+- The API response includes `trackingQueued` so your automation can log how many AWBs started tracking.
+
+6. Ready-made Google Apps Script:
+- Use [google-apps-script-sync.gs](c:\Users\hp\OneDrive\Desktop\seahawk-full_stack\scripts\google-apps-script-sync.gs)
+- Paste it into Google Apps Script, set your backend URL and `INTEGRATION_SYNC_API_KEY`, then run it manually or via a time trigger every 5 minutes.
+
+Notes:
+- This endpoint is API-key protected and audit-logged (`INTEGRATION_IMPORT`).
+- Use your Railway backend base URL (for example `https://<service>.up.railway.app`).
+- Best practice is to sync changed rows every 1-5 minutes.
+
+---
+
 ## Security
 
 - **Authentication** — JWT access tokens (15 min) + opaque refresh tokens (30 days) stored in the DB with revocation support

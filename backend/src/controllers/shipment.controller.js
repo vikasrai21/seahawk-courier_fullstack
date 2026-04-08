@@ -106,7 +106,22 @@ const getMonthlyStats = asyncHandler(async (req, res) => {
 });
 
 const scanAwb = asyncHandler(async (req, res) => {
-  const result = await svc.scanAwbAndUpdate(req.body.awb, req.user?.id, req.body.courier);
+  let ocrHints = null;
+  if (req.body.imageBase64) {
+    try {
+      const { extractShipmentFromImage } = require('../services/ocr.service');
+      const details = await extractShipmentFromImage(req.body.imageBase64, 'image/jpeg');
+      if (details?.success) ocrHints = details;
+    } catch (_err) {
+      // Non-blocking by design: barcode capture should still proceed.
+    }
+  }
+
+  const result = await svc.scanAwbAndUpdate(req.body.awb, req.user?.id, req.body.courier, {
+    captureOnly: req.body.captureOnly,
+    source: 'scanner',
+    ocrHints,
+  });
   await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'SCAN_AWB', entity: 'SHIPMENT', entityId: result.shipment?.id, newValue: result, ip: req.ip });
   R.ok(res, result, 'AWB scanned and updated successfully');
 });
@@ -116,20 +131,106 @@ const scanAwbBulk = asyncHandler(async (req, res) => {
   
   if (!scanQueue) {
     // Fallback to synchronous if Redis/Queue is not configured
-    const result = await svc.scanAwbBulkAndUpdate(req.body.awbs, req.user?.id, req.body.courier);
+    const result = await svc.scanAwbBulkAndUpdate(req.body.awbs, req.user?.id, req.body.courier, {
+      captureOnly: req.body.captureOnly,
+      source: 'scanner_bulk',
+    });
     await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'SCAN_AWB_BULK', entity: 'SHIPMENT', newValue: { totalScanned: req.body.awbs.length, successes: result.successful.length }, ip: req.ip });
     return R.ok(res, result, 'Bulk AWB scan completed synchronously');
   }
 
   // Add the job to BullMQ
-  const job = await scanQueue.add('bulk-scan', { awbs: req.body.awbs, userId: req.user?.id, courier: req.body.courier });
+  const job = await scanQueue.add('bulk-scan', { awbs: req.body.awbs, userId: req.user?.id, courier: req.body.courier, captureOnly: req.body.captureOnly });
   await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'ENQUEUE_SCAN_BULK', entity: 'JOB', entityId: job.id, newValue: { totalScanned: req.body.awbs.length }, ip: req.ip });
   
   R.ok(res, { jobId: job.id, message: 'Processing in background' }, 'Bulk scan queued successfully');
 });
 
+const scanImage = asyncHandler(async (req, res) => {
+  const { imageBase64 } = req.body;
+  if (!imageBase64) return res.status(400).json({ success: false, message: 'Image base64 string is required' });
+
+  // 1. Process image using Gemini Vision OCR
+  const { extractShipmentFromImage } = require('../services/ocr.service');
+  const details = await extractShipmentFromImage(imageBase64, 'image/jpeg');
+
+  if (!details.success || !details.awb) {
+    return res.status(400).json({ success: false, message: 'Could not extract a valid AWB from the image.' });
+  }
+
+  // 2. We now have the AWB and optionally consignee, weight, destination
+  // We feed this into the existing scanAwbAndUpdate logic, but we augment the DB if needed
+  const svc = require('../services/shipment.service');
+  const prisma = require('../config/prisma');
+  const { normalizeStatus } = require('../services/stateMachine');
+
+  const awb = details.awb.trim();
+  let courier = details.courier || 'AUTO';
+
+  if (!courier || courier === 'AUTO') {
+    // If Gemini didn't find the courier, use regex
+    const autoDetectCourier = (awbStr) => {
+      const a = String(awbStr || '').toUpperCase().trim();
+      if (/^\d{12}$/.test(a)) return 'Trackon';
+      if (/^\d{13,14}$/.test(a)) return 'Delhivery';
+      if (/^[A-Z]{1,2}\d{8,10}$/.test(a)) return 'DTDC';
+      return 'Delhivery';
+    };
+    courier = autoDetectCourier(awb);
+  }
+
+  // Check if shipment exists
+  let shipment = await prisma.shipment.findUnique({ where: { awb } });
+
+  // Regardless, we will TRY to fetch tracking if possible, or just apply OCR data directly
+  // Actually, OCR gives us richer details than standard API responses!
+  const updateData = { updatedById: req.user?.id };
+  if (details.consignee) updateData.consignee = details.consignee.toUpperCase();
+  if (details.destination) updateData.destination = details.destination.toUpperCase();
+  if (details.weight) updateData.weight = details.weight;
+  if (details.amount) updateData.amount = details.amount;
+  updateData.courier = courier;
+
+  let savedShipment;
+  if (!shipment) {
+    // Auto-create newly discovered shipment from image
+    savedShipment = await prisma.shipment.create({
+      data: {
+        awb,
+        date: new Date().toISOString().split('T')[0],
+        clientCode: 'MISC',
+        consignee: updateData.consignee || 'UNKNOWN',
+        destination: updateData.destination || 'UNKNOWN',
+        weight: updateData.weight || 0.5,
+        amount: updateData.amount || 0,
+        courier: courier,
+        department: 'Operations',
+        service: 'Standard',
+        status: 'InTransit', 
+        remarks: 'OCR_DISCOVERED: Captured via AI Vision Scanner',
+        createdById: req.user?.id,
+        updatedById: req.user?.id
+      },
+      include: { client: { select: { company: true } } }
+    });
+    // emitShipmentCreated(savedShipment); (Handled by socket emit if imported, but omitted here for simplicity)
+  } else {
+    // Update existing shipment with OCR details (never override existing weight/amount with 0)
+    savedShipment = await prisma.shipment.update({
+      where: { awb },
+      data: updateData,
+      include: { client: { select: { company: true } } }
+    });
+  }
+
+  await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'SCAN_IMAGE_OCR', entity: 'SHIPMENT', entityId: savedShipment.id, newValue: details, ip: req.ip });
+  
+  R.ok(res, { message: 'Image scanned safely.', shipment: savedShipment, ocrDetails: details });
+});
+
 module.exports = { getAll, getOne, create, update, patchStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getValidStatuses, deleteShipment: remove,
   getImportLedger,
   scanAwb,
-  scanAwbBulk
+  scanAwbBulk,
+  scanImage
 };

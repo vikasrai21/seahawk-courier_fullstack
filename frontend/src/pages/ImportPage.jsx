@@ -263,7 +263,7 @@ export default function ImportPage({ toast }) {
       const shipments = mappedRows.map(({ _dateCorrected, ...row }) => row);
       const res = await api.post('/shipments/import', { shipments });
       setResult(res.data);
-      toast?.(`✓ Imported ${res.data.imported} rows!`, 'success');
+      toast?.(`Imported ${res.data.imported} rows. Tracking sync started for ${res.data.trackingQueued || 0} shipments.`, 'success');
     } catch (err) {
       setError(err.message);
       toast?.(err.message, 'error');
@@ -471,10 +471,14 @@ export default function ImportPage({ toast }) {
             <span className="text-indigo-700">📦 Operational shipments: <strong>{result.operationalCreated || 0}</strong></span>
             <span className="text-yellow-700">♻️ Repeated AWBs linked: <strong>{result.duplicates}</strong></span>
             <span className="text-blue-700">💸 Auto-priced: <strong>{result.autoPriced || 0}</strong></span>
+            <span className="text-sky-700">🚚 Tracking sync queued: <strong>{result.trackingQueued || 0}</strong></span>
             {result.errors?.length > 0 && (
               <span className="text-red-700">❌ Errors: <strong>{result.errors.length}</strong></span>
             )}
           </div>
+          <p className="mt-2 text-xs text-green-700">
+            New and active courier shipments start background tracking sync immediately after import, so clients can see movement sooner.
+          </p>
           {result.errors?.length > 0 && (
             <div className="mt-2 text-xs text-red-600 space-y-0.5">
               {result.errors.map((e, i) => <p key={i}>• AWB {e.awb}: {e.error}</p>)}
@@ -502,10 +506,10 @@ export default function ImportPage({ toast }) {
           <div>
             <h3 className="font-bold text-amber-900">Auto-Sync: Keep working in Excel, dashboard updates automatically</h3>
             <p className="text-sm text-amber-800 mt-1">
-              Instead of manually importing every time, you can set up a Windows script that watches your Excel file and syncs it to the dashboard automatically — every 5 minutes, or whenever you want.
+              Instead of waiting 3-4 days for manual entry, you can push rows into Seahawk automatically from Google Sheets, Power Automate, or any system that can call an API.
             </p>
             <p className="text-sm text-amber-800 mt-2">
-              <strong>Setup:</strong> The file <code className="bg-amber-100 px-1 rounded text-xs">C:\seahawk-v6\auto-sync.bat</code> is already inside your ZIP. Edit it to point to your Excel file path, then double-click it to start watching. It runs silently in the background.
+              <strong>Setup:</strong> use <code className="bg-amber-100 px-1 rounded text-xs">POST /api/public/integrations/excel/import</code> with <code className="bg-amber-100 px-1 rounded text-xs">x-sync-key</code>. A ready-to-use Apps Script template is included in <code className="bg-amber-100 px-1 rounded text-xs">scripts/google-apps-script-sync.gs</code>.
             </p>
           </div>
         </div>

@@ -57,7 +57,9 @@ async function getActiveContractsByClientCodes(clientCodes = [], db = prisma) {
     orderBy: { createdAt: 'asc' },
   });
 
-  return contracts.reduce((acc, contract) => {
+  const rows = Array.isArray(contracts) ? contracts : [];
+
+  return rows.reduce((acc, contract) => {
     const key = contract.clientCode.toUpperCase();
     if (!acc[key]) acc[key] = [];
     acc[key].push(contract);

@@ -58,7 +58,15 @@ module.exports = {
   // Optional integrations — no crash if missing, but carrier will be disabled
   carriers: {
     delhivery: { key: optional('DELHIVERY_API_KEY'), url: optional('DELHIVERY_API_URL', 'https://track.delhivery.com') },
-    dtdc:      { key: optional('DTDC_API_KEY'),      customerCode: optional('DTDC_CUSTOMER_CODE') },
+    dtdc:      {
+      key: optional('DTDC_API_KEY'),
+      accessToken: optional('DTDC_ACCESS_TOKEN', optional('DTDC_API_KEY')),
+      username: optional('DTDC_USERNAME', optional('DTDC_CLIENT_ID')),
+      password: optional('DTDC_PASSWORD'),
+      customerCode: optional('DTDC_CUSTOMER_CODE'),
+      authUrl: optional('DTDC_AUTH_API_URL', 'https://blktracksvc.dtdc.com/dtdc-api/api/dtdc/authenticate'),
+      trackingUrl: optional('DTDC_TRACKING_API_URL', 'https://blktracksvc.dtdc.com/dtdc-tracking-api/dtdc-api/rest/JSONCnTrk/getTrackDetails'),
+    },
     trackon: {
       appKey: optional('TRACKON_APP_KEY', optional('TRACKON_API_KEY')),
       userId: optional('TRACKON_USER_ID', optional('TRACKON_CUSTOMER_ID', optional('TRACKON_CLIENT_ID'))),
@@ -124,5 +132,9 @@ module.exports = {
     dtdcSecret: optional('DTDC_WEBHOOK_SECRET'),
     replayWindowSeconds: parseInt(optional('WEBHOOK_REPLAY_WINDOW_SECONDS', '300'), 10),
     idempotencyTtlSeconds: parseInt(optional('WEBHOOK_IDEMPOTENCY_TTL_SECONDS', '86400'), 10),
+  },
+
+  integrations: {
+    syncApiKey: optional('INTEGRATION_SYNC_API_KEY'),
   },
 };

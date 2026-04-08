@@ -13,8 +13,8 @@ set EXCEL_FILE=C:\Users\%USERNAME%\Documents\seahawk-entries.xlsx
 :: 2. How often to check for changes (in seconds). Default: 300 = every 5 minutes
 set INTERVAL=300
 
-:: 3. Dashboard URL (don't change unless you changed the port)
-set DASHBOARD=http://localhost:3001
+:: 3. Dashboard URL (Railway production backend)
+set DASHBOARD=https://seahawk-courierfullstack-production.up.railway.app
 
 :: ============================================================
 ::  DO NOT EDIT BELOW THIS LINE

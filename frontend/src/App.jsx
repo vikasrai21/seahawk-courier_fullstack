@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -61,6 +61,7 @@ const WalletPage = lazy(() => import('./pages/WalletPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const SupportTicketsPage = lazy(() => import('./pages/SupportTicketsPage'));
 const OwnerAuditPage = lazy(() => import('./pages/OwnerAuditPage'));
+const MobileScannerPage = lazy(() => import('./pages/MobileScannerPage'));
 
 function AuthLoadingScreen() {
   return (
@@ -97,7 +98,11 @@ function RouteLoadingScreen() {
 
 function PrivateRoute({ children, adminOnly = false, ownerOnly = false, roles = null }) {
   const { user, isAdmin, isOwner, hasRole } = useAuth();
+  const location = useLocation();
   if (!user) return <Navigate to="/login" replace />;
+  if (user.mustChangePassword && location.pathname !== '/change-password' && location.pathname !== '/app/change-password') {
+    return <Navigate to="/change-password?required=1" replace />;
+  }
   if (ownerOnly && !isOwner) return <Navigate to="/app" replace />;
   if (adminOnly && !isAdmin) return <Navigate to="/app" replace />;
   if (roles && !hasRole(...roles)) return <Navigate to="/app" replace />;
@@ -106,14 +111,22 @@ function PrivateRoute({ children, adminOnly = false, ownerOnly = false, roles = 
 
 function StaffRoute({ children }) {
   const { user } = useAuth();
+  const location = useLocation();
   if (!user) return <Navigate to="/login" replace />;
+  if (user.mustChangePassword && location.pathname !== '/change-password' && location.pathname !== '/app/change-password') {
+    return <Navigate to="/change-password?required=1" replace />;
+  }
   if (user.role === 'CLIENT') return <Navigate to="/portal" replace />;
   return children;
 }
 
 function ClientRoute({ children }) {
   const { user } = useAuth();
+  const location = useLocation();
   if (!user) return <Navigate to="/login" replace />;
+  if (user.mustChangePassword && location.pathname !== '/change-password') {
+    return <Navigate to="/change-password?required=1" replace />;
+  }
   if (user.role !== 'CLIENT') return <Navigate to="/app" replace />;
   return children;
 }
@@ -141,6 +154,9 @@ function AppRoutes() {
             <Route path="/track" element={<PublicTrackPage />} />
             <Route path="/track/:awb" element={<PublicTrackPage />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/mobile-scanner" element={<MobileScannerPage />} />
+            <Route path="/mobile-scanner/:pin" element={<MobileScannerPage />} />
+            <Route path="/change-password" element={<PrivateRoute><ChangePasswordPage /></PrivateRoute>} />
 
             <Route path="/portal" element={<ClientRoute>{withToast(ClientPortalPage)}</ClientRoute>} />
             <Route path="/portal/shipments" element={<ClientRoute>{withToast(ClientShipmentsPage)}</ClientRoute>} />

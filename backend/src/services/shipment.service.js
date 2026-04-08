@@ -14,6 +14,12 @@ const { normalizeStatus } = require('./stateMachine');
 const { emitShipmentCreated, emitShipmentStatusUpdated } = require('../realtime/socket');
 const contractSvc  = require('./contract.service');
 const importLedger = require('./import-ledger.service');
+const riskAnalysis = require('./riskAnalysis.service');
+const queueSvc     = require('./queue.service');
+const clientMatcher = require('./clientMatcher.service');
+
+const TRACKABLE_COURIERS = new Set(['Delhivery', 'Trackon', 'DTDC', 'BlueDart', 'FedEx', 'DHL']);
+const TERMINAL_STATUSES = new Set(['Delivered', 'RTO', 'Cancelled']);
 
 const clearCache = () => {
   if (redis?.status === 'ready') {
@@ -94,6 +100,7 @@ async function getById(id) {
 
 async function create(data, userId) {
   const today = new Date().toISOString().split('T')[0];
+  const risk = await riskAnalysis.analyzeShipment(data);
   const shipment = await prisma.$transaction(async (tx) => {
     const contractPrice = (!Number(data.amount || 0) && data.clientCode)
       ? await contractSvc.calculatePrice({
@@ -114,6 +121,8 @@ async function create(data, userId) {
       createdById: userId || null,
       updatedById: userId || null,
       remarks: data.remarks || (contractPrice ? `AUTO_PRICED:${contractPrice.contractName}` : ''),
+      riskScore: risk?.score || 0,
+      riskFactors: risk?.factors || [],
     };
 
     if ((payload.amount || 0) > 0) {
@@ -226,7 +235,9 @@ async function bulkImport(shipments, userId) {
   const today = new Date().toISOString().split('T')[0];
   const batchKey = `imp_${Date.now()}`;
   let imported = 0, duplicates = 0, autoPriced = 0, operationalCreated = 0;
+  let trackingQueued = 0;
   const errors = [];
+  const trackingCandidates = [];
   await importLedger.ensureTable();
   const clientCodes = [...new Set(shipments.map(s => (s.clientCode || 'MISC').toUpperCase()))];
   const contractsByClient = await contractSvc.getActiveContractsByClientCodes(clientCodes);
@@ -239,27 +250,34 @@ async function bulkImport(shipments, userId) {
       const clientCode = (s.clientCode || 'MISC').toUpperCase();
       const amount = parseFloat(s.amount) || 0;
       const weight = parseFloat(s.weight) || 0;
+      const normalizedCourier = String(s.courier || '').trim() || autoDetectCourier(awb);
       const contractPrice = amount > 0
         ? null
         : contractSvc.calculatePriceFromContract(
             contractSvc.selectBestContract(contractsByClient[clientCode] || [], {
-              courier: String(s.courier || ''),
+              courier: normalizedCourier,
               service: String(s.service || 'Standard'),
             }),
             weight
           );
       const finalAmount = amount > 0 ? amount : Number(contractPrice?.total || 0);
       if (contractPrice) autoPriced++;
-      const normalizedStatus = normalizeStatus(String(s.status || 'Delivered'));
+      const normalizedStatus = normalizeStatus(String(s.status || 'Booked'));
       const existing = await prisma.shipment.findUnique({ where: { awb } });
 
       let operationalShipment = existing;
       if (!existing) {
-        operationalShipment = await prisma.shipment.create({ data: { awb, clientCode, date: s.date || today, consignee: String(s.consignee || '').toUpperCase(), destination: String(s.destination || '').toUpperCase(), weight, amount: finalAmount, courier: String(s.courier || ''), department: String(s.department || ''), service: String(s.service || 'Standard'), status: normalizedStatus, remarks: String(s.remarks || (contractPrice ? `AUTO_PRICED:${contractPrice.contractName}` : '')), createdById: userId || null, updatedById: userId || null } });
+        operationalShipment = await prisma.shipment.create({ data: { awb, clientCode, date: s.date || today, consignee: String(s.consignee || '').toUpperCase(), destination: String(s.destination || '').toUpperCase(), weight, amount: finalAmount, courier: normalizedCourier, department: String(s.department || ''), service: String(s.service || 'Standard'), status: normalizedStatus, remarks: String(s.remarks || (contractPrice ? `AUTO_PRICED:${contractPrice.contractName}` : '')), createdById: userId || null, updatedById: userId || null } });
         emitShipmentCreated(operationalShipment);
         operationalCreated++;
       } else {
         duplicates++;
+      }
+
+      const effectiveCourier = String(operationalShipment?.courier || normalizedCourier || '').trim();
+      const effectiveStatus = String(operationalShipment?.status || normalizedStatus || '').trim();
+      if (operationalShipment?.id && TRACKABLE_COURIERS.has(effectiveCourier) && !TERMINAL_STATUSES.has(effectiveStatus)) {
+        trackingCandidates.push({ shipmentId: operationalShipment.id, awb, carrier: effectiveCourier });
       }
 
       await importLedger.insertRow({
@@ -274,7 +292,7 @@ async function bulkImport(shipments, userId) {
         pincode: String(s.pincode || ''),
         weight,
         amount: finalAmount,
-        courier: String(s.courier || ''),
+        courier: normalizedCourier,
         department: String(s.department || ''),
         service: String(s.service || 'Standard'),
         status: normalizedStatus,
@@ -288,8 +306,20 @@ async function bulkImport(shipments, userId) {
     } catch (err) { if (err.code === 'P2002') duplicates++; else errors.push({ awb, error: err.message }); }
   }
   
+  if (trackingCandidates.length > 0) {
+    const uniqueCandidates = [...new Map(trackingCandidates.map((item) => [item.awb, item])).values()];
+    for (const candidate of uniqueCandidates) {
+      try {
+        await queueSvc.enqueueTrackingSync(candidate.shipmentId, candidate.awb, candidate.carrier);
+        trackingQueued++;
+      } catch (err) {
+        logger.warn(`[Import] Tracking sync enqueue failed for ${candidate.awb}: ${err.message}`);
+      }
+    }
+  }
+
   if (imported > 0) clearCache();
-  return { imported, duplicates, autoPriced, operationalCreated, batchKey, errors: errors.slice(0, 20) };
+  return { imported, duplicates, autoPriced, operationalCreated, trackingQueued, batchKey, errors: errors.slice(0, 20) };
 }
 
 async function getTodayStats() {
@@ -348,17 +378,148 @@ async function getMyShipments(clientCode, { page = 1, limit = 25, search, status
   return { shipments, pagination: { total, page: parseInt(page), limit: parseInt(limit) } };
 }
 
-async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery') {
-  const shipment = await prisma.shipment.findUnique({ where: { awb } });
-  
-  if (!shipment) {
-     throw new AppError(`Shipment with AWB ${awb} not found. Please ensure it is synced from Excel first.`, 404);
+function autoDetectCourier(awbStr) {
+  const awb = String(awbStr || '').toUpperCase().trim();
+  if (!awb) return 'Delhivery';
+  if (/^\d{12}$/.test(awb)) return 'Trackon'; // Typically 12 digits
+  if (/^\d{13,14}$/.test(awb)) return 'Delhivery'; // Typically 13-14 digits
+  if (/^[A-Z]{1,2}\d{8,10}$/.test(awb)) return 'DTDC'; // Alphanumeric
+  return 'Delhivery'; // Fallback
+}
+
+function buildCapturedShipmentPayload(awb, courier, userId, source) {
+  return {
+    awb,
+    date: new Date().toISOString().split('T')[0],
+    clientCode: 'MISC',
+    consignee: 'UNKNOWN',
+    destination: 'UNKNOWN',
+    weight: 0.5,
+    amount: 0,
+    courier,
+    department: 'Operations',
+    service: 'Standard',
+    status: 'Booked',
+    remarks: source === 'scanner_bulk'
+      ? 'SCAN_CAPTURED: Bulk intake awaiting tracking sync'
+      : 'SCAN_CAPTURED: Intake awaiting tracking sync',
+    createdById: userId,
+    updatedById: userId,
+  };
+}
+
+async function createOrReuseCapturedShipment(awb, userId, courier, source = 'scanner') {
+  const existingShipment = await prisma.shipment.findUnique({
+    where: { awb },
+    include: { client: { select: { company: true } } },
+  });
+
+  if (existingShipment) {
+    const updatedShipment = await prisma.shipment.update({
+      where: { awb },
+      data: {
+        courier,
+        updatedById: userId,
+        remarks: existingShipment.remarks || 'SCAN_CAPTURED: Intake awaiting tracking sync',
+      },
+      include: { client: { select: { company: true } } },
+    });
+
+    return {
+      shipment: updatedShipment,
+      existed: true,
+      source: 'local_existing',
+      trackingUnavailable: true,
+      message: 'Shipment captured from local records. Live tracking is unavailable right now.',
+    };
   }
 
+  const createdShipment = await prisma.shipment.create({
+    data: buildCapturedShipmentPayload(awb, courier, userId, source),
+    include: { client: { select: { company: true } } },
+  });
+  emitShipmentCreated(createdShipment);
+  clearCache();
+
+  return {
+    shipment: createdShipment,
+    existed: false,
+    source: 'captured_placeholder',
+    trackingUnavailable: true,
+    message: 'Shipment captured successfully. Live tracking can sync later.',
+  };
+}
+
+async function attachClientSuggestion(savedShipment, ocrHints = null) {
+  if (!savedShipment?.id) {
+    return { shipment: savedShipment, clientSuggestion: null };
+  }
+
+  const suggestion = await clientMatcher.suggestClientForShipment(savedShipment, ocrHints);
+  if (!suggestion?.suggestedClientCode) {
+    return { shipment: savedShipment, clientSuggestion: suggestion };
+  }
+
+  if (savedShipment.clientCode === suggestion.suggestedClientCode) {
+    return { shipment: savedShipment, clientSuggestion: { ...suggestion, autoAssigned: false } };
+  }
+
+  if (savedShipment.clientCode === 'MISC' && suggestion.shouldAutoAssign) {
+    const patched = await prisma.shipment.update({
+      where: { id: savedShipment.id },
+      data: {
+        clientCode: suggestion.suggestedClientCode,
+        remarks: `${savedShipment.remarks || ''}${savedShipment.remarks ? ' | ' : ''}AUTO_CLIENT_MATCH:${suggestion.suggestedClientCode}`,
+      },
+      include: { client: { select: { company: true } } },
+    });
+    return {
+      shipment: patched,
+      clientSuggestion: { ...suggestion, autoAssigned: true },
+    };
+  }
+
+  return { shipment: savedShipment, clientSuggestion: { ...suggestion, autoAssigned: false } };
+}
+
+async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}) {
+  const { captureOnly = false, source = 'scanner', ocrHints = null } = options;
+  if (!courier || courier === 'AUTO') {
+    courier = autoDetectCourier(awb);
+  }
+
+  let shipment = await prisma.shipment.findUnique({ where: { awb } });
+  
   const tracker = COURIERS[courier] || COURIERS['Delhivery'];
 
-  const trackingData = await tracker.getTracking(awb);
+  let trackingData = null;
+  let trackingError = null;
+  try {
+    trackingData = await tracker.getTracking(awb);
+  } catch (err) {
+    trackingError = err;
+  }
+
   if (!trackingData) {
+    if (captureOnly) {
+      const captured = await createOrReuseCapturedShipment(awb, userId, courier, source);
+      const enriched = await attachClientSuggestion(captured.shipment, ocrHints);
+      return {
+        ...captured,
+        shipment: enriched.shipment,
+        meta: {
+          existed: captured.existed,
+          source: captured.source,
+          trackingUnavailable: true,
+          trackingError: trackingError?.message || null,
+          clientSuggestion: enriched.clientSuggestion,
+        },
+      };
+    }
+
+    if (!shipment) {
+      throw new AppError(`Shipment with AWB ${awb} not found in database and could not be fetched from ${courier} API.`, 404);
+    }
     throw new AppError(`Could not fetch tracking data for AWB ${awb} from ${courier} API. Please check your tracking number or API credentials.`, 400);
   }
 
@@ -369,31 +530,67 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery') {
   if (trackingData.status && trackingData.status !== 'Booked') updateData.status = normalizeStatus(trackingData.status);
   updateData.courier = courier;
 
-  const updatedShipment = await prisma.shipment.update({
-    where: { awb },
-    data: updateData,
-    include: { client: { select: { company: true } } }
-  });
+  let savedShipment;
+  if (!shipment) {
+    // Auto-create newly discovered shipment
+    savedShipment = await prisma.shipment.create({
+      data: {
+        awb,
+        date: new Date().toISOString().split('T')[0],
+        clientCode: 'MISC',
+        consignee: updateData.consignee || 'UNKNOWN',
+        destination: updateData.destination || 'UNKNOWN',
+        weight: 0.5,
+        amount: 0,
+        courier: courier,
+        department: 'Operations',
+        service: 'Standard',
+        status: updateData.status || 'InTransit',
+        remarks: 'AUTO_DISCOVERED: Via Scanner',
+        createdById: userId,
+        updatedById: userId
+      },
+      include: { client: { select: { company: true } } }
+    });
+    emitShipmentCreated(savedShipment);
+  } else {
+    // Update existing shipment
+    savedShipment = await prisma.shipment.update({
+      where: { awb },
+      data: updateData,
+      include: { client: { select: { company: true } } }
+    });
+  }
 
-  if (trackingData.status && trackingData.status !== shipment.status) {
+  if (trackingData.status && (!shipment || trackingData.status !== shipment.status)) {
     try {
-      await prisma.trackingEvent.create({ data: { shipmentId: updatedShipment.id, awb, status: trackingData.status, description: 'Scanned and updated from API', timestamp: new Date(), source: 'API' } });
+      await prisma.trackingEvent.create({ data: { shipmentId: savedShipment.id, awb, status: trackingData.status, description: 'Scanned and updated from API', timestamp: new Date(), source: 'API' } });
     } catch (e) { logger.warn(`[Tracking] Event log failed: ${e.message}`); }
   }
 
   clearCache();
-  emitShipmentStatusUpdated(updatedShipment);
-  return { message: 'Tracking data updated successfully', shipment: updatedShipment };
+  const enriched = await attachClientSuggestion(savedShipment, ocrHints);
+  emitShipmentStatusUpdated(enriched.shipment);
+  return {
+    message: shipment ? 'Tracking data updated successfully' : 'Shipment automatically discovered and created',
+    shipment: enriched.shipment,
+    meta: {
+      existed: !!shipment,
+      source: shipment ? 'tracked_existing' : 'tracked_discovered',
+      trackingUnavailable: false,
+      clientSuggestion: enriched.clientSuggestion,
+    },
+  };
 }
 
-async function scanAwbBulkAndUpdate(awbs, userId, courier = 'Delhivery') {
+async function scanAwbBulkAndUpdate(awbs, userId, courier = 'Delhivery', options = {}) {
   const results = { successful: [], failed: [] };
   
   // Process sequentially to be kind to Courier API rate limits
   for (const awb of awbs) {
     try {
-      const data = await scanAwbAndUpdate(awb, userId, courier);
-      results.successful.push({ awb, data: data.shipment });
+      const data = await scanAwbAndUpdate(awb, userId, courier, options);
+      results.successful.push({ awb, data: data.shipment, meta: data.meta || {} });
     } catch (err) {
       results.failed.push({ awb, error: err.message });
     }

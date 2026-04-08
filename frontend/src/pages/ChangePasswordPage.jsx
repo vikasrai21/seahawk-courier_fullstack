@@ -41,7 +41,10 @@ export default function ChangePasswordPage() {
       });
       setSuccess(true);
       setTimeout(() => {
-        if (isRequired) navigate('/app', { replace: true });
+        if (isRequired) {
+          if (user?.role === 'CLIENT') navigate('/portal', { replace: true });
+          else navigate('/app', { replace: true });
+        }
         else navigate(-1);
       }, 2000);
     } catch (err) {

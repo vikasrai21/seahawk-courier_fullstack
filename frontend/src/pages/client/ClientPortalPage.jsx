@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Area, AreaChart, ResponsiveContainer, CartesianGrid, Tooltip, XAxis, YAxis, LineChart, Line, Legend } from 'recharts';
+import { Area, AreaChart, ResponsiveContainer, CartesianGrid, Tooltip, XAxis, YAxis, LineChart, Line, Legend, ReferenceDot } from 'recharts';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
@@ -10,6 +10,62 @@ import { SkeletonTable } from '../../components/ui/Skeleton';
 import { useDebounce } from '../../hooks/useDebounce';
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+
+function getClientAssistantFollowups(message) {
+  const text = String(message?.text || '').toLowerCase();
+  const actionType = message?.action?.type || '';
+  if (actionType === 'TRACK_AWB' || text.includes('track')) return ['Show my shipments', 'Raise support ticket', 'Create pickup'];
+  if (actionType === 'PICKUP_CREATE' || text.includes('pickup')) return ['Show my pickups', 'Track AWB', 'Raise support ticket'];
+  if (actionType === 'NDR_RESPOND' || actionType === 'NDR_LIST' || text.includes('ndr')) return ['Show my NDRs', 'Track AWB', 'Raise support ticket'];
+  if (actionType === 'SUPPORT_TICKET' || actionType === 'SUPPORT_TICKET_LIST' || text.includes('ticket')) return ['Show my tickets', 'Track AWB', 'Show my shipments'];
+  return ['Track AWB', 'Show my shipments', 'Create pickup'];
+}
+
+function getClientChipIcon(label) {
+  const value = String(label || '').toLowerCase();
+  if (value.includes('track')) return '◎';
+  if (value.includes('shipment')) return '▣';
+  if (value.includes('pickup')) return '↥';
+  if (value.includes('ticket')) return '?';
+  if (value.includes('ndr')) return '!';
+  return '•';
+}
+
+function PortalAssistantAvatar({ size = 44 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="portalOrbBg" x1="10" y1="6" x2="54" y2="58" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FDE68A" />
+          <stop offset="0.45" stopColor="#FB7185" />
+          <stop offset="1" stopColor="#A78BFA" />
+        </linearGradient>
+        <linearGradient id="portalFace" x1="19" y1="18" x2="45" y2="44" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FFF9F4" />
+          <stop offset="1" stopColor="#FFE8F1" />
+        </linearGradient>
+        <linearGradient id="portalVisor" x1="22" y1="24" x2="43" y2="35" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#7C2D12" />
+          <stop offset="1" stopColor="#9D174D" />
+        </linearGradient>
+      </defs>
+      <circle cx="32" cy="32" r="32" fill="url(#portalOrbBg)" />
+      <circle cx="21" cy="16" r="10" fill="white" opacity="0.24" />
+      <circle cx="32" cy="31" r="18.5" fill="url(#portalFace)" />
+      <path d="M17 25C18.8 18.2 24.5 13 32 13C37.8 13 43.6 16.1 46.6 21.2C43.2 24.8 38.8 26.8 33 26.8C27.8 26.8 23 25.8 17 25Z" fill="#831843" />
+      <path d="M20.5 27C24.8 29 28.7 29.8 33.2 29.8C37.7 29.8 41.6 28.8 45.2 26.5V38.2C45.2 45 39.6 50.5 32.7 50.5H31.5C24.7 50.5 19.2 45 19.2 38.2V29.4C19.2 28.6 19.7 27.7 20.5 27Z" fill="url(#portalFace)" />
+      <rect x="23" y="27.4" width="18" height="8.8" rx="4.4" fill="url(#portalVisor)" />
+      <circle className="portal-avatar-eye" cx="28.8" cy="31.8" r="1.8" fill="#FFF7ED" />
+      <circle className="portal-avatar-eye" cx="35.2" cy="31.8" r="1.8" fill="#FFF7ED" />
+      <path d="M27.5 40C29.5 42 34.3 42 36.8 39.7" stroke="#F43F5E" strokeWidth="2.2" strokeLinecap="round" />
+      <circle cx="23.5" cy="36.3" r="2.4" fill="#FDA4AF" opacity="0.45" />
+      <circle cx="40.8" cy="36.3" r="2.4" fill="#FDA4AF" opacity="0.45" />
+      <circle cx="49.5" cy="18.5" r="5.2" fill="#34D399" />
+      <path d="M49.5 14.7V22.3" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M45.7 18.5H53.3" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function RangeChip({ active, label, onClick }) {
   return (
@@ -158,17 +214,44 @@ const RANGE_OPTIONS = [
   { key: 'custom', label: 'Custom' },
 ];
 
-const ACTIONS = [
-  { to: '/portal/bulk-track', icon: '🔍', title: 'Bulk AWB Tracking', description: 'Search many shipments together and spot stuck parcels in one pass.', tone: 'blue', featured: true },
-  { to: '/portal/map', icon: '🗺️', title: 'Live Shipment Map', description: 'Watch active shipments move in real time across your service lanes.', tone: 'teal', featured: true },
-  { to: '/portal/pickups', icon: '📦', title: 'Raise Pickup Request', description: 'Schedule a pickup quickly when your dispatch team needs same-day action.', tone: 'green' },
-  { to: '/portal/ndr', icon: '⚠️', title: 'NDR Self-Service', description: 'Resolve failed attempts, update remarks, and recover at-risk orders.', tone: 'rose' },
-  { to: '/portal/import', icon: '📤', title: 'Order Import', description: 'Upload bulk orders and get them into the shipment pipeline faster.', tone: 'amber' },
-  { to: '/portal/pod', icon: '📸', title: 'Digital PODs', description: 'Access proof-of-delivery records without bouncing between screens.', tone: 'blue' },
-  { to: '/portal/rto-intelligence', icon: '📊', title: 'RTO Intelligence', description: 'Understand return patterns and spot the lanes driving cost leakage.', tone: 'orange' },
-  { to: '/portal/notifications', icon: '🔔', title: 'Notification Preferences', description: 'Tune alerts so teams only get the updates that matter.', tone: 'slate' },
-  { to: '/portal/support', icon: '🎫', title: 'Support Tickets', description: 'Check open issues, ticket history, and response status in one place.', tone: 'slate' },
-  { to: '/portal/branding', icon: '🌐', title: 'Branded Tracking', description: 'Manage the customer-facing tracking experience under your own brand.', tone: 'teal' },
+const ACTION_GROUPS = [
+  {
+    key: 'operations',
+    title: 'Operations',
+    subtitle: 'Daily movement actions',
+    actions: [
+      { to: '/portal/bulk-track', icon: '🔍', title: 'Bulk AWB Tracking', description: 'Search many shipments together and spot stuck parcels in one pass.', tone: 'blue', featured: true },
+      { to: '/portal/map', icon: '🗺️', title: 'Live Shipment Map', description: 'Watch active shipments move in real time across your service lanes.', tone: 'teal', featured: true },
+      { to: '/portal/pickups', icon: '📦', title: 'Raise Pickup Request', description: 'Schedule a pickup quickly when your dispatch team needs same-day action.', tone: 'green' },
+    ],
+  },
+  {
+    key: 'issues',
+    title: 'Issues',
+    subtitle: 'Recovery and exception workflows',
+    actions: [
+      { to: '/portal/ndr', icon: '⚠️', title: 'NDR Self-Service', description: 'Resolve failed attempts, update remarks, and recover at-risk orders.', tone: 'rose' },
+      { to: '/portal/rto-intelligence', icon: '📊', title: 'RTO Intelligence', description: 'Understand return patterns and spot the lanes driving cost leakage.', tone: 'orange' },
+      { to: '/portal/pod', icon: '📸', title: 'Digital PODs', description: 'Access proof-of-delivery records without bouncing between screens.', tone: 'blue' },
+    ],
+  },
+  {
+    key: 'system',
+    title: 'System',
+    subtitle: 'Configuration and communication',
+    actions: [
+      { to: '/portal/import', icon: '📤', title: 'Order Import', description: 'Upload bulk orders and get them into the shipment pipeline faster.', tone: 'amber' },
+      { to: '/portal/notifications', icon: '🔔', title: 'Notification Preferences', description: 'Tune alerts so teams only get the updates that matter.', tone: 'slate' },
+      { to: '/portal/support', icon: '🎫', title: 'Support Tickets', description: 'Check open issues, ticket history, and response status in one place.', tone: 'slate' },
+      { to: '/portal/branding', icon: '🌐', title: 'Branded Tracking', description: 'Manage the customer-facing tracking experience under your own brand.', tone: 'teal' },
+    ],
+  },
+];
+
+const WOW_FACTORS = [
+  { label: 'Premium Tracking Experience', value: 'White-label + live events', accent: '#2563eb' },
+  { label: 'Operational Reliability', value: 'Carrier-linked status sync', accent: '#0f766e' },
+  { label: 'Client Confidence Layer', value: 'SLA, RTO and support visibility', accent: '#c2410c' },
 ];
 
 export default function ClientPortalPage({ toast }) {
@@ -201,7 +284,7 @@ export default function ClientPortalPage({ toast }) {
   const [assistantInput, setAssistantInput] = useState('');
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantMessages, setAssistantMessages] = useState([
-    { role: 'assistant', text: 'Hi! Ask me about shipments, NDRs, pickups, or support tickets.' },
+    { role: 'assistant', text: 'Hi! I can help with shipments, AWB tracking, pickups, NDRs, and support tickets.' },
   ]);
 
   const assistantSuggestions = [
@@ -404,6 +487,17 @@ export default function ClientPortalPage({ toast }) {
     }));
   }, [stats]);
 
+  const movementInsights = useMemo(() => {
+    if (!trendData.length) return { wowPct: 0, peak: null, thisWeek: 0, lastWeek: 0 };
+    const values = trendData.map((t) => Number(t.shipments || 0));
+    const peakVal = Math.max(...values);
+    const peak = trendData.find((t) => Number(t.shipments || 0) === peakVal) || null;
+    const thisWeek = values.slice(-7).reduce((a, b) => a + b, 0);
+    const lastWeek = values.slice(-14, -7).reduce((a, b) => a + b, 0);
+    const wowPct = lastWeek > 0 ? Math.round(((thisWeek - lastWeek) / lastWeek) * 100) : (thisWeek > 0 ? 100 : 0);
+    return { wowPct, peak, thisWeek, lastWeek };
+  }, [trendData]);
+
   const performanceData = useMemo(() => {
     return (performance?.series || []).map((row) => ({
       ...row,
@@ -412,18 +506,33 @@ export default function ClientPortalPage({ toast }) {
   }, [performance]);
 
   const intelItems = intel?.items || [];
+  const smartAlerts = useMemo(() => {
+    const alerts = [];
+    const inTransit = Number(stats?.totals?.inTransit || 0);
+    const rto = Number(stats?.totals?.rto || 0);
+    const ndr = Number(stats?.totals?.ndr || 0);
+    if (inTransit >= 10) alerts.push({ tone: 'blue', text: `${inTransit} shipments are active in the network right now.` });
+    if (rto > 0) alerts.push({ tone: 'red', text: `${rto} shipments are in RTO flow and need recovery attention.` });
+    if (ndr > 0) alerts.push({ tone: 'orange', text: `${ndr} shipments need NDR action to prevent delivery failures.` });
+    if (!alerts.length) alerts.push({ tone: 'green', text: 'No critical alerts right now. Operations look stable.' });
+    return alerts.slice(0, 3);
+  }, [stats]);
 
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg,#f7faff 0%,#eef4fd 100%)', fontFamily: "'Inter', -apple-system, sans-serif" }}>
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg,#f4f8ff 0%,#eef4fd 34%,#f8fbff 100%)', fontFamily: "'Sora','Manrope','Segoe UI',sans-serif", position: 'relative', overflowX: 'hidden' }}>
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+        <div style={{ position: 'absolute', top: -120, right: -140, width: 420, height: 420, borderRadius: '50%', background: 'radial-gradient(circle,rgba(56,189,248,0.17) 0%,rgba(56,189,248,0) 70%)' }} />
+        <div style={{ position: 'absolute', top: 240, left: -160, width: 380, height: 380, borderRadius: '50%', background: 'radial-gradient(circle,rgba(251,146,60,0.16) 0%,rgba(251,146,60,0) 72%)' }} />
+      </div>
       <header
         style={{
           position: 'sticky',
           top: 0,
           zIndex: 40,
           height: 70,
-          background: 'rgba(255,255,255,0.85)',
+          background: 'rgba(255,255,255,0.8)',
           backdropFilter: 'blur(16px)',
-          borderBottom: '1px solid rgba(219,230,244,0.6)',
+          borderBottom: '1px solid rgba(219,230,244,0.7)',
           boxShadow: '0 4px 24px -12px rgba(15,23,42,0.08)',
           padding: '0 24px',
           display: 'flex',
@@ -442,6 +551,24 @@ export default function ClientPortalPage({ toast }) {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+          <Link
+            to="/portal/notifications"
+            style={{
+              textDecoration: 'none',
+              border: '1px solid #e2e8f0',
+              background: '#fff',
+              color: '#0f172a',
+              borderRadius: 999,
+              padding: '7px 12px',
+              fontSize: 11,
+              fontWeight: 900,
+              letterSpacing: '.04em',
+              textTransform: 'uppercase',
+            }}
+            title="Open notification preferences"
+          >
+            Alert Settings
+          </Link>
           <Link
             to="/portal/notifications"
             style={{ position: 'relative', cursor: 'pointer', transition: 'transform 0.2s' }}
@@ -467,7 +594,7 @@ export default function ClientPortalPage({ toast }) {
         </div>
       </header>
 
-      <main style={{ maxWidth: 1240, margin: '0 auto', padding: '28px 20px 40px' }}>
+      <main style={{ maxWidth: 1240, margin: '0 auto', padding: '28px 20px 40px', position: 'relative', zIndex: 1 }}>
         <section className="portal-hero-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.35fr) minmax(280px,.75fr)', gap: 16, marginBottom: 18 }}>
           <PortalPanel
             tone="dark"
@@ -479,9 +606,9 @@ export default function ClientPortalPage({ toast }) {
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 999, padding: '7px 12px', background: 'rgba(148,197,253,0.14)', border: '1px solid rgba(148,197,253,0.24)', color: '#dbeafe', fontSize: 11, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 16 }}>
                 Live Client Command Center
               </div>
-              <div className="portal-hero-inner" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.2fr) minmax(260px,1fr) 170px', gap: 24, alignItems: 'start' }}>
+              <div className="portal-hero-inner" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.15fr) minmax(240px,.95fr) 165px', gap: 20, alignItems: 'start' }}>
                 <div>
-                  <h1 style={{ margin: 0, color: '#f8fbff', fontSize: 36, lineHeight: 1.05, fontWeight: 900, letterSpacing: '-0.5px', maxWidth: 480 }}>
+                  <h1 style={{ margin: 0, color: '#f8fbff', fontSize: 32, lineHeight: 1.08, fontWeight: 900, letterSpacing: '-0.4px', maxWidth: 480 }}>
                     Command Center
                   </h1>
                   <p style={{ margin: '14px 0 0', color: '#c9d9f2', fontSize: 14, lineHeight: 1.6, maxWidth: 460 }}>
@@ -493,14 +620,14 @@ export default function ClientPortalPage({ toast }) {
                       className="portal-btn-primary"
                       style={{ border: '1px solid rgba(255,255,255,0.2)', borderRadius: 12, padding: '11px 18px', background: 'linear-gradient(180deg,#fb923c 0%,#ea580c 100%)', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', boxShadow: '0 8px 20px -8px rgba(234,88,12,0.8)', transition: 'all 0.2s' }}
                     >
-                      Sync Live Now
+                      Sync with Couriers
                     </button>
                     <Link
                       to="/portal/shipments"
                       className="portal-btn-secondary"
                       style={{ textDecoration: 'none', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, padding: '11px 18px', background: 'rgba(255,255,255,0.08)', color: '#f8fafc', fontSize: 13, fontWeight: 700, transition: 'all 0.2s' }}
                     >
-                      Open Shipment Desk
+                      Create / Manage Shipments
                     </Link>
                     <button
                       onClick={fetchPortalData}
@@ -513,7 +640,7 @@ export default function ClientPortalPage({ toast }) {
                 </div>
 
                 {/* Activity Feed in Middle! */}
-                <div style={{ background: 'rgba(15,23,42,0.4)', borderRadius: 18, border: '1px solid rgba(148,197,253,0.1)', padding: 16, height: '100%', minHeight: 180 }}>
+                <div style={{ background: 'rgba(15,23,42,0.4)', borderRadius: 18, border: '1px solid rgba(148,197,253,0.1)', padding: 14, height: '100%', minHeight: 156 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent Activity</div>
                     <div style={{ fontSize: 10, color: '#475569', fontWeight: 600 }}>Last 24h</div>
@@ -589,6 +716,39 @@ export default function ClientPortalPage({ toast }) {
           </PortalPanel>
         </section>
 
+        <section style={{ marginBottom: 18 }}>
+          <div style={{ borderRadius: 18, border: '1px solid #dbe6f4', background: 'linear-gradient(145deg,#ffffff 0%,#f9fbff 60%,#f7faff 100%)', boxShadow: '0 14px 34px -24px rgba(15,23,42,0.35)', padding: 14 }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              {WOW_FACTORS.map((item) => (
+                <div key={item.label} className="wow-factor-card" style={{ flex: '1 1 280px', minWidth: 220, border: '1px solid #e5edf8', borderRadius: 14, padding: '12px 14px', background: '#fff', position: 'relative', overflow: 'hidden' }}>
+                  <div style={{ fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '.11em', color: '#64748b' }}>{item.label}</div>
+                  <div style={{ marginTop: 6, fontSize: 14, fontWeight: 900, color: '#0f172a' }}>{item.value}</div>
+                  <div style={{ marginTop: 10, height: 4, borderRadius: 999, background: '#eef3fb' }}>
+                    <div style={{ width: '78%', height: '100%', borderRadius: 999, background: `linear-gradient(90deg,${item.accent},#93c5fd)` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section style={{ marginBottom: 18 }}>
+          <PortalPanel
+            eyebrow="Smart Alerts"
+            title="Actionable Signals"
+            subtitle="Real-time alerts from your shipment pipeline."
+          >
+            <div style={{ display: 'grid', gap: 8 }}>
+              {smartAlerts.map((alert, idx) => (
+                <div key={idx} style={{ border: '1px solid #e5edf8', borderRadius: 12, padding: '10px 12px', background: '#f8fbff', display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: 999, background: alert.tone === 'red' ? '#ef4444' : alert.tone === 'orange' ? '#f97316' : alert.tone === 'green' ? '#16a34a' : '#2563eb' }} />
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>{alert.text}</div>
+                </div>
+              ))}
+            </div>
+          </PortalPanel>
+        </section>
+
         <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 12, marginBottom: 18 }}>
           <MetricCard icon="📦" label="Total Shipments" value={stats?.totals?.total || 0} hint="Volume" color="#2563eb" />
           <MetricCard icon="🧾" label="Booked" value={stats?.totals?.booked || 0} hint="Created" color="#475569" />
@@ -602,8 +762,15 @@ export default function ClientPortalPage({ toast }) {
           <PortalPanel
             eyebrow="Shipment Pulse"
             title="Movement Trend"
-            subtitle="See order volume over the selected period with a smoother growth-style view."
-            action={<span style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>{stats?.range?.from} to {stats?.range?.to}</span>}
+            subtitle="See order volume over the selected period with highlights that explain performance shifts."
+            action={(
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>{stats?.range?.from} to {stats?.range?.to}</div>
+                <div style={{ marginTop: 4, fontSize: 10, fontWeight: 900, color: movementInsights.wowPct >= 0 ? '#0c7a52' : '#b42318' }}>
+                  {movementInsights.wowPct >= 0 ? '+' : ''}{movementInsights.wowPct}% vs last week
+                </div>
+              </div>
+            )}
           >
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 10, marginBottom: 14 }}>
               {[
@@ -620,7 +787,7 @@ export default function ClientPortalPage({ toast }) {
                 </div>
               ))}
             </div>
-            <div style={{ height: 260, position: 'relative' }}>
+            <div style={{ height: 280, position: 'relative' }}>
               <ResponsiveContainer width="100%" height="100%" minWidth={250}>
                 <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
@@ -635,32 +802,75 @@ export default function ClientPortalPage({ toast }) {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }} dy={10} />
                   <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }} dx={-10} />
-                  <Tooltip 
-                    contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 12px 28px rgba(15,23,42,0.15)', fontWeight: 700, padding: '12px 16px' }} 
+                  <Tooltip
+                    formatter={(value) => [`${value} Shipments`, 'Movement']}
+                    labelFormatter={(value) => `Date: ${value}`}
+                    contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 12px 28px rgba(15,23,42,0.15)', fontWeight: 700, padding: '12px 16px' }}
                     itemStyle={{ color: '#0f172a', fontWeight: 900 }}
                   />
                   <Area type="monotone" dataKey="shipments" stroke="#2563eb" strokeWidth={4} fill="url(#portalTrendFill)" animationDuration={1800} filter="url(#shadow)" />
+                  {movementInsights.peak && (
+                    <ReferenceDot
+                      x={movementInsights.peak.day}
+                      y={movementInsights.peak.shipments}
+                      r={6}
+                      fill="#ea580c"
+                      stroke="#fff"
+                      strokeWidth={2}
+                    />
+                  )}
                 </AreaChart>
               </ResponsiveContainer>
+              {movementInsights.peak && (
+                <div style={{ position: 'absolute', top: 8, right: 10, borderRadius: 999, border: '1px solid #ffd8bd', background: '#fff3ec', color: '#c2410c', fontSize: 10, fontWeight: 900, padding: '5px 10px' }}>
+                  Peak {movementInsights.peak.shipments} on {movementInsights.peak.day}
+                </div>
+              )}
+              {!trendData.length && (
+                <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
+                  <div style={{ textAlign: 'center', maxWidth: 320 }}>
+                    <div style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>No movement data yet</div>
+                    <Link to="/portal/import" style={{ display: 'inline-block', marginTop: 10, textDecoration: 'none', border: '1px solid #dbe6f4', borderRadius: 999, padding: '8px 12px', fontSize: 11, fontWeight: 800, color: '#0f172a', background: '#fff' }}>
+                      Import first shipments
+                    </Link>
+                  </div>
+                </div>
+              )}
             </div>
           </PortalPanel>
 
           <PortalPanel
             eyebrow="Quick Actions"
             title="Move Fast"
-            subtitle="The most-used client tools now live in a single action deck with clearer hierarchy."
+            subtitle="Actions are grouped by intent so teams know exactly where to click first."
           >
-            <div className="portal-actions-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 12 }}>
-              {ACTIONS.map((action) => (
-                <ActionTile key={action.title} {...action} />
+            <div style={{ display: 'grid', gap: 12 }}>
+              {ACTION_GROUPS.map((group) => (
+                <div key={group.key} style={{ border: '1px solid #e8eef8', borderRadius: 14, padding: 10, background: '#fbfdff' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.08em' }}>{group.title}</div>
+                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>{group.subtitle}</div>
+                  </div>
+                  <div className="portal-action-group-row" style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+                    {group.actions.map((action) => (
+                      <div key={action.title} style={{ flex: '0 0 240px' }}>
+                        <ActionTile {...action} />
+                      </div>
+                    ))}
+                    {group.key === 'system' && (
+                      <div style={{ flex: '0 0 240px' }}>
+                        <ActionTile
+                          icon="🎫"
+                          title={ticketOpen ? 'Close Ticket Composer' : 'Raise Support Ticket'}
+                          description="Open a quick issue form right here when a shipment needs immediate help."
+                          tone="slate"
+                          onClick={() => setTicketOpen((v) => !v)}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
               ))}
-              <ActionTile
-                icon="🎫"
-                title={ticketOpen ? 'Close Ticket Composer' : 'Raise Support Ticket'}
-                description="Open a quick issue form right here when a shipment needs immediate help."
-                tone="slate"
-                onClick={() => setTicketOpen((v) => !v)}
-              />
             </div>
             {ticketOpen && (
               <div style={{ marginTop: 14, border: '1px solid #e2eaf5', borderRadius: 18, padding: 14, background: 'linear-gradient(180deg,#fcfdff 0%,#f8fbff 100%)' }}>
@@ -695,11 +905,14 @@ export default function ClientPortalPage({ toast }) {
           </PortalPanel>
         </section>
 
-        <section style={{ background: '#fff', border: '1px solid #e5edf8', borderRadius: 18, padding: 16, boxShadow: '0 8px 24px -14px rgba(11,31,58,0.2)', marginBottom: 18 }}>
+        <section style={{ background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)', border: '1px solid #d9e8fb', borderRadius: 18, padding: 16, boxShadow: '0 14px 30px -18px rgba(37,99,235,0.3)', marginBottom: 18 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
             <div>
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#0f172a' }}>Delivery Performance Dashboard</h3>
               <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: 12 }}>Delivered vs RTO vs failed delivery behavior for your shipments.</p>
+              <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 999, border: '1px solid #c7dbf3', background: '#eff6ff', color: '#1d4ed8', padding: '4px 10px', fontSize: 10.5, fontWeight: 900 }}>
+                Client Health Score: {performance?.summary?.successRate || 0}%
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               {[30, 60, 90].map((d) => (
@@ -846,7 +1059,16 @@ export default function ClientPortalPage({ toast }) {
           ) : shipments.length === 0 ? (
             <div style={{ padding: 28, textAlign: 'center', color: '#64748b' }}>
               <div style={{ fontSize: 36 }}>📭</div>
-              <div style={{ marginTop: 8, fontWeight: 700 }}>No shipments found in this range.</div>
+              <div style={{ marginTop: 8, fontWeight: 800, color: '#334155' }}>No shipments yet in this view.</div>
+              <div style={{ marginTop: 6, fontSize: 13 }}>Create your first shipment flow to activate tracking and analytics.</div>
+              <div style={{ marginTop: 12, display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <Link to="/portal/import" style={{ textDecoration: 'none', border: '1px solid #dbe6f4', borderRadius: 999, padding: '8px 12px', fontSize: 11, fontWeight: 900, color: '#0f172a', background: '#fff' }}>
+                  Upload First Shipment Batch
+                </Link>
+                <Link to="/portal/pickups" style={{ textDecoration: 'none', border: '1px solid #f7c9aa', borderRadius: 999, padding: '8px 12px', fontSize: 11, fontWeight: 900, color: '#c2410c', background: '#fff3ec' }}>
+                  Raise Pickup Request
+                </Link>
+              </div>
             </div>
           ) : (
             <div style={{ overflowX: 'auto' }}>
@@ -862,7 +1084,7 @@ export default function ClientPortalPage({ toast }) {
                 </thead>
                 <tbody>
                   {shipments.map((s, i) => (
-                    <tr key={s.id} style={{ background: i % 2 ? '#fcfdff' : '#fff', borderBottom: '1px solid #eef3fb', transition: 'background 180ms ease' }}>
+                    <tr key={s.id} className="portal-row" style={{ background: i % 2 ? '#fcfdff' : '#fff', borderBottom: '1px solid #eef3fb', transition: 'background 180ms ease, transform 180ms ease' }}>
                       <td style={{ padding: '12px 14px', fontWeight: 800, color: '#0f172a', fontFamily: 'monospace' }}>{s.awb}</td>
                       <td style={{ padding: '12px 14px', color: '#475569' }}>{s.date}</td>
                       <td style={{ padding: '12px 14px', color: '#334155' }}>{s.consignee || '—'}</td>
@@ -893,59 +1115,128 @@ export default function ClientPortalPage({ toast }) {
           <button
             type="button"
             onClick={() => setAssistantOpen(true)}
+            className="portal-launcher"
             style={{
               borderRadius: 999,
-              background: '#0f172a',
-              color: '#fff',
-              border: '1px solid #0f172a',
-              padding: '12px 16px',
+              background: 'linear-gradient(145deg,#fff8eb 0%,#fff1f7 52%,#f3f0ff 100%)',
+              color: '#0f172a',
+              border: '1px solid rgba(255,255,255,0.9)',
+              padding: '8px 12px 8px 8px',
               fontSize: 12,
               fontWeight: 800,
-              boxShadow: '0 14px 36px -20px rgba(15,23,42,0.6)',
+              boxShadow: '0 22px 42px -24px rgba(251,113,133,0.34), 0 14px 24px -22px rgba(168,85,247,0.28), inset 0 1px 0 rgba(255,255,255,0.92)',
               cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              position: 'relative',
+              overflow: 'hidden',
             }}
           >
-            Assistant
+            <div className="portal-avatar-float" style={{ width: 38, height: 38, borderRadius: '50%', overflow: 'hidden', boxShadow: '0 6px 16px rgba(124,58,237,0.25)' }}>
+              <PortalAssistantAvatar size={38} />
+            </div>
+            <div style={{ textAlign: 'left', lineHeight: 1.1 }}>
+              <div style={{ fontSize: 12, fontWeight: 900 }}>Assistant</div>
+              <div style={{ fontSize: 10, color: '#e11d48', fontWeight: 800 }}>Client Care Copilot</div>
+            </div>
           </button>
         ) : (
           <div style={{
             width: 340,
             maxHeight: 520,
-            background: '#fff',
-            border: '1px solid #e5edf8',
+            background: 'linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,248,251,0.96) 100%)',
+            backdropFilter: 'blur(18px)',
+            border: '1px solid rgba(255,255,255,0.82)',
             borderRadius: 18,
-            boxShadow: '0 18px 42px -30px rgba(11,31,58,0.35)',
+            boxShadow: '0 24px 56px -34px rgba(190,24,93,0.35)',
             display: 'grid',
             gridTemplateRows: 'auto 1fr auto',
             overflow: 'hidden',
           }}>
-            <div style={{ padding: 12, borderBottom: '1px solid #edf2fa', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a' }}>Client Assistant</div>
+            <div style={{ padding: 12, borderBottom: '1px solid rgba(251,207,232,0.55)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg,#fff1f2 0%,#faf5ff 58%,#fff7ed 100%)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div className="portal-avatar-float" style={{ width: 34, height: 34, borderRadius: '50%', overflow: 'hidden', boxShadow: '0 6px 16px rgba(124,58,237,0.18)' }}>
+                  <PortalAssistantAvatar size={34} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a' }}>Client Assistant</div>
+                  <div style={{ fontSize: 10, color: '#e11d48', fontWeight: 800 }}>Portal Care Guide</div>
+                </div>
+              </div>
               <button type="button" onClick={() => setAssistantOpen(false)} style={{ border: 0, background: 'transparent', color: '#64748b', cursor: 'pointer' }}>Close</button>
             </div>
             <div style={{ padding: 12, overflowY: 'auto', display: 'grid', gap: 8 }}>
               {assistantMessages.map((m, idx) => (
-                <div key={idx} style={{
-                  justifySelf: m.role === 'user' ? 'end' : 'start',
-                  background: m.role === 'user' ? '#0f172a' : '#f8fbff',
-                  color: m.role === 'user' ? '#fff' : '#0f172a',
-                  border: m.role === 'user' ? '1px solid #0f172a' : '1px solid #e5edf8',
-                  borderRadius: 12,
-                  padding: '8px 10px',
-                  fontSize: 12,
-                  whiteSpace: 'pre-wrap',
-                  maxWidth: '90%',
-                }}>
-                  {m.text}
-                  {m.action?.confirmRequired && (
-                    <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                      <button
-                        type="button"
-                        onClick={() => sendAssistant({ action: m.action, confirm: true })}
-                        style={{ border: '1px solid #f7c9aa', background: '#fff3ec', borderRadius: 10, padding: '6px 8px', fontSize: 11, fontWeight: 800, color: '#c2410c', cursor: 'pointer' }}
-                      >
-                        Run Action
-                      </button>
+                <div key={idx} style={{ justifySelf: m.role === 'user' ? 'end' : 'start', maxWidth: '92%' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                    {m.role === 'assistant' && (
+                      <div className="portal-avatar-float" style={{ width: 28, height: 28, borderRadius: '50%', overflow: 'hidden', flexShrink: 0 }}>
+                        <PortalAssistantAvatar size={28} />
+                      </div>
+                    )}
+                    <div style={{
+                      background: m.role === 'user' ? '#0f172a' : '#f8fbff',
+                      color: m.role === 'user' ? '#fff' : '#0f172a',
+                      border: m.role === 'user' ? '1px solid #0f172a' : '1px solid #e5edf8',
+                      borderRadius: 12,
+                      padding: '8px 10px',
+                      fontSize: 12,
+                      whiteSpace: 'pre-wrap',
+                    }}>
+                      {m.text}
+                      {m.action?.confirmRequired && (
+                        <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                          <button
+                            type="button"
+                            onClick={() => sendAssistant({ action: m.action, confirm: true })}
+                            style={{ border: '1px solid #f7c9aa', background: '#fff3ec', borderRadius: 10, padding: '6px 8px', fontSize: 11, fontWeight: 800, color: '#c2410c', cursor: 'pointer' }}
+                          >
+                            Run Action
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {m.role === 'assistant' && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, marginLeft: 36 }}>
+                      {getClientAssistantFollowups(m).map((label) => (
+                        <button
+                          className="portal-follow-chip"
+                          key={`${idx}-${label}`}
+                          type="button"
+                          onClick={() => sendAssistant({ message: label })}
+                          style={{
+                            borderRadius: 999,
+                            border: '1px solid rgba(251,113,133,0.16)',
+                            background: 'linear-gradient(135deg,#fff8eb 0%, #fff1f2 48%, #faf5ff 100%)',
+                            color: '#9f1239',
+                            fontSize: 10.5,
+                            fontWeight: 900,
+                            padding: '6px 11px',
+                            cursor: 'pointer',
+                            boxShadow: '0 10px 20px -16px rgba(244,114,182,0.45), inset 0 1px 0 rgba(255,255,255,0.95)',
+                            letterSpacing: '0.01em',
+                          }}
+                        >
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{
+                              minWidth: 16,
+                              height: 16,
+                              borderRadius: 999,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              background: 'rgba(251,113,133,0.1)',
+                              color: '#e11d48',
+                              fontSize: 9,
+                              fontWeight: 900,
+                              lineHeight: 1,
+                            }}>{getClientChipIcon(label)}</span>
+                            {label}
+                          </span>
+                        </button>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -1026,6 +1317,53 @@ export default function ClientPortalPage({ toast }) {
       </Modal>
 
       <style>{`
+        .portal-launcher::before {
+          content: '';
+          position: absolute;
+          inset: -8px;
+          border-radius: 999px;
+          background: radial-gradient(circle, rgba(251,113,133,0.18) 0%, rgba(251,113,133,0) 66%);
+          animation: portalLauncherPulse 3.8s ease-out infinite;
+        }
+        .portal-launcher::after {
+          content: '';
+          position: absolute;
+          inset: 10px;
+          border-radius: 999px;
+          background: radial-gradient(circle at 50% 0%, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0) 58%);
+          pointer-events: none;
+        }
+        .portal-follow-chip {
+          transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, filter 160ms ease;
+        }
+        .portal-follow-chip:hover {
+          transform: translateY(-1px);
+          filter: saturate(1.05);
+          box-shadow: 0 12px 22px -16px rgba(244,114,182,0.32), inset 0 1px 0 rgba(255,255,255,0.98);
+          border-color: rgba(251,113,133,0.28);
+        }
+        .portal-follow-chip:active {
+          transform: translateY(0px) scale(0.98);
+        }
+        .portal-avatar-float { animation: portalAvatarFloat 4.2s ease-in-out infinite; transform-origin: center; }
+        .portal-avatar-eye { animation: portalAvatarBlink 5.4s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
+        @keyframes portalAvatarFloat {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-2px) rotate(1deg); }
+        }
+        @keyframes portalAvatarBlink {
+          0%, 43%, 45%, 100% { transform: scaleY(1); }
+          44% { transform: scaleY(0.12); }
+        }
+        @keyframes portalLauncherPulse {
+          0% { transform: scale(0.92); opacity: 0.26; }
+          72% { transform: scale(1.1); opacity: 0; }
+          100% { transform: scale(1.1); opacity: 0; }
+        }
+        @keyframes panelFloat {
+          0%,100% { transform: translateY(0px); }
+          50% { transform: translateY(-3px); }
+        }
         @keyframes ticketPopupIn {
           from { opacity: 0; transform: translateY(8px) scale(0.98); }
           to { opacity: 1; transform: translateY(0) scale(1); }
@@ -1044,6 +1382,22 @@ export default function ClientPortalPage({ toast }) {
           transform: translateY(-2px);
           box-shadow: 0 22px 36px -24px rgba(15,23,42,0.48);
         }
+        .wow-factor-card:hover {
+          border-color: #c7dbf3 !important;
+          box-shadow: 0 12px 22px -18px rgba(15,23,42,0.5);
+          animation: panelFloat 1.8s ease-in-out infinite;
+        }
+        .portal-row:hover {
+          background: #f5f9ff !important;
+          transform: scale(1.001);
+        }
+        .portal-action-group-row::-webkit-scrollbar {
+          height: 8px;
+        }
+        .portal-action-group-row::-webkit-scrollbar-thumb {
+          background: #dbe6f4;
+          border-radius: 999px;
+        }
         .portal-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 24px -10px rgba(234,88,12,0.95) !important; filter: brightness(1.05); }
         .portal-btn-secondary:hover { background: rgba(255,255,255,0.15) !important; }
         .portal-btn-ghost:hover { color: #f8fafc !important; background: rgba(255,255,255,0.06) !important; }
@@ -1055,14 +1409,16 @@ export default function ClientPortalPage({ toast }) {
           }
         }
         @media (max-width: 1024px) {
-          .portal-actions-grid {
-            grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+          .portal-action-group-row > div {
+            flex-basis: 210px !important;
           }
         }
         @media (max-width: 820px) {
-          .portal-actions-grid,
           .portal-ticket-meta {
             grid-template-columns: 1fr !important;
+          }
+          .portal-action-group-row > div {
+            flex-basis: 82vw !important;
           }
         }
       `}</style>

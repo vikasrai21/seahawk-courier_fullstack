@@ -23,10 +23,16 @@ const shipmentSchema = z.object({
 
 const updateShipmentSchema = shipmentSchema.partial();
 const statusUpdateSchema   = z.object({ status: z.enum(STATUSES) });
-const scanAwbSchema        = z.object({ awb: z.string().min(1, 'AWB is required').trim(), courier: z.enum(['Delhivery','Trackon','DTDC']).default('Delhivery') });
+const scanAwbSchema        = z.object({
+  awb: z.string().min(1, 'AWB is required').trim(),
+  courier: z.enum(['Delhivery','Trackon','DTDC','AUTO']).default('AUTO'),
+  captureOnly: z.coerce.boolean().optional().default(false),
+  imageBase64: z.string().optional(),
+});
 const scanAwbBulkSchema    = z.object({ 
   awbs: z.array(z.string().trim().min(1)).min(1, 'At least one AWB is required').max(200, 'Max 200 AWBs per request'),
-  courier: z.enum(['Delhivery','Trackon','DTDC']).default('Delhivery') 
+  courier: z.enum(['Delhivery','Trackon','DTDC','AUTO']).default('AUTO'),
+  captureOnly: z.coerce.boolean().optional().default(false),
 });
 
 const importSchema = z.object({
@@ -41,7 +47,7 @@ const importSchema = z.object({
     courier:     z.union([z.string(), z.number(), z.null(), z.undefined()]).transform(v => String(v || '')).default(''),
     department:  z.union([z.string(), z.number(), z.null(), z.undefined()]).transform(v => String(v || '')).default(''),
     service:     optStr.default('Standard'),
-    status:      optStr.default('Delivered'),
+    status:      optStr.default('Booked'),
     remarks:     z.union([z.string(), z.number(), z.null(), z.undefined()]).transform(v => String(v || '')).default(''),
   })).min(1, 'No shipments provided'),
 });

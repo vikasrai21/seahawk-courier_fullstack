@@ -73,7 +73,7 @@ export default function ClientImportPage({ toast }) {
     try {
       const res = await api.post('/portal/import', { shipments: rows });
       setResult(res.data || {});
-      toast?.(res.message || 'Import completed', 'success');
+      toast?.(`Import completed. Tracking sync started for ${res.data?.trackingQueued || 0} shipments.`, 'success');
     } catch (err) {
       toast?.(err.message || 'Import failed', 'error');
     } finally {
@@ -109,6 +109,8 @@ export default function ClientImportPage({ toast }) {
               Operational shipments: {result.operationalCreated || 0}
               {' · '}
               Repeated AWBs linked: {result.duplicates || 0}
+              {' · '}
+              Tracking sync queued: {result.trackingQueued || 0}
             </div>
             {(result.errors || []).length > 0 && (
               <div className="mt-3 text-xs text-red-600 space-y-1">
