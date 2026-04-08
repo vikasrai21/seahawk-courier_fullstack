@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import { advancedExportToExcel } from './excel';
 
 const fmt    = n => `₹${Number(n||0).toLocaleString('en-IN')}`;
 const fmtNum = n => Number(n||0).toFixed(1);
@@ -52,29 +52,32 @@ function downloadExcel({ rows, clientInfo, dateLabel, reportType }) {
     [],
   ];
 
-  const ws = XLSX.utils.aoa_to_sheet(headerRows);
-  XLSX.utils.sheet_add_json(ws, sheetRows, { origin: { r: headerRows.length, c: 0 } });
-  ws['!cols'] = [
-    { wch: 4 }, { wch: 12 }, { wch: 18 }, { wch: 25 }, { wch: 18 },
-    { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 14 },
-  ];
-
   const total  = rows.reduce((a, r) => a + (r.amount || 0), 0);
   const weight = rows.reduce((a, r) => a + (r.weight || 0), 0);
-  const summaryStart = headerRows.length + sheetRows.length + 1;
-  XLSX.utils.sheet_add_aoa(ws, [
+
+  const finalRows = [
+    ...headerRows,
+    Object.keys(sheetRows[0]),
+    ...sheetRows.map(r => Object.values(r)),
     [],
     ['', '', '', '', '', '', '', 'Total Weight (kg):', parseFloat(weight.toFixed(1))],
     ['', '', '', '', '', '', '', 'Total Amount (₹):',  parseFloat(total.toFixed(2))],
     ['', '', '', '', '', '', '', 'Total Shipments:',   rows.length],
-  ], { origin: { r: summaryStart, c: 0 } });
+  ];
 
-  const wb    = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Report');
   const fname = clientInfo
     ? `seahawk-${clientInfo.code}-${dateLabel.replace(/[\s/]/g, '-')}.xlsx`
     : `seahawk-report-${dateLabel.replace(/[\s/]/g, '-')}.xlsx`;
-  XLSX.writeFile(wb, fname);
+
+  advancedExportToExcel({
+    sheets: [{
+      name: 'Report',
+      mode: 'aoa',
+      data: finalRows,
+      columnWidths: [5, 12, 18, 25, 18, 14, 10, 15, 15]
+    }]
+  }, fname);
+
   return fname;
 }
 

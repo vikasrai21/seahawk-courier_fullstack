@@ -28,7 +28,7 @@ import {
   Table,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import * as XLSX from 'xlsx';
+import { exportJsonToExcel, readExcelAsJson } from '../utils/excel';
 import { BrowserMultiFormatReader } from '@zxing/browser';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -79,9 +79,8 @@ const findAwbColumn = (row = {}) => {
   return keys.find((key) => /^(awb|airwaybill|tracking|trackingnumber|cnno|consignment|docket)$/i.test(String(key).replace(/\s+/g, '')));
 };
 
-const extractAwbsFromSheet = (sheet) => {
-  const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
-  if (!rows.length) return [];
+const extractAwbsFromData = (rows) => {
+  if (!rows || !rows.length) return [];
 
   const awbColumn = findAwbColumn(rows[0]);
   if (awbColumn) {
@@ -413,9 +412,8 @@ export default function ScanAWBPage({ toast }) {
 
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const awbs = [...new Set(extractAwbsFromSheet(firstSheet))];
+      const { rows } = await readExcelAsJson(arrayBuffer, 0);
+      const awbs = [...new Set(extractAwbsFromData(rows))];
 
       if (!awbs.length) {
         toast?.('No AWB column or valid AWB values found in the sheet.', 'error');
@@ -524,10 +522,7 @@ export default function ScanAWBPage({ toast }) {
       return;
     }
 
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'SCAN_INTAKE');
-    XLSX.writeFile(wb, `scan-intake-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    exportJsonToExcel(rows, `scan-intake-${new Date().toISOString().slice(0, 10)}.xlsx`, 'SCAN_INTAKE');
   };
 
   const copyTabularLedger = () => {
@@ -576,10 +571,7 @@ export default function ScanAWBPage({ toast }) {
       return;
     }
 
-    const ws = XLSX.utils.json_to_sheet(failed);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'SCAN_ERRORS');
-    XLSX.writeFile(wb, `scan-errors-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    exportJsonToExcel(failed, `scan-errors-${new Date().toISOString().slice(0, 10)}.xlsx`, 'SCAN_ERRORS');
   };
 
   const assignClient = async (clientCode) => {

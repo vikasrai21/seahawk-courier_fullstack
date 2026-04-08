@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Download, DatabaseBackup, Info, FileSpreadsheet } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { advancedExportToExcel } from '../utils/excel';
 import api from '../services/api';
 import { useFetch } from '../hooks/useFetch';
 
@@ -44,7 +44,7 @@ export default function SyncPage({ toast }) {
         'Remarks':     s.remarks,
       }));
 
-      const wb = XLSX.utils.book_new();
+      const exportConfig = { sheets: [] };
 
       // If filtered by client, also add a summary sheet
       if (mode === 'filtered' && clientFilter) {
@@ -59,24 +59,27 @@ export default function SyncPage({ toast }) {
           [`Total Amount (₹)`, data.reduce((a,s) => a + (s.amount||0), 0).toFixed(2)],
           [`Total Weight (kg)`, data.reduce((a,s) => a + (s.weight||0), 0).toFixed(2)],
         ];
-        const wsSummary = XLSX.utils.aoa_to_sheet(sumRows);
-        wsSummary['!cols'] = [{ wch: 30 }, { wch: 20 }];
-        XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+        exportConfig.sheets.push({
+          name: 'Summary',
+          mode: 'aoa',
+          data: sumRows,
+          columnWidths: [40, 20]
+        });
       }
 
-      const ws = XLSX.utils.json_to_sheet(rows);
-      ws['!cols'] = [
-        { wch: 5 }, { wch: 12 }, { wch: 10 }, { wch: 18 }, { wch: 25 },
-        { wch: 18 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 10 },
-        { wch: 12 }, { wch: 14 }, { wch: 20 },
-      ];
-      XLSX.utils.book_append_sheet(wb, ws, 'Shipments');
+      exportConfig.sheets.push({
+        name: 'Shipments',
+        mode: 'json',
+        data: rows,
+        columnWidths: [8, 15, 12, 20, 30, 20, 15, 12, 15, 12, 12, 15, 25],
+        columns: Object.keys(rows[0]).map(k => ({ header: k, key: k }))
+      });
 
       const fname = mode === 'filtered' && clientFilter
         ? `seahawk-${clientFilter}-${fromDate}-to-${toDate}.xlsx`
         : `seahawk-all-${today()}.xlsx`;
 
-      XLSX.writeFile(wb, fname);
+      await advancedExportToExcel(exportConfig, fname);
       toast?.(`Exported ${rows.length} shipments ✓`, 'success');
     } catch (err) { toast?.(err.message, 'error'); }
     finally { setExporting(false); }

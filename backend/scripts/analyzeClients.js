@@ -1,7 +1,8 @@
-const xlsx = require('xlsx');
-const workbook = xlsx.readFile('C:/Users/hp/OneDrive/Desktop/seahawk-full_stack/BILLS/SALE -MARCH_2026.xlsx');
-const sheet = workbook.Sheets[workbook.SheetNames[0]];
-const data = xlsx.utils.sheet_to_json(sheet);
+const { readExcelAsJson } = require('../src/utils/excel');
+const fs = require('fs');
+
+async function run() {
+const data = await readExcelAsJson(fs.readFileSync('C:/Users/hp/OneDrive/Desktop/seahawk-full_stack/BILLS/SALE -MARCH_2026.xlsx'));
 
 const map = {};
 data.forEach(r => {
@@ -15,10 +16,13 @@ data.forEach(r => {
   if (r['Awb No']) map[c].awbs.push(String(r['Awb No']));
 });
 
-Object.entries(map).forEach(([k, v]) => {
-  console.log(`\n=== ${k} (${v.count} shipments) ===`);
-  console.log('Couriers:', [...v.couriers].join(', '));
-  console.log('Sample AWBs:', v.awbs.slice(0, 3).join(', '));
-  console.log('Sample Consignees:', [...new Set(v.consignees)].slice(0, 4).join(', '));
-  console.log('Destinations:', [...v.destinations].slice(0, 5).join(', '));
-});
+  Object.entries(map).forEach(([k, v]) => {
+    console.log(`\n=== ${k} (${v.count} shipments) ===`);
+    console.log('Couriers:', [...v.couriers].join(', '));
+    console.log('Sample AWBs:', v.awbs.slice(0, 3).join(', '));
+    console.log('Sample Consignees:', [...new Set(v.consignees)].slice(0, 4).join(', '));
+    console.log('Destinations:', [...v.destinations].slice(0, 5).join(', '));
+  });
+}
+
+run().catch(console.error);

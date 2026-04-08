@@ -9,5 +9,8 @@
     "verify:full": "npm run verify && npm run build:ci --prefix frontend",
     "build": "npm ci --prefix frontend && npm run build --prefix frontend && node -e \"const fs=require('fs');fs.rmSync('backend/public',{recursive:true,force:true});fs.cpSync('frontend/dist','backend/public',{recursive:true});\" && npm ci --prefix backend && cd backend && npx prisma generate",
     "start": "cd backend && npx prisma migrate deploy && node server.js"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0"
   }
 }

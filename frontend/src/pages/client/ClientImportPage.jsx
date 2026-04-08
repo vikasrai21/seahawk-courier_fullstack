@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import * as XLSX from 'xlsx';
+import { readExcelAsJson } from '../../utils/excel';
 import api from '../../services/api';
 
 const FIELD_MAP = {
@@ -54,9 +54,7 @@ export default function ClientImportPage({ toast }) {
   const handleFile = async (file) => {
     try {
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: 'array' });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rawRows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+      const { rows: rawRows } = await readExcelAsJson(buf, 0);
       setRows(normalizeRows(rawRows).slice(0, 500));
       setResult(null);
     } catch (err) {

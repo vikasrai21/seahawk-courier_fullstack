@@ -14,21 +14,15 @@ const dashboardUrl = process.argv[3] || 'http://localhost:3001';
 const apiBase      = dashboardUrl.replace(/\/$/, '') + '/api';
 
 // ── 1. Read and parse the Excel file ─────────────────────────────────────
-let XLSX;
-try {
-  XLSX = require('xlsx');
-} catch {
-  console.error('Installing xlsx package...');
-  require('child_process').execSync('npm install xlsx', { stdio: 'inherit', cwd: __dirname });
-  XLSX = require('xlsx');
-}
+const ExcelJS = require('exceljs');
 
 function excelDateToString(val) {
+  if (val instanceof Date) {
+    return val.toISOString().split('T')[0];
+  }
   if (typeof val === 'number') {
-    try {
-      const d = XLSX.SSF.parse_date_code(val);
-      return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
-    } catch { return new Date().toISOString().split('T')[0]; }
+    // exceljs usually handles dates as Date objects, but fallback for safety
+    return new Date().toISOString().split('T')[0];
   }
   if (typeof val === 'string') {
     const m = val.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
@@ -63,11 +57,36 @@ function detectField(col) {
   return null;
 }
 
-function parseExcel(filePath) {
-  const wb    = XLSX.readFile(filePath, { cellDates: false });
-  // Use first sheet
-  const ws    = wb.Sheets[wb.SheetNames[0]];
-  const rows  = XLSX.utils.sheet_to_json(ws, { defval: '' });
+async function parseExcel(filePath) {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.readFile(filePath);
+  const ws = wb.worksheets[0];
+  if (!ws) return [];
+
+  const headers = [];
+  const rows = [];
+  
+  ws.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+    if (rowNumber === 1) {
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        headers[colNumber] = cell.value?.toString().trim() || `Col${colNumber}`;
+      });
+    } else {
+      const obj = {};
+      let hasData = false;
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        const header = headers[colNumber];
+        if (header) {
+          let val = cell.value;
+          if (val && typeof val === 'object' && val.result !== undefined) val = val.result;
+          if (val !== undefined && val !== null && val !== '') hasData = true;
+          obj[header] = val;
+        }
+      });
+      if (hasData) rows.push(obj);
+    }
+  });
+
   if (!rows.length) return [];
 
   // Build column map
@@ -160,7 +179,7 @@ async function main() {
   }
 
   console.log('  Reading:', excelPath);
-  const shipments = parseExcel(excelPath);
+  const shipments = await parseExcel(excelPath);
   console.log(`  Found ${shipments.length} rows with AWB numbers`);
 
   if (!shipments.length) {

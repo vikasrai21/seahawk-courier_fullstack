@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
-import * as XLSX from 'xlsx';
+import { readExcelAsJson, getSheetAsJson } from '../utils/excel';
 import {
   Upload, FileSpreadsheet, CheckCircle, AlertCircle,
   RefreshCw, Eye, EyeOff, Columns, Zap, Info
@@ -44,10 +44,7 @@ function buildColumnMap(headers) {
 
 function excelDateToString(val, ambiguousFormat = 'DMY') {
   if (typeof val === 'number') {
-    try {
-      const d = XLSX.SSF.parse_date_code(val);
-      return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
-    } catch { return new Date().toISOString().split('T')[0]; }
+    return new Date().toISOString().split('T')[0];
   }
   if (typeof val === 'string') {
     // DD/MM/YYYY or DD-MM-YYYY
@@ -192,9 +189,7 @@ export default function ImportPage({ toast }) {
     };
   }, [mappedRows]);
 
-  const parseSheet = useCallback((wb, idx) => {
-    const ws      = wb.Sheets[wb.SheetNames[idx]];
-    const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  const parseSheet = useCallback((rawRows, idx) => {
     if (!rawRows.length) { setError('Sheet is empty.'); return; }
 
     const headers        = Object.keys(rawRows[0]);
@@ -213,14 +208,14 @@ export default function ImportPage({ toast }) {
   const parseFile = (f) => {
     setResult(null); setError(''); setFile(null); setPreview([]);
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
-        const wb = XLSX.read(e.target.result, { type: 'array', cellDates: false });
-        setRawWb(wb);
-        setSheets(wb.SheetNames);
+        const { rows, sheetNames, rawWorkbook } = await readExcelAsJson(e.target.result, 0);
+        setRawWb(rawWorkbook);
+        setSheets(sheetNames);
         setSheetIdx(0);
         setFile({ name: f.name });
-        parseSheet(wb, 0);
+        parseSheet(rows, 0);
       } catch (err) {
         setError('Could not read file: ' + err.message);
       }
@@ -230,30 +225,35 @@ export default function ImportPage({ toast }) {
 
   const handleSheetChange = (idx) => {
     setSheetIdx(idx);
-    if (rawWb) parseSheet(rawWb, idx);
+    if (rawWb) {
+      const { rows } = getSheetAsJson(rawWb, idx);
+      parseSheet(rows, idx);
+    }
   };
 
   const handleColMapChange = (field, col) => {
     const newMap = { ...colMap, [field]: col || undefined };
     setColMap(newMap);
-    const rows = mapRows(
-      XLSX.utils.sheet_to_json(rawWb.Sheets[rawWb.SheetNames[sheetIdx]], { defval: '' }),
+    const { rows } = getSheetAsJson(rawWb, sheetIdx);
+    const mapped = mapRows(
+      rows,
       newMap,
       dateFormat
     );
-    setMapped(rows);
-    setPreview(rows.slice(0, 8));
+    setMapped(mapped);
+    setPreview(mapped.slice(0, 8));
   };
 
   useEffect(() => {
     if (!rawWb || !sheets.length) return;
-    const rows = mapRows(
-      XLSX.utils.sheet_to_json(rawWb.Sheets[rawWb.SheetNames[sheetIdx]], { defval: '' }),
+    const { rows } = getSheetAsJson(rawWb, sheetIdx);
+    const mapped = mapRows(
+      rows,
       colMap,
       dateFormat
     );
-    setMapped(rows);
-    setPreview(rows.slice(0, 8));
+    setMapped(mapped);
+    setPreview(mapped.slice(0, 8));
   }, [dateFormat, rawWb, sheets, sheetIdx, colMap]);
 
   const handleImport = async () => {
@@ -271,7 +271,7 @@ export default function ImportPage({ toast }) {
   };
 
   const allHeaders = rawWb && sheets[sheetIdx]
-    ? Object.keys(XLSX.utils.sheet_to_json(rawWb.Sheets[rawWb.SheetNames[sheetIdx]], { defval: '' })[0] || {})
+    ? Object.keys(getSheetAsJson(rawWb, sheetIdx).rows[0] || {})
     : [];
 
   const detectedCount = Object.keys(colMap).length;

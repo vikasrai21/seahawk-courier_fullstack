@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import * as XLSX from 'xlsx';
+import { readExcelAsJson, exportJsonToExcel } from '../utils/excel';
 import { 
   AlertTriangle, CircleCheck, CircleX, Download, ExternalLink, 
   FileSpreadsheet, Filter, Info, ListTodo, SearchCheck, 
@@ -941,10 +941,7 @@ export default function OwnerAuditPage({ toast }) {
         RecoveryStatus: r.difference > 50 ? 'DISPUTE' : r.difference > 0 ? 'REVIEW' : 'OK'
       }));
       
-      const ws = XLSX.utils.json_to_sheet(data);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Audit Detail");
-      XLSX.writeFile(wb, `Audit_Report_${billFile?.name?.replace(/ /g, '_') || 'Seahawk'}.xlsx`);
+      exportJsonToExcel(data, `Audit_Report_${billFile?.name?.replace(/ /g, '_') || 'Seahawk'}.xlsx`, "Audit Detail");
       toast?.('Exported audit report', 'success');
     } catch (err) {
       toast?.('Failed to export CSV', 'error');
@@ -1095,9 +1092,7 @@ export default function OwnerAuditPage({ toast }) {
     try {
       if (!file) return;
       const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array' });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const grid = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      const { rows: grid } = await readExcelAsJson(buffer, 0);
       if (!grid.length) throw new Error('Empty file');
 
       const detected = discoverShipmentGrid(grid);
@@ -1280,7 +1275,7 @@ export default function OwnerAuditPage({ toast }) {
             setSelectedRowKey={setSelectedRowKey}
             selectedRow={filteredResults.find(r => r._rowKey === selectedRowKey)}
             markSelectedVerified={handleSaveAudit}
-            exportAuditResults={() => toast?.('Exporting results...', 'info')}
+            exportAuditResults={exportAuditResults}
             onBack={() => { setResults([]); setBillFile(null); }}
             generatingAI={generatingAI}
             generateAIInsight={generateAIInsight}
