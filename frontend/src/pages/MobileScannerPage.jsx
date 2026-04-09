@@ -53,6 +53,8 @@ export default function MobileScannerPage() {
   const [awaitingLabelCapture, setAwaitingLabelCapture] = useState(false);
   const [labelCaptureBusy, setLabelCaptureBusy] = useState(false);
   const [labelCaptureHint, setLabelCaptureHint] = useState('');
+  const [capturedLabelPreview, setCapturedLabelPreview] = useState('');
+  const [capturedLabelPayload, setCapturedLabelPayload] = useState(null);
   const [approvalDraft, setApprovalDraft] = useState(null);
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [approvalMessage, setApprovalMessage] = useState('');
@@ -288,6 +290,8 @@ export default function MobileScannerPage() {
     setAwaitingLabelCapture(false);
     setLabelCaptureBusy(false);
     setLabelCaptureHint('');
+    setCapturedLabelPreview('');
+    setCapturedLabelPayload(null);
   };
 
   const captureFrame = ({ quality = 0.82, maxWidth = 1920, target = 'full' } = {}) => {
@@ -347,19 +351,56 @@ export default function MobileScannerPage() {
     } catch { return null; }
   };
 
-  const submitLockedBarcode = async (withPhoto = true) => {
-    if (!pendingBarcode || !socketRef.current) return;
+  const captureLabelPhoto = async () => {
+    if (!pendingBarcode) return;
     setLabelCaptureBusy(true);
-    setLabelCaptureHint(withPhoto ? 'Capturing label for OCR...' : 'Sending barcode only...');
+    setLabelCaptureHint('Capturing still photo...');
 
     try {
-      const imageBase64 = withPhoto ? captureFrame({ quality: 0.9, maxWidth: 2200, target: 'full' }) : null;
-      const focusImageBase64 = withPhoto ? captureFrame({ quality: 0.92, maxWidth: 1800, target: 'focus' }) : null;
+      const imageBase64 = captureFrame({ quality: 0.9, maxWidth: 2200, target: 'full' });
+      const focusImageBase64 = captureFrame({ quality: 0.92, maxWidth: 1800, target: 'focus' });
+
+      if (!imageBase64) {
+        setLabelCaptureHint('Could not capture photo. Hold steady and try again.');
+        return;
+      }
+
+      setCapturedLabelPayload({
+        imageBase64,
+        focusImageBase64,
+      });
+      setCapturedLabelPreview(`data:image/jpeg;base64,${imageBase64}`);
+      setLabelCaptureHint('Photo captured. Use it or retake it.');
+    } finally {
+      setLabelCaptureBusy(false);
+    }
+  };
+
+  const retakeLabelPhoto = () => {
+    setCapturedLabelPreview('');
+    setCapturedLabelPayload(null);
+    setLabelCaptureHint('Retake the full AWB photo.');
+  };
+
+  const submitLockedBarcode = async (withPhoto = true) => {
+    if (!pendingBarcode || !socketRef.current) return;
+    if (withPhoto && !capturedLabelPayload?.imageBase64) {
+      setLabelCaptureHint('Capture the label photo first.');
+      return;
+    }
+    setLabelCaptureBusy(true);
+    setLabelCaptureHint(withPhoto ? 'Sending captured photo to OCR...' : 'Sending barcode only...');
+
+    try {
+      const imageBase64 = withPhoto ? capturedLabelPayload?.imageBase64 || null : null;
+      const focusImageBase64 = withPhoto ? capturedLabelPayload?.focusImageBase64 || null : null;
       socketRef.current.emit('scanner:scan', { awb: pendingBarcode, imageBase64, focusImageBase64 });
       setScanCount((c) => c + 1);
       setLastAwb(pendingBarcode);
       setAwaitingLabelCapture(false);
       setPendingBarcode('');
+      setCapturedLabelPreview('');
+      setCapturedLabelPayload(null);
       scannerPausedRef.current = false;
       scanLockUntilRef.current = Date.now() + 700;
       setLabelCaptureHint('Sent to desktop. Keep scanning.');
@@ -609,7 +650,9 @@ export default function MobileScannerPage() {
               </div>
               <div className="msc-overlay-tip">
                 {awaitingLabelCapture
-                  ? 'Barcode locked. Hold full AWB in view and tap Capture Label.'
+                  ? capturedLabelPreview
+                    ? 'Still photo captured. Use it or retake it before OCR.'
+                    : 'Barcode locked. Hold full AWB in view and tap Capture Label.'
                   : 'Point to barcode first. After lock, capture full AWB for client, consignee, destination, pincode, weight, and value.'}
               </div>
             </div>
@@ -685,11 +728,31 @@ export default function MobileScannerPage() {
       {cameraActive && awaitingLabelCapture && (
         <div className="msc-capture-panel">
           <div className="msc-capture-title">Barcode: {pendingBarcode || 'LOCKED'}</div>
-          <div className="msc-capture-sub">Take one clear full-label photo so OCR can extract all fields.</div>
+          <div className="msc-capture-sub">
+            {capturedLabelPreview
+              ? 'This still image will be sent to OCR. Retake if the label is blurry or cropped.'
+              : 'Take one clear full-label photo so OCR can extract all fields.'}
+          </div>
+          {capturedLabelPreview ? (
+            <div className="msc-preview-shell">
+              <img src={capturedLabelPreview} alt="Captured AWB label" className="msc-preview-image" />
+            </div>
+          ) : null}
           <div className="msc-capture-actions">
-            <button type="button" className="msc-capture-primary" onClick={() => submitLockedBarcode(true)} disabled={labelCaptureBusy}>
-              {labelCaptureBusy ? <><Aperture size={16} /> Capturing...</> : <><Camera size={16} /> Capture Label</>}
-            </button>
+            {capturedLabelPreview ? (
+              <>
+                <button type="button" className="msc-capture-secondary" onClick={retakeLabelPhoto} disabled={labelCaptureBusy}>
+                  Retake Photo
+                </button>
+                <button type="button" className="msc-capture-primary" onClick={() => submitLockedBarcode(true)} disabled={labelCaptureBusy}>
+                  {labelCaptureBusy ? <><Aperture size={16} /> Sending...</> : <><Save size={16} /> Use Photo</>}
+                </button>
+              </>
+            ) : (
+              <button type="button" className="msc-capture-primary" onClick={captureLabelPhoto} disabled={labelCaptureBusy}>
+                {labelCaptureBusy ? <><Aperture size={16} /> Capturing...</> : <><Camera size={16} /> Capture Label</>}
+              </button>
+            )}
             <button type="button" className="msc-capture-secondary" onClick={() => submitLockedBarcode(false)} disabled={labelCaptureBusy}>
               Send Barcode Only
             </button>
@@ -960,6 +1023,20 @@ export default function MobileScannerPage() {
           display: flex;
           gap: 0.6rem;
           margin-top: 0.7rem;
+          flex-wrap: wrap;
+        }
+        .msc-preview-shell {
+          margin-top: 0.75rem;
+          border-radius: 16px;
+          overflow: hidden;
+          border: 1px solid rgba(148,163,184,0.18);
+          background: rgba(2,6,23,0.82);
+          max-height: 220px;
+        }
+        .msc-preview-image {
+          width: 100%;
+          display: block;
+          object-fit: cover;
         }
         .msc-capture-primary,
         .msc-capture-secondary {
