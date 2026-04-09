@@ -115,6 +115,54 @@ const buildScanEntry = (awb, courier, shipment, meta = {}, error = null) => ({
   timestamp: new Date(),
 });
 
+const normalizeCompareValue = (value, fallback = 'Not captured') => {
+  if (value === null || value === undefined || value === '') return fallback;
+  return String(value);
+};
+
+const reviewDiffFields = (reviewScan, reviewForm) => {
+  if (!reviewScan) return [];
+
+  const suggestedClientCode = reviewScan.meta?.clientSuggestion?.suggestedClientCode || reviewScan.shipment?.clientCode || '';
+  const suggestedClientName = reviewScan.meta?.clientSuggestion?.suggestedClientName || reviewScan.shipment?.client?.company || '';
+
+  return [
+    {
+      key: 'client',
+      label: 'Client',
+      scanned: suggestedClientName ? `${suggestedClientCode || 'MISC'} - ${suggestedClientName}` : (suggestedClientCode || 'MISC'),
+      final: reviewForm.clientCode || 'MISC',
+    },
+    {
+      key: 'consignee',
+      label: 'Consignee',
+      scanned: normalizeCompareValue(reviewScan.shipment?.consignee),
+      final: normalizeCompareValue(reviewForm.consignee),
+    },
+    {
+      key: 'destination',
+      label: 'Destination',
+      scanned: normalizeCompareValue(reviewScan.shipment?.destination),
+      final: normalizeCompareValue(reviewForm.destination),
+    },
+    {
+      key: 'weight',
+      label: 'Weight',
+      scanned: reviewScan.shipment?.weight ? `${reviewScan.shipment.weight} kg` : 'Not captured',
+      final: reviewForm.weight ? `${reviewForm.weight} kg` : 'Not set',
+    },
+    {
+      key: 'amount',
+      label: 'Declared Value',
+      scanned: reviewScan.shipment?.amount ? `₹${reviewScan.shipment.amount}` : 'Not captured',
+      final: reviewForm.amount ? `₹${reviewForm.amount}` : 'Not set',
+    },
+  ].map((field) => ({
+    ...field,
+    changed: field.scanned.trim().toUpperCase() !== field.final.trim().toUpperCase(),
+  }));
+};
+
 export default function ScanAWBPage({ toast }) {
   const navigate = useNavigate();
   const { isAdmin, hasRole } = useAuth();
@@ -157,6 +205,7 @@ export default function ScanAWBPage({ toast }) {
 
   const reviewScan = reviewQueue[0] || null;
   const pendingReviewCount = reviewQueue.length;
+  const reviewComparison = reviewDiffFields(reviewScan, reviewForm);
 
   useEffect(() => {
     if (!reviewScan) {
@@ -942,6 +991,60 @@ export default function ScanAWBPage({ toast }) {
                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Courier</span>
                      <div className="text-lg font-black text-blue-500">{reviewScan.courier}</div>
                    </div>
+                </div>
+
+                <div className="mb-6 grid grid-cols-1 xl:grid-cols-2 gap-4 relative z-10">
+                  <div className="rounded-[26px] border border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/60 p-4">
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <div>
+                        <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Scan extraction</div>
+                        <div className="text-sm font-black text-slate-900 dark:text-white">What the scanner suggested</div>
+                      </div>
+                      <div className="rounded-full bg-white dark:bg-slate-900 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-blue-600 dark:text-blue-300">
+                        Suggested
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      {reviewComparison.map((field) => (
+                        <div key={`source-${field.key}`} className="rounded-2xl border border-slate-200/80 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 px-4 py-3">
+                          <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">{field.label}</div>
+                          <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white break-words">{field.scanned}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-[26px] border border-emerald-200/80 dark:border-emerald-900/50 bg-emerald-50/70 dark:bg-emerald-950/20 p-4">
+                    <div className="flex items-center justify-between gap-3 mb-4">
+                      <div>
+                        <div className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-300">Final save payload</div>
+                        <div className="text-sm font-black text-slate-900 dark:text-white">What will be saved after approval</div>
+                      </div>
+                      <div className="rounded-full bg-white/90 dark:bg-slate-900/70 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-600 dark:text-emerald-300">
+                        {reviewComparison.filter((field) => field.changed).length} changed
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      {reviewComparison.map((field) => (
+                        <div
+                          key={`final-${field.key}`}
+                          className={`rounded-2xl px-4 py-3 border ${
+                            field.changed
+                              ? 'border-amber-300/80 dark:border-amber-500/40 bg-amber-50/80 dark:bg-amber-950/20'
+                              : 'border-emerald-200/80 dark:border-emerald-900/40 bg-white/80 dark:bg-slate-900/70'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">{field.label}</div>
+                            <div className={`text-[10px] font-black uppercase tracking-[0.18em] ${field.changed ? 'text-amber-600 dark:text-amber-300' : 'text-emerald-600 dark:text-emerald-300'}`}>
+                              {field.changed ? 'Edited' : 'Matched'}
+                            </div>
+                          </div>
+                          <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white break-words">{field.final}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 <form onSubmit={saveActiveReview} className="space-y-4 relative z-10">

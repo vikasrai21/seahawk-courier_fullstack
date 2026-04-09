@@ -4,7 +4,7 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
 import { useParams } from 'react-router-dom';
 import {
   ScanLine, CheckCircle2, AlertCircle, Wifi, WifiOff,
-  Smartphone, Zap, X, Volume2, Vibrate,
+  Smartphone, Zap, X, Camera, Aperture,
 } from 'lucide-react';
 
 function resolveSocketUrl() {
@@ -45,6 +45,7 @@ export default function MobileScannerPage() {
   const [lastFeedback, setLastFeedback] = useState(null); // { awb, status, clientCode, clientName, consignee, destination, weight, reviewRequired }
   const [flashFeedback, setFlashFeedback] = useState(null); // 'success' | 'error'
   const [cameraActive, setCameraActive] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
 
   const socketRef = useRef(null);
   const videoRef = useRef(null);
@@ -150,6 +151,7 @@ export default function MobileScannerPage() {
     lastDecodedRef.current = '';
     scanLockUntilRef.current = 0;
     setCameraActive(false);
+    setCameraReady(false);
   };
 
   const captureFrame = () => {
@@ -173,6 +175,10 @@ export default function MobileScannerPage() {
       const scanner = new BrowserMultiFormatReader();
       scannerRef.current = scanner;
       setCameraActive(true);
+      setCameraReady(false);
+      if (videoRef.current) {
+        videoRef.current.onloadedmetadata = () => setCameraReady(true);
+      }
 
       await scanner.decodeFromConstraints(
         {
@@ -336,6 +342,16 @@ export default function MobileScannerPage() {
           <>
             <video ref={videoRef} className="msc-video" muted playsInline autoPlay disablePictureInPicture />
             <div className="msc-scan-overlay">
+              <div className="msc-overlay-head">
+                <div className="msc-overlay-chip">
+                  <Camera size={14} />
+                  Rear camera live
+                </div>
+                <div className={`msc-overlay-chip ${cameraReady ? 'ready' : ''}`}>
+                  <Aperture size={14} />
+                  {cameraReady ? 'Aim at AWB barcode' : 'Waking camera'}
+                </div>
+              </div>
               <div className="msc-scan-frame">
                 <div className="msc-corner msc-tl" />
                 <div className="msc-corner msc-tr" />
@@ -343,7 +359,7 @@ export default function MobileScannerPage() {
                 <div className="msc-corner msc-br" />
                 <div className="msc-scan-line" />
               </div>
-              <div className="msc-overlay-tip">Center the barcode inside the frame. Rear camera is preferred automatically.</div>
+              <div className="msc-overlay-tip">Fill this box with the barcode first. Desktop review will then confirm client, consignee, destination, and weight.</div>
             </div>
           </>
         ) : (
@@ -542,7 +558,7 @@ export default function MobileScannerPage() {
         /* ── Status bar ─────────────────────────────────────────── */
         .msc-status-bar {
           display: flex; align-items: center; justify-content: space-between;
-          padding: 0.6rem 1rem;
+          padding: max(0.7rem, env(safe-area-inset-top)) 1rem 0.65rem;
           background: #0f172a;
           border-bottom: 1px solid #1e293b;
           z-index: 20;
@@ -575,7 +591,7 @@ export default function MobileScannerPage() {
           position: relative;
           background: #000;
           overflow: hidden;
-          min-height: 52vh;
+          min-height: 0;
         }
         .msc-video {
           width: 100%; height: 100%;
@@ -594,29 +610,57 @@ export default function MobileScannerPage() {
         /* ── Scanning overlay ───────────────────────────────────── */
         .msc-scan-overlay {
           position: absolute; inset: 0;
-          display: flex; align-items: center; justify-content: center;
+          display: flex; align-items: center; justify-content: space-between;
           flex-direction: column;
           gap: 1rem;
+          padding: 1rem 1rem 1.35rem;
           pointer-events: none;
         }
+        .msc-overlay-head {
+          width: 100%;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 0.65rem;
+          flex-wrap: wrap;
+        }
+        .msc-overlay-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.45rem;
+          padding: 0.55rem 0.8rem;
+          border-radius: 999px;
+          background: rgba(15,23,42,0.74);
+          border: 1px solid rgba(148,163,184,0.2);
+          color: #dbeafe;
+          font-size: 0.68rem;
+          font-weight: 800;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+        }
+        .msc-overlay-chip.ready {
+          color: #86efac;
+          border-color: rgba(34,197,94,0.3);
+        }
         .msc-scan-frame {
-          width: 80%; max-width: 300px;
-          aspect-ratio: 2.5 / 1;
+          width: min(88vw, 420px);
+          aspect-ratio: 2.2 / 1;
           position: relative;
-          box-shadow: 0 0 0 9999px rgba(2,6,23,0.28);
-          border-radius: 16px;
+          box-shadow: 0 0 0 9999px rgba(2,6,23,0.22);
+          border-radius: 20px;
+          margin: auto 0;
         }
         .msc-overlay-tip {
           padding: 0.55rem 0.9rem;
-          border-radius: 999px;
-          background: rgba(15,23,42,0.72);
+          border-radius: 18px;
+          background: rgba(15,23,42,0.76);
           border: 1px solid rgba(148,163,184,0.18);
           color: #cbd5e1;
-          font-size: 0.68rem;
+          font-size: 0.72rem;
           font-weight: 700;
           letter-spacing: 0.04em;
           text-align: center;
-          max-width: 88%;
+          max-width: min(92%, 32rem);
         }
         .msc-corner {
           position: absolute; width: 24px; height: 24px;
@@ -643,12 +687,13 @@ export default function MobileScannerPage() {
 
         /* ── Last scan feedback ─────────────────────────────────── */
         .msc-last-scan {
-          padding: 0.75rem 1rem;
+          padding: 0.85rem 1rem calc(0.85rem + env(safe-area-inset-bottom));
           background: #0f172a;
           border-top: 1px solid #1e293b;
           display: flex; align-items: flex-start; justify-content: space-between;
-          gap: 0.5rem;
+          gap: 0.75rem;
           z-index: 20;
+          flex-wrap: wrap;
         }
         .msc-last-awb-wrap {
           display: flex;
@@ -679,7 +724,9 @@ export default function MobileScannerPage() {
           flex-direction: column;
           gap: 0.45rem;
           align-items: flex-end;
-          max-width: 58%;
+          max-width: none;
+          flex: 1 1 100%;
+          padding-top: 0.15rem;
         }
         .msc-feedback-details {
           display: grid;
@@ -734,7 +781,7 @@ export default function MobileScannerPage() {
         .msc-controls {
           padding: 1rem;
           padding-bottom: max(1rem, env(safe-area-inset-bottom));
-          background: #0f172a;
+          background: linear-gradient(180deg, rgba(8,13,24,0) 0%, rgba(8,13,24,0.9) 30%, #0f172a 100%);
           border-top: 1px solid #1e293b;
           z-index: 20;
         }
@@ -758,6 +805,28 @@ export default function MobileScannerPage() {
         .msc-cam-active {
           background: linear-gradient(135deg, #ef4444, #dc2626);
           box-shadow: 0 4px 20px rgba(239,68,68,0.3);
+        }
+        @media (max-width: 480px) {
+          .msc-status-left, .msc-status-right {
+            font-size: 0.58rem;
+            letter-spacing: 0.16em;
+          }
+          .msc-scan-frame {
+            width: min(90vw, 360px);
+            aspect-ratio: 2 / 1;
+          }
+          .msc-overlay-tip {
+            font-size: 0.68rem;
+          }
+          .msc-feedback-details {
+            grid-template-columns: 1fr;
+          }
+          .msc-feedback-details div {
+            align-items: flex-start;
+          }
+          .msc-feedback-details strong {
+            text-align: left;
+          }
         }
       `}</style>
     </div>
