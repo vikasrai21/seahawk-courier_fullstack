@@ -388,10 +388,10 @@ export default function ScanAWBPage({ toast }) {
       toast?.(`📱 Phone disconnected. ${totalScans} scans completed.`, 'warning');
     };
 
-    const onRemoteScan = async ({ awb, imageBase64, scanNumber }) => {
+    const onRemoteScan = async ({ awb, imageBase64, focusImageBase64, scanNumber }) => {
       if (!awb) return;
       setMobileScanCount((prev) => scanNumber || prev + 1);
-      await processSingleScan(awb, imageBase64);
+      await processSingleScan(awb, imageBase64, focusImageBase64);
     };
 
     const onApprovalSubmitted = async (approval) => {
@@ -470,7 +470,7 @@ export default function ScanAWBPage({ toast }) {
     }
   };
 
-  const processSingleScan = async (rawAwb, imageBase64 = null) => {
+  const processSingleScan = async (rawAwb, imageBase64 = null, focusImageBase64 = null) => {
     const currentAwb = String(rawAwb || '').trim();
     if (!currentAwb) return null;
 
@@ -484,6 +484,7 @@ export default function ScanAWBPage({ toast }) {
         courier,
         captureOnly: true,
         ...(smartAssist && imageBase64 ? { imageBase64 } : {}),
+        ...(smartAssist && focusImageBase64 ? { focusImageBase64 } : {}),
       });
       const result = payload?.data || {};
       const shipment = result.shipment || null;

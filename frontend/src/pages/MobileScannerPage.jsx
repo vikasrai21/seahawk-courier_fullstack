@@ -59,6 +59,8 @@ export default function MobileScannerPage() {
 
   const socketRef = useRef(null);
   const videoRef = useRef(null);
+  const cameraWrapRef = useRef(null);
+  const scanFrameRef = useRef(null);
   const scannerRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const scanBusyRef = useRef(false);
@@ -288,16 +290,59 @@ export default function MobileScannerPage() {
     setLabelCaptureHint('');
   };
 
-  const captureFrame = ({ quality = 0.82, maxWidth = 1920 } = {}) => {
+  const captureFrame = ({ quality = 0.82, maxWidth = 1920, target = 'full' } = {}) => {
     const video = videoRef.current;
     if (!video || !video.videoWidth) return null;
     try {
+      let sx = 0;
+      let sy = 0;
+      let sw = video.videoWidth;
+      let sh = video.videoHeight;
+
+      if (target === 'focus' && cameraWrapRef.current && scanFrameRef.current) {
+        const videoRect = video.getBoundingClientRect();
+        const frameRect = scanFrameRef.current.getBoundingClientRect();
+        const displayWidth = videoRect.width;
+        const displayHeight = videoRect.height;
+        const sourceWidth = video.videoWidth;
+        const sourceHeight = video.videoHeight;
+        const videoAspect = sourceWidth / sourceHeight;
+        const displayAspect = displayWidth / displayHeight;
+
+        let renderedWidth = displayWidth;
+        let renderedHeight = displayHeight;
+        let offsetX = 0;
+        let offsetY = 0;
+
+        if (videoAspect > displayAspect) {
+          renderedHeight = displayHeight;
+          renderedWidth = renderedHeight * videoAspect;
+          offsetX = (renderedWidth - displayWidth) / 2;
+        } else {
+          renderedWidth = displayWidth;
+          renderedHeight = renderedWidth / videoAspect;
+          offsetY = (renderedHeight - displayHeight) / 2;
+        }
+
+        const expandX = frameRect.width * 0.55;
+        const expandY = frameRect.height * 0.9;
+        const cropLeft = Math.max(0, frameRect.left - videoRect.left - expandX);
+        const cropTop = Math.max(0, frameRect.top - videoRect.top - expandY);
+        const cropWidth = Math.min(displayWidth - cropLeft, frameRect.width + expandX * 2);
+        const cropHeight = Math.min(displayHeight - cropTop, frameRect.height + expandY * 2);
+
+        sx = Math.max(0, ((cropLeft + offsetX) / renderedWidth) * sourceWidth);
+        sy = Math.max(0, ((cropTop + offsetY) / renderedHeight) * sourceHeight);
+        sw = Math.min(sourceWidth - sx, (cropWidth / renderedWidth) * sourceWidth);
+        sh = Math.min(sourceHeight - sy, (cropHeight / renderedHeight) * sourceHeight);
+      }
+
       const canvas = document.createElement('canvas');
-      canvas.width = Math.min(maxWidth, video.videoWidth);
-      canvas.height = Math.round((canvas.width / video.videoWidth) * video.videoHeight);
+      canvas.width = Math.min(maxWidth, sw);
+      canvas.height = Math.round((canvas.width / sw) * sh);
       const ctx = canvas.getContext('2d');
       if (!ctx) return null;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
       return canvas.toDataURL('image/jpeg', quality).split(',')[1] || null;
     } catch { return null; }
   };
@@ -308,8 +353,9 @@ export default function MobileScannerPage() {
     setLabelCaptureHint(withPhoto ? 'Capturing label for OCR...' : 'Sending barcode only...');
 
     try {
-      const imageBase64 = withPhoto ? captureFrame({ quality: 0.86, maxWidth: 1920 }) : null;
-      socketRef.current.emit('scanner:scan', { awb: pendingBarcode, imageBase64 });
+      const imageBase64 = withPhoto ? captureFrame({ quality: 0.9, maxWidth: 2200, target: 'full' }) : null;
+      const focusImageBase64 = withPhoto ? captureFrame({ quality: 0.92, maxWidth: 1800, target: 'focus' }) : null;
+      socketRef.current.emit('scanner:scan', { awb: pendingBarcode, imageBase64, focusImageBase64 });
       setScanCount((c) => c + 1);
       setLastAwb(pendingBarcode);
       setAwaitingLabelCapture(false);
@@ -532,7 +578,7 @@ export default function MobileScannerPage() {
       </div>
 
       {/* Camera viewport */}
-      <div className="msc-camera-wrap">
+      <div className="msc-camera-wrap" ref={cameraWrapRef}>
         <video
           ref={videoRef}
           className={`msc-video ${cameraActive ? 'msc-video-active' : 'msc-video-idle'}`}
@@ -554,7 +600,7 @@ export default function MobileScannerPage() {
                   {cameraReady ? 'Aim at AWB barcode' : 'Waking camera'}
                 </div>
               </div>
-              <div className="msc-scan-frame">
+              <div className="msc-scan-frame" ref={scanFrameRef}>
                 <div className="msc-corner msc-tl" />
                 <div className="msc-corner msc-tr" />
                 <div className="msc-corner msc-bl" />

@@ -269,7 +269,7 @@ function handleMobileScannerConnection(socket) {
   });
 
   // Phone sends a scanned barcode
-  socket.on('scanner:scan', ({ awb, imageBase64 }) => {
+  socket.on('scanner:scan', ({ awb, imageBase64, focusImageBase64 }) => {
     const currentSession = scanSessions.get(pin);
     if (!currentSession || currentSession.phoneSocketId !== socket.id) return;
 
@@ -281,6 +281,7 @@ function handleMobileScannerConnection(socket) {
     io.to(currentSession.desktopSocketId).emit('scanner:remote-scan', {
       awb: String(awb || '').trim(),
       imageBase64: imageBase64 || null,
+      focusImageBase64: focusImageBase64 || null,
       scanNumber: currentSession.scanCount,
       timestamp: new Date().toISOString(),
     });

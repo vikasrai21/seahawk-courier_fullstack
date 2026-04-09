@@ -14,10 +14,12 @@ if (GEMINI_API_KEY) {
  * @param {string} base64Data - The pure base64 string of the image (without data:image/... prefix)
  * @param {string} mimeType - e.g. "image/jpeg"
  */
-exports.extractShipmentFromImage = async (base64Data, mimeType) => {
+exports.extractShipmentFromImage = async (base64Data, mimeType, options = {}) => {
   if (!genAI) {
     throw new Error('OCR Vision is locked: GEMINI_API_KEY is missing from environment variables.');
   }
+
+  const knownAwb = String(options.knownAwb || '').trim();
 
   const model = genAI.getGenerativeModel({
     model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
@@ -53,6 +55,12 @@ exports.extractShipmentFromImage = async (base64Data, mimeType) => {
 I am uploading an image of a courier waybill/slip.
 Carefully read ALL the text provided on the slip.
 
+KNOWN BARCODE:
+- The barcode/AWB has already been scanned separately as: ${knownAwb || 'UNKNOWN'}
+- If the image barcode is blurry, partially cut, or hard to read, DO NOT guess a different AWB.
+- Prefer the known barcode above whenever it is plausible.
+- Your main job is to extract the other shipment fields from the label image.
+
 CRITICAL EXTRACTION RULES for Consignee and Destination:
 1. "consignee": This is usually labeled "To:", "Consignee:", or "Recipient:". Extract ONLY the name of the person or company receiving the package. (e.g., "VILAS VADLA", "RANJAN KUMAR", "ARICOM ENTERPRISES").
 2. "destination": Look for the Destination City and Pincode at the bottom of the To/Consignee address block. 
@@ -66,7 +74,12 @@ Extract the AWB Number (usually labeled Tracking, Docket, or AWB), sender/consig
 If you can identify the client/merchant/account owner from sender text, merchant text, or branding, put it in clientName.
 If order reference text appears as OID / Order ID / Ref / Invoice / Order No, map the best value into orderNo.
 If you recognize the carrier's logo (like Trackon, DTDC, Delhivery, BlueDart), specify the courier name.
-Respond using the required JSON schema mapping. If you cannot find any tracking number or slip info, set success to false.`;
+Be conservative:
+- Leave fields blank instead of inventing.
+- "clientName" should be the sender, merchant, seller, or account owner, not the courier brand.
+- "destination" should prefer city/locality over the entire address block when possible.
+- "rawText" should contain the most important visible text you relied on.
+Respond using the required JSON schema mapping. If you cannot find any meaningful shipment info, set success to false.`;
 
   try {
     const result = await model.generateContent([
@@ -79,7 +92,11 @@ Respond using the required JSON schema mapping. If you cannot find any tracking 
       }
     ]);
     
-    return JSON.parse(result.response.text());
+    const parsed = JSON.parse(result.response.text());
+    if (knownAwb && (!parsed.awb || String(parsed.awb).trim().length < 6)) {
+      parsed.awb = knownAwb;
+    }
+    return parsed;
   } catch (error) {
     logger.error(`[OCR Vision Error]: ${error.message}`);
     throw new Error(`Vision AI Processing failed: ${error.message}`);

@@ -107,11 +107,42 @@ const getMonthlyStats = asyncHandler(async (req, res) => {
 
 const scanAwb = asyncHandler(async (req, res) => {
   let ocrHints = null;
-  if (req.body.imageBase64) {
+  if (req.body.imageBase64 || req.body.focusImageBase64) {
     try {
       const { extractShipmentFromImage } = require('../services/ocr.service');
-      const details = await extractShipmentFromImage(req.body.imageBase64, 'image/jpeg');
-      if (details?.success) ocrHints = details;
+      const scoreOcr = (details) => {
+        if (!details?.success) return 0;
+        return [
+          details.clientName,
+          details.consignee,
+          details.destination,
+          details.pincode,
+          details.orderNo,
+          details.weight,
+          details.amount,
+        ].filter((value) => {
+          if (typeof value === 'number') return value > 0;
+          return String(value || '').trim().length > 0;
+        }).length;
+      };
+
+      const attempts = [];
+      if (req.body.focusImageBase64) {
+        attempts.push(extractShipmentFromImage(req.body.focusImageBase64, 'image/jpeg', { knownAwb: req.body.awb }));
+      }
+      if (req.body.imageBase64) {
+        attempts.push(extractShipmentFromImage(req.body.imageBase64, 'image/jpeg', { knownAwb: req.body.awb }));
+      }
+
+      const settled = await Promise.allSettled(attempts);
+      const successful = settled
+        .filter((item) => item.status === 'fulfilled' && item.value?.success)
+        .map((item) => item.value);
+
+      if (successful.length) {
+        successful.sort((a, b) => scoreOcr(b) - scoreOcr(a));
+        ocrHints = successful[0];
+      }
     } catch (_err) {
       // Non-blocking by design: barcode capture should still proceed.
     }

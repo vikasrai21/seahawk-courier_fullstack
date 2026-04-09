@@ -28,6 +28,7 @@ const scanAwbSchema        = z.object({
   courier: z.enum(['Delhivery','Trackon','DTDC','AUTO']).default('AUTO'),
   captureOnly: z.coerce.boolean().optional().default(false),
   imageBase64: z.string().optional(),
+  focusImageBase64: z.string().optional(),
 });
 const scanAwbBulkSchema    = z.object({ 
   awbs: z.array(z.string().trim().min(1)).min(1, 'At least one AWB is required').max(200, 'Max 200 AWBs per request'),
