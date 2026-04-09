@@ -17,6 +17,10 @@ RUN cd backend && npm ci --only=production --silent
 COPY backend/prisma ./backend/prisma
 RUN cd backend && npx prisma generate
 
+# Copy backend static assets, then overlay the fresh frontend build
+COPY backend/public ./backend/public
+RUN mkdir -p ./backend/public && cp -R ./frontend/dist/. ./backend/public/
+
 # Copy backend source
 COPY backend/src ./backend/src
 COPY backend/server.js ./backend/server.js

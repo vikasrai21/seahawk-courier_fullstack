@@ -21,6 +21,8 @@ import {
   Repeat,
   Database,
   Radar,
+  Smartphone,
+  Wifi,
   WifiOff,
   QrCode,
   Save,

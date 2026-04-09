@@ -10,6 +10,7 @@ const config = require('./src/config');
 const logger = require('./src/utils/logger');
 const prisma = require('./src/config/prisma');
 const { startScheduler } = require('./src/utils/scheduler');
+const { ensureStartupOwner } = require('./src/utils/startup-owner-bootstrap');
 const { initWorkers } = require('./src/workers/scanner.worker');
 const { initSocket } = require('./src/realtime/socket');
 
@@ -28,7 +29,7 @@ async function startServer() {
   try {
     await prisma.$connect();
     logger.info('Database connected successfully.');
-
+    await ensureStartupOwner();
 
   } catch (err) {
     logger.error('Failed to connect to database. Exiting.', { error: err.message });
