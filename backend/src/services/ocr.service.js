@@ -9,6 +9,57 @@ if (GEMINI_API_KEY) {
   genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 }
 
+function firstMatch(text, regex, index = 1) {
+  const match = String(text || '').match(regex);
+  return match ? String(match[index] || '').trim() : '';
+}
+
+function normalizeRawText(text) {
+  return String(text || '')
+    .replace(/\r/g, '\n')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+}
+
+function enhanceParsedDetails(parsed = {}, knownAwb = '') {
+  const rawText = normalizeRawText(parsed.rawText || '');
+  const next = {
+    ...parsed,
+    awb: String(parsed.awb || knownAwb || '').trim(),
+    rawText,
+  };
+
+  if (!next.courier) {
+    if (/dtdc/i.test(rawText)) next.courier = 'DTDC';
+    else if (/delhivery/i.test(rawText)) next.courier = 'Delhivery';
+    else if (/trackon/i.test(rawText)) next.courier = 'Trackon';
+  }
+
+  if (!next.pincode) {
+    next.pincode = firstMatch(rawText, /\b(\d{6})\b/, 1);
+  }
+
+  if (!next.weight) {
+    const weight = firstMatch(rawText, /\b(\d+(?:\.\d+)?)\s*(?:kg|kgs|kilograms?)\b/i, 1);
+    if (weight) next.weight = Number(weight);
+  }
+
+  if (!next.orderNo) {
+    next.orderNo = firstMatch(
+      rawText,
+      /\b(?:order|oid|invoice|ref(?:erence)?)\s*(?:no|id|#)?\s*[:\-]?\s*([A-Z0-9\-\/]{4,})/i,
+      1
+    );
+  }
+
+  if (!next.clientName) {
+    next.clientName = String(parsed.senderCompany || parsed.merchant || '').trim();
+  }
+
+  return next;
+}
+
 /**
  * Extracts AWB details from a courier slip image using Gemini 2.0 Flash Vision
  * @param {string} base64Data - The pure base64 string of the image (without data:image/... prefix)
@@ -96,7 +147,9 @@ Respond using the required JSON schema mapping. If you cannot find any meaningfu
     if (knownAwb && (!parsed.awb || String(parsed.awb).trim().length < 6)) {
       parsed.awb = knownAwb;
     }
-    return parsed;
+    const enhanced = enhanceParsedDetails(parsed, knownAwb);
+    logger.info(`[OCR Vision Parsed] awb=${enhanced.awb || 'NA'} courier=${enhanced.courier || 'NA'} client=${enhanced.clientName || 'NA'} consignee=${enhanced.consignee || 'NA'} destination=${enhanced.destination || 'NA'} pincode=${enhanced.pincode || 'NA'} weight=${enhanced.weight || 0} orderNo=${enhanced.orderNo || 'NA'}`);
+    return enhanced;
   } catch (error) {
     logger.error(`[OCR Vision Error]: ${error.message}`);
     throw new Error(`Vision AI Processing failed: ${error.message}`);

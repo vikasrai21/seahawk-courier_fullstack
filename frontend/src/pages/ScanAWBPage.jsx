@@ -379,6 +379,7 @@ export default function ScanAWBPage({ toast }) {
 
     const onPhoneConnected = ({ pin }) => {
       setMobileStatus('connected');
+      setShowMobileModal(false);
       playSuccess();
       toast?.('📱 Mobile phone connected! Start scanning barcodes.', 'success');
     };
