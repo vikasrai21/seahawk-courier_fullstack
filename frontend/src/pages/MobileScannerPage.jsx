@@ -668,59 +668,61 @@ export default function MobileScannerPage() {
       {approvalDraft && (
         <div className="msc-approval-sheet">
           <div className="msc-sheet-handle" />
-          <div className="msc-sheet-head">
-            <div>
-              <div className="msc-sheet-kicker">Final Approval</div>
-              <div className="msc-sheet-title">Review this shipment before it reaches desktop and portal</div>
+          <div className="msc-sheet-body">
+            <div className="msc-sheet-head">
+              <div>
+                <div className="msc-sheet-kicker">Final Approval</div>
+                <div className="msc-sheet-title">Review this shipment before it reaches desktop and portal</div>
+              </div>
+              <button className="msc-sheet-close" type="button" onClick={() => setApprovalDraft(null)} disabled={approvalBusy}>
+                <X size={16} />
+              </button>
             </div>
-            <button className="msc-sheet-close" type="button" onClick={() => setApprovalDraft(null)} disabled={approvalBusy}>
-              <X size={16} />
-            </button>
-          </div>
 
-          <div className="msc-sheet-awb">{approvalDraft.awb}</div>
-          {approvalMessage ? <div className="msc-sheet-message">{approvalMessage}</div> : null}
+            <div className="msc-sheet-awb">{approvalDraft.awb}</div>
+            {approvalMessage ? <div className="msc-sheet-message">{approvalMessage}</div> : null}
 
-          <div className="msc-sheet-grid">
-            <label>
-              <span>Client code</span>
-              <input value={approvalDraft.clientCode} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, clientCode: e.target.value.toUpperCase() }))} />
-            </label>
-            <label>
-              <span>Client name</span>
-              <input value={approvalDraft.clientName} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, clientName: e.target.value }))} />
-            </label>
-            <label>
-              <span>Consignee</span>
-              <input value={approvalDraft.consignee} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, consignee: e.target.value.toUpperCase() }))} />
-            </label>
-            <label>
-              <span>Destination</span>
-              <input value={approvalDraft.destination} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, destination: e.target.value.toUpperCase() }))} />
-            </label>
-            <label>
-              <span>Pincode</span>
-              <input value={approvalDraft.pincode} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))} />
-            </label>
-            <label>
-              <span>Weight</span>
-              <input type="number" step="0.01" value={approvalDraft.weight} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, weight: e.target.value }))} />
-            </label>
-            <label>
-              <span>Value</span>
-              <input type="number" step="0.01" value={approvalDraft.amount} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, amount: e.target.value }))} />
-            </label>
-            <label>
-              <span>Order no</span>
-              <input value={approvalDraft.orderNo} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, orderNo: e.target.value.toUpperCase() }))} />
-            </label>
-          </div>
+            <div className="msc-sheet-grid">
+              <label>
+                <span>Client code</span>
+                <input value={approvalDraft.clientCode} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, clientCode: e.target.value.toUpperCase() }))} />
+              </label>
+              <label>
+                <span>Client name</span>
+                <input value={approvalDraft.clientName} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, clientName: e.target.value }))} />
+              </label>
+              <label>
+                <span>Consignee</span>
+                <input value={approvalDraft.consignee} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, consignee: e.target.value.toUpperCase() }))} />
+              </label>
+              <label>
+                <span>Destination</span>
+                <input value={approvalDraft.destination} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, destination: e.target.value.toUpperCase() }))} />
+              </label>
+              <label>
+                <span>Pincode</span>
+                <input value={approvalDraft.pincode} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))} />
+              </label>
+              <label>
+                <span>Weight</span>
+                <input type="number" step="0.01" value={approvalDraft.weight} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, weight: e.target.value }))} />
+              </label>
+              <label>
+                <span>Value</span>
+                <input type="number" step="0.01" value={approvalDraft.amount} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, amount: e.target.value }))} />
+              </label>
+              <label>
+                <span>Order no</span>
+                <input value={approvalDraft.orderNo} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, orderNo: e.target.value.toUpperCase() }))} />
+              </label>
+            </div>
 
-          <div className="msc-sheet-actions">
-            <button type="button" className="msc-sheet-secondary" onClick={() => setApprovalDraft(null)} disabled={approvalBusy}>Keep scanning</button>
-            <button type="button" className="msc-sheet-primary" onClick={submitApproval} disabled={approvalBusy}>
-              {approvalBusy ? <><Aperture size={16} /> Saving...</> : <><Save size={16} /> Approve & Send</>}
-            </button>
+            <div className="msc-sheet-actions">
+              <button type="button" className="msc-sheet-secondary" onClick={() => setApprovalDraft(null)} disabled={approvalBusy}>Keep scanning</button>
+              <button type="button" className="msc-sheet-primary" onClick={submitApproval} disabled={approvalBusy}>
+                {approvalBusy ? <><Aperture size={16} /> Saving...</> : <><Save size={16} /> Approve & Send</>}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -995,17 +997,19 @@ export default function MobileScannerPage() {
           position: absolute;
           left: 0.75rem;
           right: 0.75rem;
-          bottom: calc(0.65rem + env(safe-area-inset-bottom));
+          bottom: calc(0.5rem + env(safe-area-inset-bottom));
           z-index: 35;
-          border-radius: 18px;
-          border: 1px solid rgba(52,211,153,0.4);
-          background: rgba(2,6,23,0.9);
-          backdrop-filter: blur(10px);
-          padding: 0.8rem;
-          box-shadow: 0 10px 30px rgba(2,6,23,0.45);
+          border-radius: 24px;
+          border: 1px solid rgba(56,189,248,0.18);
+          background: linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(2,6,23,0.98) 100%);
+          backdrop-filter: blur(18px);
+          padding: 0.85rem;
+          box-shadow: 0 24px 60px rgba(2,6,23,0.45);
+          max-height: min(44vh, 360px);
+          overflow-y: auto;
         }
         .msc-capture-title {
-          color: #bbf7d0;
+          color: #7dd3fc;
           font-size: 0.78rem;
           font-weight: 900;
           letter-spacing: 0.12em;
@@ -1055,12 +1059,12 @@ export default function MobileScannerPage() {
         }
         .msc-capture-primary {
           color: #fff;
-          background: linear-gradient(135deg, #16a34a, #22c55e);
-          box-shadow: 0 12px 24px rgba(34,197,94,0.22);
+          background: linear-gradient(135deg, #0ea5e9, #22c55e);
+          box-shadow: 0 12px 24px rgba(14,165,233,0.22);
         }
         .msc-capture-secondary {
           color: #cbd5e1;
-          background: rgba(148,163,184,0.16);
+          background: rgba(30,41,59,0.96);
         }
         .msc-capture-toast {
           position: absolute;
@@ -1083,15 +1087,21 @@ export default function MobileScannerPage() {
           position: absolute;
           left: 0;
           right: 0;
-          bottom: calc(4.9rem + env(safe-area-inset-bottom));
+          bottom: calc(4.7rem + env(safe-area-inset-bottom));
           z-index: 40;
           margin: 0 0.85rem;
-          padding: 0.9rem 0.9rem 1rem;
           border-radius: 26px 26px 22px 22px;
-          background: rgba(15,23,42,0.96);
-          border: 1px solid rgba(148,163,184,0.18);
-          box-shadow: 0 18px 48px rgba(2,6,23,0.46);
+          background: linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(2,6,23,0.98) 100%);
+          border: 1px solid rgba(56,189,248,0.14);
+          box-shadow: 0 24px 64px rgba(2,6,23,0.5);
           backdrop-filter: blur(20px);
+          max-height: min(62vh, 560px);
+          overflow: hidden;
+        }
+        .msc-sheet-body {
+          padding: 0.2rem 0.9rem 1rem;
+          max-height: calc(min(62vh, 560px) - 12px);
+          overflow-y: auto;
         }
         .msc-sheet-handle {
           width: 54px;
@@ -1116,7 +1126,7 @@ export default function MobileScannerPage() {
         }
         .msc-sheet-title {
           margin-top: 0.35rem;
-          color: #f8fafc;
+          color: #e2e8f0;
           font-size: 0.92rem;
           font-weight: 800;
           line-height: 1.35;
@@ -1166,8 +1176,8 @@ export default function MobileScannerPage() {
         .msc-sheet-grid label input {
           width: 100%;
           border-radius: 14px;
-          border: 1px solid rgba(148,163,184,0.14);
-          background: rgba(2,6,23,0.6);
+          border: 1px solid rgba(148,163,184,0.12);
+          background: rgba(15,23,42,0.92);
           color: #f8fafc;
           padding: 0.72rem 0.8rem;
           font-size: 0.78rem;
@@ -1456,14 +1466,19 @@ export default function MobileScannerPage() {
           }
           .msc-approval-sheet {
             margin: 0 0.55rem;
-            bottom: calc(4.7rem + env(safe-area-inset-bottom));
-            padding: 0.85rem 0.8rem 0.95rem;
+            bottom: calc(4.5rem + env(safe-area-inset-bottom));
+            max-height: min(58vh, 520px);
+          }
+          .msc-sheet-body {
+            padding: 0.15rem 0.8rem 0.95rem;
+            max-height: calc(min(58vh, 520px) - 12px);
           }
           .msc-capture-panel {
             left: 0.55rem;
             right: 0.55rem;
-            bottom: calc(0.45rem + env(safe-area-inset-bottom));
+            bottom: calc(0.35rem + env(safe-area-inset-bottom));
             padding: 0.72rem;
+            max-height: min(42vh, 340px);
           }
           .msc-capture-actions {
             flex-direction: column;

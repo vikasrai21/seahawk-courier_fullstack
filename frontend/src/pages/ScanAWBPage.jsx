@@ -1557,11 +1557,11 @@ export default function ScanAWBPage({ toast }) {
 
         {/* ── Mobile Bridge QR Modal ──────────────────────────────────── */}
         {showMobileModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={(e) => { if (e.target === e.currentTarget) hideMobileModal(); }}>
-            <div className="bg-white dark:bg-slate-900 rounded-[40px] p-8 max-w-md w-full mx-4 shadow-2xl border border-slate-200 dark:border-slate-800 relative overflow-hidden">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-300 p-4 sm:p-6" onClick={(e) => { if (e.target === e.currentTarget) hideMobileModal(); }}>
+            <div className="bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.10),_transparent_32%),linear-gradient(180deg,_#ffffff_0%,_#f8fafc_100%)] dark:bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.12),_transparent_28%),linear-gradient(180deg,_#0f172a_0%,_#020617_100%)] rounded-[32px] sm:rounded-[40px] p-5 sm:p-8 max-w-md w-full max-h-[min(92vh,860px)] overflow-y-auto shadow-[0_30px_90px_rgba(2,6,23,0.34)] border border-white/60 dark:border-slate-800/90 relative">
               {/* Glow */}
               <div className="absolute -top-20 -right-20 w-60 h-60 rounded-full bg-blue-500/10 blur-[60px] pointer-events-none" />
-              <div className="absolute -bottom-20 -left-20 w-60 h-60 rounded-full bg-violet-500/10 blur-[60px] pointer-events-none" />
+              <div className="absolute -bottom-20 -left-20 w-60 h-60 rounded-full bg-emerald-500/10 blur-[60px] pointer-events-none" />
 
               <div className="relative z-10">
                 {/* Header */}
@@ -1585,7 +1585,7 @@ export default function ScanAWBPage({ toast }) {
                 {/* QR Code */}
                 {mobileStatus !== 'connected' && (
                   <div className="flex flex-col items-center gap-4 mb-6">
-                    <div className="p-4 bg-white rounded-3xl shadow-inner border border-slate-100">
+                    <div className="p-4 bg-white/90 dark:bg-slate-950/80 rounded-3xl shadow-inner border border-slate-100 dark:border-slate-800">
                       {mobileQRData ? (
                         <img src={mobileQRData} alt="Scan this QR code with your phone" className="w-56 h-56" />
                       ) : (
@@ -1597,7 +1597,7 @@ export default function ScanAWBPage({ toast }) {
                     <p className="text-xs text-slate-500 dark:text-slate-400 text-center max-w-xs">
                       Scan this QR code with your phone camera, or open your browser and go to:
                     </p>
-                    <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800 rounded-2xl text-[11px] font-mono font-bold text-blue-500 text-center break-all">
+                    <div className="px-4 py-2 bg-slate-100/80 dark:bg-slate-800/90 rounded-2xl text-[11px] font-mono font-bold text-sky-600 dark:text-sky-300 text-center break-all">
                       {window.location.origin}/mobile-scanner/{mobilePIN}
                     </div>
                   </div>
@@ -1606,7 +1606,7 @@ export default function ScanAWBPage({ toast }) {
                 {/* PIN display */}
                 <div className="flex flex-col items-center gap-3 mb-6">
                   <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Or enter PIN manually</span>
-                  <div className="flex items-center gap-3 px-6 py-4 bg-slate-50 dark:bg-slate-800 rounded-2xl">
+                  <div className="flex items-center gap-3 px-4 sm:px-6 py-4 bg-slate-100/80 dark:bg-slate-800/90 rounded-2xl w-full justify-center">
                     <span className="text-4xl font-black font-mono tracking-[0.4em] text-slate-900 dark:text-white">{mobilePIN}</span>
                     <button
                       type="button"
@@ -1621,7 +1621,7 @@ export default function ScanAWBPage({ toast }) {
                 {/* Connection status */}
                 {mobileStatus === 'connected' && (
                   <div className="space-y-4">
-                    <div className="flex items-center justify-center gap-3 px-4 py-4 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
+                    <div className="flex items-center justify-center gap-3 px-4 py-4 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 shadow-inner">
                       <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-lg shadow-emerald-500/50" />
                       <span className="text-sm font-black text-emerald-600 uppercase tracking-widest">Phone is scanning</span>
                     </div>
@@ -1643,7 +1643,7 @@ export default function ScanAWBPage({ toast }) {
                     <div className="flex items-center gap-2 px-4 py-3 bg-amber-500/10 rounded-2xl text-amber-600 text-xs font-bold">
                       <WifiOff size={14} /> Phone disconnected. Scan QR again to reconnect.
                     </div>
-                    <button onClick={startMobileSession} className="px-6 py-3 rounded-2xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-blue-500/20">
+                    <button onClick={startMobileSession} className="px-6 py-3 rounded-2xl bg-sky-500 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-sky-500/20">
                       Generate New Code
                     </button>
                   </div>
