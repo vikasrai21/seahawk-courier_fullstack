@@ -1162,14 +1162,14 @@ export default function ScanAWBPage({ toast }) {
           {/* RIGHT COLUMN: Review Panel OR Info Board */}
           <div className="space-y-5">
             {reviewScan ? (
-              <div className="rounded-[40px] bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/50 p-6 sm:p-8 shadow-2xl relative overflow-hidden ring-4 ring-emerald-500/20 animate-in slide-in-from-right-4">
+              <div className="rounded-[32px] bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/50 p-5 sm:p-6 shadow-xl relative overflow-hidden ring-2 ring-emerald-500/15 animate-in slide-in-from-right-4 max-h-[78vh] overflow-y-auto">
                 <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 blur-[80px] pointer-events-none" />
                 <div className="flex items-center gap-3 mb-6 relative z-10">
                   <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30">
                     <Edit size={20} />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-slate-900 dark:text-white">Active Review</h3>
+                    <h3 className="text-lg font-black text-slate-900 dark:text-white">Active Review</h3>
                     <p className="text-[10px] uppercase font-black tracking-[0.2em] text-emerald-600">Please verify extracted details</p>
                   </div>
                 </div>
@@ -1203,7 +1203,7 @@ export default function ScanAWBPage({ toast }) {
                    </div>
                 </div>
 
-                <div className="mb-6 grid grid-cols-1 xl:grid-cols-2 gap-4 relative z-10">
+                <div className="mb-5 grid grid-cols-1 xl:grid-cols-2 gap-3 relative z-10">
                   <div className="rounded-[26px] border border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/60 p-4">
                     <div className="flex items-center justify-between gap-3 mb-4">
                       <div>
@@ -1214,11 +1214,11 @@ export default function ScanAWBPage({ toast }) {
                         Suggested
                       </div>
                     </div>
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {reviewComparison.map((field) => (
-                        <div key={`source-${field.key}`} className="rounded-2xl border border-slate-200/80 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 px-4 py-3">
+                        <div key={`source-${field.key}`} className="rounded-2xl border border-slate-200/80 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 px-3 py-2.5">
                           <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">{field.label}</div>
-                          <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white break-words">{field.scanned}</div>
+                          <div className="mt-1 text-[13px] font-bold text-slate-900 dark:text-white break-words">{field.scanned}</div>
                         </div>
                       ))}
                     </div>
@@ -1234,7 +1234,7 @@ export default function ScanAWBPage({ toast }) {
                         {reviewComparison.filter((field) => field.changed).length} changed
                       </div>
                     </div>
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {reviewComparison.map((field) => (
                         <div
                           key={`final-${field.key}`}
@@ -1250,7 +1250,7 @@ export default function ScanAWBPage({ toast }) {
                               {field.changed ? 'Edited' : 'Matched'}
                             </div>
                           </div>
-                          <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white break-words">{field.final}</div>
+                          <div className="mt-1 text-[13px] font-bold text-slate-900 dark:text-white break-words">{field.final}</div>
                         </div>
                       ))}
                     </div>

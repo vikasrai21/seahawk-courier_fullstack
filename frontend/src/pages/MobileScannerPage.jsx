@@ -34,6 +34,34 @@ const vibrate = (pattern = [50]) => {
   try { navigator.vibrate?.(pattern); } catch { /* silent */ }
 };
 
+const BARCODE_PATTERNS = [
+  /^Z\d{8,9}$/,
+  /^D\d{9,11}$/,
+  /^X\d{9,10}$/,
+  /^7X\d{9}$/,
+  /^I\d{7,8}$/,
+  /^JD\d{18}$/,
+  /^\d{12,14}$/,
+  /^[A-Z]{1,3}\d{7,14}$/,
+];
+
+function normalizeDetectedBarcode(value) {
+  const cleaned = String(value || '')
+    .toUpperCase()
+    .replace(/\s+/g, '')
+    .replace(/[^A-Z0-9]/g, '');
+
+  if (cleaned.length < 8) return '';
+  if (BARCODE_PATTERNS.some((pattern) => pattern.test(cleaned))) return cleaned;
+
+  const digitCount = (cleaned.match(/\d/g) || []).length;
+  if (/^(?=.*\d)[A-Z0-9]{8,18}$/.test(cleaned) && digitCount >= 7) {
+    return cleaned;
+  }
+
+  return '';
+}
+
 export default function MobileScannerPage() {
   const { pin: urlPin } = useParams();
   const [pin, setPin] = useState(urlPin || '');
@@ -358,7 +386,7 @@ export default function MobileScannerPage() {
 
     try {
       const imageBase64 = captureFrame({ quality: 0.9, maxWidth: 2200, target: 'full' });
-      const focusImageBase64 = captureFrame({ quality: 0.92, maxWidth: 1800, target: 'focus' });
+      const focusImageBase64 = captureFrame({ quality: 0.94, maxWidth: 1800, target: 'focus' });
 
       if (!imageBase64) {
         setLabelCaptureHint('Could not capture photo. Hold steady and try again.');
@@ -369,7 +397,7 @@ export default function MobileScannerPage() {
         imageBase64,
         focusImageBase64,
       });
-      setCapturedLabelPreview(`data:image/jpeg;base64,${imageBase64}`);
+      setCapturedLabelPreview(`data:image/jpeg;base64,${focusImageBase64 || imageBase64}`);
       setLabelCaptureHint('Photo captured. Use it or retake it.');
     } finally {
       setLabelCaptureBusy(false);
@@ -437,19 +465,14 @@ export default function MobileScannerPage() {
       hints.set(DecodeHintType.POSSIBLE_FORMATS, [
         BarcodeFormat.CODE_128,
         BarcodeFormat.CODE_39,
-        BarcodeFormat.CODE_93,
         BarcodeFormat.CODABAR,
         BarcodeFormat.ITF,
-        BarcodeFormat.EAN_13,
-        BarcodeFormat.EAN_8,
-        BarcodeFormat.UPC_A,
-        BarcodeFormat.UPC_E,
-        BarcodeFormat.QR_CODE,
+        BarcodeFormat.CODE_93,
       ]);
 
       const scanner = new BrowserMultiFormatReader(hints, {
-        delayBetweenScanAttempts: 60,
-        delayBetweenScanSuccess: 350,
+        delayBetweenScanAttempts: 25,
+        delayBetweenScanSuccess: 80,
       });
       scannerRef.current = scanner;
       setCameraReady(false);
@@ -476,14 +499,14 @@ export default function MobileScannerPage() {
           return;
         }
         setCameraError('');
-        const awb = String(result.getText() || '').trim();
+        const awb = normalizeDetectedBarcode(result.getText());
         const now = Date.now();
         if (!awb) return;
         if (scanBusyRef.current) return;
         if (now < scanLockUntilRef.current && awb === lastDecodedRef.current) return;
 
         scanBusyRef.current = true;
-        scanLockUntilRef.current = now + 2000;
+        scanLockUntilRef.current = now + 450;
         lastDecodedRef.current = awb;
         scannerPausedRef.current = true;
 
@@ -827,8 +850,10 @@ export default function MobileScannerPage() {
         .msc-root {
           min-height: 100vh;
           min-height: 100dvh;
-          background: #080d18;
-          color: #fff;
+          background:
+            radial-gradient(circle at top, rgba(14,165,233,0.12), transparent 28%),
+            linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
+          color: #0f172a;
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
           display: flex;
           flex-direction: column;
@@ -836,8 +861,16 @@ export default function MobileScannerPage() {
           transition: background 0.3s;
           position: relative;
         }
-        .msc-flash-success { background: #064e3b !important; }
-        .msc-flash-error { background: #7f1d1d !important; }
+        .msc-flash-success {
+          background:
+            radial-gradient(circle at top, rgba(34,197,94,0.16), transparent 28%),
+            linear-gradient(180deg, #f3fff7 0%, #eafff1 100%) !important;
+        }
+        .msc-flash-error {
+          background:
+            radial-gradient(circle at top, rgba(248,113,113,0.14), transparent 28%),
+            linear-gradient(180deg, #fff7f7 0%, #fff1f1 100%) !important;
+        }
 
         .msc-container {
           flex: 1;
@@ -958,8 +991,8 @@ export default function MobileScannerPage() {
         .msc-status-bar {
           display: flex; align-items: center; justify-content: space-between;
           padding: max(0.7rem, env(safe-area-inset-top)) 1rem 0.65rem;
-          background: #0f172a;
-          border-bottom: 1px solid #1e293b;
+          background: rgba(15,23,42,0.92);
+          border-bottom: 1px solid rgba(148,163,184,0.2);
           z-index: 20;
         }
         .msc-status-left, .msc-status-right {
@@ -988,7 +1021,7 @@ export default function MobileScannerPage() {
         .msc-camera-wrap {
           flex: 1;
           position: relative;
-          background: #000;
+          background: linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%);
           overflow: hidden;
           min-height: 0;
           isolation: isolate;
@@ -1000,16 +1033,16 @@ export default function MobileScannerPage() {
           bottom: calc(0.5rem + env(safe-area-inset-bottom));
           z-index: 35;
           border-radius: 24px;
-          border: 1px solid rgba(56,189,248,0.18);
-          background: linear-gradient(180deg, rgba(15,23,42,0.96) 0%, rgba(2,6,23,0.98) 100%);
+          border: 1px solid rgba(125,211,252,0.28);
+          background: linear-gradient(180deg, rgba(255,255,255,0.97) 0%, rgba(241,245,249,0.98) 100%);
           backdrop-filter: blur(18px);
           padding: 0.85rem;
-          box-shadow: 0 24px 60px rgba(2,6,23,0.45);
+          box-shadow: 0 24px 60px rgba(15,23,42,0.18);
           max-height: min(44vh, 360px);
           overflow-y: auto;
         }
         .msc-capture-title {
-          color: #7dd3fc;
+          color: #0f4c81;
           font-size: 0.78rem;
           font-weight: 900;
           letter-spacing: 0.12em;
@@ -1018,7 +1051,7 @@ export default function MobileScannerPage() {
         }
         .msc-capture-sub {
           margin-top: 0.35rem;
-          color: #cbd5e1;
+          color: #334155;
           font-size: 0.68rem;
           font-weight: 700;
           line-height: 1.4;
@@ -1033,14 +1066,16 @@ export default function MobileScannerPage() {
           margin-top: 0.75rem;
           border-radius: 16px;
           overflow: hidden;
-          border: 1px solid rgba(148,163,184,0.18);
-          background: rgba(2,6,23,0.82);
-          max-height: 220px;
+          border: 1px solid rgba(148,163,184,0.2);
+          background: #ffffff;
+          max-height: 240px;
         }
         .msc-preview-image {
           width: 100%;
           display: block;
-          object-fit: cover;
+          object-fit: contain;
+          max-height: 240px;
+          background: #f8fafc;
         }
         .msc-capture-primary,
         .msc-capture-secondary {
@@ -1063,8 +1098,8 @@ export default function MobileScannerPage() {
           box-shadow: 0 12px 24px rgba(14,165,233,0.22);
         }
         .msc-capture-secondary {
-          color: #cbd5e1;
-          background: rgba(30,41,59,0.96);
+          color: #334155;
+          background: rgba(226,232,240,0.9);
         }
         .msc-capture-toast {
           position: absolute;
@@ -1075,8 +1110,8 @@ export default function MobileScannerPage() {
           padding: 0.62rem 0.85rem;
           border-radius: 12px;
           border: 1px solid rgba(56,189,248,0.32);
-          background: rgba(15,23,42,0.9);
-          color: #bae6fd;
+          background: rgba(255,255,255,0.96);
+          color: #0369a1;
           font-size: 0.68rem;
           font-weight: 800;
           text-align: center;
@@ -1091,9 +1126,9 @@ export default function MobileScannerPage() {
           z-index: 40;
           margin: 0 0.85rem;
           border-radius: 26px 26px 22px 22px;
-          background: linear-gradient(180deg, rgba(15,23,42,0.98) 0%, rgba(2,6,23,0.98) 100%);
-          border: 1px solid rgba(56,189,248,0.14);
-          box-shadow: 0 24px 64px rgba(2,6,23,0.5);
+          background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%);
+          border: 1px solid rgba(125,211,252,0.24);
+          box-shadow: 0 24px 64px rgba(15,23,42,0.18);
           backdrop-filter: blur(20px);
           max-height: min(62vh, 560px);
           overflow: hidden;
@@ -1118,7 +1153,7 @@ export default function MobileScannerPage() {
           margin-bottom: 0.75rem;
         }
         .msc-sheet-kicker {
-          color: #38bdf8;
+          color: #0284c7;
           font-size: 0.62rem;
           font-weight: 900;
           text-transform: uppercase;
@@ -1126,7 +1161,7 @@ export default function MobileScannerPage() {
         }
         .msc-sheet-title {
           margin-top: 0.35rem;
-          color: #e2e8f0;
+          color: #0f172a;
           font-size: 0.92rem;
           font-weight: 800;
           line-height: 1.35;
@@ -1136,14 +1171,14 @@ export default function MobileScannerPage() {
           height: 2rem;
           border-radius: 999px;
           border: none;
-          background: rgba(148,163,184,0.14);
-          color: #e2e8f0;
+          background: rgba(226,232,240,0.9);
+          color: #475569;
           display: inline-flex;
           align-items: center;
           justify-content: center;
         }
         .msc-sheet-awb {
-          color: #f8fafc;
+          color: #0f172a;
           font-size: 1rem;
           font-weight: 900;
           font-family: 'SF Mono', 'Fira Code', monospace;
@@ -1151,7 +1186,7 @@ export default function MobileScannerPage() {
         }
         .msc-sheet-message {
           margin-bottom: 0.75rem;
-          color: #94a3b8;
+          color: #64748b;
           font-size: 0.7rem;
           font-weight: 700;
           line-height: 1.45;
@@ -1167,7 +1202,7 @@ export default function MobileScannerPage() {
           gap: 0.35rem;
         }
         .msc-sheet-grid label span {
-          color: #94a3b8;
+          color: #64748b;
           font-size: 0.58rem;
           font-weight: 900;
           text-transform: uppercase;
@@ -1176,9 +1211,9 @@ export default function MobileScannerPage() {
         .msc-sheet-grid label input {
           width: 100%;
           border-radius: 14px;
-          border: 1px solid rgba(148,163,184,0.12);
-          background: rgba(15,23,42,0.92);
-          color: #f8fafc;
+          border: 1px solid rgba(148,163,184,0.18);
+          background: rgba(255,255,255,0.96);
+          color: #0f172a;
           padding: 0.72rem 0.8rem;
           font-size: 0.78rem;
           font-weight: 700;
@@ -1206,7 +1241,7 @@ export default function MobileScannerPage() {
         }
         .msc-sheet-secondary {
           background: rgba(148,163,184,0.12);
-          color: #cbd5e1;
+          color: #475569;
         }
         .msc-sheet-primary {
           background: linear-gradient(135deg, #16a34a, #22c55e);
@@ -1217,7 +1252,7 @@ export default function MobileScannerPage() {
           width: 100%; height: 100%;
           object-fit: cover;
           display: block;
-          background: #000;
+          background: #cbd5e1;
           position: absolute;
           inset: 0;
           z-index: 0;
@@ -1232,7 +1267,7 @@ export default function MobileScannerPage() {
         .msc-camera-placeholder {
           display: flex; flex-direction: column;
           align-items: center; justify-content: center;
-          height: 100%; gap: 1rem; color: #334155;
+          height: 100%; gap: 1rem; color: #64748b;
         }
         .msc-placeholder-icon { opacity: 0.3; }
         .msc-camera-placeholder p { font-size: 0.8rem; font-weight: 600; }
@@ -1261,16 +1296,16 @@ export default function MobileScannerPage() {
           gap: 0.45rem;
           padding: 0.55rem 0.8rem;
           border-radius: 999px;
-          background: rgba(15,23,42,0.74);
-          border: 1px solid rgba(148,163,184,0.2);
-          color: #dbeafe;
+          background: rgba(255,255,255,0.88);
+          border: 1px solid rgba(148,163,184,0.22);
+          color: #334155;
           font-size: 0.68rem;
           font-weight: 800;
           letter-spacing: 0.06em;
           text-transform: uppercase;
         }
         .msc-overlay-chip.ready {
-          color: #86efac;
+          color: #047857;
           border-color: rgba(34,197,94,0.3);
         }
         .msc-scan-frame {
@@ -1284,9 +1319,9 @@ export default function MobileScannerPage() {
         .msc-overlay-tip {
           padding: 0.55rem 0.9rem;
           border-radius: 18px;
-          background: rgba(15,23,42,0.76);
+          background: rgba(255,255,255,0.9);
           border: 1px solid rgba(148,163,184,0.18);
-          color: #cbd5e1;
+          color: #334155;
           font-size: 0.72rem;
           font-weight: 700;
           letter-spacing: 0.04em;
@@ -1319,8 +1354,8 @@ export default function MobileScannerPage() {
         /* ── Last scan feedback ─────────────────────────────────── */
         .msc-last-scan {
           padding: 0.85rem 1rem calc(0.85rem + env(safe-area-inset-bottom));
-          background: #0f172a;
-          border-top: 1px solid #1e293b;
+          background: rgba(255,255,255,0.92);
+          border-top: 1px solid rgba(148,163,184,0.18);
           display: flex; align-items: flex-start; justify-content: space-between;
           gap: 0.75rem;
           z-index: 20;
@@ -1338,13 +1373,13 @@ export default function MobileScannerPage() {
           font-family: 'SF Mono', 'Fira Code', monospace;
         }
         .msc-check { color: #22c55e; }
-        .msc-awb-text { color: #e2e8f0; }
+        .msc-awb-text { color: #0f172a; }
         .msc-client-badge {
           display: flex; align-items: center; gap: 0.25rem;
           padding: 0.25rem 0.6rem;
           border-radius: 8px;
-          background: rgba(59,130,246,0.15);
-          color: #60a5fa;
+          background: rgba(14,165,233,0.12);
+          color: #0369a1;
           font-size: 0.65rem;
           font-weight: 800;
           text-transform: uppercase;
@@ -1378,7 +1413,7 @@ export default function MobileScannerPage() {
           letter-spacing: 0.12em;
         }
         .msc-feedback-details strong {
-          color: #e2e8f0;
+          color: #0f172a;
           font-size: 0.72rem;
           font-weight: 800;
           text-align: right;
@@ -1412,8 +1447,8 @@ export default function MobileScannerPage() {
         .msc-controls {
           padding: 1rem;
           padding-bottom: max(1rem, env(safe-area-inset-bottom));
-          background: linear-gradient(180deg, rgba(8,13,24,0) 0%, rgba(8,13,24,0.9) 30%, #0f172a 100%);
-          border-top: 1px solid #1e293b;
+          background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(248,250,252,0.96) 30%, #ffffff 100%);
+          border-top: 1px solid rgba(148,163,184,0.18);
           z-index: 20;
         }
         .msc-cam-btn {
