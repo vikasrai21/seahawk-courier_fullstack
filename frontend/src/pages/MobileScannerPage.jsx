@@ -8,6 +8,10 @@ import {
   Smartphone, Zap, X, Camera, Aperture, Save,
 } from 'lucide-react';
 
+const SCANBOT_ENGINE_PATH = '/wasm/';
+const SCANBOT_LICENSE_KEY = import.meta.env.VITE_SCANBOT_LICENSE_KEY || '';
+const COURIER_SCAN_REGEX = '^(?:[A-Z0-9]{8,18})$';
+
 function resolveSocketUrl() {
   const apiUrl = import.meta.env.VITE_API_URL;
   if (!apiUrl || apiUrl.startsWith('/')) return window.location.origin;
@@ -90,14 +94,47 @@ export default function MobileScannerPage() {
   const socketRef = useRef(null);
   const videoRef = useRef(null);
   const cameraWrapRef = useRef(null);
+  const scanbotContainerRef = useRef(null);
   const scanFrameRef = useRef(null);
   const scannerRef = useRef(null);
+  const scanbotSdkRef = useRef(null);
+  const scanbotHandleRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const scanBusyRef = useRef(false);
   const scannerPausedRef = useRef(false);
   const lastDecodedRef = useRef('');
   const scanLockUntilRef = useRef(0);
   const lastDecodeErrorAtRef = useRef(0);
+  const [scannerEngine, setScannerEngine] = useState('scanbot');
+
+  const bindPreviewVideo = useCallback(() => {
+    const scanbotVideo = scanbotContainerRef.current?.querySelector?.('video');
+    if (scanbotVideo) {
+      videoRef.current = scanbotVideo;
+      return scanbotVideo;
+    }
+    return videoRef.current;
+  }, []);
+
+  const ensureScanbotSdk = useCallback(async () => {
+    if (scanbotSdkRef.current) return scanbotSdkRef.current;
+
+    const mod = await import('scanbot-web-sdk');
+    const ScanbotSDK = mod.default;
+    const sdk = await ScanbotSDK.initialize({
+      licenseKey: SCANBOT_LICENSE_KEY,
+      enginePath: SCANBOT_ENGINE_PATH,
+      userAgentAppId: 'seahawk-mobile-scanner',
+    });
+
+    const licenseInfo = await sdk.getLicenseInfo().catch(() => null);
+    if (licenseInfo && !licenseInfo.isValid()) {
+      throw new Error(licenseInfo.licenseStatusMessage || 'Scanbot license is not valid.');
+    }
+
+    scanbotSdkRef.current = sdk;
+    return sdk;
+  }, []);
 
   const waitForVideoReady = async (video) => new Promise((resolve, reject) => {
     if (!video) {
@@ -146,6 +183,23 @@ export default function MobileScannerPage() {
       }
       if (Date.now() - startedAt > 2500) {
         reject(new Error('Camera surface unavailable'));
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
+
+  const waitForScanbotVideo = async () => new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const tick = () => {
+      const video = bindPreviewVideo();
+      if (video) {
+        resolve(video);
+        return;
+      }
+      if (Date.now() - startedAt > 5000) {
+        reject(new Error('Premium scanner camera surface unavailable'));
         return;
       }
       requestAnimationFrame(tick);
@@ -297,12 +351,17 @@ export default function MobileScannerPage() {
 
   // ── Camera scanner ──────────────────────────────────────────────────────
   const stopCamera = async () => {
+    try { scanbotHandleRef.current?.dispose?.(); } catch { /* silent */ }
+    scanbotHandleRef.current = null;
     try { await scannerRef.current?.reset(); } catch { /* silent */ }
     scannerRef.current = null;
     try {
       mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
     } catch { /* silent */ }
     mediaStreamRef.current = null;
+    if (scanbotContainerRef.current) {
+      scanbotContainerRef.current.innerHTML = '';
+    }
     if (videoRef.current) {
       videoRef.current.srcObject = null;
       videoRef.current.pause?.();
@@ -397,7 +456,7 @@ export default function MobileScannerPage() {
         imageBase64,
         focusImageBase64,
       });
-      setCapturedLabelPreview(`data:image/jpeg;base64,${focusImageBase64 || imageBase64}`);
+      setCapturedLabelPreview(`data:image/jpeg;base64,${imageBase64}`);
       setLabelCaptureHint('Photo captured. Use it or retake it.');
     } finally {
       setLabelCaptureBusy(false);
@@ -430,6 +489,7 @@ export default function MobileScannerPage() {
       setCapturedLabelPreview('');
       setCapturedLabelPayload(null);
       scannerPausedRef.current = false;
+      scanbotHandleRef.current?.resumeDetection?.();
       scanLockUntilRef.current = Date.now() + 700;
       setLabelCaptureHint('Sent to desktop. Keep scanning.');
       setTimeout(() => setLabelCaptureHint(''), 1400);
@@ -445,82 +505,165 @@ export default function MobileScannerPage() {
       setCameraStarting(true);
       await stopCamera();
       setCameraActive(true);
-      const video = await waitForVideoElement();
-      if (!navigator.mediaDevices?.getUserMedia) {
-        throw new Error('This browser is not allowing camera access.');
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-      });
-
-      mediaStreamRef.current = stream;
-      const hints = new Map();
-      hints.set(DecodeHintType.TRY_HARDER, true);
-      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-        BarcodeFormat.CODE_128,
-        BarcodeFormat.CODE_39,
-        BarcodeFormat.CODABAR,
-        BarcodeFormat.ITF,
-        BarcodeFormat.CODE_93,
-      ]);
-
-      const scanner = new BrowserMultiFormatReader(hints, {
-        delayBetweenScanAttempts: 25,
-        delayBetweenScanSuccess: 80,
-      });
-      scannerRef.current = scanner;
       setCameraReady(false);
-      video.srcObject = stream;
-      video.muted = true;
-      video.defaultMuted = true;
-      video.setAttribute('playsinline', 'true');
-      video.setAttribute('webkit-playsinline', 'true');
-      await video.play();
-      await waitForVideoReady(video);
-      setCameraReady(true);
-      setCameraStarting(false);
+      setScannerEngine('scanbot');
 
-      await scanner.decodeFromVideoElement(video, async (result, error) => {
-        if (scannerPausedRef.current) return;
-        if (!result) {
-          if (error && !(error instanceof NotFoundException)) {
+      try {
+        const sdk = await ensureScanbotSdk();
+        const container = scanbotContainerRef.current;
+        if (!container) throw new Error('Premium scanner surface unavailable.');
+
+        const handle = await sdk.createBarcodeScanner({
+          container,
+          preferredCamera: 'environment',
+          previewMode: 'FIT_IN',
+          captureDelay: 80,
+          fpsLimit: 120,
+          enable4kStream: true,
+          desiredRecognitionResolution: 1440,
+          videoConstraints: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          onError: (error) => {
+            const message = error?.message || 'Premium scanner hit a camera error.';
+            setCameraError(message);
+          },
+          onBarcodesDetected: ({ barcodes = [] }) => {
+            if (scannerPausedRef.current) return;
+            const detected = barcodes
+              .map((item) => normalizeDetectedBarcode(item?.text))
+              .find(Boolean);
+            if (!detected) return;
+
             const now = Date.now();
-            if (now - lastDecodeErrorAtRef.current > 1500) {
-              setCameraError('Scanner is active but cannot decode yet. Try moving closer and hold steady.');
-              lastDecodeErrorAtRef.current = now;
-            }
-          }
-          return;
+            if (scanBusyRef.current) return;
+            if (now < scanLockUntilRef.current && detected === lastDecodedRef.current) return;
+
+            scanBusyRef.current = true;
+            scanLockUntilRef.current = now + 350;
+            lastDecodedRef.current = detected;
+            scannerPausedRef.current = true;
+            handle.pauseDetection();
+
+            setCameraError('');
+            setFlashFeedback('success');
+            vibrate([40]);
+            playBeep(1050, 0.05);
+            setTimeout(() => setFlashFeedback(null), 320);
+            setLastAwb(detected);
+            setPendingBarcode(detected);
+            setAwaitingLabelCapture(true);
+            setLabelCaptureHint('Barcode locked. Capture the AWB photo next.');
+
+            scanBusyRef.current = false;
+          },
+          scannerConfiguration: {
+            engineMode: 'NEXT_GEN',
+            minimumTextLength: 8,
+            maximumTextLength: 18,
+            barcodeFormatConfigurations: [
+              {
+                _type: 'BarcodeFormatCommonOneDConfiguration',
+                formats: ['CODE_128', 'CODE_39', 'CODE_93', 'CODABAR', 'ITF'],
+                regexFilter: COURIER_SCAN_REGEX,
+                minimumNumberOfRequiredFramesWithEqualRecognitionResult: 1,
+                minimumTextLength: 8,
+                maximumTextLength: 18,
+                oneDConfirmationMode: 'MINIMAL',
+              },
+            ],
+          },
+        });
+
+        scanbotHandleRef.current = handle;
+        handle.setFinderVisible(false);
+        const liveVideo = await waitForScanbotVideo();
+        await waitForVideoReady(liveVideo);
+        setCameraReady(true);
+        setCameraStarting(false);
+        return liveVideo;
+      } catch (scanbotError) {
+        console.debug('Scanbot unavailable, falling back to ZXing', scanbotError);
+        setScannerEngine('zxing');
+        const video = await waitForVideoElement();
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error('This browser is not allowing camera access.');
         }
-        setCameraError('');
-        const awb = normalizeDetectedBarcode(result.getText());
-        const now = Date.now();
-        if (!awb) return;
-        if (scanBusyRef.current) return;
-        if (now < scanLockUntilRef.current && awb === lastDecodedRef.current) return;
 
-        scanBusyRef.current = true;
-        scanLockUntilRef.current = now + 450;
-        lastDecodedRef.current = awb;
-        scannerPausedRef.current = true;
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+          },
+        });
 
-        setFlashFeedback('success');
-        vibrate([50]);
-        playBeep(880, 0.06);
-        setTimeout(() => setFlashFeedback(null), 400);
-        setLastAwb(awb);
-        setPendingBarcode(awb);
-        setAwaitingLabelCapture(true);
-        setLabelCaptureHint('Barcode locked. Now capture the full AWB label photo.');
+        mediaStreamRef.current = stream;
+        const hints = new Map();
+        hints.set(DecodeHintType.TRY_HARDER, true);
+        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+          BarcodeFormat.CODE_128,
+          BarcodeFormat.CODE_39,
+          BarcodeFormat.CODABAR,
+          BarcodeFormat.ITF,
+          BarcodeFormat.CODE_93,
+        ]);
 
-        scanBusyRef.current = false;
-      });
+        const scanner = new BrowserMultiFormatReader(hints, {
+          delayBetweenScanAttempts: 25,
+          delayBetweenScanSuccess: 80,
+        });
+        scannerRef.current = scanner;
+        video.srcObject = stream;
+        video.muted = true;
+        video.defaultMuted = true;
+        video.setAttribute('playsinline', 'true');
+        video.setAttribute('webkit-playsinline', 'true');
+        await video.play();
+        await waitForVideoReady(video);
+        setCameraReady(true);
+        setCameraStarting(false);
+        setCameraError('Premium scanner unavailable right now. Running compatibility mode.');
+
+        await scanner.decodeFromVideoElement(video, async (result, error) => {
+          if (scannerPausedRef.current) return;
+          if (!result) {
+            if (error && !(error instanceof NotFoundException)) {
+              const now = Date.now();
+              if (now - lastDecodeErrorAtRef.current > 1500) {
+                setCameraError('Scanner is active but cannot decode yet. Try moving closer and hold steady.');
+                lastDecodeErrorAtRef.current = now;
+              }
+            }
+            return;
+          }
+          setCameraError('');
+          const awb = normalizeDetectedBarcode(result.getText());
+          const now = Date.now();
+          if (!awb) return;
+          if (scanBusyRef.current) return;
+          if (now < scanLockUntilRef.current && awb === lastDecodedRef.current) return;
+
+          scanBusyRef.current = true;
+          scanLockUntilRef.current = now + 450;
+          lastDecodedRef.current = awb;
+          scannerPausedRef.current = true;
+
+          setFlashFeedback('success');
+          vibrate([50]);
+          playBeep(880, 0.06);
+          setTimeout(() => setFlashFeedback(null), 400);
+          setLastAwb(awb);
+          setPendingBarcode(awb);
+          setAwaitingLabelCapture(true);
+          setLabelCaptureHint('Barcode locked. Now capture the full AWB label photo.');
+
+          scanBusyRef.current = false;
+        });
+      }
     } catch (err) {
       const message = err?.message || 'Camera failed';
       setCameraError(message);
@@ -643,9 +786,13 @@ export default function MobileScannerPage() {
 
       {/* Camera viewport */}
       <div className="msc-camera-wrap" ref={cameraWrapRef}>
+        <div
+          ref={scanbotContainerRef}
+          className={`msc-scanbot-host ${cameraActive && scannerEngine === 'scanbot' ? 'msc-scanbot-host-active' : ''}`}
+        />
         <video
           ref={videoRef}
-          className={`msc-video ${cameraActive ? 'msc-video-active' : 'msc-video-idle'}`}
+          className={`msc-video ${cameraActive && scannerEngine === 'zxing' ? 'msc-video-active' : 'msc-video-idle'}`}
           muted
           playsInline
           autoPlay
@@ -657,11 +804,11 @@ export default function MobileScannerPage() {
               <div className="msc-overlay-head">
                 <div className="msc-overlay-chip">
                   <Camera size={14} />
-                  {cameraReady ? 'Rear camera live' : 'Opening rear camera'}
+                  {cameraReady ? (scannerEngine === 'scanbot' ? 'Premium camera live' : 'Compatibility camera live') : 'Opening rear camera'}
                 </div>
                 <div className={`msc-overlay-chip ${cameraReady ? 'ready' : ''}`}>
                   <Aperture size={14} />
-                  {cameraReady ? 'Aim at AWB barcode' : 'Waking camera'}
+                  {cameraReady ? (scannerEngine === 'scanbot' ? 'Fast barcode lock' : 'Aim at AWB barcode') : 'Waking camera'}
                 </div>
               </div>
               <div className="msc-scan-frame" ref={scanFrameRef}>
@@ -1025,6 +1172,25 @@ export default function MobileScannerPage() {
           overflow: hidden;
           min-height: 0;
           isolation: isolate;
+        }
+        .msc-scanbot-host {
+          position: absolute;
+          inset: 0;
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.18s ease;
+          z-index: 0;
+        }
+        .msc-scanbot-host-active {
+          opacity: 1;
+          pointer-events: auto;
+        }
+        .msc-scanbot-host video,
+        .msc-scanbot-host canvas {
+          width: 100% !important;
+          height: 100% !important;
+          object-fit: cover !important;
+          display: block;
         }
         .msc-capture-panel {
           position: absolute;

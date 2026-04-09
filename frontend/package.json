@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "build:ci": "vite build && node scripts/check-bundle-budget.mjs",
+    "copy:scanbot": "node scripts/copy-scanbot-wasm.mjs",
+    "dev": "npm run copy:scanbot && vite",
+    "build": "npm run copy:scanbot && vite build",
+    "build:ci": "npm run copy:scanbot && vite build && node scripts/check-bundle-budget.mjs",
     "smoke": "node scripts/smoke-test.mjs",
     "preview": "vite preview",
     "lint": "eslint src --ext .jsx,.js",
@@ -26,6 +27,7 @@
     "react-helmet-async": "^2.0.4",
     "react-router-dom": "^6.22.0",
     "recharts": "^2.12.0",
+    "scanbot-web-sdk": "^8.1.1",
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
