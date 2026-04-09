@@ -115,6 +115,37 @@ const buildScanEntry = (awb, courier, shipment, meta = {}, error = null) => ({
   timestamp: new Date(),
 });
 
+const extractOrderNo = (shipment = {}, meta = {}) => {
+  const raw = String(
+    meta?.ocrExtracted?.orderNo
+    || meta?.orderNo
+    || shipment?.orderNo
+    || ''
+  ).trim();
+  if (raw) return raw;
+  const remarks = String(shipment?.remarks || '');
+  const match = remarks.match(/ORDER_NO:([^|]+)/i);
+  return match ? String(match[1] || '').trim() : '';
+};
+
+const buildIntakeRow = (shipment = {}, meta = {}, awbValue = '') => {
+  const dateStr = shipment?.date || new Date().toISOString().slice(0, 10);
+  const parts = dateStr.split('-');
+  const formattedDate = parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateStr;
+  return {
+    date: formattedDate,
+    clientCode: shipment?.clientCode || meta?.clientSuggestion?.suggestedClientCode || 'MISC',
+    awb: awbValue || shipment?.awb || '',
+    consignee: shipment?.consignee || '',
+    destination: shipment?.destination || '',
+    pincode: shipment?.pincode || meta?.ocrExtracted?.pincode || '',
+    weight: Number(shipment?.weight || 0).toFixed(3),
+    amount: shipment?.amount ? Number(shipment.amount) : '',
+    courier: (shipment?.courier || '').toUpperCase(),
+    orderNo: extractOrderNo(shipment, meta),
+  };
+};
+
 const normalizeCompareValue = (value, fallback = 'Not captured') => {
   if (value === null || value === undefined || value === '') return fallback;
   return String(value);
@@ -189,8 +220,9 @@ export default function ScanAWBPage({ toast }) {
   const [mobileQRData, setMobileQRData] = useState('');
   const { socket, connected: socketConnected } = useSocket();
   const [reviewQueue, setReviewQueue] = useState([]);
-  const [reviewForm, setReviewForm] = useState({ clientCode: '', consignee: '', destination: '', weight: 0, amount: 0 });
+  const [reviewForm, setReviewForm] = useState({ clientCode: '', consignee: '', destination: '', pincode: '', weight: 0, amount: 0, orderNo: '' });
   const [savingReview, setSavingReview] = useState(false);
+  const [approvedRows, setApprovedRows] = useState([]);
   const inputRef = useRef(null);
   const spreadsheetInputRef = useRef(null);
   const videoRef = useRef(null);
@@ -209,7 +241,7 @@ export default function ScanAWBPage({ toast }) {
 
   useEffect(() => {
     if (!reviewScan) {
-      setReviewForm({ clientCode: '', consignee: '', destination: '', weight: 0, amount: 0 });
+      setReviewForm({ clientCode: '', consignee: '', destination: '', pincode: '', weight: 0, amount: 0, orderNo: '' });
       return;
     }
 
@@ -218,8 +250,10 @@ export default function ScanAWBPage({ toast }) {
       clientCode: suggestedCode,
       consignee: reviewScan.shipment?.consignee || '',
       destination: reviewScan.shipment?.destination || '',
+      pincode: reviewScan.shipment?.pincode || reviewScan.meta?.ocrExtracted?.pincode || '',
       weight: reviewScan.shipment?.weight || 0,
       amount: reviewScan.shipment?.amount || 0,
+      orderNo: extractOrderNo(reviewScan.shipment, reviewScan.meta),
     });
   }, [reviewScan]);
 
@@ -249,8 +283,51 @@ export default function ScanAWBPage({ toast }) {
     setRecentScans((prev) => [entry, ...prev].slice(0, 100));
   };
 
+  const addApprovedRow = (shipment, meta = {}, awbValue = '') => {
+    const row = buildIntakeRow(shipment, meta, awbValue);
+    setApprovedRows((prev) => [row, ...prev].slice(0, 120));
+    return row;
+  };
+
   const queueReviewScan = (entry) => {
     setReviewQueue((prev) => [...prev, entry]);
+  };
+
+  const buildApprovalPayload = (fields = {}, fallbackScan = null) => ({
+    clientCode: String(fields.clientCode || fallbackScan?.meta?.clientSuggestion?.suggestedClientCode || fallbackScan?.shipment?.clientCode || 'MISC').trim().toUpperCase(),
+    consignee: String(fields.consignee || fallbackScan?.shipment?.consignee || '').trim().toUpperCase(),
+    destination: String(fields.destination || fallbackScan?.shipment?.destination || '').trim().toUpperCase(),
+    pincode: String(fields.pincode || fallbackScan?.shipment?.pincode || fallbackScan?.meta?.ocrExtracted?.pincode || '').trim(),
+    weight: parseFloat(fields.weight ?? fallbackScan?.shipment?.weight ?? 0) || 0,
+    amount: parseFloat(fields.amount ?? fallbackScan?.shipment?.amount ?? 0) || 0,
+    orderNo: String(fields.orderNo || extractOrderNo(fallbackScan?.shipment, fallbackScan?.meta) || '').trim(),
+  });
+
+  const updateShipmentFromApproval = async (approval, fallbackScan = null) => {
+    const shipmentId = approval?.shipmentId || fallbackScan?.shipment?.id;
+    if (!shipmentId) throw new Error('No shipment found for approval.');
+
+    const normalized = buildApprovalPayload(approval?.fields || approval || {}, fallbackScan);
+    const remarksBase = String(fallbackScan?.shipment?.remarks || '');
+    const remarksWithoutOrder = remarksBase.replace(/\s*\|\s*ORDER_NO:[^|]+/gi, '').replace(/^ORDER_NO:[^|]+\s*\|?\s*/i, '').trim();
+    const nextRemarks = normalized.orderNo
+      ? `${remarksWithoutOrder}${remarksWithoutOrder ? ' | ' : ''}ORDER_NO:${normalized.orderNo}`
+      : remarksWithoutOrder;
+
+    const payload = await api.put(`/shipments/${shipmentId}`, {
+      clientCode: normalized.clientCode,
+      consignee: normalized.consignee,
+      destination: normalized.destination,
+      pincode: normalized.pincode,
+      weight: normalized.weight,
+      amount: normalized.amount,
+      remarks: nextRemarks,
+    });
+
+    return {
+      shipment: payload.data,
+      normalized,
+    };
   };
 
   // ── Mobile Bridge: create session & listen for remote scans ──────────
@@ -309,16 +386,65 @@ export default function ScanAWBPage({ toast }) {
       await processSingleScan(awb, imageBase64);
     };
 
+    const onApprovalSubmitted = async (approval) => {
+      const queuedScan = reviewQueue.find((item) => item.shipment?.id === approval?.shipmentId || item.awb === approval?.awb) || null;
+
+      try {
+        const { shipment, normalized } = await updateShipmentFromApproval(approval, queuedScan);
+        playSuccess();
+        toast?.(`Approved on mobile: ${shipment.awb}`, 'success');
+        addRecentScan(buildScanEntry(shipment.awb, shipment.courier, shipment, queuedScan?.meta || {}));
+        const intakeRow = addApprovedRow(shipment, queuedScan?.meta || {}, shipment.awb);
+        setCapturedShipment(shipment);
+        setCapturedMeta(queuedScan?.meta || null);
+        setReviewQueue((prev) => prev.filter((item) => item.shipment?.id !== shipment.id && item.awb !== shipment.awb));
+        socket.emit('scanner:approval-result', {
+          pin: mobilePIN,
+          shipmentId: shipment.id,
+          awb: shipment.awb,
+          success: true,
+          message: 'Shipment approved and saved.',
+        });
+        socket.emit('scanner:intake-preview', { pin: mobilePIN, intakeRow });
+        socket.emit('scanner:scan-processed', {
+          pin: mobilePIN,
+          awb: shipment.awb,
+          shipmentId: shipment.id,
+          status: 'success',
+          clientCode: normalized.clientCode,
+          clientName: shipment.client?.company || normalized.clientCode,
+          consignee: normalized.consignee,
+          destination: normalized.destination,
+          pincode: normalized.pincode,
+          weight: normalized.weight,
+          amount: normalized.amount,
+          orderNo: normalized.orderNo,
+          reviewRequired: false,
+        });
+      } catch (err) {
+        toast?.(err.message || 'Mobile approval could not be saved.', 'error');
+        socket.emit('scanner:approval-result', {
+          pin: mobilePIN,
+          shipmentId: approval?.shipmentId || null,
+          awb: approval?.awb,
+          success: false,
+          message: err.message || 'Desktop save failed.',
+        });
+      }
+    };
+
     socket.on('scanner:phone-connected', onPhoneConnected);
     socket.on('scanner:phone-disconnected', onPhoneDisconnected);
     socket.on('scanner:remote-scan', onRemoteScan);
+    socket.on('scanner:approval-submitted', onApprovalSubmitted);
 
     return () => {
       socket.off('scanner:phone-connected', onPhoneConnected);
       socket.off('scanner:phone-disconnected', onPhoneDisconnected);
       socket.off('scanner:remote-scan', onRemoteScan);
+      socket.off('scanner:approval-submitted', onApprovalSubmitted);
     };
-  }, [socket, mobilePIN]);
+  }, [socket, mobilePIN, reviewQueue]);
 
   const captureCurrentFrame = () => {
     const video = videoRef.current;
@@ -363,15 +489,28 @@ export default function ScanAWBPage({ toast }) {
         queueReviewScan({ awb: currentAwb, courier, shipment, meta });
         toast?.(`Captured ${currentAwb} - queued for review`, 'info');
         if (imageBase64 && mobileStatus === 'connected') {
+          const mobileDraft = buildApprovalPayload({
+            clientCode: meta?.clientSuggestion?.suggestedClientCode || shipment?.clientCode || '',
+            consignee: shipment?.consignee || '',
+            destination: shipment?.destination || '',
+            pincode: shipment?.pincode || meta?.ocrExtracted?.pincode || '',
+            weight: shipment?.weight || 0,
+            amount: shipment?.amount || 0,
+            orderNo: extractOrderNo(shipment, meta),
+          });
           socket.emit('scanner:scan-processed', {
             pin: mobilePIN,
             awb: currentAwb,
+            shipmentId: shipment?.id || null,
             status: 'pending_review',
-            clientCode: meta?.clientSuggestion?.suggestedClientCode || shipment?.clientCode || '',
+            clientCode: mobileDraft.clientCode,
             clientName: meta?.clientSuggestion?.suggestedClientName || shipment?.client?.company || '',
-            consignee: shipment?.consignee || '',
-            destination: shipment?.destination || '',
-            weight: shipment?.weight || 0,
+            consignee: mobileDraft.consignee,
+            destination: mobileDraft.destination,
+            pincode: mobileDraft.pincode,
+            weight: mobileDraft.weight,
+            amount: mobileDraft.amount,
+            orderNo: mobileDraft.orderNo,
             reviewRequired: true,
           });
         }
@@ -410,8 +549,12 @@ export default function ScanAWBPage({ toast }) {
         clientCode: reviewForm.clientCode,
         consignee: reviewForm.consignee,
         destination: reviewForm.destination,
+        pincode: reviewForm.pincode,
         weight: parseFloat(reviewForm.weight) || 0,
-        amount: parseFloat(reviewForm.amount) || 0
+        amount: parseFloat(reviewForm.amount) || 0,
+        remarks: reviewForm.orderNo
+          ? `${String(reviewScan.shipment?.remarks || '').replace(/\s*\|\s*ORDER_NO:[^|]+/gi, '').replace(/^ORDER_NO:[^|]+\s*\|?\s*/i, '').trim()}${String(reviewScan.shipment?.remarks || '').replace(/\s*\|\s*ORDER_NO:[^|]+/gi, '').replace(/^ORDER_NO:[^|]+\s*\|?\s*/i, '').trim() ? ' | ' : ''}ORDER_NO:${reviewForm.orderNo}`
+          : String(reviewScan.shipment?.remarks || '').replace(/\s*\|\s*ORDER_NO:[^|]+/gi, '').replace(/^ORDER_NO:[^|]+\s*\|?\s*/i, '').trim(),
       });
       
       const updatedShipment = payload.data;
@@ -419,18 +562,23 @@ export default function ScanAWBPage({ toast }) {
         playSuccess();
         toast?.(`Verified & Saved: ${reviewScan.awb}`, 'success');
         addRecentScan(buildScanEntry(reviewScan.awb, reviewScan.courier, updatedShipment, reviewScan.meta));
+        addApprovedRow(updatedShipment, reviewScan.meta, reviewScan.awb);
         
         // Let the phone know it successfully finished
         if (mobileStatus === 'connected') {
            socket.emit('scanner:scan-processed', {
              pin: mobilePIN,
              awb: reviewScan.awb,
+             shipmentId: updatedShipment.id,
              status: 'success',
              clientCode: reviewForm.clientCode,
              clientName: updatedShipment.client?.company || reviewForm.clientCode,
              consignee: reviewForm.consignee,
              destination: reviewForm.destination,
+             pincode: reviewForm.pincode,
              weight: parseFloat(reviewForm.weight) || 0,
+             amount: parseFloat(reviewForm.amount) || 0,
+             orderNo: reviewForm.orderNo || '',
              reviewRequired: false,
            });
         }
@@ -463,12 +611,16 @@ export default function ScanAWBPage({ toast }) {
       socket.emit('scanner:scan-processed', {
         pin: mobilePIN,
         awb: reviewScan.awb,
+        shipmentId: reviewScan.shipment?.id || null,
         status: 'review_deferred',
         clientCode: reviewScan.meta?.clientSuggestion?.suggestedClientCode || reviewScan.shipment?.clientCode || '',
         clientName: reviewScan.meta?.clientSuggestion?.suggestedClientName || reviewScan.shipment?.client?.company || '',
         consignee: reviewScan.shipment?.consignee || '',
         destination: reviewScan.shipment?.destination || '',
+        pincode: reviewScan.shipment?.pincode || reviewScan.meta?.ocrExtracted?.pincode || '',
         weight: reviewScan.shipment?.weight || 0,
+        amount: reviewScan.shipment?.amount || 0,
+        orderNo: extractOrderNo(reviewScan.shipment, reviewScan.meta),
         reviewRequired: true,
       });
     }
@@ -609,26 +761,20 @@ export default function ScanAWBPage({ toast }) {
   };
 
   const exportIntakeBatch = () => {
-    const rows = recentScans
-      .filter((scan) => scan.status === 'success')
-      .map((scan, index) => {
-        const dateStr = scan.data?.date || new Date().toISOString().slice(0, 10);
-        const parts = dateStr.split('-');
-        const formattedDate = parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateStr;
-        return {
-          'S.NO': index + 1,
-          'DATE': formattedDate,
-          'Clients': scan.data?.clientCode || 'MISC',
-          'Awb No': scan.awb,
-          'CONSIGNEE': scan.data?.consignee || '',
-          'DESTINATION': scan.data?.destination || '',
-          'WEIGHT': Number(scan.data?.weight || 0).toFixed(3),
-          'AMOU': '',
-          'COURIERS': (scan.data?.courier || scan.courier || '').toUpperCase(),
-          'ORDER NO': '',
-          'VALUE': scan.data?.amount ? Number(scan.data.amount) : '',
-        };
-      });
+    const rows = approvedRows.map((row, index) => ({
+      'S.NO': index + 1,
+      'DATE': row.date,
+      'Clients': row.clientCode,
+      'Awb No': row.awb,
+      'CONSIGNEE': row.consignee,
+      'DESTINATION': row.destination,
+      'PINCODE': row.pincode,
+      'WEIGHT': row.weight,
+      'AMOU': '',
+      'COURIERS': row.courier,
+      'ORDER NO': row.orderNo,
+      'VALUE': row.amount,
+    }));
 
     if (!rows.length) {
       toast?.('There are no successful captures to export yet.', 'error');
@@ -639,29 +785,25 @@ export default function ScanAWBPage({ toast }) {
   };
 
   const copyTabularLedger = () => {
-    const verifiedScans = recentScans.filter((scan) => scan.status === 'success');
-    if (!verifiedScans.length) {
+    if (!approvedRows.length) {
       toast?.('No verified scans to copy', 'warning');
       return;
     }
-    const headers = ['S.NO', 'DATE', 'Clients', 'Awb No', 'CONSIGNEE', 'DESTINATION', 'WEIGHT', 'AMOU', 'COURIERS', 'ORDER NO', 'VALUE'];
-    const rows = verifiedScans.map((s, index) => {
-      const dateStr = s.data?.date || new Date().toISOString().slice(0, 10);
-      const parts = dateStr.split('-');
-      const formattedDate = parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateStr;
-      
+    const headers = ['S.NO', 'DATE', 'Clients', 'Awb No', 'CONSIGNEE', 'DESTINATION', 'PINCODE', 'WEIGHT', 'AMOU', 'COURIERS', 'ORDER NO', 'VALUE'];
+    const rows = approvedRows.map((row, index) => {
       return [
         index + 1,
-        formattedDate,
-        s.data?.clientCode || 'MISC',
-        s.awb,
-        s.data?.consignee || '',
-        s.data?.destination || '',
-        Number(s.data?.weight || 0).toFixed(3),
+        row.date,
+        row.clientCode,
+        row.awb,
+        row.consignee,
+        row.destination,
+        row.pincode,
+        row.weight,
         '',
-        (s.data?.courier || s.courier || '').toUpperCase(),
-        '',
-        s.data?.amount ? Number(s.data.amount) : ''
+        row.courier,
+        row.orderNo,
+        row.amount
       ];
     });
     const tsv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
@@ -754,9 +896,67 @@ export default function ScanAWBPage({ toast }) {
             <MetricCard icon={<Database size={14} />} label="Successful" value={successfulCaptures} tone="emerald" />
             <MetricCard icon={<Radar size={14} />} label="Pending Sync" value={pendingSync} tone="amber" />
             <MetricCard icon={<History size={14} />} label="Recent Buffer" value={recentScans.length} tone="blue" />
-            <MetricCard icon={<FileSpreadsheet size={14} />} label="Excel Ready" value={spreadsheetName ? 'Loaded' : 'Idle'} tone="violet" />
+            <MetricCard icon={<FileSpreadsheet size={14} />} label="Excel Ready" value={approvedRows.length || (spreadsheetName ? 'Loaded' : 'Idle')} tone="violet" />
             <MetricCard icon={<Edit size={14} />} label="Review Queue" value={pendingReviewCount} tone="amber" />
           </div>
+        </div>
+
+        <div className="rounded-[32px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Approved Intake Buffer</div>
+              <div className="text-base font-black text-slate-900 dark:text-white mt-1">Mobile-approved rows ready for Excel paste and portal backup</div>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={copyTabularLedger}
+                className="inline-flex items-center gap-2 rounded-2xl bg-blue-500/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-blue-600"
+              >
+                <Clipboard size={12} /> Copy Rows
+              </button>
+              <button
+                type="button"
+                onClick={exportIntakeBatch}
+                className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-600"
+              >
+                <Download size={12} /> Export Excel
+              </button>
+            </div>
+          </div>
+          {approvedRows.length ? (
+            <div className="overflow-auto rounded-3xl border border-slate-100 dark:border-slate-800">
+              <table className="min-w-full text-left text-[11px]">
+                <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 uppercase tracking-widest">
+                  <tr>
+                    {['DATE', 'CLIENT', 'AWB', 'CONSIGNEE', 'DESTINATION', 'PIN', 'WEIGHT', 'VALUE', 'ORDER NO', 'COURIER'].map((header) => (
+                      <th key={header} className="px-4 py-3 font-black">{header}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {approvedRows.slice(0, 12).map((row) => (
+                    <tr key={`${row.awb}-${row.orderNo || 'row'}`} className="border-t border-slate-100 dark:border-slate-800">
+                      <td className="px-4 py-3 font-bold text-slate-600 dark:text-slate-300">{row.date}</td>
+                      <td className="px-4 py-3 font-black text-slate-900 dark:text-white">{row.clientCode}</td>
+                      <td className="px-4 py-3 font-mono font-black text-slate-900 dark:text-white">{row.awb}</td>
+                      <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-200">{row.consignee || '—'}</td>
+                      <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-200">{row.destination || '—'}</td>
+                      <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-200">{row.pincode || '—'}</td>
+                      <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-200">{row.weight}</td>
+                      <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-200">{row.amount || '—'}</td>
+                      <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-200">{row.orderNo || '—'}</td>
+                      <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-200">{row.courier || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 px-4 py-6 text-[11px] font-bold text-slate-400">
+              Approved mobile scans will appear here as clean Excel-ready rows the moment the operator taps approve on the phone.
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 2xl:grid-cols-[1.55fr_0.95fr] gap-8">
@@ -1078,6 +1278,15 @@ export default function ScanAWBPage({ toast }) {
                       />
                     </div>
                     <div>
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block mb-1">Pincode</label>
+                      <input
+                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white tabular-nums focus:ring-2 focus:ring-emerald-500/50"
+                        value={reviewForm.pincode}
+                        onChange={(e) => setReviewForm((p) => ({ ...p, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                        disabled={savingReview}
+                      />
+                    </div>
+                    <div>
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block mb-1">Weight (kg)</label>
                       <input 
                         type="number" step="0.01" min="0"
@@ -1094,6 +1303,15 @@ export default function ScanAWBPage({ toast }) {
                         className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white tabular-nums focus:ring-2 focus:ring-emerald-500/50"
                         value={reviewForm.amount || ''}
                         onChange={(e) => setReviewForm(p => ({ ...p, amount: e.target.value }))}
+                        disabled={savingReview}
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block mb-1">Order No / Reference</label>
+                      <input
+                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500/50"
+                        value={reviewForm.orderNo}
+                        onChange={(e) => setReviewForm((p) => ({ ...p, orderNo: e.target.value.toUpperCase() }))}
                         disabled={savingReview}
                       />
                     </div>

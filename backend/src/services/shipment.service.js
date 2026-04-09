@@ -387,6 +387,47 @@ function autoDetectCourier(awbStr) {
   return 'Delhivery'; // Fallback
 }
 
+function extractPincode(value) {
+  const match = String(value || '').match(/\b\d{6}\b/);
+  return match ? match[0] : '';
+}
+
+function normalizeOrderNo(ocrHints) {
+  return String(ocrHints?.orderNo || ocrHints?.oid || '').trim();
+}
+
+function summarizeOcrHints(ocrHints = null) {
+  if (!ocrHints) return null;
+  return {
+    awb: String(ocrHints.awb || '').trim(),
+    clientName: String(ocrHints.clientName || ocrHints.merchant || ocrHints.senderCompany || '').trim(),
+    consignee: String(ocrHints.consignee || '').trim(),
+    destination: String(ocrHints.destination || '').trim(),
+    pincode: String(ocrHints.pincode || extractPincode(ocrHints.destination) || '').trim(),
+    weight: Number(ocrHints.weight || 0) || 0,
+    amount: Number(ocrHints.amount || 0) || 0,
+    orderNo: normalizeOrderNo(ocrHints),
+    merchant: String(ocrHints.merchant || '').trim(),
+    rawText: String(ocrHints.rawText || '').trim(),
+  };
+}
+
+function buildOcrPatch(ocrHints = null) {
+  const patch = {};
+  const summary = summarizeOcrHints(ocrHints);
+  if (!summary) return patch;
+
+  if (summary.consignee) patch.consignee = summary.consignee.toUpperCase();
+  if (summary.destination) patch.destination = summary.destination.toUpperCase();
+  if (summary.pincode) patch.pincode = summary.pincode;
+  if (summary.weight > 0) patch.weight = summary.weight;
+  if (summary.amount > 0) patch.amount = summary.amount;
+  if (summary.orderNo) {
+    patch.remarks = `ORDER_NO:${summary.orderNo}`;
+  }
+  return patch;
+}
+
 function buildCapturedShipmentPayload(awb, courier, userId, source) {
   return {
     awb,
@@ -408,7 +449,8 @@ function buildCapturedShipmentPayload(awb, courier, userId, source) {
   };
 }
 
-async function createOrReuseCapturedShipment(awb, userId, courier, source = 'scanner') {
+async function createOrReuseCapturedShipment(awb, userId, courier, source = 'scanner', ocrHints = null) {
+  const ocrPatch = buildOcrPatch(ocrHints);
   const existingShipment = await prisma.shipment.findUnique({
     where: { awb },
     include: { client: { select: { company: true } } },
@@ -420,7 +462,8 @@ async function createOrReuseCapturedShipment(awb, userId, courier, source = 'sca
       data: {
         courier,
         updatedById: userId,
-        remarks: existingShipment.remarks || 'SCAN_CAPTURED: Intake awaiting tracking sync',
+        ...ocrPatch,
+        remarks: existingShipment.remarks || ocrPatch.remarks || 'SCAN_CAPTURED: Intake awaiting tracking sync',
       },
       include: { client: { select: { company: true } } },
     });
@@ -435,7 +478,11 @@ async function createOrReuseCapturedShipment(awb, userId, courier, source = 'sca
   }
 
   const createdShipment = await prisma.shipment.create({
-    data: buildCapturedShipmentPayload(awb, courier, userId, source),
+    data: {
+      ...buildCapturedShipmentPayload(awb, courier, userId, source),
+      ...ocrPatch,
+      remarks: ocrPatch.remarks || buildCapturedShipmentPayload(awb, courier, userId, source).remarks,
+    },
     include: { client: { select: { company: true } } },
   });
   emitShipmentCreated(createdShipment);
@@ -502,7 +549,7 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
 
   if (!trackingData) {
     if (captureOnly) {
-      const captured = await createOrReuseCapturedShipment(awb, userId, courier, source);
+      const captured = await createOrReuseCapturedShipment(awb, userId, courier, source, ocrHints);
       const enriched = await attachClientSuggestion(captured.shipment, ocrHints);
       return {
         ...captured,
@@ -513,6 +560,7 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
           trackingUnavailable: true,
           trackingError: trackingError?.message || null,
           clientSuggestion: enriched.clientSuggestion,
+          ocrExtracted: summarizeOcrHints(ocrHints),
         },
       };
     }
@@ -524,11 +572,16 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
   }
 
   const updateData = { updatedById: userId };
+  const ocrPatch = buildOcrPatch(ocrHints);
   
   if (trackingData.recipient) updateData.consignee = trackingData.recipient.toUpperCase();
   if (trackingData.destination) updateData.destination = trackingData.destination.toUpperCase();
   if (trackingData.status && trackingData.status !== 'Booked') updateData.status = normalizeStatus(trackingData.status);
   updateData.courier = courier;
+  if (ocrPatch.pincode) updateData.pincode = ocrPatch.pincode;
+  if (ocrPatch.weight && (!shipment || !shipment.weight || shipment.weight <= 0.5)) updateData.weight = ocrPatch.weight;
+  if (ocrPatch.amount && (!shipment || !shipment.amount)) updateData.amount = ocrPatch.amount;
+  if (ocrPatch.remarks) updateData.remarks = shipment?.remarks ? `${shipment.remarks} | ${ocrPatch.remarks}` : ocrPatch.remarks;
 
   let savedShipment;
   if (!shipment) {
@@ -540,13 +593,14 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
         clientCode: 'MISC',
         consignee: updateData.consignee || 'UNKNOWN',
         destination: updateData.destination || 'UNKNOWN',
+        pincode: updateData.pincode || null,
         weight: 0.5,
-        amount: 0,
+        amount: updateData.amount || 0,
         courier: courier,
         department: 'Operations',
         service: 'Standard',
         status: updateData.status || 'InTransit',
-        remarks: 'AUTO_DISCOVERED: Via Scanner',
+        remarks: updateData.remarks ? `AUTO_DISCOVERED: Via Scanner | ${updateData.remarks}` : 'AUTO_DISCOVERED: Via Scanner',
         createdById: userId,
         updatedById: userId
       },
@@ -579,6 +633,7 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
       source: shipment ? 'tracked_existing' : 'tracked_discovered',
       trackingUnavailable: false,
       clientSuggestion: enriched.clientSuggestion,
+      ocrExtracted: summarizeOcrHints(ocrHints),
     },
   };
 }

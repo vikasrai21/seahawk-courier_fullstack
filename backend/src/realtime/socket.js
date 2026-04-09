@@ -173,22 +173,43 @@ async function initSocket(server) {
     });
 
     // Desktop processes scan result and sends feedback to phone
-    socket.on('scanner:scan-processed', ({ pin, awb, status, clientCode, clientName, consignee, destination, weight, reviewRequired, error }) => {
+    socket.on('scanner:scan-processed', ({ pin, awb, shipmentId, status, clientCode, clientName, consignee, destination, pincode, weight, amount, orderNo, reviewRequired, error }) => {
       const session = scanSessions.get(pin);
       if (!session || session.desktopSocketId !== socket.id) return;
       if (session.phoneSocketId) {
         io.to(session.phoneSocketId).emit('scanner:scan-feedback', {
           awb,
+          shipmentId,
           status,
           clientCode,
           clientName,
           consignee,
           destination,
+          pincode,
           weight,
+          amount,
+          orderNo,
           reviewRequired,
           error,
         });
       }
+    });
+
+    socket.on('scanner:approval-result', ({ pin, shipmentId, awb, success, message }) => {
+      const session = scanSessions.get(pin);
+      if (!session || session.desktopSocketId !== socket.id || !session.phoneSocketId) return;
+      io.to(session.phoneSocketId).emit('scanner:approval-result', {
+        shipmentId,
+        awb,
+        success: !!success,
+        message: message || '',
+      });
+    });
+
+    socket.on('scanner:intake-preview', ({ pin, intakeRow }) => {
+      const session = scanSessions.get(pin);
+      if (!session || session.desktopSocketId !== socket.id || !session.phoneSocketId) return;
+      io.to(session.phoneSocketId).emit('scanner:intake-preview', { intakeRow });
     });
 
     // Cleanup on desktop disconnect
@@ -263,6 +284,26 @@ function handleMobileScannerConnection(socket) {
       scanNumber: currentSession.scanCount,
       timestamp: new Date().toISOString(),
     });
+  });
+
+  socket.on('scanner:approval-submit', ({ shipmentId, awb, fields }, callback) => {
+    const currentSession = scanSessions.get(pin);
+    if (!currentSession || currentSession.phoneSocketId !== socket.id) {
+      if (typeof callback === 'function') callback({ success: false, message: 'Scanner session is no longer active.' });
+      return;
+    }
+
+    io.to(currentSession.desktopSocketId).emit('scanner:approval-submitted', {
+      pin,
+      shipmentId,
+      awb: String(awb || '').trim(),
+      fields: fields || {},
+      timestamp: new Date().toISOString(),
+    });
+
+    if (typeof callback === 'function') {
+      callback({ success: true, message: 'Approval sent to desktop.' });
+    }
   });
 
   // Phone sends a heartbeat

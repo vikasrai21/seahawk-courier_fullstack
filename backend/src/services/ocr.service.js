@@ -29,16 +29,19 @@ exports.extractShipmentFromImage = async (base64Data, mimeType) => {
           success: { type: SchemaType.BOOLEAN, description: "Whether an AWB or details were successfully found" },
           awb: { type: SchemaType.STRING, description: "The tracking number / AWB / Docket number" },
           courier: { type: SchemaType.STRING, description: "Detected courier name (e.g. Trackon, DTDC, Delhivery)", nullable: true },
+          clientName: { type: SchemaType.STRING, description: "Detected sender, merchant, or client account name that owns the shipment label", nullable: true },
           consignee: { type: SchemaType.STRING, description: "The recipient's full name", nullable: true },
           destination: { type: SchemaType.STRING, description: "The destination city or full address", nullable: true },
+          pincode: { type: SchemaType.STRING, description: "The 6-digit Indian destination pincode if present", nullable: true },
           senderName: { type: SchemaType.STRING, description: "Consignor/sender person name if present", nullable: true },
           senderCompany: { type: SchemaType.STRING, description: "Consignor/sender company name if present", nullable: true },
           senderAddress: { type: SchemaType.STRING, description: "Consignor/sender full address if present", nullable: true },
           returnAddress: { type: SchemaType.STRING, description: "Return address text if present", nullable: true },
           merchant: { type: SchemaType.STRING, description: "Merchant/Brand/OID owner name if present", nullable: true },
           oid: { type: SchemaType.STRING, description: "Order ID / OID / reference text if present", nullable: true },
+          orderNo: { type: SchemaType.STRING, description: "Order number / order reference / invoice reference if visible on the label", nullable: true },
           weight: { type: SchemaType.NUMBER, description: "The numerical weight in kg. E.g. if '2.5kg' is seen, write 2.5", nullable: true },
-          amount: { type: SchemaType.NUMBER, description: "The amount charged if written as total value, otherwise 0", nullable: true },
+          amount: { type: SchemaType.NUMBER, description: "The declared value or COD amount if written on the label, otherwise 0", nullable: true },
           rawText: { type: SchemaType.STRING, description: "A brief summary of raw text read to aid debugging" }
         },
         required: ["success", "awb"]
@@ -59,7 +62,9 @@ CRITICAL EXTRACTION RULES for Consignee and Destination:
    - Here are some common destination cities you should be ready to recognize: NEW DELHI, MUMBAI, LUCKNOW, JAIPUR, DEHRADUN, BANGALORE, LUDHIANA, JALANDHAR, CHENNAI, COIMBATORE, VARANASI, PANCHKULA, NOIDA, KOLKOTTA, PUNE, KANPUR.
 
 OTHER FIELDS:
-Extract the AWB Number (usually labeled Tracking, Docket, or AWB), sender/consignor details, return address, merchant/brand or OID/reference, and any weight values.
+Extract the AWB Number (usually labeled Tracking, Docket, or AWB), sender/consignor details, return address, merchant/brand or OID/reference, destination pincode, declared value, and any weight values.
+If you can identify the client/merchant/account owner from sender text, merchant text, or branding, put it in clientName.
+If order reference text appears as OID / Order ID / Ref / Invoice / Order No, map the best value into orderNo.
 If you recognize the carrier's logo (like Trackon, DTDC, Delhivery, BlueDart), specify the courier name.
 Respond using the required JSON schema mapping. If you cannot find any tracking number or slip info, set success to false.`;
 

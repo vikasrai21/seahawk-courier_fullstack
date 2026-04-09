@@ -4,7 +4,7 @@ import { BrowserMultiFormatReader } from '@zxing/browser';
 import { useParams } from 'react-router-dom';
 import {
   ScanLine, CheckCircle2, AlertCircle, Wifi, WifiOff,
-  Smartphone, Zap, X, Camera, Aperture,
+  Smartphone, Zap, X, Camera, Aperture, Save,
 } from 'lucide-react';
 
 function resolveSocketUrl() {
@@ -46,6 +46,9 @@ export default function MobileScannerPage() {
   const [flashFeedback, setFlashFeedback] = useState(null); // 'success' | 'error'
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
+  const [approvalDraft, setApprovalDraft] = useState(null);
+  const [approvalBusy, setApprovalBusy] = useState(false);
+  const [approvalMessage, setApprovalMessage] = useState('');
 
   const socketRef = useRef(null);
   const videoRef = useRef(null);
@@ -92,6 +95,19 @@ export default function MobileScannerPage() {
     video.addEventListener('canplay', onReady, { once: true });
   });
 
+  const normalizeApprovalDraft = (feedback = {}) => ({
+    shipmentId: feedback.shipmentId || null,
+    awb: String(feedback.awb || '').trim(),
+    clientCode: String(feedback.clientCode || '').trim().toUpperCase(),
+    clientName: String(feedback.clientName || '').trim(),
+    consignee: String(feedback.consignee || '').trim().toUpperCase(),
+    destination: String(feedback.destination || '').trim().toUpperCase(),
+    pincode: String(feedback.pincode || '').replace(/\D/g, '').slice(0, 6),
+    weight: feedback.weight || 0,
+    amount: feedback.amount || 0,
+    orderNo: String(feedback.orderNo || '').trim().toUpperCase(),
+  });
+
   // ── Connect to desktop via PIN ──────────────────────────────────────────
   const connectToDesktop = useCallback((connectPin) => {
     const trimmedPin = String(connectPin || '').trim();
@@ -129,6 +145,10 @@ export default function MobileScannerPage() {
 
     socket.on('scanner:scan-feedback', (feedback) => {
       setLastFeedback(feedback);
+      if (feedback.status === 'pending_review') {
+        setApprovalDraft(normalizeApprovalDraft(feedback));
+        setApprovalMessage('Review the extracted fields, adjust anything wrong, then approve.');
+      }
       if (feedback.status === 'success') {
         setFlashFeedback('success');
         vibrate([30]);
@@ -137,6 +157,18 @@ export default function MobileScannerPage() {
         setFlashFeedback('error');
         vibrate([100, 50, 100]);
         playBeep(200, 0.2);
+      }
+      setTimeout(() => setFlashFeedback(null), 600);
+    });
+
+    socket.on('scanner:approval-result', ({ success, message }) => {
+      setApprovalBusy(false);
+      setApprovalMessage(message || '');
+      if (success) {
+        setApprovalDraft(null);
+        setFlashFeedback('success');
+      } else {
+        setFlashFeedback('error');
       }
       setTimeout(() => setFlashFeedback(null), 600);
     });
@@ -180,6 +212,30 @@ export default function MobileScannerPage() {
       stopCamera();
     };
   }, []);
+
+  const submitApproval = () => {
+    if (!approvalDraft || !socketRef.current) return;
+    setApprovalBusy(true);
+    setApprovalMessage('Sending approved intake to desktop...');
+    socketRef.current.emit('scanner:approval-submit', {
+      shipmentId: approvalDraft.shipmentId,
+      awb: approvalDraft.awb,
+      fields: {
+        clientCode: approvalDraft.clientCode,
+        consignee: approvalDraft.consignee,
+        destination: approvalDraft.destination,
+        pincode: approvalDraft.pincode,
+        weight: approvalDraft.weight,
+        amount: approvalDraft.amount,
+        orderNo: approvalDraft.orderNo,
+      },
+    }, (response) => {
+      if (!response?.success) {
+        setApprovalBusy(false);
+        setApprovalMessage(response?.message || 'Desktop did not accept the approval.');
+      }
+    });
+  };
 
   // ── Camera scanner ──────────────────────────────────────────────────────
   const stopCamera = async () => {
@@ -420,6 +476,66 @@ export default function MobileScannerPage() {
         )}
       </div>
 
+      {approvalDraft && (
+        <div className="msc-approval-sheet">
+          <div className="msc-sheet-handle" />
+          <div className="msc-sheet-head">
+            <div>
+              <div className="msc-sheet-kicker">Final Approval</div>
+              <div className="msc-sheet-title">Review this shipment before it reaches desktop and portal</div>
+            </div>
+            <button className="msc-sheet-close" type="button" onClick={() => setApprovalDraft(null)} disabled={approvalBusy}>
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="msc-sheet-awb">{approvalDraft.awb}</div>
+          {approvalMessage ? <div className="msc-sheet-message">{approvalMessage}</div> : null}
+
+          <div className="msc-sheet-grid">
+            <label>
+              <span>Client code</span>
+              <input value={approvalDraft.clientCode} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, clientCode: e.target.value.toUpperCase() }))} />
+            </label>
+            <label>
+              <span>Client name</span>
+              <input value={approvalDraft.clientName} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, clientName: e.target.value }))} />
+            </label>
+            <label>
+              <span>Consignee</span>
+              <input value={approvalDraft.consignee} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, consignee: e.target.value.toUpperCase() }))} />
+            </label>
+            <label>
+              <span>Destination</span>
+              <input value={approvalDraft.destination} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, destination: e.target.value.toUpperCase() }))} />
+            </label>
+            <label>
+              <span>Pincode</span>
+              <input value={approvalDraft.pincode} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))} />
+            </label>
+            <label>
+              <span>Weight</span>
+              <input type="number" step="0.01" value={approvalDraft.weight} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, weight: e.target.value }))} />
+            </label>
+            <label>
+              <span>Value</span>
+              <input type="number" step="0.01" value={approvalDraft.amount} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, amount: e.target.value }))} />
+            </label>
+            <label>
+              <span>Order no</span>
+              <input value={approvalDraft.orderNo} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, orderNo: e.target.value.toUpperCase() }))} />
+            </label>
+          </div>
+
+          <div className="msc-sheet-actions">
+            <button type="button" className="msc-sheet-secondary" onClick={() => setApprovalDraft(null)} disabled={approvalBusy}>Keep scanning</button>
+            <button type="button" className="msc-sheet-primary" onClick={submitApproval} disabled={approvalBusy}>
+              {approvalBusy ? <><Aperture size={16} /> Saving...</> : <><Save size={16} /> Approve & Send</>}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Last scan feedback */}
       {lastAwb && (
         <div className="msc-last-scan">
@@ -643,6 +759,130 @@ export default function MobileScannerPage() {
           overflow: hidden;
           min-height: 0;
           isolation: isolate;
+        }
+        .msc-approval-sheet {
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: calc(4.9rem + env(safe-area-inset-bottom));
+          z-index: 40;
+          margin: 0 0.85rem;
+          padding: 0.9rem 0.9rem 1rem;
+          border-radius: 26px 26px 22px 22px;
+          background: rgba(15,23,42,0.96);
+          border: 1px solid rgba(148,163,184,0.18);
+          box-shadow: 0 18px 48px rgba(2,6,23,0.46);
+          backdrop-filter: blur(20px);
+        }
+        .msc-sheet-handle {
+          width: 54px;
+          height: 5px;
+          border-radius: 999px;
+          background: rgba(148,163,184,0.34);
+          margin: 0 auto 0.75rem;
+        }
+        .msc-sheet-head {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 0.75rem;
+          margin-bottom: 0.75rem;
+        }
+        .msc-sheet-kicker {
+          color: #38bdf8;
+          font-size: 0.62rem;
+          font-weight: 900;
+          text-transform: uppercase;
+          letter-spacing: 0.22em;
+        }
+        .msc-sheet-title {
+          margin-top: 0.35rem;
+          color: #f8fafc;
+          font-size: 0.92rem;
+          font-weight: 800;
+          line-height: 1.35;
+        }
+        .msc-sheet-close {
+          width: 2rem;
+          height: 2rem;
+          border-radius: 999px;
+          border: none;
+          background: rgba(148,163,184,0.14);
+          color: #e2e8f0;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .msc-sheet-awb {
+          color: #f8fafc;
+          font-size: 1rem;
+          font-weight: 900;
+          font-family: 'SF Mono', 'Fira Code', monospace;
+          margin-bottom: 0.55rem;
+        }
+        .msc-sheet-message {
+          margin-bottom: 0.75rem;
+          color: #94a3b8;
+          font-size: 0.7rem;
+          font-weight: 700;
+          line-height: 1.45;
+        }
+        .msc-sheet-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 0.65rem;
+        }
+        .msc-sheet-grid label {
+          display: flex;
+          flex-direction: column;
+          gap: 0.35rem;
+        }
+        .msc-sheet-grid label span {
+          color: #94a3b8;
+          font-size: 0.58rem;
+          font-weight: 900;
+          text-transform: uppercase;
+          letter-spacing: 0.16em;
+        }
+        .msc-sheet-grid label input {
+          width: 100%;
+          border-radius: 14px;
+          border: 1px solid rgba(148,163,184,0.14);
+          background: rgba(2,6,23,0.6);
+          color: #f8fafc;
+          padding: 0.72rem 0.8rem;
+          font-size: 0.78rem;
+          font-weight: 700;
+          outline: none;
+        }
+        .msc-sheet-actions {
+          display: flex;
+          gap: 0.7rem;
+          margin-top: 0.9rem;
+        }
+        .msc-sheet-secondary,
+        .msc-sheet-primary {
+          flex: 1;
+          min-height: 3rem;
+          border-radius: 16px;
+          border: none;
+          font-size: 0.78rem;
+          font-weight: 900;
+          text-transform: uppercase;
+          letter-spacing: 0.14em;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+        }
+        .msc-sheet-secondary {
+          background: rgba(148,163,184,0.12);
+          color: #cbd5e1;
+        }
+        .msc-sheet-primary {
+          background: linear-gradient(135deg, #16a34a, #22c55e);
+          color: #fff;
+          box-shadow: 0 14px 30px rgba(34,197,94,0.22);
         }
         .msc-video {
           width: 100%; height: 100%;
@@ -882,6 +1122,14 @@ export default function MobileScannerPage() {
           }
           .msc-feedback-details strong {
             text-align: left;
+          }
+          .msc-approval-sheet {
+            margin: 0 0.55rem;
+            bottom: calc(4.7rem + env(safe-area-inset-bottom));
+            padding: 0.85rem 0.8rem 0.95rem;
+          }
+          .msc-sheet-grid {
+            grid-template-columns: 1fr;
           }
         }
       `}</style>
