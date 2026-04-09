@@ -49,6 +49,10 @@ export default function MobileScannerPage() {
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraStarting, setCameraStarting] = useState(false);
   const [cameraError, setCameraError] = useState('');
+  const [pendingBarcode, setPendingBarcode] = useState('');
+  const [awaitingLabelCapture, setAwaitingLabelCapture] = useState(false);
+  const [labelCaptureBusy, setLabelCaptureBusy] = useState(false);
+  const [labelCaptureHint, setLabelCaptureHint] = useState('');
   const [approvalDraft, setApprovalDraft] = useState(null);
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [approvalMessage, setApprovalMessage] = useState('');
@@ -58,6 +62,7 @@ export default function MobileScannerPage() {
   const scannerRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const scanBusyRef = useRef(false);
+  const scannerPausedRef = useRef(false);
   const lastDecodedRef = useRef('');
   const scanLockUntilRef = useRef(0);
   const lastDecodeErrorAtRef = useRef(0);
@@ -271,25 +276,51 @@ export default function MobileScannerPage() {
       videoRef.current.pause?.();
     }
     scanBusyRef.current = false;
+    scannerPausedRef.current = false;
     lastDecodedRef.current = '';
     scanLockUntilRef.current = 0;
     setCameraActive(false);
     setCameraReady(false);
     setCameraStarting(false);
+    setPendingBarcode('');
+    setAwaitingLabelCapture(false);
+    setLabelCaptureBusy(false);
+    setLabelCaptureHint('');
   };
 
-  const captureFrame = () => {
+  const captureFrame = ({ quality = 0.82, maxWidth = 1920 } = {}) => {
     const video = videoRef.current;
     if (!video || !video.videoWidth) return null;
     try {
       const canvas = document.createElement('canvas');
-      canvas.width = Math.min(800, video.videoWidth);
+      canvas.width = Math.min(maxWidth, video.videoWidth);
       canvas.height = Math.round((canvas.width / video.videoWidth) * video.videoHeight);
       const ctx = canvas.getContext('2d');
       if (!ctx) return null;
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      return canvas.toDataURL('image/jpeg', 0.5).split(',')[1] || null;
+      return canvas.toDataURL('image/jpeg', quality).split(',')[1] || null;
     } catch { return null; }
+  };
+
+  const submitLockedBarcode = async (withPhoto = true) => {
+    if (!pendingBarcode || !socketRef.current) return;
+    setLabelCaptureBusy(true);
+    setLabelCaptureHint(withPhoto ? 'Capturing label for OCR...' : 'Sending barcode only...');
+
+    try {
+      const imageBase64 = withPhoto ? captureFrame({ quality: 0.86, maxWidth: 1920 }) : null;
+      socketRef.current.emit('scanner:scan', { awb: pendingBarcode, imageBase64 });
+      setScanCount((c) => c + 1);
+      setLastAwb(pendingBarcode);
+      setAwaitingLabelCapture(false);
+      setPendingBarcode('');
+      scannerPausedRef.current = false;
+      scanLockUntilRef.current = Date.now() + 700;
+      setLabelCaptureHint('Sent to desktop. Keep scanning.');
+      setTimeout(() => setLabelCaptureHint(''), 1400);
+    } finally {
+      setLabelCaptureBusy(false);
+    }
   };
 
   const startCamera = async () => {
@@ -346,6 +377,7 @@ export default function MobileScannerPage() {
       setCameraStarting(false);
 
       await scanner.decodeFromVideoElement(video, async (result, error) => {
+        if (scannerPausedRef.current) return;
         if (!result) {
           if (error && !(error instanceof NotFoundException)) {
             const now = Date.now();
@@ -366,17 +398,16 @@ export default function MobileScannerPage() {
         scanBusyRef.current = true;
         scanLockUntilRef.current = now + 2000;
         lastDecodedRef.current = awb;
+        scannerPausedRef.current = true;
 
         setFlashFeedback('success');
         vibrate([50]);
         playBeep(880, 0.06);
         setTimeout(() => setFlashFeedback(null), 400);
-
-        setScanCount((c) => c + 1);
         setLastAwb(awb);
-
-        const imageBase64 = captureFrame();
-        socketRef.current?.emit('scanner:scan', { awb, imageBase64 });
+        setPendingBarcode(awb);
+        setAwaitingLabelCapture(true);
+        setLabelCaptureHint('Barcode locked. Now capture the full AWB label photo.');
 
         scanBusyRef.current = false;
       });
@@ -530,7 +561,11 @@ export default function MobileScannerPage() {
                 <div className="msc-corner msc-br" />
                 <div className="msc-scan-line" />
               </div>
-              <div className="msc-overlay-tip">Fill this box with the barcode first. Desktop review will then confirm client, consignee, destination, and weight.</div>
+              <div className="msc-overlay-tip">
+                {awaitingLabelCapture
+                  ? 'Barcode locked. Hold full AWB in view and tap Capture Label.'
+                  : 'Point to barcode first. After lock, capture full AWB for client, consignee, destination, pincode, weight, and value.'}
+              </div>
             </div>
           </>
         ) : (
@@ -599,6 +634,25 @@ export default function MobileScannerPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {cameraActive && awaitingLabelCapture && (
+        <div className="msc-capture-panel">
+          <div className="msc-capture-title">Barcode: {pendingBarcode || 'LOCKED'}</div>
+          <div className="msc-capture-sub">Take one clear full-label photo so OCR can extract all fields.</div>
+          <div className="msc-capture-actions">
+            <button type="button" className="msc-capture-primary" onClick={() => submitLockedBarcode(true)} disabled={labelCaptureBusy}>
+              {labelCaptureBusy ? <><Aperture size={16} /> Capturing...</> : <><Camera size={16} /> Capture Label</>}
+            </button>
+            <button type="button" className="msc-capture-secondary" onClick={() => submitLockedBarcode(false)} disabled={labelCaptureBusy}>
+              Send Barcode Only
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!awaitingLabelCapture && !!labelCaptureHint && (
+        <div className="msc-capture-toast">{labelCaptureHint}</div>
       )}
 
       {/* Last scan feedback */}
@@ -828,6 +882,80 @@ export default function MobileScannerPage() {
           min-height: 0;
           isolation: isolate;
         }
+        .msc-capture-panel {
+          position: absolute;
+          left: 0.75rem;
+          right: 0.75rem;
+          bottom: calc(0.65rem + env(safe-area-inset-bottom));
+          z-index: 35;
+          border-radius: 18px;
+          border: 1px solid rgba(52,211,153,0.4);
+          background: rgba(2,6,23,0.9);
+          backdrop-filter: blur(10px);
+          padding: 0.8rem;
+          box-shadow: 0 10px 30px rgba(2,6,23,0.45);
+        }
+        .msc-capture-title {
+          color: #bbf7d0;
+          font-size: 0.78rem;
+          font-weight: 900;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          font-family: 'SF Mono', 'Fira Code', monospace;
+        }
+        .msc-capture-sub {
+          margin-top: 0.35rem;
+          color: #cbd5e1;
+          font-size: 0.68rem;
+          font-weight: 700;
+          line-height: 1.4;
+        }
+        .msc-capture-actions {
+          display: flex;
+          gap: 0.6rem;
+          margin-top: 0.7rem;
+        }
+        .msc-capture-primary,
+        .msc-capture-secondary {
+          flex: 1;
+          min-height: 2.6rem;
+          border-radius: 14px;
+          border: none;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.45rem;
+          font-size: 0.7rem;
+          font-weight: 900;
+          text-transform: uppercase;
+          letter-spacing: 0.12em;
+        }
+        .msc-capture-primary {
+          color: #fff;
+          background: linear-gradient(135deg, #16a34a, #22c55e);
+          box-shadow: 0 12px 24px rgba(34,197,94,0.22);
+        }
+        .msc-capture-secondary {
+          color: #cbd5e1;
+          background: rgba(148,163,184,0.16);
+        }
+        .msc-capture-toast {
+          position: absolute;
+          bottom: calc(6rem + env(safe-area-inset-bottom));
+          left: 1rem;
+          right: 1rem;
+          z-index: 45;
+          padding: 0.62rem 0.85rem;
+          border-radius: 12px;
+          border: 1px solid rgba(56,189,248,0.32);
+          background: rgba(15,23,42,0.9);
+          color: #bae6fd;
+          font-size: 0.68rem;
+          font-weight: 800;
+          text-align: center;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+        }
         .msc-approval-sheet {
           position: absolute;
           left: 0;
@@ -1016,7 +1144,6 @@ export default function MobileScannerPage() {
           width: min(88vw, 420px);
           aspect-ratio: 2.2 / 1;
           position: relative;
-          box-shadow: 0 0 0 9999px rgba(2,6,23,0.18);
           border-radius: 20px;
           margin: auto 0;
           background: transparent;
@@ -1180,6 +1307,9 @@ export default function MobileScannerPage() {
           background: linear-gradient(135deg, #ef4444, #dc2626);
           box-shadow: 0 4px 20px rgba(239,68,68,0.3);
         }
+        .msc-capture-panel + .msc-controls {
+          padding-top: 0.5rem;
+        }
         @media (max-width: 480px) {
           .msc-status-left, .msc-status-right {
             font-size: 0.58rem;
@@ -1205,6 +1335,15 @@ export default function MobileScannerPage() {
             margin: 0 0.55rem;
             bottom: calc(4.7rem + env(safe-area-inset-bottom));
             padding: 0.85rem 0.8rem 0.95rem;
+          }
+          .msc-capture-panel {
+            left: 0.55rem;
+            right: 0.55rem;
+            bottom: calc(0.45rem + env(safe-area-inset-bottom));
+            padding: 0.72rem;
+          }
+          .msc-capture-actions {
+            flex-direction: column;
           }
           .msc-sheet-grid {
             grid-template-columns: 1fr;

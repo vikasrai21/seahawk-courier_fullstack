@@ -336,6 +336,10 @@ export default function ScanAWBPage({ toast }) {
       toast?.('WebSocket not connected. Please refresh.', 'error');
       return;
     }
+    if (mobilePIN && mobileStatus !== 'idle') {
+      setShowMobileModal(true);
+      return;
+    }
     socket.emit('scanner:create-session', (response) => {
       if (response?.success) {
         const pin = response.pin;
@@ -355,7 +359,11 @@ export default function ScanAWBPage({ toast }) {
         toast?.('Could not create scan session', 'error');
       }
     });
-  }, [socket, socketConnected, toast]);
+  }, [socket, socketConnected, toast, mobilePIN, mobileStatus]);
+
+  const hideMobileModal = useCallback(() => {
+    setShowMobileModal(false);
+  }, []);
 
   const endMobileSession = useCallback(() => {
     socket?.emit('scanner:end-session');
@@ -1547,7 +1555,7 @@ export default function ScanAWBPage({ toast }) {
 
         {/* ── Mobile Bridge QR Modal ──────────────────────────────────── */}
         {showMobileModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={(e) => { if (e.target === e.currentTarget) endMobileSession(); }}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-300" onClick={(e) => { if (e.target === e.currentTarget) hideMobileModal(); }}>
             <div className="bg-white dark:bg-slate-900 rounded-[40px] p-8 max-w-md w-full mx-4 shadow-2xl border border-slate-200 dark:border-slate-800 relative overflow-hidden">
               {/* Glow */}
               <div className="absolute -top-20 -right-20 w-60 h-60 rounded-full bg-blue-500/10 blur-[60px] pointer-events-none" />
@@ -1567,7 +1575,7 @@ export default function ScanAWBPage({ toast }) {
                       </p>
                     </div>
                   </div>
-                  <button onClick={endMobileSession} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 transition">
+                  <button onClick={hideMobileModal} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 transition">
                     <X size={18} />
                   </button>
                 </div>
@@ -1635,6 +1643,25 @@ export default function ScanAWBPage({ toast }) {
                     </div>
                     <button onClick={startMobileSession} className="px-6 py-3 rounded-2xl bg-blue-500 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-blue-500/20">
                       Generate New Code
+                    </button>
+                  </div>
+                )}
+
+                {mobileStatus !== 'idle' && (
+                  <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={hideMobileModal}
+                      className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 text-[11px] font-black uppercase tracking-widest hover:text-slate-700 transition"
+                    >
+                      Hide panel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={endMobileSession}
+                      className="px-4 py-2 rounded-xl bg-red-500 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-red-500/20"
+                    >
+                      Stop session
                     </button>
                   </div>
                 )}
