@@ -7,6 +7,7 @@ cmds = [
 [phases.build]
 cmds = [
   "cd ../frontend && npm run build",
+  "rm -rf public && mkdir -p public && cp -R ../frontend/dist/. public/",
   "npx prisma generate"
 ]
 
