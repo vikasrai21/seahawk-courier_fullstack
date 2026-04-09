@@ -46,6 +46,8 @@ export default function MobileScannerPage() {
   const [flashFeedback, setFlashFeedback] = useState(null); // 'success' | 'error'
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
+  const [cameraStarting, setCameraStarting] = useState(false);
+  const [cameraError, setCameraError] = useState('');
   const [approvalDraft, setApprovalDraft] = useState(null);
   const [approvalBusy, setApprovalBusy] = useState(false);
   const [approvalMessage, setApprovalMessage] = useState('');
@@ -254,6 +256,7 @@ export default function MobileScannerPage() {
     scanLockUntilRef.current = 0;
     setCameraActive(false);
     setCameraReady(false);
+    setCameraStarting(false);
   };
 
   const captureFrame = () => {
@@ -273,9 +276,14 @@ export default function MobileScannerPage() {
   const startCamera = async () => {
     if (!socketRef.current || status !== 'paired') return;
     try {
+      setCameraError('');
+      setCameraStarting(true);
       await stopCamera();
       const video = videoRef.current;
       if (!video) throw new Error('Camera surface unavailable');
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('This browser is not allowing camera access.');
+      }
 
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
@@ -299,6 +307,7 @@ export default function MobileScannerPage() {
       await video.play();
       await waitForVideoReady(video);
       setCameraReady(true);
+      setCameraStarting(false);
 
       await scanner.decodeFromVideoElement(video, async (result) => {
         if (!result) return;
@@ -326,7 +335,10 @@ export default function MobileScannerPage() {
         scanBusyRef.current = false;
       });
     } catch (err) {
-      setErrorMsg(err.message || 'Camera failed');
+      const message = err?.message || 'Camera failed';
+      setCameraError(message);
+      setErrorMsg(message);
+      setCameraStarting(false);
       await stopCamera();
     }
   };
@@ -569,9 +581,9 @@ export default function MobileScannerPage() {
       )}
 
       {/* Error banner */}
-      {errorMsg && status === 'error' && (
+      {(cameraError || (errorMsg && status === 'error')) && (
         <div className="msc-error msc-error-banner">
-          <AlertCircle size={14} /> {errorMsg}
+          <AlertCircle size={14} /> {cameraError || errorMsg}
         </div>
       )}
 
@@ -579,10 +591,13 @@ export default function MobileScannerPage() {
       <div className="msc-controls">
         <button
           className={`msc-cam-btn ${cameraActive ? 'msc-cam-active' : ''}`}
+          disabled={cameraStarting}
           onClick={cameraActive ? stopCamera : startCamera}
         >
           {cameraActive ? (
             <><X size={22} /> Stop Camera</>
+          ) : cameraStarting ? (
+            <><Aperture size={22} /> Starting Camera...</>
           ) : (
             <><ScanLine size={22} /> Start Scanning</>
           )}
@@ -1096,6 +1111,9 @@ export default function MobileScannerPage() {
           cursor: pointer;
           transition: transform 0.1s;
           box-shadow: 0 4px 20px rgba(34,197,94,0.3);
+        }
+        .msc-cam-btn:disabled {
+          opacity: 0.7;
         }
         .msc-cam-btn:active { transform: scale(0.97); }
         .msc-cam-active {
