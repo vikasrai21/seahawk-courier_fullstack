@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { BrowserMultiFormatReader } from '@zxing/browser';
+import { BarcodeFormat, DecodeHintType, NotFoundException } from '@zxing/library';
 import { useParams } from 'react-router-dom';
 import {
   ScanLine, CheckCircle2, AlertCircle, Wifi, WifiOff,
@@ -59,6 +60,7 @@ export default function MobileScannerPage() {
   const scanBusyRef = useRef(false);
   const lastDecodedRef = useRef('');
   const scanLockUntilRef = useRef(0);
+  const lastDecodeErrorAtRef = useRef(0);
 
   const waitForVideoReady = async (video) => new Promise((resolve, reject) => {
     if (!video) {
@@ -312,7 +314,25 @@ export default function MobileScannerPage() {
       });
 
       mediaStreamRef.current = stream;
-      const scanner = new BrowserMultiFormatReader();
+      const hints = new Map();
+      hints.set(DecodeHintType.TRY_HARDER, true);
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+        BarcodeFormat.CODE_128,
+        BarcodeFormat.CODE_39,
+        BarcodeFormat.CODE_93,
+        BarcodeFormat.CODABAR,
+        BarcodeFormat.ITF,
+        BarcodeFormat.EAN_13,
+        BarcodeFormat.EAN_8,
+        BarcodeFormat.UPC_A,
+        BarcodeFormat.UPC_E,
+        BarcodeFormat.QR_CODE,
+      ]);
+
+      const scanner = new BrowserMultiFormatReader(hints, {
+        delayBetweenScanAttempts: 60,
+        delayBetweenScanSuccess: 350,
+      });
       scannerRef.current = scanner;
       setCameraReady(false);
       video.srcObject = stream;
@@ -325,8 +345,18 @@ export default function MobileScannerPage() {
       setCameraReady(true);
       setCameraStarting(false);
 
-      await scanner.decodeFromVideoElement(video, async (result) => {
-        if (!result) return;
+      await scanner.decodeFromVideoElement(video, async (result, error) => {
+        if (!result) {
+          if (error && !(error instanceof NotFoundException)) {
+            const now = Date.now();
+            if (now - lastDecodeErrorAtRef.current > 1500) {
+              setCameraError('Scanner is active but cannot decode yet. Try moving closer and hold steady.');
+              lastDecodeErrorAtRef.current = now;
+            }
+          }
+          return;
+        }
+        setCameraError('');
         const awb = String(result.getText() || '').trim();
         const now = Date.now();
         if (!awb) return;
