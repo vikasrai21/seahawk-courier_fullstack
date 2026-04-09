@@ -97,6 +97,23 @@ export default function MobileScannerPage() {
     video.addEventListener('canplay', onReady, { once: true });
   });
 
+  const waitForVideoElement = async () => new Promise((resolve, reject) => {
+    const startedAt = Date.now();
+    const tick = () => {
+      const video = videoRef.current;
+      if (video) {
+        resolve(video);
+        return;
+      }
+      if (Date.now() - startedAt > 2500) {
+        reject(new Error('Camera surface unavailable'));
+        return;
+      }
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
+
   const normalizeApprovalDraft = (feedback = {}) => ({
     shipmentId: feedback.shipmentId || null,
     awb: String(feedback.awb || '').trim(),
@@ -279,8 +296,8 @@ export default function MobileScannerPage() {
       setCameraError('');
       setCameraStarting(true);
       await stopCamera();
-      const video = videoRef.current;
-      if (!video) throw new Error('Camera surface unavailable');
+      setCameraActive(true);
+      const video = await waitForVideoElement();
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error('This browser is not allowing camera access.');
       }
@@ -297,7 +314,6 @@ export default function MobileScannerPage() {
       mediaStreamRef.current = stream;
       const scanner = new BrowserMultiFormatReader();
       scannerRef.current = scanner;
-      setCameraActive(true);
       setCameraReady(false);
       video.srcObject = stream;
       video.muted = true;
@@ -456,9 +472,16 @@ export default function MobileScannerPage() {
 
       {/* Camera viewport */}
       <div className="msc-camera-wrap">
+        <video
+          ref={videoRef}
+          className={`msc-video ${cameraActive ? 'msc-video-active' : 'msc-video-idle'}`}
+          muted
+          playsInline
+          autoPlay
+          disablePictureInPicture
+        />
         {cameraActive ? (
           <>
-            <video ref={videoRef} className="msc-video" muted playsInline autoPlay disablePictureInPicture />
             <div className="msc-scan-overlay">
               <div className="msc-overlay-head">
                 <div className="msc-overlay-chip">
@@ -907,6 +930,13 @@ export default function MobileScannerPage() {
           position: absolute;
           inset: 0;
           z-index: 0;
+        }
+        .msc-video-idle {
+          opacity: 0;
+          pointer-events: none;
+        }
+        .msc-video-active {
+          opacity: 1;
         }
         .msc-camera-placeholder {
           display: flex; flex-direction: column;
