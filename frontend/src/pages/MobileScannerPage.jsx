@@ -50,9 +50,47 @@ export default function MobileScannerPage() {
   const socketRef = useRef(null);
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
+  const mediaStreamRef = useRef(null);
   const scanBusyRef = useRef(false);
   const lastDecodedRef = useRef('');
   const scanLockUntilRef = useRef(0);
+
+  const waitForVideoReady = async (video) => new Promise((resolve, reject) => {
+    if (!video) {
+      reject(new Error('Video element unavailable'));
+      return;
+    }
+
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      video.removeEventListener('loadedmetadata', onReady);
+      video.removeEventListener('canplay', onReady);
+      clearTimeout(timeoutId);
+      resolve();
+    };
+
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+      video.removeEventListener('loadedmetadata', onReady);
+      video.removeEventListener('canplay', onReady);
+      clearTimeout(timeoutId);
+      reject(new Error('Camera preview did not become ready'));
+    };
+
+    const onReady = () => finish();
+    const timeoutId = setTimeout(fail, 5000);
+
+    if (video.readyState >= 2) {
+      finish();
+      return;
+    }
+
+    video.addEventListener('loadedmetadata', onReady, { once: true });
+    video.addEventListener('canplay', onReady, { once: true });
+  });
 
   // ── Connect to desktop via PIN ──────────────────────────────────────────
   const connectToDesktop = useCallback((connectPin) => {
@@ -147,6 +185,14 @@ export default function MobileScannerPage() {
   const stopCamera = async () => {
     try { await scannerRef.current?.reset(); } catch { /* silent */ }
     scannerRef.current = null;
+    try {
+      mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
+    } catch { /* silent */ }
+    mediaStreamRef.current = null;
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+      videoRef.current.pause?.();
+    }
     scanBusyRef.current = false;
     lastDecodedRef.current = '';
     scanLockUntilRef.current = 0;
@@ -172,53 +218,57 @@ export default function MobileScannerPage() {
     if (!socketRef.current || status !== 'paired') return;
     try {
       await stopCamera();
+      const video = videoRef.current;
+      if (!video) throw new Error('Camera surface unavailable');
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      });
+
+      mediaStreamRef.current = stream;
       const scanner = new BrowserMultiFormatReader();
       scannerRef.current = scanner;
       setCameraActive(true);
       setCameraReady(false);
-      if (videoRef.current) {
-        videoRef.current.onloadedmetadata = () => setCameraReady(true);
-      }
+      video.srcObject = stream;
+      video.muted = true;
+      video.defaultMuted = true;
+      video.setAttribute('playsinline', 'true');
+      video.setAttribute('webkit-playsinline', 'true');
+      await video.play();
+      await waitForVideoReady(video);
+      setCameraReady(true);
 
-      await scanner.decodeFromConstraints(
-        {
-          video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-        },
-        videoRef.current,
-        async (result, err) => {
-          if (!result) return;
-          const awb = String(result.getText() || '').trim();
-          const now = Date.now();
-          if (!awb) return;
-          if (scanBusyRef.current) return;
-          if (now < scanLockUntilRef.current && awb === lastDecodedRef.current) return;
+      await scanner.decodeFromVideoElement(video, async (result) => {
+        if (!result) return;
+        const awb = String(result.getText() || '').trim();
+        const now = Date.now();
+        if (!awb) return;
+        if (scanBusyRef.current) return;
+        if (now < scanLockUntilRef.current && awb === lastDecodedRef.current) return;
 
-          scanBusyRef.current = true;
-          scanLockUntilRef.current = now + 2000;
-          lastDecodedRef.current = awb;
+        scanBusyRef.current = true;
+        scanLockUntilRef.current = now + 2000;
+        lastDecodedRef.current = awb;
 
-          // Quick visual + haptic feedback on scan
-          setFlashFeedback('success');
-          vibrate([50]);
-          playBeep(880, 0.06);
-          setTimeout(() => setFlashFeedback(null), 400);
+        setFlashFeedback('success');
+        vibrate([50]);
+        playBeep(880, 0.06);
+        setTimeout(() => setFlashFeedback(null), 400);
 
-          setScanCount((c) => c + 1);
-          setLastAwb(awb);
+        setScanCount((c) => c + 1);
+        setLastAwb(awb);
 
-          // Capture frame for OCR hints
-          const imageBase64 = captureFrame();
+        const imageBase64 = captureFrame();
+        socketRef.current?.emit('scanner:scan', { awb, imageBase64 });
 
-          // Send to desktop via socket
-          socketRef.current?.emit('scanner:scan', { awb, imageBase64 });
-
-          scanBusyRef.current = false;
-        }
-      );
+        scanBusyRef.current = false;
+      });
     } catch (err) {
       setErrorMsg(err.message || 'Camera failed');
       await stopCamera();
@@ -345,7 +395,7 @@ export default function MobileScannerPage() {
               <div className="msc-overlay-head">
                 <div className="msc-overlay-chip">
                   <Camera size={14} />
-                  Rear camera live
+                  {cameraReady ? 'Rear camera live' : 'Opening rear camera'}
                 </div>
                 <div className={`msc-overlay-chip ${cameraReady ? 'ready' : ''}`}>
                   <Aperture size={14} />
@@ -592,12 +642,16 @@ export default function MobileScannerPage() {
           background: #000;
           overflow: hidden;
           min-height: 0;
+          isolation: isolate;
         }
         .msc-video {
           width: 100%; height: 100%;
           object-fit: cover;
           display: block;
-          background: #020617;
+          background: #000;
+          position: absolute;
+          inset: 0;
+          z-index: 0;
         }
         .msc-camera-placeholder {
           display: flex; flex-direction: column;
@@ -615,6 +669,7 @@ export default function MobileScannerPage() {
           gap: 1rem;
           padding: 1rem 1rem 1.35rem;
           pointer-events: none;
+          z-index: 1;
         }
         .msc-overlay-head {
           width: 100%;
@@ -646,9 +701,10 @@ export default function MobileScannerPage() {
           width: min(88vw, 420px);
           aspect-ratio: 2.2 / 1;
           position: relative;
-          box-shadow: 0 0 0 9999px rgba(2,6,23,0.22);
+          box-shadow: 0 0 0 9999px rgba(2,6,23,0.18);
           border-radius: 20px;
           margin: auto 0;
+          background: transparent;
         }
         .msc-overlay-tip {
           padding: 0.55rem 0.9rem;
