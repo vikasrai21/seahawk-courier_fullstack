@@ -42,7 +42,7 @@ export default function MobileScannerPage() {
   const [pairedUser, setPairedUser] = useState('');
   const [scanCount, setScanCount] = useState(0);
   const [lastAwb, setLastAwb] = useState('');
-  const [lastFeedback, setLastFeedback] = useState(null); // { awb, status, clientCode, clientName }
+  const [lastFeedback, setLastFeedback] = useState(null); // { awb, status, clientCode, clientName, consignee, destination, weight, reviewRequired }
   const [flashFeedback, setFlashFeedback] = useState(null); // 'success' | 'error'
   const [cameraActive, setCameraActive] = useState(false);
 
@@ -174,8 +174,14 @@ export default function MobileScannerPage() {
       scannerRef.current = scanner;
       setCameraActive(true);
 
-      await scanner.decodeFromVideoDevice(
-        undefined,
+      await scanner.decodeFromConstraints(
+        {
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+        },
         videoRef.current,
         async (result, err) => {
           if (!result) return;
@@ -328,7 +334,7 @@ export default function MobileScannerPage() {
       <div className="msc-camera-wrap">
         {cameraActive ? (
           <>
-            <video ref={videoRef} className="msc-video" muted playsInline autoPlay />
+            <video ref={videoRef} className="msc-video" muted playsInline autoPlay disablePictureInPicture />
             <div className="msc-scan-overlay">
               <div className="msc-scan-frame">
                 <div className="msc-corner msc-tl" />
@@ -337,6 +343,7 @@ export default function MobileScannerPage() {
                 <div className="msc-corner msc-br" />
                 <div className="msc-scan-line" />
               </div>
+              <div className="msc-overlay-tip">Center the barcode inside the frame. Rear camera is preferred automatically.</div>
             </div>
           </>
         ) : (
@@ -350,14 +357,30 @@ export default function MobileScannerPage() {
       {/* Last scan feedback */}
       {lastAwb && (
         <div className="msc-last-scan">
-          <div className="msc-last-awb">
-            <CheckCircle2 size={16} className="msc-check" />
-            <span className="msc-awb-text">{lastAwb}</span>
+          <div className="msc-last-awb-wrap">
+            <div className="msc-last-awb">
+              <CheckCircle2 size={16} className="msc-check" />
+              <span className="msc-awb-text">{lastAwb}</span>
+            </div>
+            {lastFeedback?.status && (
+              <div className={`msc-feedback-pill ${lastFeedback.status}`}>
+                {lastFeedback.status === 'pending_review' ? 'Pending desktop review' : lastFeedback.status === 'success' ? 'Verified' : lastFeedback.status === 'review_deferred' ? 'Deferred' : 'Needs attention'}
+              </div>
+            )}
           </div>
-          {lastFeedback?.clientCode && (
-            <div className="msc-client-badge">
-              <Zap size={12} /> {lastFeedback.clientCode}
-              {lastFeedback.clientName ? ` · ${lastFeedback.clientName}` : ''}
+          {(lastFeedback?.clientCode || lastFeedback?.consignee || lastFeedback?.destination || lastFeedback?.weight) && (
+            <div className="msc-feedback-card">
+              {lastFeedback?.clientCode && (
+                <div className="msc-client-badge">
+                  <Zap size={12} /> {lastFeedback.clientCode}
+                  {lastFeedback.clientName ? ` · ${lastFeedback.clientName}` : ''}
+                </div>
+              )}
+              <div className="msc-feedback-details">
+                {lastFeedback?.consignee ? <div><span>Consignee</span><strong>{lastFeedback.consignee}</strong></div> : null}
+                {lastFeedback?.destination ? <div><span>Destination</span><strong>{lastFeedback.destination}</strong></div> : null}
+                {lastFeedback?.weight ? <div><span>Weight</span><strong>{lastFeedback.weight} kg</strong></div> : null}
+              </div>
             </div>
           )}
         </div>
@@ -552,10 +575,13 @@ export default function MobileScannerPage() {
           position: relative;
           background: #000;
           overflow: hidden;
+          min-height: 52vh;
         }
         .msc-video {
           width: 100%; height: 100%;
           object-fit: cover;
+          display: block;
+          background: #020617;
         }
         .msc-camera-placeholder {
           display: flex; flex-direction: column;
@@ -569,14 +595,28 @@ export default function MobileScannerPage() {
         .msc-scan-overlay {
           position: absolute; inset: 0;
           display: flex; align-items: center; justify-content: center;
+          flex-direction: column;
+          gap: 1rem;
           pointer-events: none;
         }
         .msc-scan-frame {
           width: 80%; max-width: 300px;
           aspect-ratio: 2.5 / 1;
           position: relative;
-          box-shadow: 0 0 0 9999px rgba(0,0,0,0.45);
+          box-shadow: 0 0 0 9999px rgba(2,6,23,0.28);
           border-radius: 16px;
+        }
+        .msc-overlay-tip {
+          padding: 0.55rem 0.9rem;
+          border-radius: 999px;
+          background: rgba(15,23,42,0.72);
+          border: 1px solid rgba(148,163,184,0.18);
+          color: #cbd5e1;
+          font-size: 0.68rem;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          text-align: center;
+          max-width: 88%;
         }
         .msc-corner {
           position: absolute; width: 24px; height: 24px;
@@ -606,9 +646,15 @@ export default function MobileScannerPage() {
           padding: 0.75rem 1rem;
           background: #0f172a;
           border-top: 1px solid #1e293b;
-          display: flex; align-items: center; justify-content: space-between;
+          display: flex; align-items: flex-start; justify-content: space-between;
           gap: 0.5rem;
           z-index: 20;
+        }
+        .msc-last-awb-wrap {
+          display: flex;
+          flex-direction: column;
+          gap: 0.45rem;
+          min-width: 0;
         }
         .msc-last-awb {
           display: flex; align-items: center; gap: 0.4rem;
@@ -627,6 +673,61 @@ export default function MobileScannerPage() {
           font-weight: 800;
           text-transform: uppercase;
           letter-spacing: 0.1em;
+        }
+        .msc-feedback-card {
+          display: flex;
+          flex-direction: column;
+          gap: 0.45rem;
+          align-items: flex-end;
+          max-width: 58%;
+        }
+        .msc-feedback-details {
+          display: grid;
+          gap: 0.3rem;
+          width: 100%;
+        }
+        .msc-feedback-details div {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 0.08rem;
+        }
+        .msc-feedback-details span {
+          color: #64748b;
+          font-size: 0.58rem;
+          font-weight: 800;
+          text-transform: uppercase;
+          letter-spacing: 0.12em;
+        }
+        .msc-feedback-details strong {
+          color: #e2e8f0;
+          font-size: 0.72rem;
+          font-weight: 800;
+          text-align: right;
+        }
+        .msc-feedback-pill {
+          display: inline-flex;
+          align-items: center;
+          align-self: flex-start;
+          padding: 0.24rem 0.55rem;
+          border-radius: 999px;
+          font-size: 0.58rem;
+          font-weight: 900;
+          text-transform: uppercase;
+          letter-spacing: 0.12em;
+        }
+        .msc-feedback-pill.pending_review,
+        .msc-feedback-pill.review_deferred {
+          background: rgba(245,158,11,0.18);
+          color: #fbbf24;
+        }
+        .msc-feedback-pill.success {
+          background: rgba(34,197,94,0.18);
+          color: #4ade80;
+        }
+        .msc-feedback-pill.error {
+          background: rgba(239,68,68,0.18);
+          color: #f87171;
         }
 
         /* ── Controls ───────────────────────────────────────────── */

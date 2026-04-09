@@ -173,7 +173,7 @@ async function initSocket(server) {
     });
 
     // Desktop processes scan result and sends feedback to phone
-    socket.on('scanner:scan-processed', ({ pin, awb, status, clientCode, clientName }) => {
+    socket.on('scanner:scan-processed', ({ pin, awb, status, clientCode, clientName, consignee, destination, weight, reviewRequired, error }) => {
       const session = scanSessions.get(pin);
       if (!session || session.desktopSocketId !== socket.id) return;
       if (session.phoneSocketId) {
@@ -182,6 +182,11 @@ async function initSocket(server) {
           status,
           clientCode,
           clientName,
+          consignee,
+          destination,
+          weight,
+          reviewRequired,
+          error,
         });
       }
     });

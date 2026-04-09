@@ -140,7 +140,7 @@ export default function ScanAWBPage({ toast }) {
   const [mobileScanCount, setMobileScanCount] = useState(0);
   const [mobileQRData, setMobileQRData] = useState('');
   const { socket, connected: socketConnected } = useSocket();
-  const [reviewScan, setReviewScan] = useState(null);
+  const [reviewQueue, setReviewQueue] = useState([]);
   const [reviewForm, setReviewForm] = useState({ clientCode: '', consignee: '', destination: '', weight: 0, amount: 0 });
   const [savingReview, setSavingReview] = useState(false);
   const inputRef = useRef(null);
@@ -154,6 +154,25 @@ export default function ScanAWBPage({ toast }) {
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
+  const reviewScan = reviewQueue[0] || null;
+  const pendingReviewCount = reviewQueue.length;
+
+  useEffect(() => {
+    if (!reviewScan) {
+      setReviewForm({ clientCode: '', consignee: '', destination: '', weight: 0, amount: 0 });
+      return;
+    }
+
+    const suggestedCode = reviewScan.meta?.clientSuggestion?.suggestedClientCode || reviewScan.shipment?.clientCode || 'MISC';
+    setReviewForm({
+      clientCode: suggestedCode,
+      consignee: reviewScan.shipment?.consignee || '',
+      destination: reviewScan.shipment?.destination || '',
+      weight: reviewScan.shipment?.weight || 0,
+      amount: reviewScan.shipment?.amount || 0,
+    });
+  }, [reviewScan]);
 
   const triggerFeedback = (type) => {
     setLastFeedback(type);
@@ -179,6 +198,10 @@ export default function ScanAWBPage({ toast }) {
 
   const addRecentScan = (entry) => {
     setRecentScans((prev) => [entry, ...prev].slice(0, 100));
+  };
+
+  const queueReviewScan = (entry) => {
+    setReviewQueue((prev) => [...prev, entry]);
   };
 
   // ── Mobile Bridge: create session & listen for remote scans ──────────
@@ -233,18 +256,8 @@ export default function ScanAWBPage({ toast }) {
 
     const onRemoteScan = async ({ awb, imageBase64, scanNumber }) => {
       if (!awb) return;
-      setMobileScanCount(scanNumber || ((c) => c + 1));
-      // Process the scan exactly like a local scan
+      setMobileScanCount((prev) => scanNumber || prev + 1);
       await processSingleScan(awb, imageBase64);
-      // Send feedback back to phone
-      const lastScan = recentScans[0];
-      socket.emit('scanner:scan-processed', {
-        pin: mobilePIN,
-        awb,
-        status: lastScan?.status || 'success',
-        clientCode: lastScan?.meta?.clientSuggestion?.suggestedClientCode || '',
-        clientName: lastScan?.meta?.clientSuggestion?.suggestedClientName || '',
-      });
     };
 
     socket.on('scanner:phone-connected', onPhoneConnected);
@@ -276,7 +289,7 @@ export default function ScanAWBPage({ toast }) {
 
   const processSingleScan = async (rawAwb, imageBase64 = null) => {
     const currentAwb = String(rawAwb || '').trim();
-    if (!currentAwb) return;
+    if (!currentAwb) return null;
 
     setLoading(true);
     setAwb(currentAwb);
@@ -298,29 +311,43 @@ export default function ScanAWBPage({ toast }) {
       setCapturedMeta(meta);
 
       if (scanMode === 'single' || imageBase64) {
-        // Drop into Active Review Mode for one-by-one checking
-        const suggestedCode = meta?.clientSuggestion?.suggestedClientCode || shipment?.clientCode || 'MISC';
-        setReviewForm({
-          clientCode: suggestedCode,
-          consignee: shipment?.consignee || '',
-          destination: shipment?.destination || '',
-          weight: shipment?.weight || 0,
-          amount: shipment?.amount || 0,
-        });
-        setReviewScan({ awb: currentAwb, courier, shipment, meta });
-        toast?.(`Captured ${currentAwb} - Ready for review`, 'info');
+        queueReviewScan({ awb: currentAwb, courier, shipment, meta });
+        toast?.(`Captured ${currentAwb} - queued for review`, 'info');
+        if (imageBase64 && mobileStatus === 'connected') {
+          socket.emit('scanner:scan-processed', {
+            pin: mobilePIN,
+            awb: currentAwb,
+            status: 'pending_review',
+            clientCode: meta?.clientSuggestion?.suggestedClientCode || shipment?.clientCode || '',
+            clientName: meta?.clientSuggestion?.suggestedClientName || shipment?.client?.company || '',
+            consignee: shipment?.consignee || '',
+            destination: shipment?.destination || '',
+            weight: shipment?.weight || 0,
+            reviewRequired: true,
+          });
+        }
+        return { mode: 'review', awb: currentAwb, shipment, meta };
       } else {
-        // Bulk bypasses review block to just queue them
         addRecentScan(buildScanEntry(currentAwb, courier, shipment, meta));
+        return { mode: 'captured', awb: currentAwb, shipment, meta };
       }
     } catch (err) {
       playError();
       triggerFeedback('error');
       setCameraError(err.message || 'Scan failed');
       addRecentScan(buildScanEntry(currentAwb, courier, null, {}, err.message || 'Scan failed'));
+      if (imageBase64 && mobileStatus === 'connected') {
+        socket.emit('scanner:scan-processed', {
+          pin: mobilePIN,
+          awb: currentAwb,
+          status: 'error',
+          error: err.message || 'Scan failed',
+        });
+      }
+      return { mode: 'error', awb: currentAwb, error: err.message || 'Scan failed' };
     } finally {
       setLoading(false);
-      if (!reviewScan) setTimeout(() => inputRef.current?.focus(), 120);
+      setTimeout(() => inputRef.current?.focus(), 120);
     }
   };
 
@@ -352,10 +379,14 @@ export default function ScanAWBPage({ toast }) {
              status: 'success',
              clientCode: reviewForm.clientCode,
              clientName: updatedShipment.client?.company || reviewForm.clientCode,
+             consignee: reviewForm.consignee,
+             destination: reviewForm.destination,
+             weight: parseFloat(reviewForm.weight) || 0,
+             reviewRequired: false,
            });
         }
         
-        setReviewScan(null);
+        setReviewQueue((prev) => prev.slice(1));
         setTimeout(() => inputRef.current?.focus(), 120);
       }
     } catch (err) {
@@ -363,6 +394,37 @@ export default function ScanAWBPage({ toast }) {
     } finally {
       setSavingReview(false);
     }
+  };
+
+  const deferActiveReview = () => {
+    if (!reviewScan) return;
+    setReviewQueue((prev) => (prev.length <= 1 ? prev : [...prev.slice(1), prev[0]]));
+    toast?.(`Moved ${reviewScan.awb} to the back of the review queue`, 'warning');
+  };
+
+  const removeActiveReview = () => {
+    if (!reviewScan) return;
+    addRecentScan(buildScanEntry(
+      reviewScan.awb,
+      reviewScan.courier,
+      reviewScan.shipment,
+      { ...(reviewScan.meta || {}), reviewDeferred: true },
+    ));
+    if (mobileStatus === 'connected') {
+      socket.emit('scanner:scan-processed', {
+        pin: mobilePIN,
+        awb: reviewScan.awb,
+        status: 'review_deferred',
+        clientCode: reviewScan.meta?.clientSuggestion?.suggestedClientCode || reviewScan.shipment?.clientCode || '',
+        clientName: reviewScan.meta?.clientSuggestion?.suggestedClientName || reviewScan.shipment?.client?.company || '',
+        consignee: reviewScan.shipment?.consignee || '',
+        destination: reviewScan.shipment?.destination || '',
+        weight: reviewScan.shipment?.weight || 0,
+        reviewRequired: true,
+      });
+    }
+    setReviewQueue((prev) => prev.slice(1));
+    toast?.(`Deferred ${reviewScan.awb} without saving changes`, 'warning');
   };
 
   const startCameraScan = async () => {
@@ -639,11 +701,12 @@ export default function ScanAWBPage({ toast }) {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 w-full xl:w-auto">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 w-full xl:w-auto">
             <MetricCard icon={<Database size={14} />} label="Successful" value={successfulCaptures} tone="emerald" />
             <MetricCard icon={<Radar size={14} />} label="Pending Sync" value={pendingSync} tone="amber" />
             <MetricCard icon={<History size={14} />} label="Recent Buffer" value={recentScans.length} tone="blue" />
             <MetricCard icon={<FileSpreadsheet size={14} />} label="Excel Ready" value={spreadsheetName ? 'Loaded' : 'Idle'} tone="violet" />
+            <MetricCard icon={<Edit size={14} />} label="Review Queue" value={pendingReviewCount} tone="amber" />
           </div>
         </div>
 
@@ -852,6 +915,24 @@ export default function ScanAWBPage({ toast }) {
                   </div>
                 </div>
 
+                <div className="mb-5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/50 px-4 py-3 relative z-10">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
+                        {pendingReviewCount} item{pendingReviewCount === 1 ? '' : 's'} waiting for verification
+                      </div>
+                      <div className="mt-1 text-xs font-bold text-slate-600 dark:text-slate-300">
+                        Save, defer, or skip before jumping to the next captured AWB.
+                      </div>
+                    </div>
+                    {pendingReviewCount > 1 && (
+                      <div className="rounded-full bg-white/80 dark:bg-slate-900/60 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-300">
+                        Next: {reviewQueue[1]?.awb || '—'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl mb-6 flex items-center justify-between border border-slate-100 dark:border-slate-700">
                    <div>
                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">AWB</span>
@@ -918,11 +999,19 @@ export default function ScanAWBPage({ toast }) {
                   <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
                     <button
                       type="button"
-                      onClick={() => setReviewScan(null)}
+                      onClick={deferActiveReview}
+                      className="px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-amber-600 hover:text-amber-500 transition"
+                      disabled={savingReview}
+                    >
+                      Review Later
+                    </button>
+                    <button
+                      type="button"
+                      onClick={removeActiveReview}
                       className="px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
                       disabled={savingReview}
                     >
-                      Discard
+                      Skip
                     </button>
                     <button
                       type="submit"
@@ -934,6 +1023,25 @@ export default function ScanAWBPage({ toast }) {
                     </button>
                   </div>
                 </form>
+
+                {pendingReviewCount > 1 && (
+                  <div className="mt-6 relative z-10">
+                    <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-3">Queued scans</div>
+                    <div className="space-y-2">
+                      {reviewQueue.slice(1, 4).map((queued) => (
+                        <div key={queued.awb} className="flex items-center justify-between rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
+                          <div>
+                            <div className="text-xs font-black font-mono text-slate-900 dark:text-white">{queued.awb}</div>
+                            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                              {queued.meta?.clientSuggestion?.suggestedClientCode || queued.shipment?.clientCode || 'MISC'} · {queued.shipment?.destination || 'Awaiting review'}
+                            </div>
+                          </div>
+                          <div className="text-[10px] font-black uppercase tracking-widest text-amber-600">Queued</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="rounded-[32px] bg-gradient-to-br from-blue-50 to-white dark:from-blue-950/20 dark:to-slate-900 border border-blue-200/60 dark:border-blue-900/50 p-6 shadow-sm">
