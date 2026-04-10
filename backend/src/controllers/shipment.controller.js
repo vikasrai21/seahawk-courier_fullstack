@@ -139,22 +139,30 @@ const scanAwb = asyncHandler(async (req, res) => {
       const ocrOptions = { knownAwb: req.body.awb, clients, corrections, sessionContext };
 
       const attempts = [];
-      if (req.body.focusImageBase64) {
-        attempts.push(extractShipmentFromImage(req.body.focusImageBase64, 'image/jpeg', ocrOptions));
-      }
-      if (req.body.imageBase64) {
-        attempts.push(extractShipmentFromImage(req.body.imageBase64, 'image/jpeg', ocrOptions));
+      if (req.body.focusImageBase64) attempts.push({ label: 'focus', image: req.body.focusImageBase64 });
+      if (req.body.imageBase64) attempts.push({ label: 'full', image: req.body.imageBase64 });
+
+      let bestExtracted = null;
+      let bestScore = -1;
+
+      for (const attempt of attempts) {
+        const extracted = await extractShipmentFromImage(attempt.image, 'image/jpeg', ocrOptions);
+        if (!extracted?.success) continue;
+
+        const currentScore = scoreOcr(extracted);
+        if (currentScore > bestScore) {
+          bestExtracted = extracted;
+          bestScore = currentScore;
+        }
+
+        if (attempt.label === 'focus' && currentScore >= 4) {
+          break;
+        }
       }
 
-      const settled = await Promise.allSettled(attempts);
-      const successful = settled
-        .filter((item) => item.status === 'fulfilled' && item.value?.success)
-        .map((item) => item.value);
-
-      if (successful.length) {
-        successful.sort((a, b) => scoreOcr(b) - scoreOcr(a));
+      if (bestExtracted) {
         // Run through Intelligence Engine (fuzzy match, corrections, pincode, anomalies)
-        ocrHints = await intelligenceEngine.resolveEntities(successful[0], { sessionContext });
+        ocrHints = await intelligenceEngine.resolveEntities(bestExtracted, { sessionContext });
       }
     } catch (_err) {
       // Non-blocking by design: barcode capture should still proceed.

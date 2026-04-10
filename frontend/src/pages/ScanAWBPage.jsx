@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   ScanLine,
+  Camera,
   Brain,
   CheckCircle2,
   AlertCircle,
@@ -33,6 +34,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { exportJsonToExcel, readExcelAsJson } from '../utils/excel';
 import { BrowserMultiFormatReader } from '@zxing/browser';
+import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
@@ -195,6 +197,27 @@ const reviewDiffFields = (reviewScan, reviewForm) => {
   }));
 };
 
+const BARCODE_FORMATS = [
+  BarcodeFormat.CODE_128,
+  BarcodeFormat.CODE_39,
+  BarcodeFormat.CODE_93,
+  BarcodeFormat.ITF,
+  BarcodeFormat.CODABAR,
+  BarcodeFormat.EAN_13,
+  BarcodeFormat.EAN_8,
+  BarcodeFormat.UPC_A,
+  BarcodeFormat.UPC_E,
+  BarcodeFormat.PDF_417,
+];
+
+const createBarcodeHints = () => {
+  const hints = new Map();
+  hints.set(DecodeHintType.POSSIBLE_FORMATS, BARCODE_FORMATS);
+  hints.set(DecodeHintType.TRY_HARDER, true);
+  hints.set(DecodeHintType.ASSUME_GS1, true);
+  return hints;
+};
+
 export default function ScanAWBPage({ toast }) {
   const navigate = useNavigate();
   const { isAdmin, hasRole } = useAuth();
@@ -206,15 +229,14 @@ export default function ScanAWBPage({ toast }) {
   const [loading, setLoading] = useState(false);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState('');
+  const [scannerStage, setScannerStage] = useState('idle'); // idle | barcode | document | processing
   const [recentScans, setRecentScans] = useState([]);
   const [capturedShipment, setCapturedShipment] = useState(null);
   const [capturedMeta, setCapturedMeta] = useState(null);
   const [lastFeedback, setLastFeedback] = useState(null);
   const [continuousScan, setContinuousScan] = useState(true);
   const [smartAssist, setSmartAssist] = useState(true);
-  const [manualConfirm, setManualConfirm] = useState(false);
   const [pendingDecoded, setPendingDecoded] = useState('');
-  const [pendingFrame, setPendingFrame] = useState(null);
   const [spreadsheetName, setSpreadsheetName] = useState('');
   // ── Mobile Bridge State ──────────────────────────────────────────────
   const [showMobileModal, setShowMobileModal] = useState(false);
@@ -272,6 +294,17 @@ export default function ScanAWBPage({ toast }) {
     setTimeout(() => setLastFeedback(null), 1000);
   };
 
+  const resetScannerFlow = useCallback((keepCamera = false) => {
+    scanBusyRef.current = false;
+    scanLockUntilRef.current = 0;
+    lastDecodedRef.current = '';
+    setPendingDecoded('');
+    setScannerStage(keepCamera ? 'barcode' : 'idle');
+    if (!keepCamera) {
+      setCameraActive(false);
+    }
+  }, []);
+
   const stopCamera = async () => {
     try {
       await scannerRef.current?.reset();
@@ -279,10 +312,7 @@ export default function ScanAWBPage({ toast }) {
       console.debug('Camera reset failed', err);
     }
     scannerRef.current = null;
-    scanBusyRef.current = false;
-    scanLockUntilRef.current = 0;
-    lastDecodedRef.current = '';
-    setCameraActive(false);
+    resetScannerFlow(false);
   };
 
   useEffect(() => () => {
@@ -467,17 +497,41 @@ export default function ScanAWBPage({ toast }) {
     };
   }, [socket, mobilePIN, reviewQueue]);
 
-  const captureCurrentFrame = () => {
+  const captureDocumentFrames = () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth || !video.videoHeight) return null;
     try {
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.min(1280, video.videoWidth);
-      canvas.height = Math.round((canvas.width / video.videoWidth) * video.videoHeight);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      return canvas.toDataURL('image/jpeg', 0.6).split(',')[1] || null;
+      const sourceWidth = video.videoWidth;
+      const sourceHeight = video.videoHeight;
+
+      const fullCanvas = document.createElement('canvas');
+      fullCanvas.width = Math.min(1600, sourceWidth);
+      fullCanvas.height = Math.max(1, Math.round((fullCanvas.width / sourceWidth) * sourceHeight));
+      const fullCtx = fullCanvas.getContext('2d');
+      if (!fullCtx) return null;
+      fullCtx.drawImage(video, 0, 0, fullCanvas.width, fullCanvas.height);
+
+      const cropRatio = 1.58;
+      let cropWidth = sourceWidth;
+      let cropHeight = Math.round(cropWidth / cropRatio);
+      if (cropHeight > sourceHeight) {
+        cropHeight = sourceHeight;
+        cropWidth = Math.round(cropHeight * cropRatio);
+      }
+
+      const cropX = Math.max(0, Math.round((sourceWidth - cropWidth) / 2));
+      const cropY = Math.max(0, Math.round((sourceHeight - cropHeight) / 2));
+      const focusCanvas = document.createElement('canvas');
+      focusCanvas.width = Math.min(1600, cropWidth);
+      focusCanvas.height = Math.max(1, Math.round((focusCanvas.width / cropWidth) * cropHeight));
+      const focusCtx = focusCanvas.getContext('2d');
+      if (!focusCtx) return null;
+      focusCtx.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, focusCanvas.width, focusCanvas.height);
+
+      return {
+        imageBase64: fullCanvas.toDataURL('image/jpeg', 0.78).split(',')[1] || null,
+        focusImageBase64: focusCanvas.toDataURL('image/jpeg', 0.86).split(',')[1] || null,
+      };
     } catch (_err) {
       return null;
     }
@@ -655,9 +709,11 @@ export default function ScanAWBPage({ toast }) {
 
     try {
       await stopCamera();
-      const scanner = new BrowserMultiFormatReader();
+      const scanner = new BrowserMultiFormatReader(createBarcodeHints(), 80);
       scannerRef.current = scanner;
       setCameraActive(true);
+      setScannerStage('barcode');
+      setPendingDecoded('');
 
       await scanner.decodeFromVideoDevice(undefined, videoRef.current, async (result, err) => {
         if (result) {
@@ -667,32 +723,15 @@ export default function ScanAWBPage({ toast }) {
           if (scanBusyRef.current) return;
           if (now < scanLockUntilRef.current && scannedValue === lastDecodedRef.current) return;
 
-          const frameBase64 = smartAssist ? captureCurrentFrame() : null;
-
-          // Manual confirm mode: detect but wait for user confirmation
-          if (manualConfirm) {
-            setPendingDecoded(scannedValue);
-            setPendingFrame(frameBase64);
-            // short lock to avoid rapid duplicate detections
-            scanLockUntilRef.current = now + 1200;
-            lastDecodedRef.current = scannedValue;
-            // keep scanner open for user to confirm
-            scanBusyRef.current = false;
-            return;
-          }
-
           scanBusyRef.current = true;
-          scanLockUntilRef.current = now + 800;
+          scanLockUntilRef.current = now + 5000;
           lastDecodedRef.current = scannedValue;
+          setAwb(scannedValue);
+          setPendingDecoded(scannedValue);
+          setScannerStage('document');
+          playSuccess();
+          triggerFeedback('success');
 
-          if (!continuousScan) {
-            await stopCamera();
-          }
-
-          await processSingleScan(scannedValue, frameBase64);
-          if (continuousScan) {
-            scanBusyRef.current = false;
-          }
           return;
         }
 
@@ -706,26 +745,44 @@ export default function ScanAWBPage({ toast }) {
     }
   };
 
-    const confirmPending = async () => {
-      if (!pendingDecoded) return;
-      const value = pendingDecoded;
-      const frame = pendingFrame;
-      // clear pending UI immediately
-      setPendingDecoded('');
-      setPendingFrame(null);
-      try {
-        // stop camera if single-shot expected
-        if (!continuousScan) await stopCamera();
-        await processSingleScan(value, frame);
-      } finally {
-        scanBusyRef.current = false;
-      }
-    };
+  const capturePendingDocument = async () => {
+    if (!pendingDecoded) return;
 
-    const cancelPending = () => {
-      setPendingDecoded('');
-      setPendingFrame(null);
-    };
+    const frames = smartAssist ? captureDocumentFrames() : null;
+    if (smartAssist && !frames?.imageBase64 && !frames?.focusImageBase64) {
+      setCameraError('Could not capture the document frame. Please try again.');
+      return;
+    }
+
+    setCameraError('');
+    setScannerStage('processing');
+
+    const result = await processSingleScan(pendingDecoded, frames?.imageBase64 || null, frames?.focusImageBase64 || null);
+    if (result?.mode === 'error') {
+      setScannerStage('document');
+      return;
+    }
+
+    setPendingDecoded('');
+    scanBusyRef.current = false;
+    scanLockUntilRef.current = 0;
+    lastDecodedRef.current = '';
+
+    if (!continuousScan) {
+      await stopCamera();
+      return;
+    }
+
+    setScannerStage('barcode');
+  };
+
+  const retakePendingBarcode = () => {
+    setPendingDecoded('');
+    setScannerStage(cameraActive ? 'barcode' : 'idle');
+    scanBusyRef.current = false;
+    scanLockUntilRef.current = 0;
+    lastDecodedRef.current = '';
+  };
   const handleSpreadsheetUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -753,6 +810,10 @@ export default function ScanAWBPage({ toast }) {
   const handleScan = async (e) => {
     e.preventDefault();
     if (scanMode === 'single') {
+      if (cameraActive && pendingDecoded) {
+        await capturePendingDocument();
+        return;
+      }
       await processSingleScan(awb);
       return;
     }
@@ -1112,10 +1173,21 @@ export default function ScanAWBPage({ toast }) {
                           onClick={cameraActive ? stopCamera : startCameraScan}
                           className={`p-3 rounded-xl transition-all ${cameraActive ? 'bg-emerald-500 text-white animate-pulse' : 'bg-white dark:bg-slate-700 text-slate-400 hover:text-emerald-500 shadow-sm'}`}
                           disabled={loading}
-                          title={cameraActive ? 'Stop live camera scanner' : 'Scan barcode with camera'}
+                          title={cameraActive ? 'Stop camera scanner' : 'Start barcode scanner'}
                         >
                           <ScanLine size={20} />
                         </button>
+                        {pendingDecoded && (
+                          <button
+                            type="button"
+                            onClick={capturePendingDocument}
+                            className="p-3 rounded-xl bg-slate-900 text-white shadow-sm hover:bg-slate-800 transition-colors"
+                            disabled={loading}
+                            title="Capture the aligned airwaybill"
+                          >
+                            <Camera size={20} />
+                          </button>
+                        )}
                         <button type="submit" className="hidden" />
                       </div>
                     </div>
@@ -1148,27 +1220,59 @@ export default function ScanAWBPage({ toast }) {
                   <div className="absolute inset-x-6 top-6 rounded-2xl bg-black/60 backdrop-blur-sm px-4 py-3 text-white flex items-center justify-between gap-4">
                     <div>
                       <h3 className="font-black tracking-widest uppercase text-xs">Live Barcode Scan</h3>
-                      <p className="text-slate-300 text-[11px]">Continuous scan keeps the camera open so ops can capture parcel after parcel.</p>
+                      <div className="mt-1 text-[9px] font-black uppercase tracking-[0.35em] text-emerald-300">
+                        {scannerStage === 'processing'
+                          ? 'Processing extraction'
+                          : scannerStage === 'document'
+                            ? 'Document capture'
+                            : 'Barcode acquisition'}
+                      </div>
+                      <p className="text-slate-300 text-[11px]">
+                        {pendingDecoded
+                          ? 'Barcode locked. Align the airwaybill in the rectangle and capture it manually.'
+                          : 'Keep the barcode inside the frame. Once it locks, you will move to the document capture step.'}
+                      </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={stopCamera}
-                      className="p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-colors"
-                    >
-                      <X size={16} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {pendingDecoded && (
+                        <button
+                          type="button"
+                          onClick={retakePendingBarcode}
+                          className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 transition-colors text-[10px] font-black uppercase tracking-widest"
+                        >
+                          Retake
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={stopCamera}
+                        className="p-2 rounded-xl bg-white/10 hover:bg-white/20 transition-colors"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
                   </div>
                   <div className="pointer-events-auto absolute inset-0 flex items-center justify-center">
-                    <div className="w-[90%] h-36 rounded-2xl border-2 border-emerald-400/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" />
-                    {pendingDecoded && (
-                      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3">
-                        <div className="rounded-2xl bg-white/95 dark:bg-slate-900/90 px-4 py-3 flex items-center gap-3 border border-slate-100 dark:border-slate-800 shadow-lg">
-                          <div className="font-mono font-black text-sm">{pendingDecoded}</div>
-                          <button type="button" onClick={confirmPending} className="px-4 py-2 bg-emerald-500 text-white rounded-xl font-black">Confirm</button>
-                          <button type="button" onClick={cancelPending} className="px-4 py-2 bg-rose-500 text-white rounded-xl font-black">Cancel</button>
+                    <div className="relative w-[90%] max-w-[760px] aspect-[1.62/1] rounded-[28px] border-2 border-emerald-400/90 shadow-[0_0_0_9999px_rgba(0,0,0,0.28)] overflow-hidden">
+                      <div className="absolute inset-x-10 top-10 h-[2px] bg-emerald-400/60" />
+                      <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-8">
+                        <div className="text-[10px] font-black uppercase tracking-[0.45em] text-emerald-300/90">
+                          {pendingDecoded ? 'Align airwaybill inside the frame' : 'Barcode first'}
                         </div>
+                        <div className="mt-3 max-w-[320px] text-sm font-bold text-white/90">
+                          {pendingDecoded
+                            ? 'Now tap Capture to extract the printed and handwritten fields from the label.'
+                            : 'Hold steady until the barcode is picked up. We will lock it instantly.'}
+                        </div>
+                      {pendingDecoded && (
+                        <div className="mt-5 rounded-2xl bg-black/45 px-4 py-3 border border-white/10">
+                          <div className="text-[9px] font-black uppercase tracking-[0.3em] text-slate-300">Locked AWB</div>
+                          <div className="mt-1 font-mono text-lg font-black text-white">{pendingDecoded}</div>
+                        </div>
+                      )}
                       </div>
-                    )}
+                      <div className="absolute left-[8%] right-[8%] h-[2px] bg-gradient-to-r from-transparent via-emerald-400/80 to-transparent animate-pulse" style={{ top: '46%' }} />
+                    </div>
                   </div>
                 </div>
               )}
@@ -1194,13 +1298,6 @@ export default function ScanAWBPage({ toast }) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setManualConfirm((prev) => !prev)}
-                    className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-[10px] font-black uppercase tracking-widest transition ${manualConfirm ? 'bg-blue-500/10 text-blue-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300'}`}
-                  >
-                    <ScanLine size={12} /> {manualConfirm ? 'Manual Confirm' : 'Auto Confirm'}
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setSmartAssist((prev) => !prev)}
                     className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-[10px] font-black uppercase tracking-widest transition ${smartAssist ? 'bg-blue-500/10 text-blue-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300'}`}
                   >
@@ -1211,11 +1308,11 @@ export default function ScanAWBPage({ toast }) {
 
                 <button
                   type="submit"
-                  disabled={loading || (scanMode === 'single' ? !awb.trim() : !bulkText.trim())}
+                  disabled={loading || (scanMode === 'single' ? (!awb.trim() && !pendingDecoded) : !bulkText.trim())}
                   className="w-full sm:w-auto px-10 py-5 bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.3em] rounded-[22px] shadow-xl shadow-slate-900/20 active:scale-95 transition-all flex items-center justify-center gap-4 group/btn"
                 >
                   {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <ScanLine size={20} className="group-hover/btn:scale-125 transition-transform" />}
-                  {scanMode === 'single' ? 'Capture AWB' : 'Capture Batch'}
+                  {scanMode === 'single' ? (pendingDecoded ? 'Capture Document' : 'Capture AWB') : 'Capture Batch'}
                 </button>
               </div>
             </form>
