@@ -715,7 +715,14 @@ export default function ScanAWBPage({ toast }) {
       setScannerStage('barcode');
       setPendingDecoded('');
 
-      await scanner.decodeFromVideoDevice(undefined, videoRef.current, async (result, err) => {
+      const videoConstraints = {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: 1920, max: 2560 },
+        height: { ideal: 1080, max: 1440 },
+        frameRate: { ideal: 30, max: 60 },
+      };
+
+      const decodeCallback = async (result, err) => {
         if (result) {
           const scannedValue = String(result.getText() || '').trim();
           const now = Date.now();
@@ -738,7 +745,13 @@ export default function ScanAWBPage({ toast }) {
         if (err && err.name !== 'NotFoundException') {
           setCameraError(err.message || 'Unable to read barcode from camera');
         }
-      });
+      };
+
+      if (typeof scanner.decodeFromConstraints === 'function') {
+        await scanner.decodeFromConstraints({ video: videoConstraints }, videoRef.current, decodeCallback);
+      } else {
+        await scanner.decodeFromVideoDevice(undefined, videoRef.current, decodeCallback);
+      }
     } catch (err) {
       setCameraError(err.message || 'Camera access failed');
       await stopCamera();
