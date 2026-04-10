@@ -46,6 +46,7 @@
     "pdfkit": "^0.14.0",
     "razorpay": "^2.9.2",
     "socket.io": "^4.8.3",
+    "string-similarity": "^4.0.4",
     "swagger-ui-express": "^5.0.1",
     "winston": "^3.11.0",
     "yaml": "^2.8.3",

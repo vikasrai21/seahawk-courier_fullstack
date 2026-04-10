@@ -110,6 +110,16 @@ const scanAwb = asyncHandler(async (req, res) => {
   if (req.body.imageBase64 || req.body.focusImageBase64) {
     try {
       const { extractShipmentFromImage } = require('../services/ocr.service');
+      const intelligenceEngine = require('../services/intelligenceEngine.service');
+      const correctionLearner = require('../services/correctionLearner.service');
+
+      // Build context for the AI prompt
+      const [clients, corrections] = await Promise.all([
+        intelligenceEngine.getActiveClientsForPrompt(),
+        correctionLearner.getTopCorrections(20),
+      ]);
+      const sessionContext = req.body.sessionContext || {};
+
       const scoreOcr = (details) => {
         if (!details?.success) return 0;
         return [
@@ -126,12 +136,14 @@ const scanAwb = asyncHandler(async (req, res) => {
         }).length;
       };
 
+      const ocrOptions = { knownAwb: req.body.awb, clients, corrections, sessionContext };
+
       const attempts = [];
       if (req.body.focusImageBase64) {
-        attempts.push(extractShipmentFromImage(req.body.focusImageBase64, 'image/jpeg', { knownAwb: req.body.awb }));
+        attempts.push(extractShipmentFromImage(req.body.focusImageBase64, 'image/jpeg', ocrOptions));
       }
       if (req.body.imageBase64) {
-        attempts.push(extractShipmentFromImage(req.body.imageBase64, 'image/jpeg', { knownAwb: req.body.awb }));
+        attempts.push(extractShipmentFromImage(req.body.imageBase64, 'image/jpeg', ocrOptions));
       }
 
       const settled = await Promise.allSettled(attempts);
@@ -141,7 +153,8 @@ const scanAwb = asyncHandler(async (req, res) => {
 
       if (successful.length) {
         successful.sort((a, b) => scoreOcr(b) - scoreOcr(a));
-        ocrHints = successful[0];
+        // Run through Intelligence Engine (fuzzy match, corrections, pincode, anomalies)
+        ocrHints = await intelligenceEngine.resolveEntities(successful[0], { sessionContext });
       }
     } catch (_err) {
       // Non-blocking by design: barcode capture should still proceed.
@@ -152,6 +165,7 @@ const scanAwb = asyncHandler(async (req, res) => {
     captureOnly: req.body.captureOnly,
     source: 'scanner',
     ocrHints,
+    sessionContext: req.body.sessionContext || {},
   });
   await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'SCAN_AWB', entity: 'SHIPMENT', entityId: result.shipment?.id, newValue: result, ip: req.ip });
   R.ok(res, result, 'AWB scanned and updated successfully');
@@ -259,9 +273,22 @@ const scanImage = asyncHandler(async (req, res) => {
   R.ok(res, { message: 'Image scanned safely.', shipment: savedShipment, ocrDetails: details });
 });
 
+const learnCorrections = asyncHandler(async (req, res) => {
+  const correctionLearner = require('../services/correctionLearner.service');
+  const { ocrFields, approvedFields } = req.body;
+  if (!ocrFields || !approvedFields) {
+    return R.ok(res, { saved: 0 }, 'No fields to learn from');
+  }
+  const saved = await correctionLearner.recordCorrections(ocrFields, approvedFields);
+  R.ok(res, { saved: saved.length, corrections: saved }, 'Corrections recorded for learning');
+});
+
 module.exports = { getAll, getOne, create, update, patchStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getValidStatuses, deleteShipment: remove,
   getImportLedger,
   scanAwb,
   scanAwbBulk,
-  scanImage
+  scanImage,
+  learnCorrections
+};
+
 };

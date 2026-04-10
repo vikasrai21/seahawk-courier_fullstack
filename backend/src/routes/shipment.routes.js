@@ -21,6 +21,7 @@ router.post('/import',        requireRole('ADMIN', 'OPS_MANAGER'), importJsonPar
 router.post('/scan',          requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), validate(scanAwbSchema), ctrl.scanAwb);
 router.post('/scan-image',    requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), importJsonParser, ctrl.scanImage);
 router.post('/scan-bulk',     requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), validate(scanAwbBulkSchema), ctrl.scanAwbBulk);
+router.post('/learn-corrections', requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), ctrl.learnCorrections);
 router.put('/:id',            validate(updateShipmentSchema), ctrl.update);
 router.patch('/:id/status',   validate(statusUpdateSchema),   ctrl.patchStatus);
 router.get('/:id/transitions',                                 ctrl.getValidStatuses);

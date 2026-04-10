@@ -401,6 +401,7 @@ function summarizeOcrHints(ocrHints = null) {
   return {
     awb: String(ocrHints.awb || '').trim(),
     clientName: String(ocrHints.clientName || ocrHints.merchant || ocrHints.senderCompany || '').trim(),
+    clientCode: String(ocrHints.clientCode || '').trim(),
     consignee: String(ocrHints.consignee || '').trim(),
     destination: String(ocrHints.destination || '').trim(),
     pincode: String(ocrHints.pincode || extractPincode(ocrHints.destination) || '').trim(),
@@ -409,6 +410,19 @@ function summarizeOcrHints(ocrHints = null) {
     orderNo: normalizeOrderNo(ocrHints),
     merchant: String(ocrHints.merchant || '').trim(),
     rawText: String(ocrHints.rawText || '').trim(),
+    // Intelligence metadata
+    clientNameConfidence: Number(ocrHints.clientNameConfidence || 0) || 0,
+    consigneeConfidence: Number(ocrHints.consigneeConfidence || 0) || 0,
+    destinationConfidence: Number(ocrHints.destinationConfidence || 0) || 0,
+    pincodeConfidence: Number(ocrHints.pincodeConfidence || 0) || 0,
+    weightConfidence: Number(ocrHints.weightConfidence || 0) || 0,
+    amountConfidence: Number(ocrHints.amountConfidence || 0) || 0,
+    // Source tracking
+    clientNameSource: ocrHints.clientNameSource || null,
+    consigneeSource: ocrHints.consigneeSource || null,
+    destinationSource: ocrHints.destinationSource || null,
+    // Intelligence engine data
+    intelligence: ocrHints._intelligence || null,
   };
 }
 

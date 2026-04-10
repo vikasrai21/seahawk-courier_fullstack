@@ -494,3 +494,18 @@ model DelhiveryPincode {
   @@index([pincode])
   @@map("delhivery_pincodes")
 }
+
+model ScanCorrection {
+  id        Int      @id @default(autoincrement())
+  field     String
+  original  String
+  corrected String
+  count     Int      @default(1)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([field, original])
+  @@index([field])
+  @@index([count])
+  @@map("scan_corrections")
+}

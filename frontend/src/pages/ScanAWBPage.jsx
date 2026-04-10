@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   ScanLine,
+  Brain,
   CheckCircle2,
   AlertCircle,
   RefreshCw,
@@ -1159,222 +1160,147 @@ export default function ScanAWBPage({ toast }) {
             </form>
           </div>
 
-          {/* RIGHT COLUMN: Review Panel OR Info Board */}
-          <div className="space-y-5">
-            {reviewScan ? (
-              <div className="rounded-[32px] bg-white dark:bg-slate-900 border border-emerald-200 dark:border-emerald-900/50 p-5 sm:p-6 shadow-xl relative overflow-hidden ring-2 ring-emerald-500/15 animate-in slide-in-from-right-4 max-h-[78vh] overflow-y-auto">
-                <div className="absolute top-0 right-0 w-64 h-64 bg-emerald-500/10 blur-[80px] pointer-events-none" />
-                <div className="flex items-center gap-3 mb-6 relative z-10">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30">
-                    <Edit size={20} />
-                  </div>
+          <div className="flex flex-col gap-8">
+            {reviewScan ? (() => {
+              const ocrData = reviewScan.meta?.ocrExtracted || reviewScan.meta || {};
+              const intelligence = ocrData.intelligence || reviewScan.shipment?.intelligence || null;
+              
+              const confLevel = (score) => {
+                if (score >= 0.85) return 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]';
+                if (score >= 0.55) return 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]';
+                return 'bg-rose-500 shadow-[0_0_8px_rgba(225,29,72,0.5)]';
+              };
+
+              const sourceBadge = (source) => {
+                if (source === 'learned') return <span className="text-[9px] bg-indigo-100 text-indigo-700 font-bold px-1.5 py-0.5 rounded-md ml-2 border border-indigo-200">🧠 Learned</span>;
+                if (source === 'fuzzy_match') return <span className="text-[9px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded-md ml-2 border border-blue-200">🔍 Matched</span>;
+                if (source === 'delhivery_pincode' || source === 'india_post') return <span className="text-[9px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded-md ml-2 border border-emerald-200">📍 Pincode</span>;
+                return null;
+              };
+
+              return (
+              <div className="rounded-[32px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-5 sm:p-6 shadow-xl relative overflow-hidden animate-in slide-in-from-right-4">
+                <div className="flex items-center justify-between mb-6">
                   <div>
-                    <h3 className="text-lg font-black text-slate-900 dark:text-white">Active Review</h3>
-                    <p className="text-[10px] uppercase font-black tracking-[0.2em] text-emerald-600">Please verify extracted details</p>
+                    <h3 className="text-sm font-black uppercase text-slate-800 dark:text-white flex items-center gap-2">
+                       <Brain size={16} className="text-violet-500" /> Intelligence Review
+                    </h3>
+                    <div className="text-xs font-bold text-slate-500 mt-1">Reviewing {pendingReviewCount} pending items</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] uppercase font-black tracking-widest text-slate-400">AWB</div>
+                    <div className="font-mono text-lg font-black">{reviewScan.awb}</div>
                   </div>
                 </div>
 
-                <div className="mb-5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/50 px-4 py-3 relative z-10">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
-                        {pendingReviewCount} item{pendingReviewCount === 1 ? '' : 's'} waiting for verification
+                <form onSubmit={saveActiveReview} className="space-y-3 relative z-10">
+                  <div className="grid grid-cols-1 gap-3">
+                    {/* Client Name */}
+                    <div className="group rounded-2xl border border-slate-200 bg-slate-50 p-3 transition-colors focus-within:border-violet-500 focus-within:bg-white">
+                      <div className="flex items-center justify-between mb-1">
+                         <div className="flex items-center">
+                           <div className={`w-2 h-2 rounded-full mr-2 ${confLevel(ocrData.clientNameConfidence || 0)}`} />
+                           <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Client Code</label>
+                           {sourceBadge(ocrData.clientNameSource)}
+                         </div>
                       </div>
-                      <div className="mt-1 text-xs font-bold text-slate-600 dark:text-slate-300">
-                        Save, defer, or skip before jumping to the next captured AWB.
-                      </div>
-                    </div>
-                    {pendingReviewCount > 1 && (
-                      <div className="rounded-full bg-white/80 dark:bg-slate-900/60 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-slate-300">
-                        Next: {reviewQueue[1]?.awb || '—'}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl mb-6 flex items-center justify-between border border-slate-100 dark:border-slate-700">
-                   <div>
-                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">AWB</span>
-                     <div className="text-lg font-black font-mono text-slate-900 dark:text-white">{reviewScan.awb}</div>
-                   </div>
-                   <div className="text-right">
-                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">Courier</span>
-                     <div className="text-lg font-black text-blue-500">{reviewScan.courier}</div>
-                   </div>
-                </div>
-
-                <div className="mb-5 grid grid-cols-1 xl:grid-cols-2 gap-3 relative z-10">
-                  <div className="rounded-[26px] border border-slate-200 dark:border-slate-800 bg-slate-50/90 dark:bg-slate-800/60 p-4">
-                    <div className="flex items-center justify-between gap-3 mb-4">
-                      <div>
-                        <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Scan extraction</div>
-                        <div className="text-sm font-black text-slate-900 dark:text-white">What the scanner suggested</div>
-                      </div>
-                      <div className="rounded-full bg-white dark:bg-slate-900 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-blue-600 dark:text-blue-300">
-                        Suggested
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      {reviewComparison.map((field) => (
-                        <div key={`source-${field.key}`} className="rounded-2xl border border-slate-200/80 dark:border-slate-700 bg-white/80 dark:bg-slate-900/80 px-3 py-2.5">
-                          <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">{field.label}</div>
-                          <div className="mt-1 text-[13px] font-bold text-slate-900 dark:text-white break-words">{field.scanned}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="rounded-[26px] border border-emerald-200/80 dark:border-emerald-900/50 bg-emerald-50/70 dark:bg-emerald-950/20 p-4">
-                    <div className="flex items-center justify-between gap-3 mb-4">
-                      <div>
-                        <div className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-600 dark:text-emerald-300">Final save payload</div>
-                        <div className="text-sm font-black text-slate-900 dark:text-white">What will be saved after approval</div>
-                      </div>
-                      <div className="rounded-full bg-white/90 dark:bg-slate-900/70 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-emerald-600 dark:text-emerald-300">
-                        {reviewComparison.filter((field) => field.changed).length} changed
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      {reviewComparison.map((field) => (
-                        <div
-                          key={`final-${field.key}`}
-                          className={`rounded-2xl px-4 py-3 border ${
-                            field.changed
-                              ? 'border-amber-300/80 dark:border-amber-500/40 bg-amber-50/80 dark:bg-amber-950/20'
-                              : 'border-emerald-200/80 dark:border-emerald-900/40 bg-white/80 dark:bg-slate-900/70'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">{field.label}</div>
-                            <div className={`text-[10px] font-black uppercase tracking-[0.18em] ${field.changed ? 'text-amber-600 dark:text-amber-300' : 'text-emerald-600 dark:text-emerald-300'}`}>
-                              {field.changed ? 'Edited' : 'Matched'}
-                            </div>
-                          </div>
-                          <div className="mt-1 text-[13px] font-bold text-slate-900 dark:text-white break-words">{field.final}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <form onSubmit={saveActiveReview} className="space-y-4 relative z-10">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block mb-1">Assigned Client</label>
                       <input 
-                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white uppercase focus:ring-2 focus:ring-emerald-500/50"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-900 uppercase focus:ring-0"
                         value={reviewForm.clientCode}
                         onChange={(e) => setReviewForm(p => ({ ...p, clientCode: e.target.value.toUpperCase() }))}
                         disabled={savingReview}
+                        placeholder="e.g. MISC"
                       />
+                      {intelligence?.clientMatches?.length > 0 && intelligence.clientNeedsConfirmation && (
+                        <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-slate-200">
+                          {intelligence.clientMatches.slice(0, 3).map(m => (
+                            <button type="button" key={m.code} onClick={() => setReviewForm(f => ({ ...f, clientCode: m.code }))} className={`text-[10px] px-2 py-1 rounded-lg font-bold border ${reviewForm.clientCode === m.code ? 'bg-violet-100 text-violet-700 border-violet-200' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+                              {m.code} ({Math.round(m.score * 100)}%)
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block mb-1">Consignee Name</label>
+
+                    {/* Consignee */}
+                    <div className="group rounded-2xl border border-slate-200 bg-slate-50 p-3 transition-colors focus-within:border-violet-500 focus-within:bg-white">
+                      <div className="flex items-center mb-1">
+                         <div className={`w-2 h-2 rounded-full mr-2 ${confLevel(ocrData.consigneeConfidence || 0)}`} />
+                         <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Consignee</label>
+                         {sourceBadge(ocrData.consigneeSource)}
+                      </div>
                       <input 
-                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white uppercase focus:ring-2 focus:ring-emerald-500/50"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-900 uppercase focus:ring-0"
                         value={reviewForm.consignee}
                         onChange={(e) => setReviewForm(p => ({ ...p, consignee: e.target.value.toUpperCase() }))}
                         disabled={savingReview}
-                        autoFocus
                       />
                     </div>
-                    <div className="sm:col-span-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block mb-1">Destination Details (City & Pincode)</label>
+
+                    {/* Destination */}
+                    <div className="group rounded-2xl border border-slate-200 bg-slate-50 p-3 transition-colors focus-within:border-violet-500 focus-within:bg-white">
+                      <div className="flex items-center mb-1">
+                         <div className={`w-2 h-2 rounded-full mr-2 ${confLevel(ocrData.destinationConfidence || 0)}`} />
+                         <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Destination</label>
+                         {sourceBadge(ocrData.destinationSource)}
+                      </div>
                       <input 
-                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white uppercase focus:ring-2 focus:ring-emerald-500/50"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-900 uppercase focus:ring-0"
                         value={reviewForm.destination}
                         onChange={(e) => setReviewForm(p => ({ ...p, destination: e.target.value.toUpperCase() }))}
                         disabled={savingReview}
                       />
+                      {intelligence?.pincodeCity && intelligence.pincodeCity !== reviewForm.destination && (
+                        <button type="button" onClick={() => setReviewForm(f => ({ ...f, destination: intelligence.pincodeCity }))} className="mt-2 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded-md block">
+                          📍 Suggestion: {intelligence.pincodeCity}
+                        </button>
+                      )}
                     </div>
-                    <div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mt-3">
+                    {/* Pincode */}
+                    <div className="group rounded-2xl border border-slate-200 bg-slate-50 p-3 transition-colors focus-within:border-violet-500 focus-within:bg-white">
                       <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block mb-1">Pincode</label>
                       <input
-                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white tabular-nums focus:ring-2 focus:ring-emerald-500/50"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-900 tabular-nums focus:ring-0"
                         value={reviewForm.pincode}
                         onChange={(e) => setReviewForm((p) => ({ ...p, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
                         disabled={savingReview}
                       />
                     </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block mb-1">Weight (kg)</label>
+                    {/* Weight */}
+                    <div className={`group rounded-2xl border ${intelligence?.weightAnomaly?.anomaly ? 'border-amber-400 bg-amber-50' : 'border-slate-200 bg-slate-50'} p-3 transition-colors focus-within:border-violet-500 focus-within:bg-white`}>
+                      <div className="flex items-center mb-1">
+                        <div className={`w-2 h-2 rounded-full mr-2 ${confLevel(ocrData.weightConfidence || 0)}`} />
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Weight (kg)</label>
+                      </div>
                       <input 
                         type="number" step="0.01" min="0"
-                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white tabular-nums focus:ring-2 focus:ring-emerald-500/50"
+                        className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-900 tabular-nums focus:ring-0"
                         value={reviewForm.weight || ''}
                         onChange={(e) => setReviewForm(p => ({ ...p, weight: e.target.value }))}
                         disabled={savingReview}
                       />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block mb-1">Declared Value (₹)</label>
-                      <input 
-                        type="number" min="0"
-                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white tabular-nums focus:ring-2 focus:ring-emerald-500/50"
-                        value={reviewForm.amount || ''}
-                        onChange={(e) => setReviewForm(p => ({ ...p, amount: e.target.value }))}
-                        disabled={savingReview}
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1 block mb-1">Order No / Reference</label>
-                      <input
-                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-3 text-sm font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500/50"
-                        value={reviewForm.orderNo}
-                        onChange={(e) => setReviewForm((p) => ({ ...p, orderNo: e.target.value.toUpperCase() }))}
-                        disabled={savingReview}
-                      />
+                      {intelligence?.weightAnomaly?.anomaly && (
+                        <div className="text-[9px] text-amber-600 font-bold mt-1 leading-tight">⚠️ {intelligence.weightAnomaly.warning}</div>
+                      )}
                     </div>
                   </div>
 
-                  <div className="pt-4 flex items-center justify-end gap-3 border-t border-slate-100 dark:border-slate-800">
-                    <button
-                      type="button"
-                      onClick={deferActiveReview}
-                      className="px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-amber-600 hover:text-amber-500 transition"
-                      disabled={savingReview}
-                    >
-                      Review Later
-                    </button>
-                    <button
-                      type="button"
-                      onClick={removeActiveReview}
-                      className="px-6 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
-                      disabled={savingReview}
-                    >
+                  <div className="pt-4 flex items-center justify-between border-t border-slate-100">
+                    <button type="button" onClick={removeActiveReview} className="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 transition" disabled={savingReview}>
                       Skip
                     </button>
-                    <button
-                      type="submit"
-                      disabled={savingReview}
-                      className="px-8 py-3 rounded-xl bg-emerald-500 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-emerald-500/30 hover:bg-emerald-400 transition-colors flex items-center gap-2"
-                    >
-                      {savingReview ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save size={16} />}
-                      Save & Verify
+                    <button type="submit" disabled={savingReview} className="px-8 py-3 rounded-[14px] bg-slate-900 text-white text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-colors flex items-center gap-2">
+                       {savingReview ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save size={16} />} Approve & Save
                     </button>
                   </div>
                 </form>
 
-                {pendingReviewCount > 1 && (
-                  <div className="mt-6 relative z-10">
-                    <div className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-3">Queued scans</div>
-                    <div className="space-y-2">
-                      {reviewQueue.slice(1, 4).map((queued) => (
-                        <div key={queued.awb} className="flex items-center justify-between rounded-2xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
-                          <div>
-                            <div className="text-xs font-black font-mono text-slate-900 dark:text-white">{queued.awb}</div>
-                            <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                              {queued.meta?.clientSuggestion?.suggestedClientCode || queued.shipment?.clientCode || 'MISC'} · {queued.shipment?.destination || 'Awaiting review'}
-                            </div>
-                          </div>
-                          <div className="text-[10px] font-black uppercase tracking-widest text-amber-600">Queued</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
-            ) : (
+              );
+            })() : (
               <div className="rounded-[32px] bg-gradient-to-br from-blue-50 to-white dark:from-blue-950/20 dark:to-slate-900 border border-blue-200/60 dark:border-blue-900/50 p-6 shadow-sm">
                 <div className="flex items-center justify-between gap-4 mb-5">
                   <div>
@@ -1555,137 +1481,57 @@ export default function ScanAWBPage({ toast }) {
           </div>
         )}
 
-        {/* ── Mobile Bridge QR Modal ──────────────────────────────────── */}
+        {/* ── Mobile Session & QR Modal ──────────────────────────────────── */}
         {showMobileModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-300 p-4 sm:p-6" onClick={(e) => { if (e.target === e.currentTarget) hideMobileModal(); }}>
-            <div className="bg-[radial-gradient(circle_at_top,_rgba(34,197,94,0.10),_transparent_32%),linear-gradient(180deg,_#ffffff_0%,_#f8fafc_100%)] dark:bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.12),_transparent_28%),linear-gradient(180deg,_#0f172a_0%,_#020617_100%)] rounded-[32px] sm:rounded-[40px] p-5 sm:p-8 max-w-md w-full max-h-[min(92vh,860px)] overflow-y-auto shadow-[0_30px_90px_rgba(2,6,23,0.34)] border border-white/60 dark:border-slate-800/90 relative">
-              {/* Glow */}
-              <div className="absolute -top-20 -right-20 w-60 h-60 rounded-full bg-blue-500/10 blur-[60px] pointer-events-none" />
-              <div className="absolute -bottom-20 -left-20 w-60 h-60 rounded-full bg-emerald-500/10 blur-[60px] pointer-events-none" />
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 backdrop-blur-sm animate-in fade-in duration-300 p-4" onClick={(e) => { if (e.target === e.currentTarget) hideMobileModal(); }}>
+            <div className="bg-white rounded-[32px] p-6 max-w-sm w-full shadow-2xl relative overflow-hidden">
+               {/* Header */}
+               <div className="flex justify-between items-start mb-6">
+                 <div>
+                   <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                     <Smartphone size={20} className="text-violet-500" /> Scanner Link
+                   </h3>
+                   <p className="text-[11px] font-bold text-slate-500 mt-1 uppercase tracking-widest">
+                     {mobileStatus === 'connected' ? 'Session Active' : 'Waiting for connection'}
+                   </p>
+                 </div>
+                 <button onClick={hideMobileModal} className="p-2 rounded-full bg-slate-100 text-slate-400 hover:text-slate-600">
+                   <X size={16} />
+                 </button>
+               </div>
 
-              <div className="relative z-10">
-                {/* Header */}
-                <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${mobileStatus === 'connected' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30 animate-pulse' : 'bg-gradient-to-br from-blue-500 to-violet-600 text-white shadow-lg shadow-blue-500/20'}`}>
-                      {mobileStatus === 'connected' ? <Wifi size={22} /> : <Smartphone size={22} />}
+               {mobileStatus === 'connected' ? (
+                 <div className="flex flex-col items-center gap-4 py-6">
+                    <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-500 animate-pulse">
+                      <Wifi size={32} />
                     </div>
-                    <div>
-                      <h3 className="text-lg font-black text-slate-900 dark:text-white">Connect Mobile</h3>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                        {mobileStatus === 'connected' ? '✅ Phone connected' : mobileStatus === 'disconnected' ? '📱 Phone disconnected' : 'Waiting for phone...'}
-                      </p>
+                    <div className="text-center">
+                      <div className="text-2xl font-black">{mobileScanCount}</div>
+                      <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">Scans this session</div>
                     </div>
-                  </div>
-                  <button onClick={hideMobileModal} className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 hover:text-slate-600 transition">
-                    <X size={18} />
-                  </button>
-                </div>
-
-                {/* QR Code */}
-                {mobileStatus !== 'connected' && (
-                  <div className="flex flex-col items-center gap-4 mb-6">
-                    <div className="p-4 bg-white/90 dark:bg-slate-950/80 rounded-3xl shadow-inner border border-slate-100 dark:border-slate-800">
-                      {mobileQRData ? (
-                        <img src={mobileQRData} alt="Scan this QR code with your phone" className="w-56 h-56" />
-                      ) : (
-                        <div className="w-56 h-56 flex items-center justify-center text-slate-300">
-                          <QrCode size={80} />
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 text-center max-w-xs">
-                      Scan this QR code with your phone camera, or open your browser and go to:
-                    </p>
-                    <div className="px-4 py-2 bg-slate-100/80 dark:bg-slate-800/90 rounded-2xl text-[11px] font-mono font-bold text-sky-600 dark:text-sky-300 text-center break-all">
-                      {window.location.origin}/mobile-scanner/{mobilePIN}
-                    </div>
-                  </div>
-                )}
-
-                {/* PIN display */}
-                <div className="flex flex-col items-center gap-3 mb-6">
-                  <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Or enter PIN manually</span>
-                  <div className="flex items-center gap-3 px-4 sm:px-6 py-4 bg-slate-100/80 dark:bg-slate-800/90 rounded-2xl w-full justify-center">
-                    <span className="text-4xl font-black font-mono tracking-[0.4em] text-slate-900 dark:text-white">{mobilePIN}</span>
-                    <button
-                      type="button"
-                      onClick={() => { navigator.clipboard?.writeText(mobilePIN); toast?.('PIN copied!', 'success'); }}
-                      className="p-2 rounded-xl bg-white dark:bg-slate-700 text-slate-400 hover:text-blue-500 shadow-sm transition"
-                    >
-                      <Copy size={16} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Connection status */}
-                {mobileStatus === 'connected' && (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-center gap-3 px-4 py-4 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 shadow-inner">
-                      <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-lg shadow-emerald-500/50" />
-                      <span className="text-sm font-black text-emerald-600 uppercase tracking-widest">Phone is scanning</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 text-center">
-                        <div className="text-2xl font-black text-slate-900 dark:text-white">{mobileScanCount}</div>
-                        <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">Remote Scans</div>
-                      </div>
-                      <div className="rounded-2xl bg-slate-50 dark:bg-slate-800 p-4 text-center">
-                        <div className="text-2xl font-black text-emerald-500">{successfulCaptures}</div>
-                        <div className="text-[9px] font-black uppercase tracking-widest text-slate-400 mt-1">Captured</div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {mobileStatus === 'disconnected' && (
-                  <div className="flex flex-col items-center gap-3">
-                    <div className="flex items-center gap-2 px-4 py-3 bg-amber-500/10 rounded-2xl text-amber-600 text-xs font-bold">
-                      <WifiOff size={14} /> Phone disconnected. Scan QR again to reconnect.
-                    </div>
-                    <button onClick={startMobileSession} className="px-6 py-3 rounded-2xl bg-sky-500 text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-sky-500/20">
-                      Generate New Code
-                    </button>
-                  </div>
-                )}
-
-                {mobileStatus !== 'idle' && (
-                  <div className="mt-5 pt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
-                    <button
-                      type="button"
-                      onClick={hideMobileModal}
-                      className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 text-[11px] font-black uppercase tracking-widest hover:text-slate-700 transition"
-                    >
-                      Hide panel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={endMobileSession}
-                      className="px-4 py-2 rounded-xl bg-red-500 text-white text-[11px] font-black uppercase tracking-widest shadow-lg shadow-red-500/20"
-                    >
-                      Stop session
-                    </button>
-                  </div>
-                )}
-
-                {/* How it works */}
-                <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <div className="grid grid-cols-3 gap-3 text-center">
-                    <div>
-                      <div className="w-8 h-8 mx-auto mb-2 rounded-xl bg-blue-500/10 text-blue-500 flex items-center justify-center text-xs font-black">1</div>
-                      <p className="text-[9px] font-bold text-slate-400">Scan QR with phone</p>
-                    </div>
-                    <div>
-                      <div className="w-8 h-8 mx-auto mb-2 rounded-xl bg-violet-500/10 text-violet-500 flex items-center justify-center text-xs font-black">2</div>
-                      <p className="text-[9px] font-bold text-slate-400">Phone scans barcode</p>
-                    </div>
-                    <div>
-                      <div className="w-8 h-8 mx-auto mb-2 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center text-xs font-black">3</div>
-                      <p className="text-[9px] font-bold text-slate-400">Result on desktop</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+                 </div>
+               ) : (
+                 <div className="flex flex-col items-center gap-5 pb-2">
+                   <div className="p-3 bg-white rounded-3xl shadow-[0_0_20px_rgba(0,0,0,0.05)] border border-slate-100">
+                     {mobileQRData ? (
+                       <img src={mobileQRData} alt="Scan QR" className="w-48 h-48 rounded-2xl" />
+                     ) : (
+                       <div className="w-48 h-48 flex items-center justify-center bg-slate-50 rounded-2xl text-slate-300">
+                         <QrCode size={40} />
+                       </div>
+                     )}
+                   </div>
+                   <div className="text-center max-w-[240px]">
+                     <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
+                       Scan with camera to connect
+                     </p>
+                     <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-xl border border-slate-100 justify-center group cursor-pointer hover:bg-slate-100" onClick={() => { navigator.clipboard?.writeText(mobilePIN); }}>
+                       <span className="text-[11px] font-mono font-black tracking-[0.2em] text-violet-600">PIN: {mobilePIN}</span>
+                       <Copy size={12} className="text-slate-400 group-hover:text-violet-500" />
+                     </div>
+                   </div>
+                 </div>
+               )}
             </div>
           </div>
         )}

@@ -212,6 +212,28 @@ async function initSocket(server) {
       io.to(session.phoneSocketId).emit('scanner:intake-preview', { intakeRow });
     });
 
+    // Desktop tells phone: "I'm done processing, you can scan again"
+    socket.on('scanner:ready-for-next', ({ pin }) => {
+      const session = scanSessions.get(pin);
+      if (!session || session.desktopSocketId !== socket.id || !session.phoneSocketId) return;
+      io.to(session.phoneSocketId).emit('scanner:ready-for-next', {
+        scanCount: session.scanCount,
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    // Desktop relays correction diffs for the learning system
+    socket.on('scanner:learn-corrections', ({ pin, ocrFields, approvedFields }) => {
+      // This is handled server-side: call the correction learner directly
+      try {
+        const correctionLearner = require('../services/correctionLearner.service');
+        correctionLearner.recordCorrections(ocrFields || {}, approvedFields || {})
+          .catch(err => logger.warn(`[Learning] Socket correction save failed: ${err.message}`));
+      } catch (err) {
+        logger.warn(`[Learning] Socket correction failed: ${err.message}`);
+      }
+    });
+
     // Cleanup on desktop disconnect
     socket.on('disconnect', () => {
       logger.info(`Socket disconnected: ${user.email}`);
@@ -269,7 +291,7 @@ function handleMobileScannerConnection(socket) {
   });
 
   // Phone sends a scanned barcode
-  socket.on('scanner:scan', ({ awb, imageBase64, focusImageBase64 }) => {
+  socket.on('scanner:scan', ({ awb, imageBase64, focusImageBase64, sessionContext }) => {
     const currentSession = scanSessions.get(pin);
     if (!currentSession || currentSession.phoneSocketId !== socket.id) return;
 
@@ -277,13 +299,14 @@ function handleMobileScannerConnection(socket) {
 
     logger.info(`Remote scan #${currentSession.scanCount}: AWB ${awb} via PIN ${pin}`);
 
-    // Relay to desktop
+    // Relay to desktop with session context
     io.to(currentSession.desktopSocketId).emit('scanner:remote-scan', {
       awb: String(awb || '').trim(),
       imageBase64: imageBase64 || null,
       focusImageBase64: focusImageBase64 || null,
       scanNumber: currentSession.scanCount,
       timestamp: new Date().toISOString(),
+      sessionContext: sessionContext || {},
     });
   });
 

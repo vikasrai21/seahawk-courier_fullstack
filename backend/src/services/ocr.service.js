@@ -36,6 +36,7 @@ function enhanceParsedDetails(parsed = {}, knownAwb = '') {
     else if (/trackon/i.test(rawText)) next.courier = 'Trackon';
   }
 
+  // Regex fallbacks ONLY if Gemini didn't extract
   if (!next.pincode) {
     next.pincode = firstMatch(rawText, /\b(\d{6})\b/, 1);
   }
@@ -61,9 +62,86 @@ function enhanceParsedDetails(parsed = {}, knownAwb = '') {
 }
 
 /**
- * Extracts AWB details from a courier slip image using Gemini 2.0 Flash Vision
- * @param {string} base64Data - The pure base64 string of the image (without data:image/... prefix)
+ * Build the context-aware Gemini prompt with client names and correction history injected.
+ */
+function buildPrompt(knownAwb = '', contextData = {}) {
+  const { clients = [], corrections = [], sessionContext = {} } = contextData;
+
+  const clientList = clients.length
+    ? clients.map((c) => `${c.code}: ${c.company}`).join('\n')
+    : '(no client data available)';
+
+  const correctionList = corrections.length
+    ? corrections.map((c) => `"${c.original}" → "${c.corrected}" (${c.field}, seen ${c.count}x)`).join('\n')
+    : '(no correction history yet)';
+
+  const sessionHint = sessionContext.recentClient
+    ? `Recent scans in this session were mostly for client: ${sessionContext.recentClient}`
+    : 'No session context available.';
+
+  return `You are an expert OCR AI for an Indian logistics company called Seahawk Courier & Cargo.
+I am uploading an image of a courier waybill/slip. Carefully read ALL visible text.
+
+KNOWN BARCODE:
+- The barcode/AWB has already been scanned separately as: ${knownAwb || 'UNKNOWN'}
+- If the image barcode is blurry or partially cut, DO NOT guess a different AWB.
+- Prefer the known barcode above whenever plausible.
+
+═══════════════════════════════════════════
+KNOWN CLIENTS OF SEAHAWK (match sender/merchant against these):
+${clientList}
+═══════════════════════════════════════════
+
+LEARNED CORRECTIONS (past OCR mistakes → correct values):
+${correctionList}
+
+SESSION CONTEXT:
+${sessionHint}
+
+═══════════════════════════════════════════
+CRITICAL EXTRACTION RULES:
+═══════════════════════════════════════════
+
+1. "consignee": The RECIPIENT (labeled "To:", "Consignee:", "Recipient:"). Extract ONLY the name of the person or company RECEIVING the package.
+
+2. "destination": The destination CITY name. Look at the bottom of the To/Consignee address block.
+   - Extract the City name. If a 6-digit Indian pincode is visible, extract it too.
+   - Common cities: NEW DELHI, MUMBAI, LUCKNOW, JAIPUR, DEHRADUN, BANGALORE, LUDHIANA, JALANDHAR, CHENNAI, COIMBATORE, VARANASI, PANCHKULA, NOIDA, KOLKATA, PUNE, KANPUR, CHANDIGARH, HYDERABAD, AHMEDABAD, SURAT.
+
+3. "clientName": The SENDER, MERCHANT, SELLER, or ACCOUNT OWNER on the label. NOT the courier brand.
+   - If the sender/merchant fuzzy-matches a known client from the list above, return that client name EXACTLY as listed.
+   - If you've seen a correction pattern above, apply it automatically.
+
+4. "pincode": Always a 6-digit number. Extract separately even if it's part of the address.
+
+5. "weight": Numeric value in kg. If the label says "2.5kg" → weight is 2.5.
+
+6. "amount": The declared value or COD amount if visible. Otherwise 0.
+
+7. "orderNo": Order ID / OID / Reference / Invoice number if visible.
+
+HANDWRITTEN TEXT:
+Many Indian courier slips have handwritten consignee names and destinations.
+Be EXTRA CAREFUL when reading handwritten text. If unsure, provide your best guess
+and reflect that uncertainty in the confidence score (lower number).
+
+CONFIDENCE SCORES:
+For EACH field, provide a confidence score between 0.0 and 1.0.
+- 1.0 = 100% certain (clearly printed, easy to read)
+- 0.5 = somewhat uncertain (partially visible, minor blur)
+- 0.1 = very uncertain (heavily blurred, barely readable)
+
+Be conservative: leave fields blank rather than invent data.
+Respond using the required JSON schema.`;
+}
+
+/**
+ * Extracts AWB details from a courier slip image using Gemini Vision
+ * with context-aware prompt injection.
+ *
+ * @param {string} base64Data - The pure base64 string of the image
  * @param {string} mimeType - e.g. "image/jpeg"
+ * @param {object} options - { knownAwb, clients, corrections, sessionContext }
  */
 exports.extractShipmentFromImage = async (base64Data, mimeType, options = {}) => {
   if (!genAI) {
@@ -71,6 +149,11 @@ exports.extractShipmentFromImage = async (base64Data, mimeType, options = {}) =>
   }
 
   const knownAwb = String(options.knownAwb || '').trim();
+  const contextData = {
+    clients: options.clients || [],
+    corrections: options.corrections || [],
+    sessionContext: options.sessionContext || {},
+  };
 
   const model = genAI.getGenerativeModel({
     model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
@@ -82,19 +165,25 @@ exports.extractShipmentFromImage = async (base64Data, mimeType, options = {}) =>
           success: { type: SchemaType.BOOLEAN, description: "Whether an AWB or details were successfully found" },
           awb: { type: SchemaType.STRING, description: "The tracking number / AWB / Docket number" },
           courier: { type: SchemaType.STRING, description: "Detected courier name (e.g. Trackon, DTDC, Delhivery)", nullable: true },
-          clientName: { type: SchemaType.STRING, description: "Detected sender, merchant, or client account name that owns the shipment label", nullable: true },
+          clientName: { type: SchemaType.STRING, description: "Detected sender/merchant/client who owns the shipment. Match against known clients if possible.", nullable: true },
+          clientNameConfidence: { type: SchemaType.NUMBER, description: "Confidence 0.0–1.0 for clientName extraction", nullable: true },
           consignee: { type: SchemaType.STRING, description: "The recipient's full name", nullable: true },
-          destination: { type: SchemaType.STRING, description: "The destination city or full address", nullable: true },
+          consigneeConfidence: { type: SchemaType.NUMBER, description: "Confidence 0.0–1.0 for consignee extraction", nullable: true },
+          destination: { type: SchemaType.STRING, description: "The destination city", nullable: true },
+          destinationConfidence: { type: SchemaType.NUMBER, description: "Confidence 0.0–1.0 for destination extraction", nullable: true },
           pincode: { type: SchemaType.STRING, description: "The 6-digit Indian destination pincode if present", nullable: true },
+          pincodeConfidence: { type: SchemaType.NUMBER, description: "Confidence 0.0–1.0 for pincode extraction", nullable: true },
           senderName: { type: SchemaType.STRING, description: "Consignor/sender person name if present", nullable: true },
           senderCompany: { type: SchemaType.STRING, description: "Consignor/sender company name if present", nullable: true },
           senderAddress: { type: SchemaType.STRING, description: "Consignor/sender full address if present", nullable: true },
           returnAddress: { type: SchemaType.STRING, description: "Return address text if present", nullable: true },
           merchant: { type: SchemaType.STRING, description: "Merchant/Brand/OID owner name if present", nullable: true },
           oid: { type: SchemaType.STRING, description: "Order ID / OID / reference text if present", nullable: true },
-          orderNo: { type: SchemaType.STRING, description: "Order number / order reference / invoice reference if visible on the label", nullable: true },
+          orderNo: { type: SchemaType.STRING, description: "Order number / order reference / invoice reference if visible", nullable: true },
           weight: { type: SchemaType.NUMBER, description: "The numerical weight in kg. E.g. if '2.5kg' is seen, write 2.5", nullable: true },
+          weightConfidence: { type: SchemaType.NUMBER, description: "Confidence 0.0–1.0 for weight extraction", nullable: true },
           amount: { type: SchemaType.NUMBER, description: "The declared value or COD amount if written on the label, otherwise 0", nullable: true },
+          amountConfidence: { type: SchemaType.NUMBER, description: "Confidence 0.0–1.0 for amount extraction", nullable: true },
           rawText: { type: SchemaType.STRING, description: "A brief summary of raw text read to aid debugging" }
         },
         required: ["success", "awb"]
@@ -102,35 +191,7 @@ exports.extractShipmentFromImage = async (base64Data, mimeType, options = {}) =>
     }
   });
 
-  const prompt = `You are an expert OCR AI for Indian logistics and courier parsing. 
-I am uploading an image of a courier waybill/slip.
-Carefully read ALL the text provided on the slip.
-
-KNOWN BARCODE:
-- The barcode/AWB has already been scanned separately as: ${knownAwb || 'UNKNOWN'}
-- If the image barcode is blurry, partially cut, or hard to read, DO NOT guess a different AWB.
-- Prefer the known barcode above whenever it is plausible.
-- Your main job is to extract the other shipment fields from the label image.
-
-CRITICAL EXTRACTION RULES for Consignee and Destination:
-1. "consignee": This is usually labeled "To:", "Consignee:", or "Recipient:". Extract ONLY the name of the person or company receiving the package. (e.g., "VILAS VADLA", "RANJAN KUMAR", "ARICOM ENTERPRISES").
-2. "destination": Look for the Destination City and Pincode at the bottom of the To/Consignee address block. 
-   - You MUST extract the City name. 
-   - If there is a 6-digit Indian Pincode, extract it too. (e.g., "NEW DELHI 110001" or "PANCHKULA"). 
-   - VERY IMPORTANT: Sometimes the Pincode is missing. That is okay, just extract the City name in that case.
-   - Here are some common destination cities you should be ready to recognize: NEW DELHI, MUMBAI, LUCKNOW, JAIPUR, DEHRADUN, BANGALORE, LUDHIANA, JALANDHAR, CHENNAI, COIMBATORE, VARANASI, PANCHKULA, NOIDA, KOLKOTTA, PUNE, KANPUR.
-
-OTHER FIELDS:
-Extract the AWB Number (usually labeled Tracking, Docket, or AWB), sender/consignor details, return address, merchant/brand or OID/reference, destination pincode, declared value, and any weight values.
-If you can identify the client/merchant/account owner from sender text, merchant text, or branding, put it in clientName.
-If order reference text appears as OID / Order ID / Ref / Invoice / Order No, map the best value into orderNo.
-If you recognize the carrier's logo (like Trackon, DTDC, Delhivery, BlueDart), specify the courier name.
-Be conservative:
-- Leave fields blank instead of inventing.
-- "clientName" should be the sender, merchant, seller, or account owner, not the courier brand.
-- "destination" should prefer city/locality over the entire address block when possible.
-- "rawText" should contain the most important visible text you relied on.
-Respond using the required JSON schema mapping. If you cannot find any meaningful shipment info, set success to false.`;
+  const prompt = buildPrompt(knownAwb, contextData);
 
   try {
     const result = await model.generateContent([
@@ -148,7 +209,8 @@ Respond using the required JSON schema mapping. If you cannot find any meaningfu
       parsed.awb = knownAwb;
     }
     const enhanced = enhanceParsedDetails(parsed, knownAwb);
-    logger.info(`[OCR Vision Parsed] awb=${enhanced.awb || 'NA'} courier=${enhanced.courier || 'NA'} client=${enhanced.clientName || 'NA'} consignee=${enhanced.consignee || 'NA'} destination=${enhanced.destination || 'NA'} pincode=${enhanced.pincode || 'NA'} weight=${enhanced.weight || 0} orderNo=${enhanced.orderNo || 'NA'}`);
+
+    logger.info(`[OCR Vision] awb=${enhanced.awb || 'NA'} courier=${enhanced.courier || 'NA'} client=${enhanced.clientName || 'NA'}(${enhanced.clientNameConfidence || '?'}) consignee=${enhanced.consignee || 'NA'}(${enhanced.consigneeConfidence || '?'}) dest=${enhanced.destination || 'NA'}(${enhanced.destinationConfidence || '?'}) pin=${enhanced.pincode || 'NA'} wt=${enhanced.weight || 0} order=${enhanced.orderNo || 'NA'}`);
     return enhanced;
   } catch (error) {
     logger.error(`[OCR Vision Error]: ${error.message}`);

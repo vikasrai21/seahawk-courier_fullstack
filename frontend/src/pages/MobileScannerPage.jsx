@@ -1,1694 +1,1168 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
-import { BrowserMultiFormatReader } from '@zxing/browser';
-import { BarcodeFormat, DecodeHintType, NotFoundException } from '@zxing/library';
-import { useParams } from 'react-router-dom';
 import {
-  ScanLine, CheckCircle2, AlertCircle, Wifi, WifiOff,
-  Smartphone, Zap, X, Camera, Aperture, Save,
+  Camera, Check, AlertCircle, RotateCcw, Send, ChevronRight, Volume2, VolumeX,
+  Wifi, WifiOff, Zap, Package, ScanLine, Shield, RefreshCw, X, Brain,
+  BarChart3, History, Clock, CheckCircle2
 } from 'lucide-react';
 
-const SCANBOT_ENGINE_PATH = '/wasm/';
-const SCANBOT_LICENSE_KEY = import.meta.env.VITE_SCANBOT_LICENSE_KEY || '';
-const COURIER_SCAN_REGEX = '^(?:[A-Z0-9]{8,18})$';
+// ─── Constants ──────────────────────────────────────────────────────────────
+const SOCKET_URL = import.meta.env.VITE_API_URL || window.location.origin;
+const SCANBOT_LICENSE = import.meta.env.VITE_SCANBOT_LICENSE_KEY || '';
+const BARCODE_SCAN_REGION = { widthPct: 0.72, heightPct: 0.38 };
+const DOC_CAPTURE_REGION = { widthPct: 0.88, heightPct: 0.55 };
+const AUTO_NEXT_DELAY = 3500;
 
-function resolveSocketUrl() {
-  const apiUrl = import.meta.env.VITE_API_URL;
-  if (!apiUrl || apiUrl.startsWith('/')) return window.location.origin;
-  return apiUrl.replace(/\/api\/?$/, '');
-}
+const STEPS = {
+  IDLE: 'IDLE',
+  SCANNING: 'SCANNING',
+  BARCODE_LOCKED: 'BARCODE_LOCKED',
+  CAPTURING: 'CAPTURING',
+  PREVIEW: 'PREVIEW',
+  PROCESSING: 'PROCESSING',
+  REVIEWING: 'REVIEWING',
+  APPROVING: 'APPROVING',
+  SUCCESS: 'SUCCESS',
+  ERROR: 'ERROR',
+};
 
-const playBeep = (freq = 880, duration = 0.08) => {
+// ─── Audio/Haptics ──────────────────────────────────────────────────────────
+const vibrate = (pattern) => {
+  try { navigator?.vibrate?.(pattern); } catch {}
+};
+
+const playTone = (freq, duration, type = 'sine') => {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.type = 'sine';
+    osc.type = type;
     osc.frequency.setValueAtTime(freq, ctx.currentTime);
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.setValueAtTime(0.12, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + duration);
-  } catch (e) { /* silent */ }
+  } catch {}
 };
 
-const vibrate = (pattern = [50]) => {
-  try { navigator.vibrate?.(pattern); } catch { /* silent */ }
+const playSuccessBeep = () => { playTone(880, 0.12); setTimeout(() => playTone(1100, 0.10), 130); };
+const playCaptureBeep = () => playTone(600, 0.08);
+const playErrorBeep = () => playTone(200, 0.25, 'sawtooth');
+
+const speak = (text) => {
+  try {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1.2; u.pitch = 1.0; u.lang = 'en-IN';
+    window.speechSynthesis.speak(u);
+  } catch {}
 };
 
-const BARCODE_PATTERNS = [
-  /^Z\d{8,9}$/,
-  /^D\d{9,11}$/,
-  /^X\d{9,10}$/,
-  /^7X\d{9}$/,
-  /^I\d{7,8}$/,
-  /^JD\d{18}$/,
-  /^\d{12,14}$/,
-  /^[A-Z]{1,3}\d{7,14}$/,
-];
+// ─── Styles ─────────────────────────────────────────────────────────────────
+const theme = {
+  bg: '#FAFBFD',
+  surface: '#FFFFFF',
+  border: 'rgba(0,0,0,0.06)',
+  text: '#111827',
+  muted: '#6B7280',
+  mutedLight: '#9CA3AF',
+  primary: '#4F46E5',
+  primaryLight: '#EEF2FF',
+  success: '#059669',
+  successLight: '#ECFDF5',
+  warning: '#D97706',
+  warningLight: '#FFFBEB',
+  error: '#DC2626',
+  errorLight: '#FEF2F2',
+};
 
-function normalizeDetectedBarcode(value) {
-  const cleaned = String(value || '')
-    .toUpperCase()
-    .replace(/\s+/g, '')
-    .replace(/[^A-Z0-9]/g, '');
+const css = `
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
 
-  if (cleaned.length < 8) return '';
-  if (BARCODE_PATTERNS.some((pattern) => pattern.test(cleaned))) return cleaned;
+.msp-root {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: ${theme.bg};
+  color: ${theme.text};
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.msp-root * { box-sizing: border-box; }
 
-  const digitCount = (cleaned.match(/\d/g) || []).length;
-  if (/^(?=.*\d)[A-Z0-9]{8,18}$/.test(cleaned) && digitCount >= 7) {
-    return cleaned;
-  }
+/* ── Monospace for AWB ── */
+.mono { font-family: 'JetBrains Mono', 'SF Mono', monospace; letter-spacing: -0.02em; }
 
-  return '';
+/* ── Step wrapper (full-screen transitions) ── */
+.msp-step {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  opacity: 0; transform: translateX(40px);
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  z-index: 1;
+}
+.msp-step.active {
+  opacity: 1; transform: translateX(0);
+  pointer-events: all; z-index: 2;
+}
+.msp-step.exiting {
+  opacity: 0; transform: translateX(-40px);
+  pointer-events: none;
 }
 
+/* ── Camera viewport ── */
+.cam-viewport {
+  position: relative; width: 100%; flex: 1;
+  background: #000; overflow: hidden;
+}
+.cam-viewport video {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.cam-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ── Scan guide rectangle ── */
+.scan-guide {
+  border: 2.5px solid rgba(255,255,255,0.7);
+  border-radius: 16px;
+  position: relative;
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+.scan-guide.detected {
+  border-color: #10B981;
+  box-shadow: 0 0 0 3px rgba(16,185,129,0.25), inset 0 0 30px rgba(16,185,129,0.05);
+}
+.scan-guide-corner {
+  position: absolute; width: 24px; height: 24px;
+  border: 3px solid rgba(255,255,255,0.9);
+  transition: border-color 0.3s;
+}
+.scan-guide.detected .scan-guide-corner { border-color: #10B981; }
+.corner-tl { top: -2px; left: -2px; border-right: none; border-bottom: none; border-radius: 8px 0 0 0; }
+.corner-tr { top: -2px; right: -2px; border-left: none; border-bottom: none; border-radius: 0 8px 0 0; }
+.corner-bl { bottom: -2px; left: -2px; border-right: none; border-top: none; border-radius: 0 0 0 8px; }
+.corner-br { bottom: -2px; right: -2px; border-left: none; border-top: none; border-radius: 0 0 8px 0; }
+
+/* ── Scan laser ── */
+@keyframes laserScan {
+  0%, 100% { top: 15%; } 50% { top: 82%; }
+}
+.scan-laser {
+  position: absolute; left: 8%; right: 8%; height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(79,70,229,0.6), transparent);
+  animation: laserScan 2.5s ease-in-out infinite;
+}
+
+/* ── HUD (top bar on camera) ── */
+.cam-hud {
+  position: absolute; top: 0; left: 0; right: 0;
+  padding: 16px 20px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.55), transparent);
+  display: flex; justify-content: space-between; align-items: flex-start;
+  z-index: 3;
+}
+.cam-hud-chip {
+  padding: 5px 12px; border-radius: 20px;
+  background: rgba(255,255,255,0.15); backdrop-filter: blur(8px);
+  color: white; font-size: 0.72rem; font-weight: 600;
+  display: flex; align-items: center; gap: 5px;
+}
+
+/* ── Bottom bar on camera ── */
+.cam-bottom {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  padding: 20px;
+  background: linear-gradient(to top, rgba(0,0,0,0.65), transparent);
+  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  z-index: 3;
+}
+
+/* ── Cards ── */
+.card {
+  background: ${theme.surface}; border: 1px solid ${theme.border};
+  border-radius: 16px; padding: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 14px 24px; border-radius: 12px; border: none;
+  font-family: inherit; font-size: 0.9rem; font-weight: 600;
+  cursor: pointer; transition: all 0.2s;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary {
+  background: linear-gradient(135deg, #4F46E5, #6366F1);
+  color: white;
+}
+.btn-primary:hover { box-shadow: 0 4px 14px rgba(79,70,229,0.35); }
+.btn-success {
+  background: linear-gradient(135deg, #059669, #10B981);
+  color: white;
+}
+.btn-outline {
+  background: ${theme.surface}; border: 1.5px solid ${theme.border};
+  color: ${theme.text};
+}
+.btn-danger { background: ${theme.errorLight}; color: ${theme.error}; }
+.btn-lg { padding: 16px 32px; font-size: 1rem; border-radius: 14px; }
+.btn-full { width: 100%; }
+.btn:disabled {
+  opacity: 0.5; cursor: default;
+}
+
+/* ── Capture button (circular) ── */
+.capture-btn {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: white; border: 4px solid rgba(255,255,255,0.4);
+  cursor: pointer; position: relative;
+  transition: transform 0.15s;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+}
+.capture-btn:active { transform: scale(0.92); }
+.capture-btn-inner {
+  position: absolute; inset: 4px; border-radius: 50%;
+  background: white; border: 2px solid #E5E7EB;
+}
+
+/* ── Preview image ── */
+.preview-img {
+  width: 100%; border-radius: 12px;
+  object-fit: contain; max-height: 50vh;
+  background: #F1F5F9;
+}
+
+/* ── Field card in review ── */
+.field-card {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 14px;
+  background: ${theme.surface}; border: 1px solid ${theme.border};
+  border-radius: 12px;
+}
+.field-card.warning { border-color: ${theme.warning}; background: ${theme.warningLight}; }
+.field-card.error-field { border-color: ${theme.error}; background: ${theme.errorLight}; }
+.field-label {
+  font-size: 0.65rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: ${theme.muted}; margin-bottom: 2px;
+}
+.field-value {
+  font-size: 0.85rem; font-weight: 600;
+  color: ${theme.text};
+}
+.field-input {
+  width: 100%; background: ${theme.bg}; border: 1px solid ${theme.border};
+  border-radius: 8px; padding: 8px 10px;
+  font-family: inherit; font-size: 0.82rem; font-weight: 500;
+  color: ${theme.text}; outline: none;
+}
+.field-input:focus { border-color: ${theme.primary}; box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
+
+/* ── Confidence dot ── */
+.conf-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0; margin-top: 4px;
+}
+.conf-high { background: ${theme.success}; }
+.conf-med { background: ${theme.warning}; }
+.conf-low { background: ${theme.error}; }
+
+/* ── Source badge ── */
+.source-badge {
+  font-size: 0.6rem; padding: 2px 6px; border-radius: 6px;
+  font-weight: 600; display: inline-flex; align-items: center; gap: 3px;
+}
+.source-learned { background: #F5F3FF; color: #7C3AED; }
+.source-ai { background: ${theme.primaryLight}; color: ${theme.primary}; }
+.source-history { background: ${theme.warningLight}; color: ${theme.warning}; }
+.source-pincode { background: ${theme.successLight}; color: ${theme.success}; }
+
+/* ── Shimmer skeleton ── */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* ── Success checkmark ── */
+@keyframes checkDraw {
+  0% { stroke-dashoffset: 48; }
+  100% { stroke-dashoffset: 0; }
+}
+@keyframes circleDraw {
+  0% { stroke-dashoffset: 200; }
+  100% { stroke-dashoffset: 0; }
+}
+.success-check-circle {
+  stroke-dasharray: 200; stroke-dashoffset: 200;
+  animation: circleDraw 0.6s ease-out 0.1s forwards;
+}
+.success-check-mark {
+  stroke-dasharray: 48; stroke-dashoffset: 48;
+  animation: checkDraw 0.5s ease-out 0.5s forwards;
+}
+
+/* ── Flash overlay ── */
+@keyframes flash { 0% { opacity: 0.8; } 100% { opacity: 0; } }
+.flash-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  pointer-events: none;
+  animation: flash 0.3s ease-out forwards;
+}
+.flash-white { background: white; }
+.flash-success { background: rgba(5,150,105,0.2); }
+.flash-error { background: rgba(220,38,38,0.2); }
+
+/* ── Duplicate warning ── */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
+}
+.shake { animation: shake 0.5s ease-in-out; }
+
+/* ── Offline banner ── */
+.offline-banner {
+  background: ${theme.warningLight}; color: ${theme.warning};
+  text-align: center; padding: 6px; font-size: 0.72rem; font-weight: 600;
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 99;
+}
+
+/* ── Scrollable panel ── */
+.scroll-panel {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 16px 20px;
+}
+`;
+
+// ─── Confidence helpers ─────────────────────────────────────────────────────
+const confLevel = (score) => {
+  if (score >= 0.85) return 'high';
+  if (score >= 0.55) return 'med';
+  return 'low';
+};
+
+const confDotClass = (score) => `conf-dot conf-${confLevel(score)}`;
+
+const sourceLabel = (source) => {
+  if (source === 'learned') return { className: 'source-badge source-learned', icon: '🧠', text: 'Learned' };
+  if (source === 'fuzzy_match') return { className: 'source-badge source-ai', icon: '🔍', text: 'Matched' };
+  if (source === 'fuzzy_history' || source === 'consignee_pattern') return { className: 'source-badge source-history', icon: '📊', text: 'History' };
+  if (source === 'delhivery_pincode' || source === 'india_post' || source === 'pincode_lookup' || source === 'indiapost_lookup') return { className: 'source-badge source-pincode', icon: '📍', text: 'Pincode' };
+  return null;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Component
+// ═══════════════════════════════════════════════════════════════════════════
 export default function MobileScannerPage() {
-  const { pin: urlPin } = useParams();
-  const [pin, setPin] = useState(urlPin || '');
-  const [pinInput, setPinInput] = useState(urlPin || '');
-  const [status, setStatus] = useState('idle'); // idle | connecting | paired | error | ended
+  const { pin } = useParams();
+  const navigate = useNavigate();
+
+  // ── Connection ──
+  const [socket, setSocket] = useState(null);
+  const [connStatus, setConnStatus] = useState('connecting'); // connecting | paired | disconnected
   const [errorMsg, setErrorMsg] = useState('');
-  const [pairedUser, setPairedUser] = useState('');
-  const [scanCount, setScanCount] = useState(0);
-  const [lastAwb, setLastAwb] = useState('');
-  const [lastFeedback, setLastFeedback] = useState(null); // { awb, status, clientCode, clientName, consignee, destination, weight, reviewRequired }
-  const [flashFeedback, setFlashFeedback] = useState(null); // 'success' | 'error'
-  const [cameraActive, setCameraActive] = useState(false);
-  const [cameraReady, setCameraReady] = useState(false);
-  const [cameraStarting, setCameraStarting] = useState(false);
-  const [cameraError, setCameraError] = useState('');
-  const [pendingBarcode, setPendingBarcode] = useState('');
-  const [awaitingLabelCapture, setAwaitingLabelCapture] = useState(false);
-  const [labelCaptureBusy, setLabelCaptureBusy] = useState(false);
-  const [labelCaptureHint, setLabelCaptureHint] = useState('');
-  const [capturedLabelPreview, setCapturedLabelPreview] = useState('');
-  const [capturedLabelPayload, setCapturedLabelPayload] = useState(null);
-  const [approvalDraft, setApprovalDraft] = useState(null);
-  const [approvalBusy, setApprovalBusy] = useState(false);
-  const [approvalMessage, setApprovalMessage] = useState('');
 
-  const socketRef = useRef(null);
+  // ── State machine ──
+  const [step, setStep] = useState(STEPS.IDLE);
+  const [prevStep, setPrevStep] = useState(null);
+
+  // ── Scan data ──
+  const [lockedAwb, setLockedAwb] = useState('');
+  const [capturedImage, setCapturedImage] = useState(null);
+  const [processingFields, setProcessingFields] = useState({});
+  const [reviewData, setReviewData] = useState(null);
+  const [reviewForm, setReviewForm] = useState({});
+  const [lastSuccess, setLastSuccess] = useState(null);
+  const [flash, setFlash] = useState(null); // null | 'white' | 'success' | 'error'
+  const [duplicateWarning, setDuplicateWarning] = useState('');
+
+  // ── Session context ──
+  const [sessionCtx, setSessionCtx] = useState({
+    scannedAwbs: new Set(),
+    clientFreq: {},
+    scanNumber: 0,
+    dominantClient: null,
+    startedAt: Date.now(),
+  });
+
+  // ── Settings ──
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+
+  // ── Refs ──
   const videoRef = useRef(null);
-  const cameraWrapRef = useRef(null);
-  const scanbotContainerRef = useRef(null);
-  const scanFrameRef = useRef(null);
-  const scannerRef = useRef(null);
-  const scanbotSdkRef = useRef(null);
-  const scanbotHandleRef = useRef(null);
-  const mediaStreamRef = useRef(null);
+  const guideRef = useRef(null);
+  const scannerRef = useRef(null); // ZXing reader
+  const scanbotRef = useRef(null); // Scanbot SDK
   const scanBusyRef = useRef(false);
-  const scannerPausedRef = useRef(false);
-  const lastDecodedRef = useRef('');
-  const scanLockUntilRef = useRef(0);
-  const lastDecodeErrorAtRef = useRef(0);
-  const [scannerEngine, setScannerEngine] = useState('scanbot');
+  const autoNextTimer = useRef(null);
 
-  const bindPreviewVideo = useCallback(() => {
-    const scanbotVideo = scanbotContainerRef.current?.querySelector?.('video');
-    if (scanbotVideo) {
-      videoRef.current = scanbotVideo;
-      return scanbotVideo;
-    }
-    return videoRef.current;
-  }, []);
-
-  const ensureScanbotSdk = useCallback(async () => {
-    if (scanbotSdkRef.current) return scanbotSdkRef.current;
-
-    const mod = await import('scanbot-web-sdk');
-    const ScanbotSDK = mod.default;
-    const sdk = await ScanbotSDK.initialize({
-      licenseKey: SCANBOT_LICENSE_KEY,
-      enginePath: SCANBOT_ENGINE_PATH,
-      userAgentAppId: 'seahawk-mobile-scanner',
-    });
-
-    const licenseInfo = await sdk.getLicenseInfo().catch(() => null);
-    if (licenseInfo && !licenseInfo.isValid()) {
-      throw new Error(licenseInfo.licenseStatusMessage || 'Scanbot license is not valid.');
-    }
-
-    scanbotSdkRef.current = sdk;
-    return sdk;
-  }, []);
-
-  const waitForVideoReady = async (video) => new Promise((resolve, reject) => {
-    if (!video) {
-      reject(new Error('Video element unavailable'));
-      return;
-    }
-
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      video.removeEventListener('loadedmetadata', onReady);
-      video.removeEventListener('canplay', onReady);
-      clearTimeout(timeoutId);
-      resolve();
-    };
-
-    const fail = () => {
-      if (settled) return;
-      settled = true;
-      video.removeEventListener('loadedmetadata', onReady);
-      video.removeEventListener('canplay', onReady);
-      clearTimeout(timeoutId);
-      reject(new Error('Camera preview did not become ready'));
-    };
-
-    const onReady = () => finish();
-    const timeoutId = setTimeout(fail, 5000);
-
-    if (video.readyState >= 2) {
-      finish();
-      return;
-    }
-
-    video.addEventListener('loadedmetadata', onReady, { once: true });
-    video.addEventListener('canplay', onReady, { once: true });
-  });
-
-  const waitForVideoElement = async () => new Promise((resolve, reject) => {
-    const startedAt = Date.now();
-    const tick = () => {
-      const video = videoRef.current;
-      if (video) {
-        resolve(video);
-        return;
-      }
-      if (Date.now() - startedAt > 2500) {
-        reject(new Error('Camera surface unavailable'));
-        return;
-      }
-      requestAnimationFrame(tick);
-    };
-    tick();
-  });
-
-  const waitForScanbotVideo = async () => new Promise((resolve, reject) => {
-    const startedAt = Date.now();
-    const tick = () => {
-      const video = bindPreviewVideo();
-      if (video) {
-        resolve(video);
-        return;
-      }
-      if (Date.now() - startedAt > 5000) {
-        reject(new Error('Premium scanner camera surface unavailable'));
-        return;
-      }
-      requestAnimationFrame(tick);
-    };
-    tick();
-  });
-
-  const normalizeApprovalDraft = (feedback = {}) => ({
-    shipmentId: feedback.shipmentId || null,
-    awb: String(feedback.awb || '').trim(),
-    clientCode: String(feedback.clientCode || '').trim().toUpperCase(),
-    clientName: String(feedback.clientName || '').trim(),
-    consignee: String(feedback.consignee || '').trim().toUpperCase(),
-    destination: String(feedback.destination || '').trim().toUpperCase(),
-    pincode: String(feedback.pincode || '').replace(/\D/g, '').slice(0, 6),
-    weight: feedback.weight || 0,
-    amount: feedback.amount || 0,
-    orderNo: String(feedback.orderNo || '').trim().toUpperCase(),
-  });
-
-  // ── Connect to desktop via PIN ──────────────────────────────────────────
-  const connectToDesktop = useCallback((connectPin) => {
-    const trimmedPin = String(connectPin || '').trim();
-    if (trimmedPin.length !== 6) {
-      setErrorMsg('Please enter a valid 6-digit PIN');
-      setStatus('error');
-      return;
-    }
-
-    setPin(trimmedPin);
-    setStatus('connecting');
-    setErrorMsg('');
-
-    const socket = io(resolveSocketUrl(), {
-      auth: { scannerPin: trimmedPin },
-      withCredentials: true,
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 2000,
-    });
-
-    socketRef.current = socket;
-
-    socket.on('connect', () => {
-      // Wait for scanner:paired event for actual confirmation
-    });
-
-    socket.on('scanner:paired', ({ message, userEmail }) => {
-      setStatus('paired');
-      setPairedUser(userEmail || 'Desktop');
-      setErrorMsg('');
-      vibrate([100, 50, 100]);
-      playBeep(1200, 0.1);
-    });
-
-    socket.on('scanner:scan-feedback', (feedback) => {
-      setLastFeedback(feedback);
-      if (feedback.status === 'pending_review') {
-        setApprovalDraft(normalizeApprovalDraft(feedback));
-        setApprovalMessage('Review the extracted fields, adjust anything wrong, then approve.');
-      }
-      if (feedback.status === 'success') {
-        setFlashFeedback('success');
-        vibrate([30]);
-        playBeep(1400, 0.06);
-      } else {
-        setFlashFeedback('error');
-        vibrate([100, 50, 100]);
-        playBeep(200, 0.2);
-      }
-      setTimeout(() => setFlashFeedback(null), 600);
-    });
-
-    socket.on('scanner:approval-result', ({ success, message }) => {
-      setApprovalBusy(false);
-      setApprovalMessage(message || '');
-      if (success) {
-        setApprovalDraft(null);
-        setFlashFeedback('success');
-      } else {
-        setFlashFeedback('error');
-      }
-      setTimeout(() => setFlashFeedback(null), 600);
-    });
-
-    socket.on('scanner:session-ended', ({ reason }) => {
-      setStatus('ended');
-      setErrorMsg(reason || 'Session ended');
-      stopCamera();
-    });
-
-    socket.on('scanner:error', ({ message }) => {
-      setStatus('error');
-      setErrorMsg(message);
-    });
-
-    socket.on('disconnect', () => {
-      if (status !== 'ended') {
-        setStatus('error');
-        setErrorMsg('Connection lost. Trying to reconnect...');
-      }
-    });
-
-    socket.on('reconnect', () => {
-      setStatus('paired');
-      setErrorMsg('');
-    });
-
-    socket.on('connect_error', () => {
-      setStatus('error');
-      setErrorMsg('Could not connect to server. Check your network.');
+  // ── Step transition helper ──
+  const goStep = useCallback((next) => {
+    setStep((prev) => {
+      setPrevStep(prev);
+      return next;
     });
   }, []);
 
-  // Auto-connect if PIN is in URL
+  // ════════════════════════════════════════════════════════════════════════
+  // SOCKET CONNECTION
+  // ════════════════════════════════════════════════════════════════════════
   useEffect(() => {
-    if (urlPin && urlPin.length === 6) {
-      connectToDesktop(urlPin);
+    if (!pin) { setErrorMsg('No PIN provided.'); return; }
+
+    const s = io(SOCKET_URL, {
+      auth: { scannerPin: pin },
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionDelay: 1500,
+      reconnectionAttempts: 20,
+    });
+
+    s.on('connect', () => setConnStatus('connecting'));
+    s.on('scanner:paired', () => {
+      setConnStatus('paired');
+      goStep(STEPS.SCANNING);
+    });
+    s.on('scanner:error', ({ message }) => {
+      setErrorMsg(message);
+      setConnStatus('disconnected');
+    });
+    s.on('scanner:session-ended', () => {
+      setConnStatus('disconnected');
+      setErrorMsg('Session ended by desktop.');
+    });
+    s.on('disconnect', () => setConnStatus('disconnected'));
+    s.on('reconnect', () => { if (connStatus === 'paired') goStep(STEPS.SCANNING); });
+
+    // Desktop processed our scan
+    s.on('scanner:scan-processed', (data) => {
+      if (data.status === 'error') {
+        setFlash('error');
+        playErrorBeep();
+        vibrate([100, 50, 100]);
+        goStep(STEPS.ERROR);
+        setErrorMsg(data.error || 'Scan failed on desktop.');
+        return;
+      }
+
+      setReviewData(data);
+      setReviewForm({
+        clientCode: data.clientCode || '',
+        consignee: data.consignee || '',
+        destination: data.destination || '',
+        pincode: data.pincode || '',
+        weight: data.weight || 0,
+        amount: data.amount || 0,
+        orderNo: data.orderNo || '',
+      });
+      setProcessingFields({});
+
+      if (data.reviewRequired) {
+        goStep(STEPS.REVIEWING);
+      } else {
+        // Auto-approved
+        playSuccessBeep();
+        vibrate([50, 30, 50]);
+        setLastSuccess({ awb: data.awb, clientCode: data.clientCode, clientName: data.clientName });
+        goStep(STEPS.SUCCESS);
+      }
+    });
+
+    // Desktop approved our mobile-submitted approval
+    s.on('scanner:approval-result', ({ success, message, awb }) => {
+      if (success) {
+        playSuccessBeep();
+        vibrate([50, 30, 50]);
+        setFlash('success');
+        setLastSuccess({ awb: reviewData?.awb || awb, clientCode: reviewForm.clientCode, clientName: reviewData?.clientName || reviewForm.clientCode });
+        goStep(STEPS.SUCCESS);
+      } else {
+        playErrorBeep();
+        setErrorMsg(message || 'Approval failed.');
+      }
+    });
+
+    s.on('scanner:ready-for-next', () => {
+      // Desktop is ready — ensure we're in a state to scan again
+    });
+
+    setSocket(s);
+    return () => { s.disconnect(); };
+  }, [pin]);
+
+  // ════════════════════════════════════════════════════════════════════════
+  // CAMERA (Barcode Scanning)
+  // ════════════════════════════════════════════════════════════════════════
+
+  const stopCamera = useCallback(async () => {
+    try {
+      if (scanbotRef.current) {
+        try {
+          const sdk = scanbotRef.current;
+          if (sdk?.barcodeScanner) await sdk.barcodeScanner.dispose();
+        } catch {}
+        scanbotRef.current = null;
+      }
+      if (scannerRef.current) {
+        try { await scannerRef.current.reset(); } catch {}
+        scannerRef.current = null;
+      }
+      if (videoRef.current?.srcObject) {
+        videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+        videoRef.current.srcObject = null;
+      }
+    } catch {}
+    scanBusyRef.current = false;
+  }, []);
+
+  const startBarcodeScanner = useCallback(async () => {
+    if (!videoRef.current) return;
+    await stopCamera();
+
+    try {
+      // Try Scanbot first if licensed
+      if (SCANBOT_LICENSE) {
+        try {
+          const ScanbotSDK = (await import('scanbot-web-sdk')).default;
+          const sdk = await ScanbotSDK.initialize({
+            licenseKey: SCANBOT_LICENSE,
+            enginePath: '/scanbot-sdk/',
+          });
+          const config = {
+            containerId: 'scanbot-camera-container',
+            onBarcodesDetected: (result) => {
+              if (scanBusyRef.current) return;
+              const barcode = result?.barcodes?.[0];
+              if (barcode?.text) handleBarcodeDetected(barcode.text);
+            },
+            style: { window: { widthProportion: BARCODE_SCAN_REGION.widthPct, heightProportion: BARCODE_SCAN_REGION.heightPct } },
+          };
+          const scanner = await sdk.createBarcodeScanner(config);
+          scanbotRef.current = { sdk, barcodeScanner: scanner };
+          return;
+        } catch (err) {
+          console.warn('Scanbot init failed, falling back to ZXing:', err.message);
+        }
+      }
+
+      // ZXing fallback
+      const { BrowserMultiFormatReader } = await import('@zxing/browser');
+      const reader = new BrowserMultiFormatReader();
+      scannerRef.current = reader;
+      
+      await reader.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
+        if (scanBusyRef.current) return;
+        if (result) handleBarcodeDetected(result.getText());
+      });
+    } catch (err) {
+      setErrorMsg('Camera access failed: ' + err.message);
+    }
+  }, [stopCamera]);
+
+  const handleBarcodeDetected = useCallback((rawText) => {
+    const awb = String(rawText || '').trim();
+    if (!awb || awb.length < 6 || scanBusyRef.current) return;
+    scanBusyRef.current = true;
+
+    // Duplicate detection
+    if (sessionCtx.scannedAwbs.has(awb)) {
+      vibrate([100, 50, 100, 50, 100]);
+      playErrorBeep();
+      setDuplicateWarning(awb);
+      setTimeout(() => { setDuplicateWarning(''); scanBusyRef.current = false; }, 2500);
+      return;
+    }
+
+    // Lock!
+    vibrate([50]);
+    playCaptureBeep();
+    setLockedAwb(awb);
+    goStep(STEPS.BARCODE_LOCKED);
+
+    // Update session
+    setSessionCtx(prev => {
+      const next = { ...prev, scanNumber: prev.scanNumber + 1 };
+      next.scannedAwbs = new Set(prev.scannedAwbs);
+      next.scannedAwbs.add(awb);
+      return next;
+    });
+
+    // Auto-transition to capture after brief pause
+    setTimeout(() => goStep(STEPS.CAPTURING), 600);
+  }, [sessionCtx, goStep]);
+
+  // Start scanning when step changes to SCANNING
+  useEffect(() => {
+    if (step === STEPS.SCANNING) {
+      scanBusyRef.current = false;
+      startBarcodeScanner();
     }
     return () => {
-      socketRef.current?.disconnect();
-      stopCamera();
+      if (step === STEPS.SCANNING) stopCamera();
     };
-  }, []);
+  }, [step, startBarcodeScanner, stopCamera]);
 
-  const submitApproval = () => {
-    if (!approvalDraft || !socketRef.current) return;
-    setApprovalBusy(true);
-    setApprovalMessage('Sending approved intake to desktop...');
-    socketRef.current.emit('scanner:approval-submit', {
-      shipmentId: approvalDraft.shipmentId,
-      awb: approvalDraft.awb,
-      fields: {
-        clientCode: approvalDraft.clientCode,
-        consignee: approvalDraft.consignee,
-        destination: approvalDraft.destination,
-        pincode: approvalDraft.pincode,
-        weight: approvalDraft.weight,
-        amount: approvalDraft.amount,
-        orderNo: approvalDraft.orderNo,
-      },
-    }, (response) => {
-      if (!response?.success) {
-        setApprovalBusy(false);
-        setApprovalMessage(response?.message || 'Desktop did not accept the approval.');
-      }
-    });
-  };
+  // ════════════════════════════════════════════════════════════════════════
+  // PHOTO CAPTURE (Document mode)
+  // ════════════════════════════════════════════════════════════════════════
 
-  // ── Camera scanner ──────────────────────────────────────────────────────
-  const stopCamera = async () => {
-    try { scanbotHandleRef.current?.dispose?.(); } catch { /* silent */ }
-    scanbotHandleRef.current = null;
-    try { await scannerRef.current?.reset(); } catch { /* silent */ }
-    scannerRef.current = null;
+  const startDocumentCamera = useCallback(async () => {
+    await stopCamera();
     try {
-      mediaStreamRef.current?.getTracks?.().forEach((track) => track.stop());
-    } catch { /* silent */ }
-    mediaStreamRef.current = null;
-    if (scanbotContainerRef.current) {
-      scanbotContainerRef.current.innerHTML = '';
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-      videoRef.current.pause?.();
-    }
-    scanBusyRef.current = false;
-    scannerPausedRef.current = false;
-    lastDecodedRef.current = '';
-    scanLockUntilRef.current = 0;
-    setCameraActive(false);
-    setCameraReady(false);
-    setCameraStarting(false);
-    setPendingBarcode('');
-    setAwaitingLabelCapture(false);
-    setLabelCaptureBusy(false);
-    setLabelCaptureHint('');
-    setCapturedLabelPreview('');
-    setCapturedLabelPayload(null);
-  };
-
-  const captureFrame = ({ quality = 0.82, maxWidth = 1920, target = 'full' } = {}) => {
-    const video = videoRef.current;
-    if (!video || !video.videoWidth) return null;
-    try {
-      let sx = 0;
-      let sy = 0;
-      let sw = video.videoWidth;
-      let sh = video.videoHeight;
-
-      if (target === 'focus' && cameraWrapRef.current && scanFrameRef.current) {
-        const videoRect = video.getBoundingClientRect();
-        const frameRect = scanFrameRef.current.getBoundingClientRect();
-        const displayWidth = videoRect.width;
-        const displayHeight = videoRect.height;
-        const sourceWidth = video.videoWidth;
-        const sourceHeight = video.videoHeight;
-        const videoAspect = sourceWidth / sourceHeight;
-        const displayAspect = displayWidth / displayHeight;
-
-        let renderedWidth = displayWidth;
-        let renderedHeight = displayHeight;
-        let offsetX = 0;
-        let offsetY = 0;
-
-        if (videoAspect > displayAspect) {
-          renderedHeight = displayHeight;
-          renderedWidth = renderedHeight * videoAspect;
-          offsetX = (renderedWidth - displayWidth) / 2;
-        } else {
-          renderedWidth = displayWidth;
-          renderedHeight = renderedWidth / videoAspect;
-          offsetY = (renderedHeight - displayHeight) / 2;
-        }
-
-        const expandX = frameRect.width * 0.55;
-        const expandY = frameRect.height * 0.9;
-        const cropLeft = Math.max(0, frameRect.left - videoRect.left - expandX);
-        const cropTop = Math.max(0, frameRect.top - videoRect.top - expandY);
-        const cropWidth = Math.min(displayWidth - cropLeft, frameRect.width + expandX * 2);
-        const cropHeight = Math.min(displayHeight - cropTop, frameRect.height + expandY * 2);
-
-        sx = Math.max(0, ((cropLeft + offsetX) / renderedWidth) * sourceWidth);
-        sy = Math.max(0, ((cropTop + offsetY) / renderedHeight) * sourceHeight);
-        sw = Math.min(sourceWidth - sx, (cropWidth / renderedWidth) * sourceWidth);
-        sh = Math.min(sourceHeight - sy, (cropHeight / renderedHeight) * sourceHeight);
-      }
-
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.min(maxWidth, sw);
-      canvas.height = Math.round((canvas.width / sw) * sh);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
-      return canvas.toDataURL('image/jpeg', quality).split(',')[1] || null;
-    } catch { return null; }
-  };
-
-  const captureLabelPhoto = async () => {
-    if (!pendingBarcode) return;
-    setLabelCaptureBusy(true);
-    setLabelCaptureHint('Capturing still photo...');
-
-    try {
-      const imageBase64 = captureFrame({ quality: 0.9, maxWidth: 2200, target: 'full' });
-      const focusImageBase64 = captureFrame({ quality: 0.94, maxWidth: 1800, target: 'focus' });
-
-      if (!imageBase64) {
-        setLabelCaptureHint('Could not capture photo. Hold steady and try again.');
-        return;
-      }
-
-      setCapturedLabelPayload({
-        imageBase64,
-        focusImageBase64,
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
       });
-      setCapturedLabelPreview(`data:image/jpeg;base64,${imageBase64}`);
-      setLabelCaptureHint('Photo captured. Use it or retake it.');
-    } finally {
-      setLabelCaptureBusy(false);
-    }
-  };
-
-  const retakeLabelPhoto = () => {
-    setCapturedLabelPreview('');
-    setCapturedLabelPayload(null);
-    setLabelCaptureHint('Retake the full AWB photo.');
-  };
-
-  const submitLockedBarcode = async (withPhoto = true) => {
-    if (!pendingBarcode || !socketRef.current) return;
-    if (withPhoto && !capturedLabelPayload?.imageBase64) {
-      setLabelCaptureHint('Capture the label photo first.');
-      return;
-    }
-    setLabelCaptureBusy(true);
-    setLabelCaptureHint(withPhoto ? 'Sending captured photo to OCR...' : 'Sending barcode only...');
-
-    try {
-      const imageBase64 = withPhoto ? capturedLabelPayload?.imageBase64 || null : null;
-      const focusImageBase64 = withPhoto ? capturedLabelPayload?.focusImageBase64 || null : null;
-      socketRef.current.emit('scanner:scan', { awb: pendingBarcode, imageBase64, focusImageBase64 });
-      setScanCount((c) => c + 1);
-      setLastAwb(pendingBarcode);
-      setAwaitingLabelCapture(false);
-      setPendingBarcode('');
-      setCapturedLabelPreview('');
-      setCapturedLabelPayload(null);
-      scannerPausedRef.current = false;
-      scanbotHandleRef.current?.resumeDetection?.();
-      scanLockUntilRef.current = Date.now() + 700;
-      setLabelCaptureHint('Sent to desktop. Keep scanning.');
-      setTimeout(() => setLabelCaptureHint(''), 1400);
-    } finally {
-      setLabelCaptureBusy(false);
-    }
-  };
-
-  const startCamera = async () => {
-    if (!socketRef.current || status !== 'paired') return;
-    try {
-      setCameraError('');
-      setCameraStarting(true);
-      await stopCamera();
-      setCameraActive(true);
-      setCameraReady(false);
-      setScannerEngine('scanbot');
-
-      try {
-        const sdk = await ensureScanbotSdk();
-        const container = scanbotContainerRef.current;
-        if (!container) throw new Error('Premium scanner surface unavailable.');
-
-        const handle = await sdk.createBarcodeScanner({
-          container,
-          preferredCamera: 'environment',
-          previewMode: 'FIT_IN',
-          captureDelay: 80,
-          fpsLimit: 120,
-          enable4kStream: true,
-          desiredRecognitionResolution: 1440,
-          videoConstraints: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1920 },
-            height: { ideal: 1080 },
-          },
-          onError: (error) => {
-            const message = error?.message || 'Premium scanner hit a camera error.';
-            setCameraError(message);
-          },
-          onBarcodesDetected: ({ barcodes = [] }) => {
-            if (scannerPausedRef.current) return;
-            const detected = barcodes
-              .map((item) => normalizeDetectedBarcode(item?.text))
-              .find(Boolean);
-            if (!detected) return;
-
-            const now = Date.now();
-            if (scanBusyRef.current) return;
-            if (now < scanLockUntilRef.current && detected === lastDecodedRef.current) return;
-
-            scanBusyRef.current = true;
-            scanLockUntilRef.current = now + 350;
-            lastDecodedRef.current = detected;
-            scannerPausedRef.current = true;
-            handle.pauseDetection();
-
-            setCameraError('');
-            setFlashFeedback('success');
-            vibrate([40]);
-            playBeep(1050, 0.05);
-            setTimeout(() => setFlashFeedback(null), 320);
-            setLastAwb(detected);
-            setPendingBarcode(detected);
-            setAwaitingLabelCapture(true);
-            setLabelCaptureHint('Barcode locked. Capture the AWB photo next.');
-
-            scanBusyRef.current = false;
-          },
-          scannerConfiguration: {
-            engineMode: 'NEXT_GEN',
-            minimumTextLength: 8,
-            maximumTextLength: 18,
-            barcodeFormatConfigurations: [
-              {
-                _type: 'BarcodeFormatCommonOneDConfiguration',
-                formats: ['CODE_128', 'CODE_39', 'CODE_93', 'CODABAR', 'ITF'],
-                regexFilter: COURIER_SCAN_REGEX,
-                minimumNumberOfRequiredFramesWithEqualRecognitionResult: 1,
-                minimumTextLength: 8,
-                maximumTextLength: 18,
-                oneDConfirmationMode: 'MINIMAL',
-              },
-            ],
-          },
-        });
-
-        scanbotHandleRef.current = handle;
-        handle.setFinderVisible(false);
-        const liveVideo = await waitForScanbotVideo();
-        await waitForVideoReady(liveVideo);
-        setCameraReady(true);
-        setCameraStarting(false);
-        return liveVideo;
-      } catch (scanbotError) {
-        console.debug('Scanbot unavailable, falling back to ZXing', scanbotError);
-        setScannerEngine('zxing');
-        const video = await waitForVideoElement();
-        if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error('This browser is not allowing camera access.');
-        }
-
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-        });
-
-        mediaStreamRef.current = stream;
-        const hints = new Map();
-        hints.set(DecodeHintType.TRY_HARDER, true);
-        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-          BarcodeFormat.CODE_128,
-          BarcodeFormat.CODE_39,
-          BarcodeFormat.CODABAR,
-          BarcodeFormat.ITF,
-          BarcodeFormat.CODE_93,
-        ]);
-
-        const scanner = new BrowserMultiFormatReader(hints, {
-          delayBetweenScanAttempts: 25,
-          delayBetweenScanSuccess: 80,
-        });
-        scannerRef.current = scanner;
-        video.srcObject = stream;
-        video.muted = true;
-        video.defaultMuted = true;
-        video.setAttribute('playsinline', 'true');
-        video.setAttribute('webkit-playsinline', 'true');
-        await video.play();
-        await waitForVideoReady(video);
-        setCameraReady(true);
-        setCameraStarting(false);
-        setCameraError('Premium scanner unavailable right now. Running compatibility mode.');
-
-        await scanner.decodeFromVideoElement(video, async (result, error) => {
-          if (scannerPausedRef.current) return;
-          if (!result) {
-            if (error && !(error instanceof NotFoundException)) {
-              const now = Date.now();
-              if (now - lastDecodeErrorAtRef.current > 1500) {
-                setCameraError('Scanner is active but cannot decode yet. Try moving closer and hold steady.');
-                lastDecodeErrorAtRef.current = now;
-              }
-            }
-            return;
-          }
-          setCameraError('');
-          const awb = normalizeDetectedBarcode(result.getText());
-          const now = Date.now();
-          if (!awb) return;
-          if (scanBusyRef.current) return;
-          if (now < scanLockUntilRef.current && awb === lastDecodedRef.current) return;
-
-          scanBusyRef.current = true;
-          scanLockUntilRef.current = now + 450;
-          lastDecodedRef.current = awb;
-          scannerPausedRef.current = true;
-
-          setFlashFeedback('success');
-          vibrate([50]);
-          playBeep(880, 0.06);
-          setTimeout(() => setFlashFeedback(null), 400);
-          setLastAwb(awb);
-          setPendingBarcode(awb);
-          setAwaitingLabelCapture(true);
-          setLabelCaptureHint('Barcode locked. Now capture the full AWB label photo.');
-
-          scanBusyRef.current = false;
-        });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
       }
     } catch (err) {
-      const message = err?.message || 'Camera failed';
-      setCameraError(message);
-      setErrorMsg(message);
-      setCameraStarting(false);
-      await stopCamera();
+      setErrorMsg('Camera access failed: ' + err.message);
     }
-  };
+  }, [stopCamera]);
 
-  // ── Heartbeat ───────────────────────────────────────────────────────────
   useEffect(() => {
-    if (status !== 'paired') return;
-    const interval = setInterval(() => {
-      socketRef.current?.emit('scanner:heartbeat');
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [status]);
+    if (step === STEPS.CAPTURING) startDocumentCamera();
+  }, [step, startDocumentCamera]);
 
-  // ── Render: PIN entry screen ──────────────────────────────────────────
-  if (status === 'idle' || (status === 'error' && !pin)) {
-    return (
-      <div className="msc-root">
-        <div className="msc-container">
-          <div className="msc-logo-ring">
-            <Smartphone size={36} />
+  const captureDocumentRegion = useCallback(() => {
+    const video = videoRef.current;
+    const guide = guideRef.current;
+    if (!video || !guide || !video.videoWidth) return null;
+
+    const videoRect = video.getBoundingClientRect();
+    const guideRect = guide.getBoundingClientRect();
+
+    const scaleX = video.videoWidth / videoRect.width;
+    const scaleY = video.videoHeight / videoRect.height;
+
+    const cropX = Math.max(0, (guideRect.left - videoRect.left) * scaleX);
+    const cropY = Math.max(0, (guideRect.top - videoRect.top) * scaleY);
+    const cropW = Math.min(video.videoWidth - cropX, guideRect.width * scaleX);
+    const cropH = Math.min(video.videoHeight - cropY, guideRect.height * scaleY);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.min(1800, Math.round(cropW));
+    canvas.height = Math.round((canvas.width / cropW) * cropH);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
+
+    return canvas.toDataURL('image/jpeg', 0.92).split(',')[1] || null;
+  }, []);
+
+  const handleCapturePhoto = useCallback(() => {
+    setFlash('white');
+    playCaptureBeep();
+    vibrate([30]);
+
+    const image = captureDocumentRegion();
+    if (!image) {
+      setErrorMsg('Could not capture image. Try again.');
+      return;
+    }
+
+    setCapturedImage(`data:image/jpeg;base64,${image}`);
+    stopCamera();
+    goStep(STEPS.PREVIEW);
+  }, [captureDocumentRegion, stopCamera, goStep]);
+
+  // ════════════════════════════════════════════════════════════════════════
+  // SEND TO DESKTOP (OCR Pipeline)
+  // ════════════════════════════════════════════════════════════════════════
+
+  const submitForProcessing = useCallback(() => {
+    if (!socket || !lockedAwb || !capturedImage) return;
+    goStep(STEPS.PROCESSING);
+
+    // Build session context for the intelligence engine
+    const ctxPayload = {
+      scanNumber: sessionCtx.scanNumber,
+      recentClient: sessionCtx.dominantClient,
+      sessionDurationMin: Math.round((Date.now() - sessionCtx.startedAt) / 60000),
+    };
+
+    // Extract base64 from data URL
+    const imageBase64 = capturedImage.split(',')[1] || capturedImage;
+
+    socket.emit('scanner:scan', {
+      awb: lockedAwb,
+      imageBase64,
+      focusImageBase64: imageBase64,
+      sessionContext: ctxPayload,
+    });
+
+    // Timeout fallback
+    setTimeout(() => {
+      if (step === STEPS.PROCESSING) {
+        setErrorMsg('Processing is taking longer than expected...');
+      }
+    }, 20000);
+  }, [socket, lockedAwb, capturedImage, sessionCtx, step, goStep]);
+
+  // ════════════════════════════════════════════════════════════════════════
+  // APPROVAL
+  // ════════════════════════════════════════════════════════════════════════
+
+  const submitApproval = useCallback(() => {
+    if (!socket || !reviewData) return;
+    goStep(STEPS.APPROVING);
+
+    // Record corrections for learning system
+    if (reviewData.ocrExtracted || reviewData) {
+      const ocrFields = {
+        clientCode: reviewData.clientCode || '',
+        clientName: reviewData.clientName || '',
+        consignee: reviewData.consignee || '',
+        destination: reviewData.destination || '',
+      };
+      const approvedFields = {
+        clientCode: reviewForm.clientCode || '',
+        clientName: reviewForm.clientCode || '', // clientCode is our working field
+        consignee: reviewForm.consignee || '',
+        destination: reviewForm.destination || '',
+      };
+
+      // Send corrections to learning system via socket
+      socket.emit('scanner:learn-corrections', {
+        pin,
+        ocrFields,
+        approvedFields,
+      });
+    }
+
+    socket.emit('scanner:approval-submit', {
+      shipmentId: reviewData.shipmentId,
+      awb: reviewData.awb || lockedAwb,
+      fields: {
+        clientCode: reviewForm.clientCode,
+        consignee: reviewForm.consignee,
+        destination: reviewForm.destination,
+        pincode: reviewForm.pincode,
+        weight: parseFloat(reviewForm.weight) || 0,
+        amount: parseFloat(reviewForm.amount) || 0,
+        orderNo: reviewForm.orderNo || '',
+      },
+    }, (response) => {
+      if (response?.success) {
+        // Wait for approval-result from desktop
+      } else {
+        goStep(STEPS.REVIEWING);
+        setErrorMsg(response?.message || 'Approval failed.');
+      }
+    });
+
+    // Update session client frequency
+    if (reviewForm.clientCode && reviewForm.clientCode !== 'MISC') {
+      setSessionCtx(prev => {
+        const freq = { ...prev.clientFreq };
+        freq[reviewForm.clientCode] = (freq[reviewForm.clientCode] || 0) + 1;
+        const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+        return { ...prev, clientFreq: freq, dominantClient: sorted[0]?.[1] >= 2 ? sorted[0][0] : null };
+      });
+    }
+  }, [socket, reviewData, reviewForm, lockedAwb, pin, goStep]);
+
+  // ════════════════════════════════════════════════════════════════════════
+  // RESET / NEXT SCAN
+  // ════════════════════════════════════════════════════════════════════════
+
+  const resetForNextScan = useCallback(() => {
+    clearTimeout(autoNextTimer.current);
+    setLockedAwb('');
+    setCapturedImage(null);
+    setReviewData(null);
+    setReviewForm({});
+    setProcessingFields({});
+    setLastSuccess(null);
+    setErrorMsg('');
+    setDuplicateWarning('');
+    scanBusyRef.current = false;
+    goStep(STEPS.SCANNING);
+  }, [goStep]);
+
+  // Auto-advance from SUCCESS
+  useEffect(() => {
+    if (step === STEPS.SUCCESS) {
+      autoNextTimer.current = setTimeout(resetForNextScan, AUTO_NEXT_DELAY);
+      return () => clearTimeout(autoNextTimer.current);
+    }
+  }, [step, resetForNextScan]);
+
+  // Voice feedback on review data & success
+  useEffect(() => {
+    if (!voiceEnabled) return;
+    
+    if (step === STEPS.REVIEWING && reviewData) {
+      const parts = [reviewData.clientName || reviewData.clientCode, reviewData.destination, reviewData.weight ? `${reviewData.weight} kilograms` : ''].filter(Boolean);
+      if (parts.length) speak(parts.join('. '));
+    } else if (step === STEPS.SUCCESS && lastSuccess) {
+      speak(`${lastSuccess.clientName || lastSuccess.clientCode || 'Shipment'} Verified.`);
+    }
+  }, [voiceEnabled, step, reviewData, lastSuccess]);
+
+  // Cleanup
+  useEffect(() => () => { stopCamera(); clearTimeout(autoNextTimer.current); }, [stopCamera]);
+
+  // ════════════════════════════════════════════════════════════════════════
+  // RENDER
+  // ════════════════════════════════════════════════════════════════════════
+
+  const isStepActive = (s) => step === s;
+  const stepClass = (s) => `msp-step ${step === s ? 'active' : ''} ${prevStep === s ? 'exiting' : ''}`;
+
+  // ── Confidence data from reviewData ──
+  const fieldConfidence = useMemo(() => {
+    if (!reviewData) return {};
+    const ocrData = reviewData.ocrExtracted || reviewData;
+    return {
+      clientCode: { confidence: ocrData?.clientNameConfidence || 0, source: ocrData?.clientNameSource || null },
+      consignee: { confidence: ocrData?.consigneeConfidence || 0, source: ocrData?.consigneeSource || null },
+      destination: { confidence: ocrData?.destinationConfidence || 0, source: ocrData?.destinationSource || null },
+      pincode: { confidence: ocrData?.pincodeConfidence || 0, source: null },
+      weight: { confidence: ocrData?.weightConfidence || 0, source: null },
+    };
+  }, [reviewData]);
+
+  const intelligence = reviewData?.ocrExtracted?.intelligence || reviewData?.intelligence || null;
+
+  return (
+    <>
+      <style>{css}</style>
+      <div className="msp-root">
+        {/* ── Flash overlay ── */}
+        {flash && <div className={`flash-overlay flash-${flash}`} onAnimationEnd={() => setFlash(null)} />}
+
+        {/* ── Duplicate warning overlay ── */}
+        {duplicateWarning && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(220,38,38,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }} className="shake">
+            <AlertCircle size={48} color="white" />
+            <div style={{ color: 'white', fontSize: '1.1rem', fontWeight: 700, textAlign: 'center' }}>DUPLICATE AWB</div>
+            <div className="mono" style={{ color: 'rgba(255,255,255,0.9)', fontSize: '1.3rem', fontWeight: 700 }}>{duplicateWarning}</div>
+            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem' }}>Already scanned in this session</div>
           </div>
-          <h1 className="msc-title">Seahawk Remote Scanner</h1>
-          <p className="msc-subtitle">Enter the 6-digit PIN shown on your desktop</p>
+        )}
 
-          <div className="msc-pin-group">
-            <input
-              className="msc-pin-input"
-              type="tel"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={6}
-              placeholder="● ● ● ● ● ●"
-              value={pinInput}
-              onChange={(e) => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              autoFocus
-            />
-            <button
-              className="msc-connect-btn"
-              disabled={pinInput.length !== 6}
-              onClick={() => connectToDesktop(pinInput)}
-            >
-              <Zap size={18} /> Connect
+        {/* ═══ IDLE / CONNECTING ═══ */}
+        <div className={stepClass(STEPS.IDLE)}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 24 }}>
+            <div style={{ width: 64, height: 64, borderRadius: '50%', background: theme.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {connStatus === 'connecting' ? <RefreshCw size={28} color={theme.primary} style={{ animation: 'spin 1s linear infinite' }} /> : <WifiOff size={28} color={theme.error} />}
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 4 }}>
+                {connStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
+              </div>
+              <div style={{ fontSize: '0.82rem', color: theme.muted }}>{errorMsg || `Connecting to session ${pin}`}</div>
+            </div>
+            {connStatus === 'disconnected' && (
+              <button className="btn btn-primary" onClick={() => window.location.reload()}>
+                <RefreshCw size={16} /> Reconnect
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ═══ SCANNING ═══ */}
+        <div className={stepClass(STEPS.SCANNING)}>
+          <div className="cam-viewport">
+            {!scanbotRef.current && <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+            <div id="scanbot-camera-container" style={{ position: 'absolute', inset: 0, display: scanbotRef.current ? 'block' : 'none' }} />
+            <div className="cam-overlay">
+              <div className="scan-guide" style={{ width: `${BARCODE_SCAN_REGION.widthPct * 100}%`, height: `${BARCODE_SCAN_REGION.heightPct * 100}%` }}>
+                <div className="scan-guide-corner corner-tl" />
+                <div className="scan-guide-corner corner-tr" />
+                <div className="scan-guide-corner corner-bl" />
+                <div className="scan-guide-corner corner-br" />
+                <div className="scan-laser" />
+              </div>
+            </div>
+            <div className="cam-hud">
+              <div className="cam-hud-chip">
+                <Wifi size={12} /> {pin}
+              </div>
+              <div className="cam-hud-chip">
+                <Package size={12} /> {sessionCtx.scanNumber}
+              </div>
+            </div>
+            <div className="cam-bottom">
+              <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.82rem', fontWeight: 600, textAlign: 'center' }}>
+                Point camera at barcode
+              </div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button className="cam-hud-chip" onClick={() => setVoiceEnabled(!voiceEnabled)} style={{ border: 'none', cursor: 'pointer' }}>
+                  {voiceEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ═══ BARCODE LOCKED (brief flash) ═══ */}
+        <div className={stepClass(STEPS.BARCODE_LOCKED)}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: theme.successLight, gap: 16 }}>
+            <CheckCircle2 size={48} color={theme.success} />
+            <div className="mono" style={{ fontSize: '1.5rem', fontWeight: 700, color: theme.success }}>{lockedAwb}</div>
+            <div style={{ color: theme.muted, fontSize: '0.82rem' }}>Barcode locked • Preparing camera...</div>
+          </div>
+        </div>
+
+        {/* ═══ CAPTURING (Document mode) ═══ */}
+        <div className={stepClass(STEPS.CAPTURING)}>
+          <div className="cam-viewport">
+            <video ref={step === STEPS.CAPTURING ? videoRef : undefined} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <div className="cam-overlay">
+              <div ref={guideRef} className="scan-guide" style={{ width: `${DOC_CAPTURE_REGION.widthPct * 100}%`, height: `${DOC_CAPTURE_REGION.heightPct * 100}%`, borderColor: 'rgba(255,255,255,0.85)' }}>
+                <div className="scan-guide-corner corner-tl" />
+                <div className="scan-guide-corner corner-tr" />
+                <div className="scan-guide-corner corner-bl" />
+                <div className="scan-guide-corner corner-br" />
+              </div>
+            </div>
+            <div className="cam-hud">
+              <div className="cam-hud-chip mono" style={{ fontSize: '0.68rem' }}>
+                <ScanLine size={12} /> {lockedAwb}
+              </div>
+            </div>
+            <div className="cam-bottom">
+              <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.82rem', fontWeight: 500, textAlign: 'center' }}>
+                Place AWB slip inside the frame
+              </div>
+              <button className="capture-btn" onClick={handleCapturePhoto}>
+                <div className="capture-btn-inner" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ═══ PREVIEW ═══ */}
+        <div className={stepClass(STEPS.PREVIEW)}>
+          <div style={{ background: theme.bg, display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${theme.border}` }}>
+              <div>
+                <div style={{ fontSize: '0.72rem', color: theme.muted, fontWeight: 600 }}>CAPTURED</div>
+                <div className="mono" style={{ fontSize: '1rem', fontWeight: 700 }}>{lockedAwb}</div>
+              </div>
+            </div>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+              {capturedImage && <img src={capturedImage} alt="Captured label" className="preview-img" />}
+            </div>
+            <div style={{ padding: '16px 20px', display: 'flex', gap: 12 }}>
+              <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => { setCapturedImage(null); goStep(STEPS.CAPTURING); }}>
+                <RotateCcw size={16} /> Retake
+              </button>
+              <button className="btn btn-primary" style={{ flex: 2 }} onClick={submitForProcessing}>
+                <Send size={16} /> Use Photo
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ═══ PROCESSING ═══ */}
+        <div className={stepClass(STEPS.PROCESSING)}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 20, gap: 16 }}>
+            <div style={{ textAlign: 'center', paddingTop: 24, paddingBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
+                <Brain size={22} color={theme.primary} style={{ animation: 'spin 2s linear infinite' }} />
+                <span style={{ fontSize: '0.9rem', fontWeight: 700, color: theme.primary }}>Intelligence Engine</span>
+              </div>
+              <div className="mono" style={{ fontSize: '0.82rem', color: theme.muted }}>{lockedAwb}</div>
+            </div>
+            {['Client', 'Consignee', 'Destination', 'Pincode', 'Weight', 'Order No'].map((label) => (
+              <div key={label} className="card" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <div className="field-label">{label}</div>
+                  <div className="skeleton" style={{ height: 18, width: `${60 + Math.random() * 30}%`, marginTop: 4 }} />
+                </div>
+                <div className="skeleton" style={{ width: 8, height: 8, borderRadius: '50%' }} />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ═══ REVIEWING ═══ */}
+        <div className={stepClass(STEPS.REVIEWING)}>
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontSize: '0.65rem', color: theme.muted, fontWeight: 600 }}>REVIEW EXTRACTION</div>
+                <div className="mono" style={{ fontSize: '0.95rem', fontWeight: 700 }}>{reviewData?.awb || lockedAwb}</div>
+              </div>
+              {intelligence?.learnedFieldCount > 0 && (
+                <div className="source-badge source-learned">🧠 {intelligence.learnedFieldCount} auto-corrected</div>
+              )}
+            </div>
+            <div className="scroll-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {/* Client */}
+              <div className={`field-card ${(fieldConfidence.clientCode?.confidence || 0) < 0.55 ? 'warning' : ''}`}>
+                <div className={confDotClass(fieldConfidence.clientCode?.confidence || 0)} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span className="field-label" style={{ margin: 0 }}>Client</span>
+                    {fieldConfidence.clientCode?.source && (() => { const s = sourceLabel(fieldConfidence.clientCode.source); return s ? <span className={s.className}>{s.icon} {s.text}</span> : null; })()}
+                  </div>
+                  <input className="field-input" value={reviewForm.clientCode || ''} onChange={e => setReviewForm(f => ({ ...f, clientCode: e.target.value.toUpperCase() }))} placeholder="Client code" />
+                  {intelligence?.clientMatches?.length > 0 && intelligence.clientNeedsConfirmation && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                      {intelligence.clientMatches.slice(0, 3).map(m => (
+                        <button key={m.code} onClick={() => setReviewForm(f => ({ ...f, clientCode: m.code }))} style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: 6, border: `1px solid ${theme.border}`, background: reviewForm.clientCode === m.code ? theme.primaryLight : theme.surface, color: theme.text, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+                          {m.code} ({Math.round(m.score * 100)}%)
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Consignee */}
+              <div className="field-card">
+                <div className={confDotClass(fieldConfidence.consignee?.confidence || 0)} />
+                <div style={{ flex: 1 }}>
+                  <div className="field-label">Consignee</div>
+                  <input className="field-input" value={reviewForm.consignee || ''} onChange={e => setReviewForm(f => ({ ...f, consignee: e.target.value.toUpperCase() }))} placeholder="Recipient name" />
+                </div>
+              </div>
+
+              {/* Destination */}
+              <div className="field-card">
+                <div className={confDotClass(fieldConfidence.destination?.confidence || 0)} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                    <span className="field-label" style={{ margin: 0 }}>Destination</span>
+                    {fieldConfidence.destination?.source && (() => { const s = sourceLabel(fieldConfidence.destination.source); return s ? <span className={s.className}>{s.icon} {s.text}</span> : null; })()}
+                  </div>
+                  <input className="field-input" value={reviewForm.destination || ''} onChange={e => setReviewForm(f => ({ ...f, destination: e.target.value.toUpperCase() }))} placeholder="City" />
+                  {intelligence?.pincodeCity && intelligence.pincodeCity !== reviewForm.destination && (
+                    <button onClick={() => setReviewForm(f => ({ ...f, destination: intelligence.pincodeCity }))} style={{ fontSize: '0.62rem', marginTop: 4, padding: '2px 8px', borderRadius: 6, border: 'none', background: theme.successLight, color: theme.success, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                      📍 Pincode suggests: {intelligence.pincodeCity}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Pincode + Weight row */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="field-card">
+                  <div style={{ flex: 1 }}>
+                    <div className="field-label">Pincode</div>
+                    <input className="field-input" value={reviewForm.pincode || ''} onChange={(e) => setReviewForm(f => ({ ...f, pincode: e.target.value }))} placeholder="6 digits" maxLength={6} inputMode="numeric" />
+                  </div>
+                </div>
+                <div className={`field-card ${intelligence?.weightAnomaly?.anomaly ? 'warning' : ''}`}>
+                  <div style={{ flex: 1 }}>
+                    <div className="field-label">Weight (kg)</div>
+                    <input className="field-input" value={reviewForm.weight || ''} onChange={(e) => setReviewForm(f => ({ ...f, weight: e.target.value }))} placeholder="0.0" inputMode="decimal" />
+                    {intelligence?.weightAnomaly?.anomaly && (
+                      <div style={{ fontSize: '0.6rem', color: theme.warning, marginTop: 2, fontWeight: 500 }}>⚠️ {intelligence.weightAnomaly.warning}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Amount + Order No */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="field-card">
+                  <div style={{ flex: 1 }}>
+                    <div className="field-label">Amount (₹)</div>
+                    <input className="field-input" value={reviewForm.amount || ''} onChange={(e) => setReviewForm(f => ({ ...f, amount: e.target.value }))} placeholder="0" inputMode="decimal" />
+                  </div>
+                </div>
+                <div className="field-card">
+                  <div style={{ flex: 1 }}>
+                    <div className="field-label">Order No</div>
+                    <input className="field-input" value={reviewForm.orderNo || ''} onChange={(e) => setReviewForm(f => ({ ...f, orderNo: e.target.value }))} placeholder="Optional" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Action buttons */}
+            <div style={{ padding: '12px 20px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: 10 }}>
+              <button className="btn btn-outline" style={{ flex: 1 }} onClick={resetForNextScan}>
+                <X size={16} /> Skip
+              </button>
+              <button className="btn btn-success btn-lg" style={{ flex: 2 }} onClick={submitApproval} disabled={step === STEPS.APPROVING}>
+                {step === STEPS.APPROVING ? <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={16} />}
+                {step === STEPS.APPROVING ? 'Saving...' : 'Approve & Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ═══ APPROVING (transparent) ═══ */}
+        <div className={stepClass(STEPS.APPROVING)} />
+
+        {/* ═══ SUCCESS ═══ */}
+        <div className={stepClass(STEPS.SUCCESS)}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 20 }}>
+            <svg width="80" height="80" viewBox="0 0 80 80">
+              <circle cx="40" cy="40" r="36" fill="none" stroke={theme.success} strokeWidth="3" className="success-check-circle" />
+              <polyline points="24,42 35,53 56,30" fill="none" stroke={theme.success} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="success-check-mark" />
+            </svg>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: theme.success, marginBottom: 4 }}>Saved Successfully</div>
+              <div className="mono" style={{ fontSize: '1.2rem', fontWeight: 700 }}>{lastSuccess?.awb}</div>
+              {lastSuccess?.clientCode && (
+                <div style={{ marginTop: 6, display: 'inline-block', padding: '4px 14px', borderRadius: 20, background: theme.primaryLight, color: theme.primary, fontSize: '0.78rem', fontWeight: 600 }}>
+                  {lastSuccess.clientName || lastSuccess.clientCode}
+                </div>
+              )}
+            </div>
+            <div style={{ fontSize: '0.72rem', color: theme.muted }}>
+              #{sessionCtx.scanNumber} scanned • Auto-continuing in 3s
+            </div>
+            <button className="btn btn-primary btn-lg btn-full" onClick={resetForNextScan} style={{ maxWidth: 320 }}>
+              <Camera size={18} /> Scan Next Parcel
             </button>
           </div>
+        </div>
 
-          {errorMsg && (
-            <div className="msc-error">
-              <AlertCircle size={14} /> {errorMsg}
+        {/* ═══ ERROR ═══ */}
+        <div className={stepClass(STEPS.ERROR)}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 20 }}>
+            <div style={{ width: 64, height: 64, borderRadius: '50%', background: theme.errorLight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <AlertCircle size={32} color={theme.error} />
             </div>
-          )}
-
-          <p className="msc-hint">
-            Open <strong>Rapid Terminal</strong> on your desktop and click <strong>"Connect Mobile"</strong> to get the PIN.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Render: Connecting ────────────────────────────────────────────────
-  if (status === 'connecting') {
-    return (
-      <div className="msc-root">
-        <div className="msc-container">
-          <div className="msc-logo-ring msc-pulse">
-            <Wifi size={36} />
-          </div>
-          <h1 className="msc-title">Connecting...</h1>
-          <p className="msc-subtitle">Pairing with desktop via PIN {pin}</p>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Render: Session ended ─────────────────────────────────────────────
-  if (status === 'ended') {
-    return (
-      <div className="msc-root">
-        <div className="msc-container">
-          <div className="msc-logo-ring msc-ended">
-            <WifiOff size={36} />
-          </div>
-          <h1 className="msc-title">Session Ended</h1>
-          <p className="msc-subtitle">{errorMsg || 'The scanning session has been closed.'}</p>
-          <p className="msc-stat">Total scans: <strong>{scanCount}</strong></p>
-          <button className="msc-connect-btn" onClick={() => { setStatus('idle'); setPin(''); setPinInput(''); setErrorMsg(''); setScanCount(0); }}>
-            Start New Session
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Render: Paired + Camera scanner ───────────────────────────────────
-  return (
-    <div className={`msc-root ${flashFeedback === 'success' ? 'msc-flash-success' : flashFeedback === 'error' ? 'msc-flash-error' : ''}`}>
-      {/* Status bar */}
-      <div className="msc-status-bar">
-        <div className="msc-status-left">
-          <div className="msc-dot msc-dot-live" />
-          <span>LIVE</span>
-          <span className="msc-status-pin">PIN {pin}</span>
-        </div>
-        <div className="msc-status-right">
-          <span className="msc-scan-count">{scanCount} scans</span>
-          <button className="msc-end-btn" onClick={() => {
-            socketRef.current?.disconnect();
-            stopCamera();
-            setStatus('ended');
-          }}>
-            <X size={16} />
-          </button>
-        </div>
-      </div>
-
-      {/* Camera viewport */}
-      <div className="msc-camera-wrap" ref={cameraWrapRef}>
-        <div
-          ref={scanbotContainerRef}
-          className={`msc-scanbot-host ${cameraActive && scannerEngine === 'scanbot' ? 'msc-scanbot-host-active' : ''}`}
-        />
-        <video
-          ref={videoRef}
-          className={`msc-video ${cameraActive && scannerEngine === 'zxing' ? 'msc-video-active' : 'msc-video-idle'}`}
-          muted
-          playsInline
-          autoPlay
-          disablePictureInPicture
-        />
-        {cameraActive ? (
-          <>
-            <div className="msc-scan-overlay">
-              <div className="msc-overlay-head">
-                <div className="msc-overlay-chip">
-                  <Camera size={14} />
-                  {cameraReady ? (scannerEngine === 'scanbot' ? 'Premium camera live' : 'Compatibility camera live') : 'Opening rear camera'}
-                </div>
-                <div className={`msc-overlay-chip ${cameraReady ? 'ready' : ''}`}>
-                  <Aperture size={14} />
-                  {cameraReady ? (scannerEngine === 'scanbot' ? 'Fast barcode lock' : 'Aim at AWB barcode') : 'Waking camera'}
-                </div>
-              </div>
-              <div className="msc-scan-frame" ref={scanFrameRef}>
-                <div className="msc-corner msc-tl" />
-                <div className="msc-corner msc-tr" />
-                <div className="msc-corner msc-bl" />
-                <div className="msc-corner msc-br" />
-                <div className="msc-scan-line" />
-              </div>
-              <div className="msc-overlay-tip">
-                {awaitingLabelCapture
-                  ? capturedLabelPreview
-                    ? 'Still photo captured. Use it or retake it before OCR.'
-                    : 'Barcode locked. Hold full AWB in view and tap Capture Label.'
-                  : 'Point to barcode first. After lock, capture full AWB for client, consignee, destination, pincode, weight, and value.'}
-              </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '1rem', fontWeight: 700, color: theme.error }}>Scan Error</div>
+              <div style={{ fontSize: '0.82rem', color: theme.muted, marginTop: 4 }}>{errorMsg}</div>
             </div>
-          </>
-        ) : (
-          <div className="msc-camera-placeholder">
-            <ScanLine size={48} className="msc-placeholder-icon" />
-            <p>Tap below to start scanning</p>
+            <button className="btn btn-primary" onClick={resetForNextScan}>
+              <RotateCcw size={16} /> Try Again
+            </button>
+          </div>
+        </div>
+
+        {/* ── Offline banner ── */}
+        {connStatus === 'disconnected' && step !== STEPS.IDLE && (
+          <div className="offline-banner">
+            <WifiOff size={12} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} />
+            Offline — Reconnecting...
           </div>
         )}
       </div>
 
-      {approvalDraft && (
-        <div className="msc-approval-sheet">
-          <div className="msc-sheet-handle" />
-          <div className="msc-sheet-body">
-            <div className="msc-sheet-head">
-              <div>
-                <div className="msc-sheet-kicker">Final Approval</div>
-                <div className="msc-sheet-title">Review this shipment before it reaches desktop and portal</div>
-              </div>
-              <button className="msc-sheet-close" type="button" onClick={() => setApprovalDraft(null)} disabled={approvalBusy}>
-                <X size={16} />
-              </button>
-            </div>
-
-            <div className="msc-sheet-awb">{approvalDraft.awb}</div>
-            {approvalMessage ? <div className="msc-sheet-message">{approvalMessage}</div> : null}
-
-            <div className="msc-sheet-grid">
-              <label>
-                <span>Client code</span>
-                <input value={approvalDraft.clientCode} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, clientCode: e.target.value.toUpperCase() }))} />
-              </label>
-              <label>
-                <span>Client name</span>
-                <input value={approvalDraft.clientName} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, clientName: e.target.value }))} />
-              </label>
-              <label>
-                <span>Consignee</span>
-                <input value={approvalDraft.consignee} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, consignee: e.target.value.toUpperCase() }))} />
-              </label>
-              <label>
-                <span>Destination</span>
-                <input value={approvalDraft.destination} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, destination: e.target.value.toUpperCase() }))} />
-              </label>
-              <label>
-                <span>Pincode</span>
-                <input value={approvalDraft.pincode} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))} />
-              </label>
-              <label>
-                <span>Weight</span>
-                <input type="number" step="0.01" value={approvalDraft.weight} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, weight: e.target.value }))} />
-              </label>
-              <label>
-                <span>Value</span>
-                <input type="number" step="0.01" value={approvalDraft.amount} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, amount: e.target.value }))} />
-              </label>
-              <label>
-                <span>Order no</span>
-                <input value={approvalDraft.orderNo} onChange={(e) => setApprovalDraft((prev) => ({ ...prev, orderNo: e.target.value.toUpperCase() }))} />
-              </label>
-            </div>
-
-            <div className="msc-sheet-actions">
-              <button type="button" className="msc-sheet-secondary" onClick={() => setApprovalDraft(null)} disabled={approvalBusy}>Keep scanning</button>
-              <button type="button" className="msc-sheet-primary" onClick={submitApproval} disabled={approvalBusy}>
-                {approvalBusy ? <><Aperture size={16} /> Saving...</> : <><Save size={16} /> Approve & Send</>}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {cameraActive && awaitingLabelCapture && (
-        <div className="msc-capture-panel">
-          <div className="msc-capture-title">Barcode: {pendingBarcode || 'LOCKED'}</div>
-          <div className="msc-capture-sub">
-            {capturedLabelPreview
-              ? 'This still image will be sent to OCR. Retake if the label is blurry or cropped.'
-              : 'Take one clear full-label photo so OCR can extract all fields.'}
-          </div>
-          {capturedLabelPreview ? (
-            <div className="msc-preview-shell">
-              <img src={capturedLabelPreview} alt="Captured AWB label" className="msc-preview-image" />
-            </div>
-          ) : null}
-          <div className="msc-capture-actions">
-            {capturedLabelPreview ? (
-              <>
-                <button type="button" className="msc-capture-secondary" onClick={retakeLabelPhoto} disabled={labelCaptureBusy}>
-                  Retake Photo
-                </button>
-                <button type="button" className="msc-capture-primary" onClick={() => submitLockedBarcode(true)} disabled={labelCaptureBusy}>
-                  {labelCaptureBusy ? <><Aperture size={16} /> Sending...</> : <><Save size={16} /> Use Photo</>}
-                </button>
-              </>
-            ) : (
-              <button type="button" className="msc-capture-primary" onClick={captureLabelPhoto} disabled={labelCaptureBusy}>
-                {labelCaptureBusy ? <><Aperture size={16} /> Capturing...</> : <><Camera size={16} /> Capture Label</>}
-              </button>
-            )}
-            <button type="button" className="msc-capture-secondary" onClick={() => submitLockedBarcode(false)} disabled={labelCaptureBusy}>
-              Send Barcode Only
-            </button>
-          </div>
-        </div>
-      )}
-
-      {!awaitingLabelCapture && !!labelCaptureHint && (
-        <div className="msc-capture-toast">{labelCaptureHint}</div>
-      )}
-
-      {/* Last scan feedback */}
-      {lastAwb && (
-        <div className="msc-last-scan">
-          <div className="msc-last-awb-wrap">
-            <div className="msc-last-awb">
-              <CheckCircle2 size={16} className="msc-check" />
-              <span className="msc-awb-text">{lastAwb}</span>
-            </div>
-            {lastFeedback?.status && (
-              <div className={`msc-feedback-pill ${lastFeedback.status}`}>
-                {lastFeedback.status === 'pending_review' ? 'Pending desktop review' : lastFeedback.status === 'success' ? 'Verified' : lastFeedback.status === 'review_deferred' ? 'Deferred' : 'Needs attention'}
-              </div>
-            )}
-          </div>
-          {(lastFeedback?.clientCode || lastFeedback?.consignee || lastFeedback?.destination || lastFeedback?.weight) && (
-            <div className="msc-feedback-card">
-              {lastFeedback?.clientCode && (
-                <div className="msc-client-badge">
-                  <Zap size={12} /> {lastFeedback.clientCode}
-                  {lastFeedback.clientName ? ` · ${lastFeedback.clientName}` : ''}
-                </div>
-              )}
-              <div className="msc-feedback-details">
-                {lastFeedback?.consignee ? <div><span>Consignee</span><strong>{lastFeedback.consignee}</strong></div> : null}
-                {lastFeedback?.destination ? <div><span>Destination</span><strong>{lastFeedback.destination}</strong></div> : null}
-                {lastFeedback?.weight ? <div><span>Weight</span><strong>{lastFeedback.weight} kg</strong></div> : null}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Error banner */}
-      {(cameraError || (errorMsg && status === 'error')) && (
-        <div className="msc-error msc-error-banner">
-          <AlertCircle size={14} /> {cameraError || errorMsg}
-        </div>
-      )}
-
-      {/* Controls */}
-      <div className="msc-controls">
-        <button
-          className={`msc-cam-btn ${cameraActive ? 'msc-cam-active' : ''}`}
-          disabled={cameraStarting}
-          onClick={cameraActive ? stopCamera : startCamera}
-        >
-          {cameraActive ? (
-            <><X size={22} /> Stop Camera</>
-          ) : cameraStarting ? (
-            <><Aperture size={22} /> Starting Camera...</>
-          ) : (
-            <><ScanLine size={22} /> Start Scanning</>
-          )}
-        </button>
-      </div>
-
-      <style>{`
-        /* ── Mobile Scanner Styles ─────────────────────────────────────── */
-        .msc-root {
-          min-height: 100vh;
-          min-height: 100dvh;
-          background:
-            radial-gradient(circle at top, rgba(14,165,233,0.12), transparent 28%),
-            linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
-          color: #0f172a;
-          font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
-          transition: background 0.3s;
-          position: relative;
-        }
-        .msc-flash-success {
-          background:
-            radial-gradient(circle at top, rgba(34,197,94,0.16), transparent 28%),
-            linear-gradient(180deg, #f3fff7 0%, #eafff1 100%) !important;
-        }
-        .msc-flash-error {
-          background:
-            radial-gradient(circle at top, rgba(248,113,113,0.14), transparent 28%),
-            linear-gradient(180deg, #fff7f7 0%, #fff1f1 100%) !important;
-        }
-
-        .msc-container {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: 2rem;
-          text-align: center;
-          gap: 1.25rem;
-        }
-
-        .msc-logo-ring {
-          width: 80px; height: 80px;
-          border-radius: 24px;
-          background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-          display: flex; align-items: center; justify-content: center;
-          color: #fff;
-          box-shadow: 0 8px 32px rgba(59,130,246,0.3);
-        }
-        .msc-pulse { animation: msc-pulse 1.5s ease-in-out infinite; }
-        .msc-ended { background: linear-gradient(135deg, #6b7280, #374151); box-shadow: none; }
-
-        @keyframes msc-pulse {
-          0%, 100% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.05); opacity: 0.8; }
-        }
-
-        .msc-title {
-          font-size: 1.5rem;
-          font-weight: 900;
-          letter-spacing: -0.02em;
-          margin: 0;
-        }
-        .msc-subtitle {
-          font-size: 0.8rem;
-          color: #94a3b8;
-          margin: 0;
-          max-width: 280px;
-          line-height: 1.5;
-        }
-        .msc-stat {
-          font-size: 0.85rem;
-          color: #64748b;
-        }
-        .msc-hint {
-          font-size: 0.7rem;
-          color: #475569;
-          max-width: 260px;
-          line-height: 1.6;
-        }
-
-        .msc-pin-group {
-          display: flex;
-          flex-direction: column;
-          gap: 0.75rem;
-          width: 100%;
-          max-width: 280px;
-        }
-        .msc-pin-input {
-          width: 100%;
-          text-align: center;
-          font-size: 2rem;
-          font-weight: 900;
-          font-family: 'SF Mono', 'Fira Code', monospace;
-          letter-spacing: 0.5em;
-          padding: 1rem;
-          border-radius: 20px;
-          border: 2px solid #1e293b;
-          background: #0f172a;
-          color: #fff;
-          outline: none;
-          transition: border-color 0.2s;
-        }
-        .msc-pin-input:focus { border-color: #3b82f6; }
-        .msc-pin-input::placeholder {
-          color: #334155;
-          letter-spacing: 0.3em;
-          font-size: 1.2rem;
-        }
-
-        .msc-connect-btn {
-          display: flex; align-items: center; justify-content: center; gap: 0.5rem;
-          width: 100%;
-          padding: 1rem;
-          border-radius: 18px;
-          border: none;
-          background: linear-gradient(135deg, #3b82f6, #6366f1);
-          color: #fff;
-          font-size: 0.9rem;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.15em;
-          cursor: pointer;
-          transition: opacity 0.2s, transform 0.1s;
-          box-shadow: 0 4px 20px rgba(59,130,246,0.3);
-        }
-        .msc-connect-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-        .msc-connect-btn:active { transform: scale(0.97); }
-
-        .msc-error {
-          display: flex; align-items: center; gap: 0.4rem;
-          padding: 0.6rem 1rem;
-          border-radius: 12px;
-          background: rgba(239,68,68,0.15);
-          color: #f87171;
-          font-size: 0.75rem;
-          font-weight: 700;
-        }
-        .msc-error-banner {
-          position: absolute;
-          bottom: 80px;
-          left: 1rem; right: 1rem;
-          z-index: 50;
-        }
-
-        /* ── Status bar ─────────────────────────────────────────── */
-        .msc-status-bar {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: max(0.7rem, env(safe-area-inset-top)) 1rem 0.65rem;
-          background: rgba(15,23,42,0.92);
-          border-bottom: 1px solid rgba(148,163,184,0.2);
-          z-index: 20;
-        }
-        .msc-status-left, .msc-status-right {
-          display: flex; align-items: center; gap: 0.5rem;
-          font-size: 0.65rem;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.2em;
-          color: #94a3b8;
-        }
-        .msc-dot {
-          width: 6px; height: 6px; border-radius: 50%;
-        }
-        .msc-dot-live { background: #22c55e; box-shadow: 0 0 8px #22c55e; animation: msc-blink 1.5s infinite; }
-        @keyframes msc-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
-        .msc-status-pin { color: #3b82f6; }
-        .msc-scan-count { color: #22c55e; font-variant-numeric: tabular-nums; }
-        .msc-end-btn {
-          background: rgba(239,68,68,0.15);
-          border: none; border-radius: 8px;
-          color: #f87171; padding: 4px; cursor: pointer;
-          display: flex; align-items: center;
-        }
-
-        /* ── Camera ─────────────────────────────────────────────── */
-        .msc-camera-wrap {
-          flex: 1;
-          position: relative;
-          background: linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%);
-          overflow: hidden;
-          min-height: 0;
-          isolation: isolate;
-        }
-        .msc-scanbot-host {
-          position: absolute;
-          inset: 0;
-          opacity: 0;
-          pointer-events: none;
-          transition: opacity 0.18s ease;
-          z-index: 0;
-        }
-        .msc-scanbot-host-active {
-          opacity: 1;
-          pointer-events: auto;
-        }
-        .msc-scanbot-host video,
-        .msc-scanbot-host canvas {
-          width: 100% !important;
-          height: 100% !important;
-          object-fit: cover !important;
-          display: block;
-        }
-        .msc-capture-panel {
-          position: absolute;
-          left: 0.75rem;
-          right: 0.75rem;
-          bottom: calc(0.5rem + env(safe-area-inset-bottom));
-          z-index: 35;
-          border-radius: 24px;
-          border: 1px solid rgba(125,211,252,0.28);
-          background: linear-gradient(180deg, rgba(255,255,255,0.97) 0%, rgba(241,245,249,0.98) 100%);
-          backdrop-filter: blur(18px);
-          padding: 0.85rem;
-          box-shadow: 0 24px 60px rgba(15,23,42,0.18);
-          max-height: min(44vh, 360px);
-          overflow-y: auto;
-        }
-        .msc-capture-title {
-          color: #0f4c81;
-          font-size: 0.78rem;
-          font-weight: 900;
-          letter-spacing: 0.12em;
-          text-transform: uppercase;
-          font-family: 'SF Mono', 'Fira Code', monospace;
-        }
-        .msc-capture-sub {
-          margin-top: 0.35rem;
-          color: #334155;
-          font-size: 0.68rem;
-          font-weight: 700;
-          line-height: 1.4;
-        }
-        .msc-capture-actions {
-          display: flex;
-          gap: 0.6rem;
-          margin-top: 0.7rem;
-          flex-wrap: wrap;
-        }
-        .msc-preview-shell {
-          margin-top: 0.75rem;
-          border-radius: 16px;
-          overflow: hidden;
-          border: 1px solid rgba(148,163,184,0.2);
-          background: #ffffff;
-          max-height: 240px;
-        }
-        .msc-preview-image {
-          width: 100%;
-          display: block;
-          object-fit: contain;
-          max-height: 240px;
-          background: #f8fafc;
-        }
-        .msc-capture-primary,
-        .msc-capture-secondary {
-          flex: 1;
-          min-height: 2.6rem;
-          border-radius: 14px;
-          border: none;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 0.45rem;
-          font-size: 0.7rem;
-          font-weight: 900;
-          text-transform: uppercase;
-          letter-spacing: 0.12em;
-        }
-        .msc-capture-primary {
-          color: #fff;
-          background: linear-gradient(135deg, #0ea5e9, #22c55e);
-          box-shadow: 0 12px 24px rgba(14,165,233,0.22);
-        }
-        .msc-capture-secondary {
-          color: #334155;
-          background: rgba(226,232,240,0.9);
-        }
-        .msc-capture-toast {
-          position: absolute;
-          bottom: calc(6rem + env(safe-area-inset-bottom));
-          left: 1rem;
-          right: 1rem;
-          z-index: 45;
-          padding: 0.62rem 0.85rem;
-          border-radius: 12px;
-          border: 1px solid rgba(56,189,248,0.32);
-          background: rgba(255,255,255,0.96);
-          color: #0369a1;
-          font-size: 0.68rem;
-          font-weight: 800;
-          text-align: center;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
-        }
-        .msc-approval-sheet {
-          position: absolute;
-          left: 0;
-          right: 0;
-          bottom: calc(4.7rem + env(safe-area-inset-bottom));
-          z-index: 40;
-          margin: 0 0.85rem;
-          border-radius: 26px 26px 22px 22px;
-          background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,250,252,0.98) 100%);
-          border: 1px solid rgba(125,211,252,0.24);
-          box-shadow: 0 24px 64px rgba(15,23,42,0.18);
-          backdrop-filter: blur(20px);
-          max-height: min(62vh, 560px);
-          overflow: hidden;
-        }
-        .msc-sheet-body {
-          padding: 0.2rem 0.9rem 1rem;
-          max-height: calc(min(62vh, 560px) - 12px);
-          overflow-y: auto;
-        }
-        .msc-sheet-handle {
-          width: 54px;
-          height: 5px;
-          border-radius: 999px;
-          background: rgba(148,163,184,0.34);
-          margin: 0 auto 0.75rem;
-        }
-        .msc-sheet-head {
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 0.75rem;
-          margin-bottom: 0.75rem;
-        }
-        .msc-sheet-kicker {
-          color: #0284c7;
-          font-size: 0.62rem;
-          font-weight: 900;
-          text-transform: uppercase;
-          letter-spacing: 0.22em;
-        }
-        .msc-sheet-title {
-          margin-top: 0.35rem;
-          color: #0f172a;
-          font-size: 0.92rem;
-          font-weight: 800;
-          line-height: 1.35;
-        }
-        .msc-sheet-close {
-          width: 2rem;
-          height: 2rem;
-          border-radius: 999px;
-          border: none;
-          background: rgba(226,232,240,0.9);
-          color: #475569;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .msc-sheet-awb {
-          color: #0f172a;
-          font-size: 1rem;
-          font-weight: 900;
-          font-family: 'SF Mono', 'Fira Code', monospace;
-          margin-bottom: 0.55rem;
-        }
-        .msc-sheet-message {
-          margin-bottom: 0.75rem;
-          color: #64748b;
-          font-size: 0.7rem;
-          font-weight: 700;
-          line-height: 1.45;
-        }
-        .msc-sheet-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 0.65rem;
-        }
-        .msc-sheet-grid label {
-          display: flex;
-          flex-direction: column;
-          gap: 0.35rem;
-        }
-        .msc-sheet-grid label span {
-          color: #64748b;
-          font-size: 0.58rem;
-          font-weight: 900;
-          text-transform: uppercase;
-          letter-spacing: 0.16em;
-        }
-        .msc-sheet-grid label input {
-          width: 100%;
-          border-radius: 14px;
-          border: 1px solid rgba(148,163,184,0.18);
-          background: rgba(255,255,255,0.96);
-          color: #0f172a;
-          padding: 0.72rem 0.8rem;
-          font-size: 0.78rem;
-          font-weight: 700;
-          outline: none;
-        }
-        .msc-sheet-actions {
-          display: flex;
-          gap: 0.7rem;
-          margin-top: 0.9rem;
-        }
-        .msc-sheet-secondary,
-        .msc-sheet-primary {
-          flex: 1;
-          min-height: 3rem;
-          border-radius: 16px;
-          border: none;
-          font-size: 0.78rem;
-          font-weight: 900;
-          text-transform: uppercase;
-          letter-spacing: 0.14em;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          gap: 0.5rem;
-        }
-        .msc-sheet-secondary {
-          background: rgba(148,163,184,0.12);
-          color: #475569;
-        }
-        .msc-sheet-primary {
-          background: linear-gradient(135deg, #16a34a, #22c55e);
-          color: #fff;
-          box-shadow: 0 14px 30px rgba(34,197,94,0.22);
-        }
-        .msc-video {
-          width: 100%; height: 100%;
-          object-fit: cover;
-          display: block;
-          background: #cbd5e1;
-          position: absolute;
-          inset: 0;
-          z-index: 0;
-        }
-        .msc-video-idle {
-          opacity: 0;
-          pointer-events: none;
-        }
-        .msc-video-active {
-          opacity: 1;
-        }
-        .msc-camera-placeholder {
-          display: flex; flex-direction: column;
-          align-items: center; justify-content: center;
-          height: 100%; gap: 1rem; color: #64748b;
-        }
-        .msc-placeholder-icon { opacity: 0.3; }
-        .msc-camera-placeholder p { font-size: 0.8rem; font-weight: 600; }
-
-        /* ── Scanning overlay ───────────────────────────────────── */
-        .msc-scan-overlay {
-          position: absolute; inset: 0;
-          display: flex; align-items: center; justify-content: space-between;
-          flex-direction: column;
-          gap: 1rem;
-          padding: 1rem 1rem 1.35rem;
-          pointer-events: none;
-          z-index: 1;
-        }
-        .msc-overlay-head {
-          width: 100%;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          gap: 0.65rem;
-          flex-wrap: wrap;
-        }
-        .msc-overlay-chip {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.45rem;
-          padding: 0.55rem 0.8rem;
-          border-radius: 999px;
-          background: rgba(255,255,255,0.88);
-          border: 1px solid rgba(148,163,184,0.22);
-          color: #334155;
-          font-size: 0.68rem;
-          font-weight: 800;
-          letter-spacing: 0.06em;
-          text-transform: uppercase;
-        }
-        .msc-overlay-chip.ready {
-          color: #047857;
-          border-color: rgba(34,197,94,0.3);
-        }
-        .msc-scan-frame {
-          width: min(88vw, 420px);
-          aspect-ratio: 2.2 / 1;
-          position: relative;
-          border-radius: 20px;
-          margin: auto 0;
-          background: transparent;
-        }
-        .msc-overlay-tip {
-          padding: 0.55rem 0.9rem;
-          border-radius: 18px;
-          background: rgba(255,255,255,0.9);
-          border: 1px solid rgba(148,163,184,0.18);
-          color: #334155;
-          font-size: 0.72rem;
-          font-weight: 700;
-          letter-spacing: 0.04em;
-          text-align: center;
-          max-width: min(92%, 32rem);
-        }
-        .msc-corner {
-          position: absolute; width: 24px; height: 24px;
-          border-color: #22c55e; border-style: solid; border-width: 0;
-        }
-        .msc-tl { top: -2px; left: -2px; border-top-width: 3px; border-left-width: 3px; border-top-left-radius: 12px; }
-        .msc-tr { top: -2px; right: -2px; border-top-width: 3px; border-right-width: 3px; border-top-right-radius: 12px; }
-        .msc-bl { bottom: -2px; left: -2px; border-bottom-width: 3px; border-left-width: 3px; border-bottom-left-radius: 12px; }
-        .msc-br { bottom: -2px; right: -2px; border-bottom-width: 3px; border-right-width: 3px; border-bottom-right-radius: 12px; }
-
-        .msc-scan-line {
-          position: absolute;
-          left: 8px; right: 8px; height: 2px;
-          background: linear-gradient(90deg, transparent, #22c55e, transparent);
-          animation: msc-scanline 2s ease-in-out infinite;
-          border-radius: 2px;
-          box-shadow: 0 0 12px #22c55e;
-        }
-        @keyframes msc-scanline {
-          0% { top: 10%; opacity: 0.4; }
-          50% { top: 85%; opacity: 1; }
-          100% { top: 10%; opacity: 0.4; }
-        }
-
-        /* ── Last scan feedback ─────────────────────────────────── */
-        .msc-last-scan {
-          padding: 0.85rem 1rem calc(0.85rem + env(safe-area-inset-bottom));
-          background: rgba(255,255,255,0.92);
-          border-top: 1px solid rgba(148,163,184,0.18);
-          display: flex; align-items: flex-start; justify-content: space-between;
-          gap: 0.75rem;
-          z-index: 20;
-          flex-wrap: wrap;
-        }
-        .msc-last-awb-wrap {
-          display: flex;
-          flex-direction: column;
-          gap: 0.45rem;
-          min-width: 0;
-        }
-        .msc-last-awb {
-          display: flex; align-items: center; gap: 0.4rem;
-          font-size: 0.8rem; font-weight: 800;
-          font-family: 'SF Mono', 'Fira Code', monospace;
-        }
-        .msc-check { color: #22c55e; }
-        .msc-awb-text { color: #0f172a; }
-        .msc-client-badge {
-          display: flex; align-items: center; gap: 0.25rem;
-          padding: 0.25rem 0.6rem;
-          border-radius: 8px;
-          background: rgba(14,165,233,0.12);
-          color: #0369a1;
-          font-size: 0.65rem;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.1em;
-        }
-        .msc-feedback-card {
-          display: flex;
-          flex-direction: column;
-          gap: 0.45rem;
-          align-items: flex-end;
-          max-width: none;
-          flex: 1 1 100%;
-          padding-top: 0.15rem;
-        }
-        .msc-feedback-details {
-          display: grid;
-          gap: 0.3rem;
-          width: 100%;
-        }
-        .msc-feedback-details div {
-          display: flex;
-          flex-direction: column;
-          align-items: flex-end;
-          gap: 0.08rem;
-        }
-        .msc-feedback-details span {
-          color: #64748b;
-          font-size: 0.58rem;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.12em;
-        }
-        .msc-feedback-details strong {
-          color: #0f172a;
-          font-size: 0.72rem;
-          font-weight: 800;
-          text-align: right;
-        }
-        .msc-feedback-pill {
-          display: inline-flex;
-          align-items: center;
-          align-self: flex-start;
-          padding: 0.24rem 0.55rem;
-          border-radius: 999px;
-          font-size: 0.58rem;
-          font-weight: 900;
-          text-transform: uppercase;
-          letter-spacing: 0.12em;
-        }
-        .msc-feedback-pill.pending_review,
-        .msc-feedback-pill.review_deferred {
-          background: rgba(245,158,11,0.18);
-          color: #fbbf24;
-        }
-        .msc-feedback-pill.success {
-          background: rgba(34,197,94,0.18);
-          color: #4ade80;
-        }
-        .msc-feedback-pill.error {
-          background: rgba(239,68,68,0.18);
-          color: #f87171;
-        }
-
-        /* ── Controls ───────────────────────────────────────────── */
-        .msc-controls {
-          padding: 1rem;
-          padding-bottom: max(1rem, env(safe-area-inset-bottom));
-          background: linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(248,250,252,0.96) 30%, #ffffff 100%);
-          border-top: 1px solid rgba(148,163,184,0.18);
-          z-index: 20;
-        }
-        .msc-cam-btn {
-          display: flex; align-items: center; justify-content: center; gap: 0.6rem;
-          width: 100%;
-          padding: 1rem;
-          border-radius: 18px;
-          border: none;
-          background: linear-gradient(135deg, #22c55e, #16a34a);
-          color: #fff;
-          font-size: 0.85rem;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.15em;
-          cursor: pointer;
-          transition: transform 0.1s;
-          box-shadow: 0 4px 20px rgba(34,197,94,0.3);
-        }
-        .msc-cam-btn:disabled {
-          opacity: 0.7;
-        }
-        .msc-cam-btn:active { transform: scale(0.97); }
-        .msc-cam-active {
-          background: linear-gradient(135deg, #ef4444, #dc2626);
-          box-shadow: 0 4px 20px rgba(239,68,68,0.3);
-        }
-        .msc-capture-panel + .msc-controls {
-          padding-top: 0.5rem;
-        }
-        @media (max-width: 480px) {
-          .msc-status-left, .msc-status-right {
-            font-size: 0.58rem;
-            letter-spacing: 0.16em;
-          }
-          .msc-scan-frame {
-            width: min(90vw, 360px);
-            aspect-ratio: 2 / 1;
-          }
-          .msc-overlay-tip {
-            font-size: 0.68rem;
-          }
-          .msc-feedback-details {
-            grid-template-columns: 1fr;
-          }
-          .msc-feedback-details div {
-            align-items: flex-start;
-          }
-          .msc-feedback-details strong {
-            text-align: left;
-          }
-          .msc-approval-sheet {
-            margin: 0 0.55rem;
-            bottom: calc(4.5rem + env(safe-area-inset-bottom));
-            max-height: min(58vh, 520px);
-          }
-          .msc-sheet-body {
-            padding: 0.15rem 0.8rem 0.95rem;
-            max-height: calc(min(58vh, 520px) - 12px);
-          }
-          .msc-capture-panel {
-            left: 0.55rem;
-            right: 0.55rem;
-            bottom: calc(0.35rem + env(safe-area-inset-bottom));
-            padding: 0.72rem;
-            max-height: min(42vh, 340px);
-          }
-          .msc-capture-actions {
-            flex-direction: column;
-          }
-          .msc-sheet-grid {
-            grid-template-columns: 1fr;
-          }
-        }
-      `}</style>
-    </div>
+      {/* Global keyframes */}
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </>
   );
 }
