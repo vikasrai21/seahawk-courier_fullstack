@@ -15,6 +15,7 @@ const BARCODE_SCAN_REGION = { widthPct: 0.72, heightPct: 0.38 };
 const DOC_CAPTURE_REGION = { widthPct: 0.88, heightPct: 0.55 };
 const AUTO_NEXT_DELAY = 3500;
 const OFFLINE_QUEUE_KEY_PREFIX = 'mobile_scanner_offline_queue';
+const LOCK_TO_CAPTURE_DELAY = 280;
 
 const STEPS = {
   IDLE: 'IDLE',
@@ -422,6 +423,8 @@ export default function MobileScannerPage() {
   const scanBusyRef = useRef(false);
   const autoNextTimer = useRef(null);
   const autoCaptureTriggeredRef = useRef(false);
+  const currentStepRef = useRef(STEPS.IDLE);
+  const lockToCaptureTimerRef = useRef(null);
 
   const saveOfflineQueue = useCallback((nextQueue) => {
     setOfflineQueue(nextQueue);
@@ -460,6 +463,10 @@ export default function MobileScannerPage() {
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    currentStepRef.current = step;
+  }, [step]);
 
   // ════════════════════════════════════════════════════════════════════════
   // SOCKET CONNECTION
@@ -586,7 +593,6 @@ export default function MobileScannerPage() {
         videoRef.current.srcObject = null;
       }
     } catch {}
-    scanBusyRef.current = false;
   }, []);
 
   const startBarcodeScanner = useCallback(async () => {
@@ -620,8 +626,20 @@ export default function MobileScannerPage() {
       }
 
       // ZXing fallback
-      const { BrowserMultiFormatReader } = await import('@zxing/browser');
-      const reader = new BrowserMultiFormatReader();
+      const [{ BrowserMultiFormatReader }, zxingCore] = await Promise.all([
+        import('@zxing/browser'),
+        import('@zxing/library'),
+      ]);
+      const reader = new BrowserMultiFormatReader(new Map([
+        [zxingCore.DecodeHintType.POSSIBLE_FORMATS, [
+          zxingCore.BarcodeFormat.CODE_128,
+          zxingCore.BarcodeFormat.CODE_39,
+          zxingCore.BarcodeFormat.CODE_93,
+          zxingCore.BarcodeFormat.ITF,
+          zxingCore.BarcodeFormat.CODABAR,
+        ]],
+        [zxingCore.DecodeHintType.TRY_HARDER, true],
+      ]), 80);
       scannerRef.current = reader;
       
       await reader.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
@@ -634,8 +652,8 @@ export default function MobileScannerPage() {
   }, [stopCamera]);
 
   const handleBarcodeDetected = useCallback((rawText) => {
-    const awb = String(rawText || '').trim();
-    if (!awb || awb.length < 6 || scanBusyRef.current) return;
+    const awb = String(rawText || '').trim().replace(/\s+/g, '').toUpperCase();
+    if (!awb || awb.length < 6 || scanBusyRef.current || currentStepRef.current !== STEPS.SCANNING) return;
     scanBusyRef.current = true;
 
     // Duplicate detection
@@ -647,7 +665,9 @@ export default function MobileScannerPage() {
       return;
     }
 
-    // Lock!
+    clearTimeout(lockToCaptureTimerRef.current);
+
+    // Lock the barcode and prevent any further scanner callbacks during the handoff.
     vibrate([50]);
     playCaptureBeep();
     setLockedAwb(awb);
@@ -661,8 +681,12 @@ export default function MobileScannerPage() {
       return next;
     });
 
-    // Auto-transition to capture after brief pause
-    setTimeout(() => goStep(STEPS.CAPTURING), 600);
+    // Auto-transition to capture after a short, stable pause.
+    lockToCaptureTimerRef.current = setTimeout(() => {
+      if (currentStepRef.current === STEPS.BARCODE_LOCKED) {
+        goStep(STEPS.CAPTURING);
+      }
+    }, LOCK_TO_CAPTURE_DELAY);
   }, [sessionCtx, goStep]);
 
   // Start scanning when step changes to SCANNING
@@ -793,6 +817,7 @@ export default function MobileScannerPage() {
     const image = captureDocumentRegion();
     if (!image) {
       setErrorMsg('Could not capture image. Try again.');
+      scanBusyRef.current = false;
       return;
     }
 
@@ -928,6 +953,7 @@ export default function MobileScannerPage() {
 
   const resetForNextScan = useCallback(() => {
     clearTimeout(autoNextTimer.current);
+    clearTimeout(lockToCaptureTimerRef.current);
     setLockedAwb('');
     setCapturedImage(null);
     setReviewData(null);
@@ -961,7 +987,11 @@ export default function MobileScannerPage() {
   }, [voiceEnabled, step, reviewData, lastSuccess]);
 
   // Cleanup
-  useEffect(() => () => { stopCamera(); clearTimeout(autoNextTimer.current); }, [stopCamera]);
+  useEffect(() => () => {
+    stopCamera();
+    clearTimeout(autoNextTimer.current);
+    clearTimeout(lockToCaptureTimerRef.current);
+  }, [stopCamera]);
 
   // ════════════════════════════════════════════════════════════════════════
   // RENDER
