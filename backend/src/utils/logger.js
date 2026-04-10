@@ -80,6 +80,9 @@ const logger = createLogger({
   level: isProd ? 'info' : 'debug',
   format: prodFormat,
   transports: [
+    new transports.Console({
+      format: isProd ? prodFormat : devFormat,
+    }),
     new transports.File({
       filename: path.join(logsDir, 'error.log'),
       level: 'error',
@@ -101,15 +104,5 @@ const logger = createLogger({
     new transports.File({ filename: path.join(logsDir, 'rejections.log') }),
   ],
 });
-
-if (!isProd) {
-  logger.add(new transports.Console({ format: devFormat }));
-}
-
-if (isProd) {
-  console.error = (...args) => logger.error(args.join(' '));
-  console.warn  = (...args) => logger.warn(args.join(' '));
-  console.log   = (...args) => logger.info(args.join(' '));
-}
 
 module.exports = logger;

@@ -1,23 +1,34 @@
 // server.js — Application entry point
+'use strict';
+
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').config();
 }
 
-const os     = require('os');
+const os = require('os');
 const { createServer } = require('http');
-const app    = require('./src/app');
-const config = require('./src/config');
-const logger = require('./src/utils/logger');
-const prisma = require('./src/config/prisma');
-const { startScheduler } = require('./src/utils/scheduler');
-const { ensureStartupOwner } = require('./src/utils/startup-owner-bootstrap');
-const { initWorkers } = require('./src/workers/scanner.worker');
-const { initSocket } = require('./src/realtime/socket');
+
+function writeStartupError(err, context = 'startup') {
+  const message = err instanceof Error ? err.message : String(err);
+  const stack = err instanceof Error ? err.stack : '';
+  process.stderr.write(`[SEAHAWK:${context}] ${message}\n`);
+  if (stack) process.stderr.write(`${stack}\n`);
+}
+
+process.on('uncaughtException', (err) => {
+  writeStartupError(err, 'uncaughtException');
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (err) => {
+  writeStartupError(err, 'unhandledRejection');
+  process.exit(1);
+});
 
 function getLANIP() {
   const nets = os.networkInterfaces();
   for (const name of Object.keys(nets)) {
-    for (const net of nets[name]) {
+    for (const net of nets[name] || []) {
       if (net.family === 'IPv4' && !net.internal) return net.address;
     }
   }
@@ -25,43 +36,76 @@ function getLANIP() {
 }
 
 async function startServer() {
-  // ── Verify DB connection before accepting traffic ──────────────────────
+  let app;
+  let config;
+  let logger;
+  let prisma;
+  let startScheduler;
+  let ensureStartupOwner;
+  let initWorkers;
+  let initSocket;
+
+  try {
+    app = require('./src/app');
+    config = require('./src/config');
+    logger = require('./src/utils/logger');
+    prisma = require('./src/config/prisma');
+    ({ startScheduler } = require('./src/utils/scheduler'));
+    ({ ensureStartupOwner } = require('./src/utils/startup-owner-bootstrap'));
+    ({ initWorkers } = require('./src/workers/scanner.worker'));
+    ({ initSocket } = require('./src/realtime/socket'));
+  } catch (err) {
+    writeStartupError(err, 'module-load');
+    process.exit(1);
+  }
+
   try {
     await prisma.$connect();
     logger.info('Database connected successfully.');
     await ensureStartupOwner();
-
   } catch (err) {
     logger.error('Failed to connect to database. Exiting.', { error: err.message });
+    writeStartupError(err, 'database');
     process.exit(1);
   }
 
   const httpServer = createServer(app);
-  await initSocket(httpServer);
+
+  try {
+    await initSocket(httpServer);
+  } catch (err) {
+    logger.error('Socket initialization failed. Exiting.', { error: err.message });
+    writeStartupError(err, 'socket');
+    process.exit(1);
+  }
 
   const server = httpServer.listen(config.port, '0.0.0.0', () => {
     const lanIP = getLANIP();
 
     if (config.isDev) {
-      console.log('\n================================================');
-      console.log('  🦅  SEAHAWK COURIER & CARGO v2.0');
-      console.log('================================================');
-      console.log(`\n  ✅  Local:          http://localhost:${config.port}`);
-      console.log(`  🌐  Network:        http://${lanIP}:${config.port}`);
-      console.log(`  📊  Health:         http://localhost:${config.port}/api/health`);
-      console.log(`  🔧  Environment:    ${config.env}`);
-      console.log('\n  Keep this window open. Ctrl+C to stop.');
-      console.log('================================================\n');
+      process.stdout.write('\n================================================\n');
+      process.stdout.write('  SEAHAWK COURIER & CARGO v2.0\n');
+      process.stdout.write('================================================\n');
+      process.stdout.write(`\n  Local:          http://localhost:${config.port}\n`);
+      process.stdout.write(`  Network:        http://${lanIP}:${config.port}\n`);
+      process.stdout.write(`  Health:         http://localhost:${config.port}/api/health\n`);
+      process.stdout.write(`  Environment:    ${config.env}\n`);
+      process.stdout.write('\n  Keep this window open. Ctrl+C to stop.\n');
+      process.stdout.write('================================================\n\n');
     } else {
       logger.info(`Server started on port ${config.port}`, { env: config.env, ip: lanIP });
     }
   });
 
-  // ── Start background jobs & workers ────────────────────────────────────────────
-  startScheduler();
-  initWorkers();
+  try {
+    startScheduler();
+    initWorkers();
+  } catch (err) {
+    logger.error('Background startup failed. Exiting.', { error: err.message });
+    writeStartupError(err, 'background-jobs');
+    process.exit(1);
+  }
 
-  // ── Graceful shutdown ────────────────────────────────────────────────
   const shutdown = async (signal) => {
     logger.info(`${signal} received. Shutting down gracefully...`);
     server.close(async () => {
@@ -69,16 +113,14 @@ async function startServer() {
       logger.info('Server closed. Goodbye.');
       process.exit(0);
     });
-    // Force exit if graceful shutdown takes too long
     setTimeout(() => process.exit(1), 10_000);
   };
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT',  () => shutdown('SIGINT'));
-
-  // Handle uncaught errors (last resort — already logged by Winston)
-  process.on('uncaughtException',  (err) => { logger.error('Uncaught Exception',  { error: err.message, stack: err.stack }); process.exit(1); });
-  process.on('unhandledRejection', (err) => { logger.error('Unhandled Rejection', { error: err }); process.exit(1); });
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
-startServer();
+startServer().catch((err) => {
+  writeStartupError(err, 'startServer');
+  process.exit(1);
+});
