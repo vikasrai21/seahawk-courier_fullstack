@@ -529,8 +529,8 @@ export default function ScanAWBPage({ toast }) {
       focusCtx.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, focusCanvas.width, focusCanvas.height);
 
       return {
-        imageBase64: fullCanvas.toDataURL('image/jpeg', 0.65).split(',')[1] || null,
-        focusImageBase64: focusCanvas.toDataURL('image/jpeg', 0.65).split(',')[1] || null,
+        imageBase64: fullCanvas.toDataURL('image/jpeg', 0.75).split(',')[1] || null,
+        focusImageBase64: focusCanvas.toDataURL('image/jpeg', 0.75).split(',')[1] || null,
       };
     } catch (_err) {
       return null;

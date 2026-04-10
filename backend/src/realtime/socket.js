@@ -67,6 +67,8 @@ async function initSocket(server) {
       origin: config.cors.origin,
       credentials: true,
     },
+    // Allow large base64 image payloads from mobile scanner flows.
+    maxHttpBufferSize: 10 * 1024 * 1024,
   });
 
   if (config.redis.url) {
