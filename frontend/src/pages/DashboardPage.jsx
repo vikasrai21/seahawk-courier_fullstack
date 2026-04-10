@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { PageHeader } from '../components/ui/PageHeader';
 import { LayoutDashboard, RefreshCw, PlusCircle, FileUp, ScanLine, Receipt, Calendar, Calculator, Zap, ArrowRight } from 'lucide-react';
 import api from '../services/api';
@@ -65,6 +65,14 @@ function secondsAgo(date) {
   if (secs < 60) return `${secs}s ago`;
   if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
   return `${Math.floor(secs / 3600)}h ago`;
+}
+
+function isLikelyMobileBrowser() {
+  if (typeof window === 'undefined') return false;
+  const ua = String(navigator.userAgent || '').toLowerCase();
+  const mobileUA = /android|iphone|ipod|iemobile|blackberry|opera mini|mobile/.test(ua);
+  const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches;
+  return mobileUA || !!coarsePointer;
 }
 
 function Filters({ range, onRangeChange, customFrom, customTo, onCustomFromChange, onCustomToChange }) {
@@ -141,6 +149,7 @@ function SmartCommandBar({ user }) {
 
 export default function DashboardPage() {
   const { user, isAdmin, hasRole } = useAuth();
+  const navigate = useNavigate();
   const { socket } = useSocket();
   const [range, setRange] = useState('30d');
   const [customFrom, setCustomFrom] = useState('');
@@ -157,6 +166,13 @@ export default function DashboardPage() {
   const [opsData, setOpsData] = useState(null);
   const [smartRevenue, setSmartRevenue] = useState(null);
   const [, setTick] = useState(Date.now());
+
+  useEffect(() => {
+    const canUseMobileScanner = isAdmin || hasRole('OPS_MANAGER') || hasRole('STAFF');
+    if (!canUseMobileScanner) return;
+    if (!isLikelyMobileBrowser()) return;
+    navigate('/scan-mobile', { replace: true });
+  }, [navigate, isAdmin, hasRole]);
 
   const currentRange = useMemo(() => getRange(range, customFrom, customTo), [range, customFrom, customTo]);
   const previousRange = useMemo(() => getPreviousRange(range, customFrom, customTo), [range, customFrom, customTo]);
