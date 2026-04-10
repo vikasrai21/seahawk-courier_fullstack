@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
@@ -11,11 +10,11 @@ import {
 // ─── Constants ──────────────────────────────────────────────────────────────
 const SOCKET_URL = import.meta.env.VITE_API_URL || window.location.origin;
 const SCANBOT_LICENSE = import.meta.env.VITE_SCANBOT_LICENSE_KEY || '';
-const BARCODE_SCAN_REGION = { widthPct: 0.72, heightPct: 0.38 };
-const DOC_CAPTURE_REGION = { widthPct: 0.88, heightPct: 0.55 };
+const BARCODE_SCAN_REGION = { widthPct: 0.85, heightPct: 0.28 }; // wide + short — fits landscape barcode strips
+const DOC_CAPTURE_REGION = { widthPct: 0.93, heightPct: 0.70 }; // tall rectangle for full AWB slip
 const AUTO_NEXT_DELAY = 3500;
 const OFFLINE_QUEUE_KEY_PREFIX = 'mobile_scanner_offline_queue';
-const LOCK_TO_CAPTURE_DELAY = 280;
+const LOCK_TO_CAPTURE_DELAY = 120; // faster transition after barcode lock
 
 const STEPS = {
   IDLE: 'IDLE',
@@ -594,12 +593,42 @@ export default function MobileScannerPage() {
     } catch {}
   }, []);
 
+  // Stops only the barcode scanner/reader — leaves the video stream running.
+  // Use this when transitioning from SCANNING → CAPTURING so there is no black-screen flicker.
+  const stopBarcodeScanner = useCallback(async () => {
+    try {
+      if (scanbotRef.current) {
+        try { await scanbotRef.current.barcodeScanner.dispose(); } catch {}
+        scanbotRef.current = null;
+      }
+      if (scannerRef.current) {
+        try { await scannerRef.current.reset(); } catch {}
+        scannerRef.current = null;
+      }
+    } catch {}
+  }, []);
+
   const startBarcodeScanner = useCallback(async () => {
     if (!videoRef.current) return;
-    await stopCamera();
+    await stopBarcodeScanner(); // stop prior reader but KEEP video stream alive
 
     try {
-      // Try Scanbot first if licensed
+      // ── Start camera only if not already running ─────────────────────────
+      if (!videoRef.current.srcObject) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width:  { ideal: 1920 },
+            height: { ideal: 1080 },
+            // Continuous autofocus/autoexposure = faster barcode lock on Trackon slips
+            advanced: [{ focusMode: 'continuous' }, { exposureMode: 'continuous' }],
+          },
+        });
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      // ── Try Scanbot first if licensed ────────────────────────────────────
       if (SCANBOT_LICENSE) {
         try {
           const ScanbotSDK = (await import('scanbot-web-sdk')).default;
@@ -624,31 +653,38 @@ export default function MobileScannerPage() {
         }
       }
 
-      // ZXing fallback
+      // ── ZXing fallback ────────────────────────────────────────────────────
+      // Use decodeFromVideoElement (NOT decodeFromVideoDevice) so ZXing reads
+      // from our already-playing stream without touching the camera itself.
+      // This means the stream survives the SCANNING→CAPTURING step transition
+      // with zero flicker.
       const [{ BrowserMultiFormatReader }, zxingCore] = await Promise.all([
         import('@zxing/browser'),
         import('@zxing/library'),
       ]);
       const reader = new BrowserMultiFormatReader(new Map([
         [zxingCore.DecodeHintType.POSSIBLE_FORMATS, [
-          zxingCore.BarcodeFormat.CODE_128,
+          zxingCore.BarcodeFormat.CODE_128,  // Primary Trackon format
+          zxingCore.BarcodeFormat.ITF,        // Trackon 12-digit numeric AWBs
           zxingCore.BarcodeFormat.CODE_39,
           zxingCore.BarcodeFormat.CODE_93,
-          zxingCore.BarcodeFormat.ITF,
           zxingCore.BarcodeFormat.CODABAR,
+          zxingCore.BarcodeFormat.EAN_13,
+          zxingCore.BarcodeFormat.EAN_8,
         ]],
         [zxingCore.DecodeHintType.TRY_HARDER, true],
-      ]), 80);
+        [zxingCore.DecodeHintType.ASSUME_GS1, false],
+      ]), 40); // 40 ms — twice as fast as before
       scannerRef.current = reader;
-      
-      await reader.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
+
+      reader.decodeFromVideoElement(videoRef.current, (result) => {
         if (scanBusyRef.current) return;
         if (result) handleBarcodeDetected(result.getText());
       });
     } catch (err) {
       setErrorMsg('Camera access failed: ' + err.message);
     }
-  }, [stopCamera]);
+  }, [stopBarcodeScanner]);
 
   const handleBarcodeDetected = useCallback((rawText) => {
     const awb = String(rawText || '').trim().replace(/\s+/g, '').toUpperCase();
@@ -692,17 +728,27 @@ export default function MobileScannerPage() {
       startBarcodeScanner();
     }
     return () => {
-      if (step === STEPS.SCANNING) stopCamera();
+      // When leaving SCANNING, stop only the barcode reader — keep the video stream
+      // alive so CAPTURING can reuse it instantly with no black-frame flicker.
+      if (step === STEPS.SCANNING) stopBarcodeScanner();
     };
-  }, [step, startBarcodeScanner, stopCamera]);
+  }, [step, startBarcodeScanner, stopBarcodeScanner]);
 
   // ════════════════════════════════════════════════════════════════════════
   // PHOTO CAPTURE (Document mode)
   // ════════════════════════════════════════════════════════════════════════
 
   const startDocumentCamera = useCallback(async () => {
-    await stopCamera();
+    await stopBarcodeScanner(); // ensure barcode reader is off
     try {
+      // Reuse the stream that was already started by startBarcodeScanner.
+      // This is the key anti-flicker fix: the video element never goes dark
+      // between the barcode-scan phase and the document-capture phase.
+      if (videoRef.current?.srcObject) {
+        setCaptureCameraReady(true);
+        return;
+      }
+      // Fallback: start fresh stream if somehow the stream was lost
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
       });
@@ -714,7 +760,7 @@ export default function MobileScannerPage() {
     } catch (err) {
       setErrorMsg('Camera access failed: ' + err.message);
     }
-  }, [stopCamera]);
+  }, [stopBarcodeScanner]);
 
   useEffect(() => {
     if (step === STEPS.CAPTURING) startDocumentCamera();
@@ -1049,10 +1095,24 @@ export default function MobileScannerPage() {
           </div>
         </div>
 
+        {/* ═══ PERSISTENT CAMERA VIDEO ═══ */}
+        {/* Lives outside all step divs so it NEVER gets unmounted/re-mounted.
+            Both SCANNING and CAPTURING phases share this same element via videoRef.
+            This is what eliminates the black-screen flicker between steps. */}
+        <video
+          ref={videoRef}
+          autoPlay playsInline muted
+          style={{
+            position: 'absolute', inset: 0,
+            width: '100%', height: '100%',
+            objectFit: 'cover', zIndex: 0,
+            display: (step === STEPS.SCANNING || step === STEPS.CAPTURING) ? 'block' : 'none',
+          }}
+        />
+
         {/* ═══ SCANNING ═══ */}
         <div className={stepClass(STEPS.SCANNING)}>
-          <div className="cam-viewport">
-            {!scanbotRef.current && <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+          <div className="cam-viewport" style={{ background: 'transparent' }}>
             <div id="scanbot-camera-container" style={{ position: 'absolute', inset: 0, display: scanbotRef.current ? 'block' : 'none' }} />
             <div className="cam-overlay">
               <div className="scan-guide" style={{ width: `${BARCODE_SCAN_REGION.widthPct * 100}%`, height: `${BARCODE_SCAN_REGION.heightPct * 100}%` }}>
@@ -1086,15 +1146,8 @@ export default function MobileScannerPage() {
 
         {/* ═══ CAPTURING (Document mode) ═══ */}
         <div className={stepClass(STEPS.CAPTURING)}>
-          <div className="cam-viewport">
-            <video ref={step === STEPS.CAPTURING ? videoRef : undefined} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            {!captureCameraReady && (
-              <div style={{ position: 'absolute', inset: 0, zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, background: 'linear-gradient(180deg, #0F172A 0%, #111827 100%)', color: 'white' }}>
-                <CheckCircle2 size={48} color="#34D399" />
-                <div className="mono" style={{ fontSize: '1.5rem', fontWeight: 700, color: '#34D399' }}>{lockedAwb}</div>
-                <div style={{ color: 'rgba(255,255,255,0.74)', fontSize: '0.82rem' }}>Barcode locked • Preparing camera...</div>
-              </div>
-            )}
+          <div className="cam-viewport" style={{ background: 'transparent' }}>
+            {/* No video element here — uses the persistent one above */}
             <div className="cam-overlay">
               <div ref={guideRef} className={`scan-guide ${docDetected ? 'detected' : ''}`} style={{ width: `${DOC_CAPTURE_REGION.widthPct * 100}%`, height: `${DOC_CAPTURE_REGION.heightPct * 100}%` }}>
                 <div className="scan-guide-corner corner-tl" />
@@ -1118,9 +1171,9 @@ export default function MobileScannerPage() {
                 Place AWB slip inside the frame
               </div>
               <div style={{ color: docDetected ? 'rgba(16,185,129,0.95)' : 'rgba(255,255,255,0.72)', fontSize: '0.72rem', fontWeight: 700 }}>
-                {!captureCameraReady ? 'Starting document camera...' : docDetected ? 'Document detected - auto-capturing' : 'Auto-detecting document edges...'}
+                {docDetected ? 'Document detected - auto-capturing' : 'Auto-detecting document edges...'}
               </div>
-              <button className="capture-btn" onClick={handleCapturePhoto} disabled={!captureCameraReady}>
+              <button className="capture-btn" onClick={handleCapturePhoto}>
                 <div className="capture-btn-inner" />
               </button>
             </div>
