@@ -106,18 +106,19 @@ const css = `
 /* ── Step wrapper (full-screen transitions) ── */
 .msp-step {
   position: absolute; inset: 0;
-  display: flex; flex-direction: column;
-  opacity: 0; transform: translateX(40px);
-  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  display: none; flex-direction: column;
+  opacity: 0; transform: none;
+  transition: none;
   pointer-events: none;
   z-index: 1;
 }
 .msp-step.active {
-  opacity: 1; transform: translateX(0);
+  display: flex;
+  opacity: 1; transform: none;
   pointer-events: all; z-index: 2;
 }
 .msp-step.exiting {
-  opacity: 0; transform: translateX(-40px);
+  opacity: 0; transform: none;
   pointer-events: none;
 }
 
@@ -387,7 +388,6 @@ export default function MobileScannerPage() {
 
   // ── State machine ──
   const [step, setStep] = useState(STEPS.IDLE);
-  const [prevStep, setPrevStep] = useState(null);
 
   // ── Scan data ──
   const [lockedAwb, setLockedAwb] = useState('');
@@ -401,6 +401,7 @@ export default function MobileScannerPage() {
   const [offlineQueue, setOfflineQueue] = useState([]);
   const [docDetected, setDocDetected] = useState(false);
   const [docStableTicks, setDocStableTicks] = useState(0);
+  const [captureCameraReady, setCaptureCameraReady] = useState(false);
 
   // ── Session context ──
   const [sessionCtx, setSessionCtx] = useState({
@@ -458,10 +459,7 @@ export default function MobileScannerPage() {
 
   // ── Step transition helper ──
   const goStep = useCallback((next) => {
-    setStep((prev) => {
-      setPrevStep(prev);
-      return next;
-    });
+    setStep(next);
   }, []);
 
   useEffect(() => {
@@ -577,6 +575,7 @@ export default function MobileScannerPage() {
 
   const stopCamera = useCallback(async () => {
     try {
+      setCaptureCameraReady(false);
       if (scanbotRef.current) {
         try {
           const sdk = scanbotRef.current;
@@ -666,12 +665,9 @@ export default function MobileScannerPage() {
     }
 
     clearTimeout(lockToCaptureTimerRef.current);
-
-    // Lock the barcode and prevent any further scanner callbacks during the handoff.
     vibrate([50]);
     playCaptureBeep();
     setLockedAwb(awb);
-    goStep(STEPS.BARCODE_LOCKED);
 
     // Update session
     setSessionCtx(prev => {
@@ -681,9 +677,9 @@ export default function MobileScannerPage() {
       return next;
     });
 
-    // Auto-transition to capture after a short, stable pause.
+    // Jump straight into document capture and keep the lock message as an overlay.
     lockToCaptureTimerRef.current = setTimeout(() => {
-      if (currentStepRef.current === STEPS.BARCODE_LOCKED) {
+      if (currentStepRef.current === STEPS.SCANNING) {
         goStep(STEPS.CAPTURING);
       }
     }, LOCK_TO_CAPTURE_DELAY);
@@ -713,6 +709,7 @@ export default function MobileScannerPage() {
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
+        setCaptureCameraReady(true);
       }
     } catch (err) {
       setErrorMsg('Camera access failed: ' + err.message);
@@ -998,7 +995,7 @@ export default function MobileScannerPage() {
   // ════════════════════════════════════════════════════════════════════════
 
   const isStepActive = (s) => step === s;
-  const stepClass = (s) => `msp-step ${step === s ? 'active' : ''} ${prevStep === s ? 'exiting' : ''}`;
+  const stepClass = (s) => `msp-step ${step === s ? 'active' : ''}`;
 
   // ── Confidence data from reviewData ──
   const fieldConfidence = useMemo(() => {
@@ -1087,19 +1084,17 @@ export default function MobileScannerPage() {
           </div>
         </div>
 
-        {/* ═══ BARCODE LOCKED (brief flash) ═══ */}
-        <div className={stepClass(STEPS.BARCODE_LOCKED)}>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: theme.successLight, gap: 16 }}>
-            <CheckCircle2 size={48} color={theme.success} />
-            <div className="mono" style={{ fontSize: '1.5rem', fontWeight: 700, color: theme.success }}>{lockedAwb}</div>
-            <div style={{ color: theme.muted, fontSize: '0.82rem' }}>Barcode locked • Preparing camera...</div>
-          </div>
-        </div>
-
         {/* ═══ CAPTURING (Document mode) ═══ */}
         <div className={stepClass(STEPS.CAPTURING)}>
           <div className="cam-viewport">
             <video ref={step === STEPS.CAPTURING ? videoRef : undefined} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            {!captureCameraReady && (
+              <div style={{ position: 'absolute', inset: 0, zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, background: 'linear-gradient(180deg, #0F172A 0%, #111827 100%)', color: 'white' }}>
+                <CheckCircle2 size={48} color="#34D399" />
+                <div className="mono" style={{ fontSize: '1.5rem', fontWeight: 700, color: '#34D399' }}>{lockedAwb}</div>
+                <div style={{ color: 'rgba(255,255,255,0.74)', fontSize: '0.82rem' }}>Barcode locked • Preparing camera...</div>
+              </div>
+            )}
             <div className="cam-overlay">
               <div ref={guideRef} className={`scan-guide ${docDetected ? 'detected' : ''}`} style={{ width: `${DOC_CAPTURE_REGION.widthPct * 100}%`, height: `${DOC_CAPTURE_REGION.heightPct * 100}%` }}>
                 <div className="scan-guide-corner corner-tl" />
@@ -1123,9 +1118,9 @@ export default function MobileScannerPage() {
                 Place AWB slip inside the frame
               </div>
               <div style={{ color: docDetected ? 'rgba(16,185,129,0.95)' : 'rgba(255,255,255,0.72)', fontSize: '0.72rem', fontWeight: 700 }}>
-                {docDetected ? 'Document detected - auto-capturing' : 'Auto-detecting document edges...'}
+                {!captureCameraReady ? 'Starting document camera...' : docDetected ? 'Document detected - auto-capturing' : 'Auto-detecting document edges...'}
               </div>
-              <button className="capture-btn" onClick={handleCapturePhoto}>
+              <button className="capture-btn" onClick={handleCapturePhoto} disabled={!captureCameraReady}>
                 <div className="capture-btn-inner" />
               </button>
             </div>
