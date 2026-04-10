@@ -290,5 +290,3 @@ module.exports = { getAll, getOne, create, update, patchStatus, remove, bulkImpo
   scanImage,
   learnCorrections
 };
-
-};
