@@ -14,6 +14,7 @@ const SCANBOT_LICENSE = import.meta.env.VITE_SCANBOT_LICENSE_KEY || '';
 const BARCODE_SCAN_REGION = { widthPct: 0.72, heightPct: 0.38 };
 const DOC_CAPTURE_REGION = { widthPct: 0.88, heightPct: 0.55 };
 const AUTO_NEXT_DELAY = 3500;
+const OFFLINE_QUEUE_KEY_PREFIX = 'mobile_scanner_offline_queue';
 
 const STEPS = {
   IDLE: 'IDLE',
@@ -376,6 +377,7 @@ const sourceLabel = (source) => {
 export default function MobileScannerPage() {
   const { pin } = useParams();
   const navigate = useNavigate();
+  const offlineQueueKey = `${OFFLINE_QUEUE_KEY_PREFIX}:${pin || 'unknown'}`;
 
   // ── Connection ──
   const [socket, setSocket] = useState(null);
@@ -395,6 +397,9 @@ export default function MobileScannerPage() {
   const [lastSuccess, setLastSuccess] = useState(null);
   const [flash, setFlash] = useState(null); // null | 'white' | 'success' | 'error'
   const [duplicateWarning, setDuplicateWarning] = useState('');
+  const [offlineQueue, setOfflineQueue] = useState([]);
+  const [docDetected, setDocDetected] = useState(false);
+  const [docStableTicks, setDocStableTicks] = useState(0);
 
   // ── Session context ──
   const [sessionCtx, setSessionCtx] = useState({
@@ -402,6 +407,7 @@ export default function MobileScannerPage() {
     clientFreq: {},
     scanNumber: 0,
     dominantClient: null,
+    dominantClientCount: 0,
     startedAt: Date.now(),
   });
 
@@ -415,6 +421,37 @@ export default function MobileScannerPage() {
   const scanbotRef = useRef(null); // Scanbot SDK
   const scanBusyRef = useRef(false);
   const autoNextTimer = useRef(null);
+  const autoCaptureTriggeredRef = useRef(false);
+
+  const saveOfflineQueue = useCallback((nextQueue) => {
+    setOfflineQueue(nextQueue);
+    try {
+      if (nextQueue.length) {
+        localStorage.setItem(offlineQueueKey, JSON.stringify(nextQueue));
+      } else {
+        localStorage.removeItem(offlineQueueKey);
+      }
+    } catch {}
+  }, [offlineQueueKey]);
+
+  const enqueueOfflineScan = useCallback((payload) => {
+    const nextItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      queuedAt: Date.now(),
+      payload,
+    };
+    saveOfflineQueue([...offlineQueue, nextItem]);
+    return nextItem;
+  }, [offlineQueue, saveOfflineQueue]);
+
+  const flushOfflineQueue = useCallback(() => {
+    if (!socket || !socket.connected || !offlineQueue.length) return;
+    offlineQueue.forEach((item) => {
+      if (!item?.payload?.awb || !item?.payload?.imageBase64) return;
+      socket.emit('scanner:scan', item.payload);
+    });
+    saveOfflineQueue([]);
+  }, [socket, offlineQueue, saveOfflineQueue]);
 
   // ── Step transition helper ──
   const goStep = useCallback((next) => {
@@ -509,6 +546,23 @@ export default function MobileScannerPage() {
     setSocket(s);
     return () => { s.disconnect(); };
   }, [pin]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(offlineQueueKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) {
+        setOfflineQueue(parsed);
+      }
+    } catch {}
+  }, [offlineQueueKey]);
+
+  useEffect(() => {
+    if (connStatus === 'paired' && socket?.connected && offlineQueue.length) {
+      flushOfflineQueue();
+    }
+  }, [connStatus, socket, offlineQueue.length, flushOfflineQueue]);
 
   // ════════════════════════════════════════════════════════════════════════
   // CAMERA (Barcode Scanning)
@@ -645,6 +699,67 @@ export default function MobileScannerPage() {
     if (step === STEPS.CAPTURING) startDocumentCamera();
   }, [step, startDocumentCamera]);
 
+  useEffect(() => {
+    if (step !== STEPS.CAPTURING) {
+      setDocDetected(false);
+      setDocStableTicks(0);
+      autoCaptureTriggeredRef.current = false;
+      return;
+    }
+
+    const tick = setInterval(() => {
+      const video = videoRef.current;
+      const guide = guideRef.current;
+      if (!video || !guide || !video.videoWidth || !video.videoHeight) return;
+
+      const videoRect = video.getBoundingClientRect();
+      const guideRect = guide.getBoundingClientRect();
+      const scaleX = video.videoWidth / Math.max(videoRect.width, 1);
+      const scaleY = video.videoHeight / Math.max(videoRect.height, 1);
+      const sx = Math.max(0, Math.floor((guideRect.left - videoRect.left) * scaleX));
+      const sy = Math.max(0, Math.floor((guideRect.top - videoRect.top) * scaleY));
+      const sw = Math.max(24, Math.floor(guideRect.width * scaleX));
+      const sh = Math.max(24, Math.floor(guideRect.height * scaleY));
+
+      const sampleCanvas = document.createElement('canvas');
+      const sampleW = 96;
+      const sampleH = 72;
+      sampleCanvas.width = sampleW;
+      sampleCanvas.height = sampleH;
+      const ctx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+      if (!ctx) return;
+
+      ctx.drawImage(video, sx, sy, Math.min(sw, video.videoWidth - sx), Math.min(sh, video.videoHeight - sy), 0, 0, sampleW, sampleH);
+      const img = ctx.getImageData(0, 0, sampleW, sampleH).data;
+
+      let sum = 0;
+      let sumSq = 0;
+      let edgeCount = 0;
+      let px = 0;
+      for (let i = 0; i < img.length; i += 4) {
+        const lum = 0.2126 * img[i] + 0.7152 * img[i + 1] + 0.0722 * img[i + 2];
+        sum += lum;
+        sumSq += lum * lum;
+        if (i > 0) {
+          if (Math.abs(lum - px) > 26) edgeCount += 1;
+        }
+        px = lum;
+      }
+
+      const total = sampleW * sampleH;
+      const mean = sum / total;
+      const variance = Math.max(0, sumSq / total - mean * mean);
+      const contrast = Math.sqrt(variance);
+      const edgeRatio = edgeCount / Math.max(total, 1);
+      const detected = mean > 35 && mean < 225 && contrast > 24 && edgeRatio > 0.12;
+
+      setDocDetected(detected);
+      setDocStableTicks((prev) => (detected ? Math.min(prev + 1, 8) : 0));
+    }, 320);
+
+    return () => clearInterval(tick);
+  }, [step]);
+
   const captureDocumentRegion = useCallback(() => {
     const video = videoRef.current;
     const guide = guideRef.current;
@@ -686,30 +801,50 @@ export default function MobileScannerPage() {
     goStep(STEPS.PREVIEW);
   }, [captureDocumentRegion, stopCamera, goStep]);
 
+  useEffect(() => {
+    if (step !== STEPS.CAPTURING) return;
+    if (docStableTicks < 3) return;
+    if (autoCaptureTriggeredRef.current) return;
+    autoCaptureTriggeredRef.current = true;
+    handleCapturePhoto();
+  }, [docStableTicks, step, handleCapturePhoto]);
+
   // ════════════════════════════════════════════════════════════════════════
   // SEND TO DESKTOP (OCR Pipeline)
   // ════════════════════════════════════════════════════════════════════════
 
   const submitForProcessing = useCallback(() => {
-    if (!socket || !lockedAwb || !capturedImage) return;
+    if (!lockedAwb || !capturedImage) return;
     goStep(STEPS.PROCESSING);
 
     // Build session context for the intelligence engine
     const ctxPayload = {
       scanNumber: sessionCtx.scanNumber,
       recentClient: sessionCtx.dominantClient,
+      dominantClient: sessionCtx.dominantClient,
+      dominantClientCount: sessionCtx.dominantClientCount,
       sessionDurationMin: Math.round((Date.now() - sessionCtx.startedAt) / 60000),
     };
 
     // Extract base64 from data URL
     const imageBase64 = capturedImage.split(',')[1] || capturedImage;
 
-    socket.emit('scanner:scan', {
+    const payload = {
       awb: lockedAwb,
       imageBase64,
       focusImageBase64: imageBase64,
       sessionContext: ctxPayload,
-    });
+    };
+
+    if (!socket || !socket.connected || connStatus !== 'paired') {
+      enqueueOfflineScan(payload);
+      playSuccessBeep();
+      setLastSuccess({ awb: lockedAwb, clientCode: 'OFFLINE', clientName: 'Queued Offline', offlineQueued: true });
+      goStep(STEPS.SUCCESS);
+      return;
+    }
+
+    socket.emit('scanner:scan', payload);
 
     // Timeout fallback
     setTimeout(() => {
@@ -717,7 +852,7 @@ export default function MobileScannerPage() {
         setErrorMsg('Processing is taking longer than expected...');
       }
     }, 20000);
-  }, [socket, lockedAwb, capturedImage, sessionCtx, step, goStep]);
+  }, [socket, lockedAwb, capturedImage, sessionCtx, step, goStep, connStatus, enqueueOfflineScan]);
 
   // ════════════════════════════════════════════════════════════════════════
   // APPROVAL
@@ -777,7 +912,12 @@ export default function MobileScannerPage() {
         const freq = { ...prev.clientFreq };
         freq[reviewForm.clientCode] = (freq[reviewForm.clientCode] || 0) + 1;
         const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
-        return { ...prev, clientFreq: freq, dominantClient: sorted[0]?.[1] >= 2 ? sorted[0][0] : null };
+        return {
+          ...prev,
+          clientFreq: freq,
+          dominantClient: sorted[0]?.[1] >= 2 ? sorted[0][0] : null,
+          dominantClientCount: sorted[0]?.[1] || 0,
+        };
       });
     }
   }, [socket, reviewData, reviewForm, lockedAwb, pin, goStep]);
@@ -931,7 +1071,7 @@ export default function MobileScannerPage() {
           <div className="cam-viewport">
             <video ref={step === STEPS.CAPTURING ? videoRef : undefined} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             <div className="cam-overlay">
-              <div ref={guideRef} className="scan-guide" style={{ width: `${DOC_CAPTURE_REGION.widthPct * 100}%`, height: `${DOC_CAPTURE_REGION.heightPct * 100}%`, borderColor: 'rgba(255,255,255,0.85)' }}>
+              <div ref={guideRef} className={`scan-guide ${docDetected ? 'detected' : ''}`} style={{ width: `${DOC_CAPTURE_REGION.widthPct * 100}%`, height: `${DOC_CAPTURE_REGION.heightPct * 100}%` }}>
                 <div className="scan-guide-corner corner-tl" />
                 <div className="scan-guide-corner corner-tr" />
                 <div className="scan-guide-corner corner-bl" />
@@ -942,10 +1082,18 @@ export default function MobileScannerPage() {
               <div className="cam-hud-chip mono" style={{ fontSize: '0.68rem' }}>
                 <ScanLine size={12} /> {lockedAwb}
               </div>
+              {offlineQueue.length > 0 && (
+                <div className="cam-hud-chip">
+                  <Clock size={12} /> {offlineQueue.length} queued
+                </div>
+              )}
             </div>
             <div className="cam-bottom">
               <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.82rem', fontWeight: 500, textAlign: 'center' }}>
                 Place AWB slip inside the frame
+              </div>
+              <div style={{ color: docDetected ? 'rgba(16,185,129,0.95)' : 'rgba(255,255,255,0.72)', fontSize: '0.72rem', fontWeight: 700 }}>
+                {docDetected ? 'Document detected - auto-capturing' : 'Auto-detecting document edges...'}
               </div>
               <button className="capture-btn" onClick={handleCapturePhoto}>
                 <div className="capture-btn-inner" />
@@ -1128,7 +1276,9 @@ export default function MobileScannerPage() {
               )}
             </div>
             <div style={{ fontSize: '0.72rem', color: theme.muted }}>
-              #{sessionCtx.scanNumber} scanned • Auto-continuing in 3s
+              {lastSuccess?.offlineQueued
+                ? `${offlineQueue.length} queued for sync • Auto-continuing in 3s`
+                : `#${sessionCtx.scanNumber} scanned • Auto-continuing in 3s`}
             </div>
             <button className="btn btn-primary btn-lg btn-full" onClick={resetForNextScan} style={{ maxWidth: 320 }}>
               <Camera size={18} /> Scan Next Parcel
@@ -1156,7 +1306,7 @@ export default function MobileScannerPage() {
         {connStatus === 'disconnected' && step !== STEPS.IDLE && (
           <div className="offline-banner">
             <WifiOff size={12} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} />
-            Offline — Reconnecting...
+            Offline — Reconnecting... {offlineQueue.length ? `(${offlineQueue.length} queued)` : ''}
           </div>
         )}
       </div>
