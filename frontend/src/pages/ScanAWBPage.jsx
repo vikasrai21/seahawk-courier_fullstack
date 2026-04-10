@@ -212,6 +212,9 @@ export default function ScanAWBPage({ toast }) {
   const [lastFeedback, setLastFeedback] = useState(null);
   const [continuousScan, setContinuousScan] = useState(true);
   const [smartAssist, setSmartAssist] = useState(true);
+  const [manualConfirm, setManualConfirm] = useState(false);
+  const [pendingDecoded, setPendingDecoded] = useState('');
+  const [pendingFrame, setPendingFrame] = useState(null);
   const [spreadsheetName, setSpreadsheetName] = useState('');
   // ── Mobile Bridge State ──────────────────────────────────────────────
   const [showMobileModal, setShowMobileModal] = useState(false);
@@ -388,7 +391,6 @@ export default function ScanAWBPage({ toast }) {
 
     const onPhoneConnected = ({ pin }) => {
       setMobileStatus('connected');
-      setMobileSessionStartedAt((prev) => prev || Date.now());
       setShowMobileModal(false);
       playSuccess();
       toast?.('📱 Mobile phone connected! Start scanning barcodes.', 'success');
@@ -396,7 +398,6 @@ export default function ScanAWBPage({ toast }) {
 
     const onPhoneDisconnected = ({ totalScans }) => {
       setMobileStatus('disconnected');
-      setMobileSessionStartedAt(null);
       toast?.(`📱 Phone disconnected. ${totalScans} scans completed.`, 'warning');
     };
 
@@ -441,7 +442,6 @@ export default function ScanAWBPage({ toast }) {
           orderNo: normalized.orderNo,
           reviewRequired: false,
         });
-        notifyMobileReadyForNext();
       } catch (err) {
         toast?.(err.message || 'Mobile approval could not be saved.', 'error');
         socket.emit('scanner:approval-result', {
@@ -465,7 +465,7 @@ export default function ScanAWBPage({ toast }) {
       socket.off('scanner:remote-scan', onRemoteScan);
       socket.off('scanner:approval-submitted', onApprovalSubmitted);
     };
-  }, [socket, mobilePIN, reviewQueue, notifyMobileReadyForNext]);
+  }, [socket, mobilePIN, reviewQueue]);
 
   const captureCurrentFrame = () => {
     const video = videoRef.current;
@@ -603,7 +603,6 @@ export default function ScanAWBPage({ toast }) {
              orderNo: reviewForm.orderNo || '',
              reviewRequired: false,
            });
-           notifyMobileReadyForNext();
         }
         
         setReviewQueue((prev) => prev.slice(1));
@@ -646,7 +645,6 @@ export default function ScanAWBPage({ toast }) {
         orderNo: extractOrderNo(reviewScan.shipment, reviewScan.meta),
         reviewRequired: true,
       });
-      notifyMobileReadyForNext();
     }
     setReviewQueue((prev) => prev.slice(1));
     toast?.(`Deferred ${reviewScan.awb} without saving changes`, 'warning');
@@ -669,15 +667,28 @@ export default function ScanAWBPage({ toast }) {
           if (scanBusyRef.current) return;
           if (now < scanLockUntilRef.current && scannedValue === lastDecodedRef.current) return;
 
+          const frameBase64 = smartAssist ? captureCurrentFrame() : null;
+
+          // Manual confirm mode: detect but wait for user confirmation
+          if (manualConfirm) {
+            setPendingDecoded(scannedValue);
+            setPendingFrame(frameBase64);
+            // short lock to avoid rapid duplicate detections
+            scanLockUntilRef.current = now + 1200;
+            lastDecodedRef.current = scannedValue;
+            // keep scanner open for user to confirm
+            scanBusyRef.current = false;
+            return;
+          }
+
           scanBusyRef.current = true;
-          scanLockUntilRef.current = now + 1800;
+          scanLockUntilRef.current = now + 800;
           lastDecodedRef.current = scannedValue;
 
           if (!continuousScan) {
             await stopCamera();
           }
 
-          const frameBase64 = smartAssist ? captureCurrentFrame() : null;
           await processSingleScan(scannedValue, frameBase64);
           if (continuousScan) {
             scanBusyRef.current = false;
@@ -694,6 +705,27 @@ export default function ScanAWBPage({ toast }) {
       await stopCamera();
     }
   };
+
+    const confirmPending = async () => {
+      if (!pendingDecoded) return;
+      const value = pendingDecoded;
+      const frame = pendingFrame;
+      // clear pending UI immediately
+      setPendingDecoded('');
+      setPendingFrame(null);
+      try {
+        // stop camera if single-shot expected
+        if (!continuousScan) await stopCamera();
+        await processSingleScan(value, frame);
+      } finally {
+        scanBusyRef.current = false;
+      }
+    };
+
+    const cancelPending = () => {
+      setPendingDecoded('');
+      setPendingFrame(null);
+    };
   const handleSpreadsheetUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -895,24 +927,6 @@ export default function ScanAWBPage({ toast }) {
 
   const successfulCaptures = recentScans.filter((scan) => scan.status === 'success').length;
   const pendingSync = recentScans.filter((scan) => scan.meta?.trackingUnavailable).length;
-  const failedCaptures = recentScans.filter((scan) => scan.status === 'error').length;
-  const processedCaptures = successfulCaptures + failedCaptures;
-  const captureSuccessRate = processedCaptures ? Math.round((successfulCaptures / processedCaptures) * 100) : 100;
-  const sessionMinutes = mobileSessionStartedAt ? Math.max(1, Math.round((Date.now() - mobileSessionStartedAt) / 60000)) : 0;
-  const topClientEntry = Object.entries(
-    recentScans.reduce((acc, scan) => {
-      const code = scan.data?.clientCode || scan.meta?.clientSuggestion?.suggestedClientCode;
-      if (!code || code === 'MISC') return acc;
-      acc[code] = (acc[code] || 0) + 1;
-      return acc;
-    }, {})
-  ).sort((a, b) => b[1] - a[1])[0];
-  const topClientCode = topClientEntry?.[0] || 'None';
-  const learningContributionCount = recentScans.reduce((sum, scan) => {
-    return sum + Number(scan.meta?.ocrExtracted?.intelligence?.learnedFieldCount || scan.meta?.ocrExtracted?.intelligence?.learnedFieldCount || 0);
-  }, 0);
-  const autoAssignedCount = recentScans.filter((scan) => scan.meta?.clientSuggestion?.autoAssigned).length;
-  const autoFillAccuracy = successfulCaptures ? Math.round((autoAssignedCount / successfulCaptures) * 100) : 0;
 
   if (!canScan) {
     return <div className="p-12 text-center text-[10px] font-black uppercase tracking-[0.3em] text-rose-500">Access Denied: Operational Clearance Required</div>;
@@ -1144,8 +1158,17 @@ export default function ScanAWBPage({ toast }) {
                       <X size={16} />
                     </button>
                   </div>
-                  <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-                    <div className="w-[78%] h-28 rounded-3xl border-2 border-emerald-400/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" />
+                  <div className="pointer-events-auto absolute inset-0 flex items-center justify-center">
+                    <div className="w-[90%] h-36 rounded-2xl border-2 border-emerald-400/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" />
+                    {pendingDecoded && (
+                      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-3">
+                        <div className="rounded-2xl bg-white/95 dark:bg-slate-900/90 px-4 py-3 flex items-center gap-3 border border-slate-100 dark:border-slate-800 shadow-lg">
+                          <div className="font-mono font-black text-sm">{pendingDecoded}</div>
+                          <button type="button" onClick={confirmPending} className="px-4 py-2 bg-emerald-500 text-white rounded-xl font-black">Confirm</button>
+                          <button type="button" onClick={cancelPending} className="px-4 py-2 bg-rose-500 text-white rounded-xl font-black">Cancel</button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1168,6 +1191,13 @@ export default function ScanAWBPage({ toast }) {
                     className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-[10px] font-black uppercase tracking-widest transition ${continuousScan ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300'}`}
                   >
                     <Repeat size={12} /> {continuousScan ? 'Continuous ON' : 'Continuous OFF'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setManualConfirm((prev) => !prev)}
+                    className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2 text-[10px] font-black uppercase tracking-widest transition ${manualConfirm ? 'bg-blue-500/10 text-blue-600' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300'}`}
+                  >
+                    <ScanLine size={12} /> {manualConfirm ? 'Manual Confirm' : 'Auto Confirm'}
                   </button>
                   <button
                     type="button"
@@ -1195,16 +1225,6 @@ export default function ScanAWBPage({ toast }) {
             {reviewScan ? (() => {
               const ocrData = reviewScan.meta?.ocrExtracted || reviewScan.meta || {};
               const intelligence = ocrData.intelligence || reviewScan.shipment?.intelligence || null;
-              const fuzzyClientAlternatives = [
-                ...(intelligence?.clientMatches || []).map((m) => ({
-                  code: m.code,
-                  label: `${m.code}${m.name ? ` - ${m.name}` : ''} (${Math.round((m.score || 0) * 100)}%)`,
-                })),
-                ...(intelligence?.consigneeClientPattern?.alternatives || []).map((m) => ({
-                  code: m.clientCode,
-                  label: `${m.clientCode} - history (${m.count}x)`,
-                })),
-              ].filter((item, idx, arr) => item.code && arr.findIndex((x) => x.code === item.code) === idx);
               
               const confLevel = (score) => {
                 if (score >= 0.85) return 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]';
@@ -1259,26 +1279,6 @@ export default function ScanAWBPage({ toast }) {
                               {m.code} ({Math.round(m.score * 100)}%)
                             </button>
                           ))}
-                        </div>
-                      )}
-                      {fuzzyClientAlternatives.length > 0 && (
-                        <div className="mt-2 pt-2 border-t border-slate-200">
-                          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 block mb-1">Fuzzy Alternatives</label>
-                          <select
-                            className="w-full rounded-lg border border-slate-200 bg-white px-2 py-2 text-[11px] font-bold text-slate-700"
-                            value=""
-                            onChange={(e) => {
-                              if (!e.target.value) return;
-                              setReviewForm((f) => ({ ...f, clientCode: e.target.value }));
-                              e.target.value = '';
-                            }}
-                            disabled={savingReview}
-                          >
-                            <option value="">Select alternative...</option>
-                            {fuzzyClientAlternatives.map((option) => (
-                              <option key={option.code} value={option.code}>{option.label}</option>
-                            ))}
-                          </select>
                         </div>
                       )}
                     </div>
@@ -1539,58 +1539,6 @@ export default function ScanAWBPage({ toast }) {
                  </tbody>
                </table>
              </div>
-          </div>
-        )}
-
-        {(mobileStatus !== 'idle' || mobilePIN) && (
-          <div className="hidden xl:block fixed bottom-5 right-5 z-40">
-            <div className="w-[280px] rounded-3xl border border-slate-200 bg-white/95 backdrop-blur-md shadow-2xl shadow-slate-900/10 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <div className="text-[9px] font-black uppercase tracking-[0.22em] text-slate-400">Session Live</div>
-                  <div className="text-sm font-black text-slate-900 mt-1">{mobilePIN ? `PIN ${mobilePIN}` : 'Preparing...'}</div>
-                </div>
-                <div className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${mobileStatus === 'connected' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                  {mobileStatus === 'connected' ? <Wifi size={11} /> : <WifiOff size={11} />}
-                  {mobileStatus}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
-                  <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Scans</div>
-                  <div className="text-lg font-black text-slate-900">{mobileScanCount}</div>
-                </div>
-                <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
-                  <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Review</div>
-                  <div className="text-lg font-black text-slate-900">{pendingReviewCount}</div>
-                </div>
-                <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
-                  <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Approved</div>
-                  <div className="text-lg font-black text-slate-900">{approvedRows.length}</div>
-                </div>
-                <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
-                  <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Success</div>
-                  <div className="text-lg font-black text-slate-900">{captureSuccessRate}%</div>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-2 mt-2">
-                <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
-                  <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Top Client</div>
-                  <div className="text-xs font-black text-slate-900 truncate">{topClientCode}</div>
-                </div>
-                <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
-                  <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Autofill</div>
-                  <div className="text-xs font-black text-slate-900">{autoFillAccuracy}%</div>
-                </div>
-                <div className="rounded-xl bg-slate-50 border border-slate-100 px-3 py-2">
-                  <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Learning</div>
-                  <div className="text-xs font-black text-slate-900">{learningContributionCount}</div>
-                </div>
-              </div>
-              <div className="mt-3 text-[10px] font-bold text-slate-500">
-                {sessionMinutes ? `${sessionMinutes} min active` : 'Session timer starts after connect'}
-              </div>
-            </div>
           </div>
         )}
 
