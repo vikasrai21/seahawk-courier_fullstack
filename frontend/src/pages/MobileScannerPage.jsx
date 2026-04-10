@@ -10,8 +10,8 @@ import {
 // ─── Constants ──────────────────────────────────────────────────────────────
 const SOCKET_URL = import.meta.env.VITE_API_URL || window.location.origin;
 const SCANBOT_LICENSE = import.meta.env.VITE_SCANBOT_LICENSE_KEY || '';
-const BARCODE_SCAN_REGION = { widthPct: 0.85, heightPct: 0.28 }; // wide + short — fits landscape barcode strips
-const DOC_CAPTURE_REGION = { widthPct: 0.93, heightPct: 0.70 }; // tall rectangle for full AWB slip
+const BARCODE_SCAN_REGION = { w: '88vw', h: '22vh' };   // very wide, short strip — barcodes are landscape
+const DOC_CAPTURE_REGION  = { w: '92vw', h: '72vh' };   // tall portrait rectangle — full AWB slip
 const AUTO_NEXT_DELAY = 3500;
 const OFFLINE_QUEUE_KEY_PREFIX = 'mobile_scanner_offline_queue';
 const LOCK_TO_CAPTURE_DELAY = 120; // faster transition after barcode lock
@@ -126,7 +126,11 @@ const css = `
 /* ── Camera viewport ── */
 .cam-viewport {
   position: relative; width: 100%; flex: 1;
-  background: #000; overflow: hidden;
+  /* Use the full screen height as the sizing context so the scan-guide
+     height-percentages always reference the actual screen, not the element's
+     own unknown height (which can collapse when the <video> is outside). */
+  min-height: 100dvh;
+  background: transparent; overflow: hidden;
 }
 .cam-viewport video {
   width: 100%; height: 100%; object-fit: cover;
@@ -134,6 +138,8 @@ const css = `
 .cam-overlay {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
+  /* Must sit ABOVE the persistent background video (z-index 0) */
+  z-index: 3;
 }
 
 /* ── Scan guide rectangle ── */
@@ -645,7 +651,7 @@ export default function MobileScannerPage() {
               // Use ref to always call the current handler, never a stale closure.
               if (barcode?.text) handleBarcodeDetectedRef.current?.(barcode.text);
             },
-            style: { window: { widthProportion: BARCODE_SCAN_REGION.widthPct, heightProportion: BARCODE_SCAN_REGION.heightPct } },
+            style: { window: { widthProportion: 0.88, heightProportion: 0.22 } },
           };
           const scanner = await sdk.createBarcodeScanner(config);
           scanbotRef.current = { sdk, barcodeScanner: scanner };
@@ -908,13 +914,7 @@ export default function MobileScannerPage() {
     goStep(STEPS.PREVIEW);
   }, [captureDocumentRegion, stopCamera, goStep]);
 
-  useEffect(() => {
-    if (step !== STEPS.CAPTURING) return;
-    if (docStableTicks < 3) return;
-    if (autoCaptureTriggeredRef.current) return;
-    autoCaptureTriggeredRef.current = true;
-    handleCapturePhoto();
-  }, [docStableTicks, step, handleCapturePhoto]);
+  // Auto-capture is intentionally disabled — user presses the shutter button manually.
 
   // ════════════════════════════════════════════════════════════════════════
   // SEND TO DESKTOP (OCR Pipeline)
@@ -953,13 +953,15 @@ export default function MobileScannerPage() {
 
     socket.emit('scanner:scan', payload);
 
-    // Timeout fallback
+    // Timeout fallback — uses currentStepRef (not the stale `step` closure value)
+    // so it correctly detects if we're still stuck on PROCESSING after 25s.
     setTimeout(() => {
-      if (step === STEPS.PROCESSING) {
-        setErrorMsg('Processing is taking longer than expected...');
+      if (currentStepRef.current === STEPS.PROCESSING) {
+        setErrorMsg('No response from desktop after 25 seconds. Check the desktop connection and try again.');
+        goStep(STEPS.ERROR);
       }
-    }, 20000);
-  }, [socket, lockedAwb, capturedImage, sessionCtx, step, goStep, connStatus, enqueueOfflineScan]);
+    }, 25000);
+  }, [socket, lockedAwb, capturedImage, sessionCtx, goStep, connStatus, enqueueOfflineScan]);
 
   // ════════════════════════════════════════════════════════════════════════
   // APPROVAL
@@ -1161,7 +1163,7 @@ export default function MobileScannerPage() {
           <div className="cam-viewport" style={{ background: 'transparent' }}>
             <div id="scanbot-camera-container" style={{ position: 'absolute', inset: 0, display: scanbotRef.current ? 'block' : 'none' }} />
             <div className="cam-overlay">
-              <div className="scan-guide" style={{ width: `${BARCODE_SCAN_REGION.widthPct * 100}%`, height: `${BARCODE_SCAN_REGION.heightPct * 100}%` }}>
+              <div className="scan-guide" style={{ width: BARCODE_SCAN_REGION.w, height: BARCODE_SCAN_REGION.h }}>
                 <div className="scan-guide-corner corner-tl" />
                 <div className="scan-guide-corner corner-tr" />
                 <div className="scan-guide-corner corner-bl" />
@@ -1206,7 +1208,7 @@ export default function MobileScannerPage() {
               </div>
             )}
             <div className="cam-overlay">
-              <div ref={guideRef} className={`scan-guide ${docDetected ? 'detected' : ''}`} style={{ width: `${DOC_CAPTURE_REGION.widthPct * 100}%`, height: `${DOC_CAPTURE_REGION.heightPct * 100}%` }}>
+              <div ref={guideRef} className={`scan-guide ${docDetected ? 'detected' : ''}`} style={{ width: DOC_CAPTURE_REGION.w, height: DOC_CAPTURE_REGION.h }}>
                 <div className="scan-guide-corner corner-tl" />
                 <div className="scan-guide-corner corner-tr" />
                 <div className="scan-guide-corner corner-bl" />
