@@ -1,5 +1,6 @@
 'use strict';
 const prisma = require('../config/prisma');
+const correctionLearner = require('./correctionLearner.service');
 
 // ── Score weights for different signal types ────────────────────────────────
 const SCORE = {
@@ -22,7 +23,7 @@ const SCORE = {
 // Keys are UPPERCASE normalised phrases found in OCR text (sender, OID, etc.)
 // Values are the client codes they correspond to.
 // This is the "brain" that makes instant predictions without needing database history.
-const TRAINED_ALIASES = {
+const BASE_TRAINED_ALIASES = {
   // VALUE / VALUE SHOPPE (Delhivery OID labels)
   'VALUE SHOPPE':         'VALUE',
   'VALUE SHOP':           'VALUE',
@@ -120,6 +121,34 @@ const TRAINED_ALIASES = {
   'S I INTERPACK':        'TS',
   'SI INTERPACK PVT':     'TS',
 };
+
+const TRAINED_ALIASES = { ...BASE_TRAINED_ALIASES };
+let aliasRefreshInFlight = null;
+
+async function refreshDynamicAliases() {
+  if (aliasRefreshInFlight) return aliasRefreshInFlight;
+
+  aliasRefreshInFlight = (async () => {
+    const discovered = await correctionLearner.discoverNewAliases();
+    const nextAliases = { ...BASE_TRAINED_ALIASES };
+
+    for (const row of discovered) {
+      if (!row?.original || !row?.corrected) continue;
+      const alias = normalize(row.original);
+      const corrected = normalize(row.corrected);
+      if (!alias || !corrected) continue;
+      nextAliases[alias] = corrected;
+    }
+
+    Object.keys(TRAINED_ALIASES).forEach((key) => delete TRAINED_ALIASES[key]);
+    Object.assign(TRAINED_ALIASES, nextAliases);
+    return TRAINED_ALIASES;
+  })().finally(() => {
+    aliasRefreshInFlight = null;
+  });
+
+  return aliasRefreshInFlight;
+}
 
 // ── AWB prefix patterns trained from Excel data ─────────────────────────────
 // Some clients have distinctive AWB number patterns
@@ -223,6 +252,8 @@ async function getHistoryBoost({ consignee, destination }) {
 // ── Main suggestion engine ──────────────────────────────────────────────────
 
 async function suggestClientForShipment(shipment, ocrHints = null) {
+  await refreshDynamicAliases();
+
   const clients = await prisma.client.findMany({
     where: { active: true },
     select: { code: true, company: true, address: true, notes: true },
@@ -429,6 +460,7 @@ async function suggestClientForShipment(shipment, ocrHints = null) {
 
 module.exports = {
   suggestClientForShipment,
+  refreshDynamicAliases,
   // Exported for testing / admin usage
   TRAINED_ALIASES,
   findAliasMatch,

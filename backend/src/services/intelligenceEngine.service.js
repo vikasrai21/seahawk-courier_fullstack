@@ -33,9 +33,14 @@ async function resolveClient(ocrClientName, sessionContext = {}) {
     const companyScore = stringSimilarity.compareTwoStrings(inputNorm, norm(c.company));
     let score = Math.max(codeScore, companyScore);
 
-    // Session boosting: if this client was dominant in the current session, boost
-    if (sessionContext.dominantClient && sessionContext.dominantClient === c.code) {
-      score = Math.min(1.0, score + 0.12);
+    // Exact session-batch boost: after 4 parcels for the same client, give the 5th
+    // and beyond a strong nudge so batch scanning behaves predictably.
+    if (
+      sessionContext.dominantClient &&
+      sessionContext.dominantClient === c.code &&
+      Number(sessionContext.dominantClientCount || 0) >= 4
+    ) {
+      score = Math.min(1.0, score + 0.25);
     }
 
     return { code: c.code, name: c.company, score: Math.round(score * 100) / 100 };
