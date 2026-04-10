@@ -10,11 +10,19 @@ import {
 // ─── Constants ──────────────────────────────────────────────────────────────
 const SOCKET_URL = import.meta.env.VITE_API_URL || window.location.origin;
 const SCANBOT_LICENSE = import.meta.env.VITE_SCANBOT_LICENSE_KEY || '';
-const BARCODE_SCAN_REGION = { w: '88vw', h: '22vh' };   // very wide, short strip — barcodes are landscape
-const DOC_CAPTURE_REGION  = { w: '92vw', h: '72vh' };   // tall portrait rectangle — full AWB slip
+// Barcode strip: wide landscape rectangle — Trackon/DTDC barcodes are horizontal
+const BARCODE_SCAN_REGION = { w: '90vw', h: '18vw' };  // aspect ~5:1, always landscape
+// Document capture: tall portrait rectangle matching a real AWB slip shape
+const DOC_CAPTURE_REGION  = { w: '92vw', h: '130vw' }; // ~A4 portrait proportion
 const AUTO_NEXT_DELAY = 3500;
 const OFFLINE_QUEUE_KEY_PREFIX = 'mobile_scanner_offline_queue';
-const LOCK_TO_CAPTURE_DELAY = 120; // faster transition after barcode lock
+const LOCK_TO_CAPTURE_DELAY = 80; // fast transition after barcode lock
+
+// Native BarcodeDetector formats (supported on Chrome Android + iOS 17+)
+const NATIVE_BARCODE_FORMATS = [
+  'code_128', 'code_39', 'code_93', 'codabar',
+  'ean_13', 'ean_8', 'itf', 'qr_code',
+];
 
 const STEPS = {
   IDLE: 'IDLE',
@@ -620,7 +628,13 @@ export default function MobileScannerPage() {
         scanbotRef.current = null;
       }
       if (scannerRef.current) {
-        try { await scannerRef.current.reset(); } catch {}
+        try {
+          if (scannerRef.current._type === 'native') {
+            scannerRef.current.reset();
+          } else {
+            await scannerRef.current.reset();
+          }
+        } catch {}
         scannerRef.current = null;
       }
     } catch {}
@@ -628,47 +642,11 @@ export default function MobileScannerPage() {
 
   const startBarcodeScanner = useCallback(async () => {
     if (!videoRef.current) return;
-    await stopBarcodeScanner(); // stop prior reader but KEEP video stream alive
+    await stopBarcodeScanner();
 
     try {
-      // ── Scanbot path ─────────────────────────────────────────────────────
-      // When Scanbot is licensed, let it own its camera entirely.
-      // We do NOT call getUserMedia here — Scanbot manages its own stream
-      // inside scanbot-camera-container. This avoids two simultaneous camera
-      // consumers and means the persistent-video element stays empty (no srcObject).
-      if (SCANBOT_LICENSE) {
-        try {
-          const ScanbotSDK = (await import('scanbot-web-sdk')).default;
-          const sdk = await ScanbotSDK.initialize({
-            licenseKey: SCANBOT_LICENSE,
-            enginePath: '/scanbot-sdk/',
-          });
-          const config = {
-            containerId: 'scanbot-camera-container',
-            onBarcodesDetected: (result) => {
-              if (scanBusyRef.current) return;
-              const barcode = result?.barcodes?.[0];
-              // Use ref to always call the current handler, never a stale closure.
-              if (barcode?.text) handleBarcodeDetectedRef.current?.(barcode.text);
-            },
-            style: { window: { widthProportion: 0.88, heightProportion: 0.22 } },
-          };
-          const scanner = await sdk.createBarcodeScanner(config);
-          scanbotRef.current = { sdk, barcodeScanner: scanner };
-          return; // ← Scanbot owns camera; skip getUserMedia + ZXing below
-        } catch (err) {
-          console.warn('Scanbot init failed, falling back to ZXing:', err.message);
-        }
-      }
-
-      // ── ZXing path: own the camera via the persistent video element ───────
-      // Only this path uses getUserMedia, so there is never a double-consumer
-      // conflict with Scanbot.
+      // ── Ensure camera stream is running ──────────────────────────────────
       if (!videoRef.current.srcObject) {
-        // Try with continuous autofocus/autoexposure for faster barcode lock.
-        // Wrapped in try/catch because 'advanced' constraints are not universally
-        // supported (notably on some iOS/Safari versions) and can throw
-        // OverconstrainedError or be silently ignored.
         let stream = null;
         try {
           stream = await navigator.mediaDevices.getUserMedia({
@@ -680,7 +658,6 @@ export default function MobileScannerPage() {
             },
           });
         } catch {
-          // advanced constraints not supported on this browser — fall back to basics
           stream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
           });
@@ -689,13 +666,61 @@ export default function MobileScannerPage() {
         await videoRef.current.play();
       }
 
+      // ── Path 1: Native BarcodeDetector (Chrome Android, iOS 17+) ─────────
+      // This runs in the browser's GPU/native layer — sub-100ms, no WASM needed.
+      if (typeof window.BarcodeDetector !== 'undefined') {
+        let supportedFormats = NATIVE_BARCODE_FORMATS;
+        try {
+          const available = await window.BarcodeDetector.getSupportedFormats();
+          supportedFormats = NATIVE_BARCODE_FORMATS.filter(f => available.includes(f));
+          if (!supportedFormats.length) supportedFormats = NATIVE_BARCODE_FORMATS;
+        } catch { /* use defaults */ }
+
+        const detector = new window.BarcodeDetector({ formats: supportedFormats });
+        let rafId = null;
+
+        const tick = async () => {
+          if (scanBusyRef.current || currentStepRef.current !== STEPS.SCANNING) return;
+          const video = videoRef.current;
+          if (!video || video.readyState < 2) {
+            rafId = requestAnimationFrame(tick);
+            return;
+          }
+          try {
+            const barcodes = await detector.detect(video);
+            if (barcodes.length > 0 && barcodes[0].rawValue) {
+              handleBarcodeDetectedRef.current?.(barcodes[0].rawValue);
+            }
+          } catch { /* frame not ready */ }
+          // ~15ms between frames = ~60fps scanning
+          if (currentStepRef.current === STEPS.SCANNING) {
+            rafId = requestAnimationFrame(() => setTimeout(tick, 15));
+          }
+        };
+
+        // Store a cleanup handle in scannerRef
+        scannerRef.current = {
+          _type: 'native',
+          reset: () => {
+            if (rafId) cancelAnimationFrame(rafId);
+            rafId = null;
+          },
+        };
+
+        // Start after a short delay to let the video settle
+        setTimeout(tick, 300);
+        return; // ← native path active, skip ZXing
+      }
+
+      // ── Path 2: ZXing fallback (Safari iOS < 17, older browsers) ─────────
       const [{ BrowserMultiFormatReader }, zxingCore] = await Promise.all([
         import('@zxing/browser'),
         import('@zxing/library'),
       ]);
-      const reader = new BrowserMultiFormatReader(new Map([
+
+      const hints = new Map([
         [zxingCore.DecodeHintType.POSSIBLE_FORMATS, [
-          zxingCore.BarcodeFormat.CODE_128,  // Primary Trackon format
+          zxingCore.BarcodeFormat.CODE_128,  // Trackon, DTDC primary format
           zxingCore.BarcodeFormat.ITF,        // Trackon 12-digit numeric AWBs
           zxingCore.BarcodeFormat.CODE_39,
           zxingCore.BarcodeFormat.CODE_93,
@@ -705,12 +730,13 @@ export default function MobileScannerPage() {
         ]],
         [zxingCore.DecodeHintType.TRY_HARDER, true],
         [zxingCore.DecodeHintType.ASSUME_GS1, false],
-      ]), 40); // 40 ms scan interval — 2× faster than before
+        [zxingCore.DecodeHintType.CHARACTER_SET, 'UTF-8'],
+      ]);
+
+      // 80ms scan interval — balance between speed and battery on iOS
+      const reader = new BrowserMultiFormatReader(hints, 80);
       scannerRef.current = reader;
 
-      // decodeFromVideoElement reads from our already-playing stream without
-      // touching the camera. The stream survives SCANNING→CAPTURING with zero flicker.
-      // We call via ref so this never closes over a stale handleBarcodeDetected.
       reader.decodeFromVideoElement(videoRef.current, (result) => {
         if (scanBusyRef.current) return;
         if (result) handleBarcodeDetectedRef.current?.(result.getText());
@@ -819,6 +845,8 @@ export default function MobileScannerPage() {
       return;
     }
 
+    // Just detect whether a document is in frame to give visual feedback.
+    // We do NOT auto-capture — user must press the shutter button.
     const tick = setInterval(() => {
       const video = videoRef.current;
       const guide = guideRef.current;
@@ -834,39 +862,28 @@ export default function MobileScannerPage() {
       const sh = Math.max(24, Math.floor(guideRect.height * scaleY));
 
       const sampleCanvas = document.createElement('canvas');
-      const sampleW = 96;
-      const sampleH = 72;
-      sampleCanvas.width = sampleW;
-      sampleCanvas.height = sampleH;
+      const sampleW = 96; const sampleH = 72;
+      sampleCanvas.width = sampleW; sampleCanvas.height = sampleH;
       const ctx = sampleCanvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) return;
-
       ctx.drawImage(video, sx, sy, Math.min(sw, video.videoWidth - sx), Math.min(sh, video.videoHeight - sy), 0, 0, sampleW, sampleH);
       const img = ctx.getImageData(0, 0, sampleW, sampleH).data;
 
-      let sum = 0;
-      let sumSq = 0;
-      let edgeCount = 0;
-      let px = 0;
+      let sum = 0, sumSq = 0, edgeCount = 0, px = 0;
       for (let i = 0; i < img.length; i += 4) {
         const lum = 0.2126 * img[i] + 0.7152 * img[i + 1] + 0.0722 * img[i + 2];
-        sum += lum;
-        sumSq += lum * lum;
-        if (i > 0) {
-          if (Math.abs(lum - px) > 26) edgeCount += 1;
-        }
+        sum += lum; sumSq += lum * lum;
+        if (i > 0 && Math.abs(lum - px) > 26) edgeCount++;
         px = lum;
       }
-
       const total = sampleW * sampleH;
       const mean = sum / total;
-      const variance = Math.max(0, sumSq / total - mean * mean);
-      const contrast = Math.sqrt(variance);
+      const contrast = Math.sqrt(Math.max(0, sumSq / total - mean * mean));
       const edgeRatio = edgeCount / Math.max(total, 1);
       const detected = mean > 35 && mean < 225 && contrast > 24 && edgeRatio > 0.12;
 
       setDocDetected(detected);
-      setDocStableTicks((prev) => (detected ? Math.min(prev + 1, 8) : 0));
+      setDocStableTicks(prev => detected ? Math.min(prev + 1, 8) : 0);
     }, 320);
 
     return () => clearInterval(tick);
@@ -953,14 +970,13 @@ export default function MobileScannerPage() {
 
     socket.emit('scanner:scan', payload);
 
-    // Timeout fallback — uses currentStepRef (not the stale `step` closure value)
-    // so it correctly detects if we're still stuck on PROCESSING after 25s.
+    // Timeout fallback — 40s to give Gemini Vision enough time on slow connections
     setTimeout(() => {
       if (currentStepRef.current === STEPS.PROCESSING) {
-        setErrorMsg('No response from desktop after 25 seconds. Check the desktop connection and try again.');
+        setErrorMsg('OCR timed out after 40 seconds. Check that GEMINI_API_KEY is set on Railway, then try again.');
         goStep(STEPS.ERROR);
       }
-    }, 25000);
+    }, 40000);
   }, [socket, lockedAwb, capturedImage, sessionCtx, goStep, connStatus, enqueueOfflineScan]);
 
   // ════════════════════════════════════════════════════════════════════════
@@ -1163,7 +1179,16 @@ export default function MobileScannerPage() {
           <div className="cam-viewport" style={{ background: 'transparent' }}>
             <div id="scanbot-camera-container" style={{ position: 'absolute', inset: 0, display: scanbotRef.current ? 'block' : 'none' }} />
             <div className="cam-overlay">
-              <div className="scan-guide" style={{ width: BARCODE_SCAN_REGION.w, height: BARCODE_SCAN_REGION.h }}>
+              {/* Wide landscape strip — matches how Trackon/DTDC barcodes are oriented */}
+              <div
+                className="scan-guide"
+                style={{
+                  width: BARCODE_SCAN_REGION.w,
+                  height: BARCODE_SCAN_REGION.h,
+                  borderRadius: 10,
+                  maxHeight: '20vw',
+                }}
+              >
                 <div className="scan-guide-corner corner-tl" />
                 <div className="scan-guide-corner corner-tr" />
                 <div className="scan-guide-corner corner-bl" />
@@ -1175,13 +1200,17 @@ export default function MobileScannerPage() {
               <div className="cam-hud-chip">
                 <Wifi size={12} /> {pin}
               </div>
-              <div className="cam-hud-chip">
+              <div className="cam-hud-chip" style={{ gap: 4 }}>
                 <Package size={12} /> {sessionCtx.scanNumber}
+                {typeof window !== 'undefined' && typeof window.BarcodeDetector !== 'undefined'
+                  ? <span style={{ color: '#34D399', fontSize: '0.6rem', fontWeight: 800 }}>⚡ NATIVE</span>
+                  : <span style={{ color: '#F59E0B', fontSize: '0.6rem', fontWeight: 800 }}>ZXING</span>
+                }
               </div>
             </div>
             <div className="cam-bottom">
               <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.82rem', fontWeight: 600, textAlign: 'center' }}>
-                Point camera at barcode
+                Align barcode inside the strip
               </div>
               <div style={{ display: 'flex', gap: 12 }}>
                 <button className="cam-hud-chip" onClick={() => setVoiceEnabled(!voiceEnabled)} style={{ border: 'none', cursor: 'pointer' }}>
@@ -1195,11 +1224,6 @@ export default function MobileScannerPage() {
         {/* ═══ CAPTURING (Document mode) ═══ */}
         <div className={stepClass(STEPS.CAPTURING)}>
           <div className="cam-viewport" style={{ background: 'transparent' }}>
-            {/* No video element here — uses the persistent one above */}
-            {/* Brief "barcode locked" overlay shown only until the reused stream
-                is confirmed stable. With the persistent-video fix this is nearly
-                instantaneous for the ZXing path; the Scanbot path may show it
-                briefly while a new stream starts. */}
             {!captureCameraReady && (
               <div style={{ position: 'absolute', inset: 0, zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, background: 'rgba(15,23,42,0.82)', backdropFilter: 'blur(4px)', color: 'white' }}>
                 <CheckCircle2 size={44} color="#34D399" />
@@ -1208,7 +1232,17 @@ export default function MobileScannerPage() {
               </div>
             )}
             <div className="cam-overlay">
-              <div ref={guideRef} className={`scan-guide ${docDetected ? 'detected' : ''}`} style={{ width: DOC_CAPTURE_REGION.w, height: DOC_CAPTURE_REGION.h }}>
+              {/* Rectangular guide sized to match an actual AWB slip */}
+              <div
+                ref={guideRef}
+                className={`scan-guide ${docDetected ? 'detected' : ''}`}
+                style={{
+                  width: DOC_CAPTURE_REGION.w,
+                  height: DOC_CAPTURE_REGION.h,
+                  maxHeight: '75vh',
+                  borderRadius: 12,
+                }}
+              >
                 <div className="scan-guide-corner corner-tl" />
                 <div className="scan-guide-corner corner-tr" />
                 <div className="scan-guide-corner corner-bl" />
@@ -1226,16 +1260,22 @@ export default function MobileScannerPage() {
               )}
             </div>
             <div className="cam-bottom">
-              <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.82rem', fontWeight: 500, textAlign: 'center' }}>
-                Place AWB slip inside the frame
+              <div style={{ color: docDetected ? 'rgba(16,185,129,0.95)' : 'rgba(255,255,255,0.85)', fontSize: '0.82rem', fontWeight: 600, textAlign: 'center', transition: 'color 0.3s' }}>
+                {docDetected ? '✓ AWB in frame — press shutter' : 'Fit the AWB slip inside the frame'}
               </div>
-              <div style={{ color: docDetected ? 'rgba(16,185,129,0.95)' : 'rgba(255,255,255,0.72)', fontSize: '0.72rem', fontWeight: 700 }}>
-                {!captureCameraReady ? 'Preparing camera…' : docDetected ? 'Document detected - auto-capturing' : 'Auto-detecting document edges...'}
-              </div>
-              {/* disabled until captureCameraReady to prevent capturing before
-                  the stream/layout is confirmed stable */}
-              <button className="capture-btn" onClick={handleCapturePhoto} disabled={!captureCameraReady}>
+              <button
+                className="capture-btn"
+                onClick={handleCapturePhoto}
+                disabled={!captureCameraReady}
+                style={{ opacity: captureCameraReady ? 1 : 0.4 }}
+              >
                 <div className="capture-btn-inner" />
+              </button>
+              <button
+                style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', fontSize: '0.72rem', padding: '6px 16px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}
+                onClick={() => { setLockedAwb(''); scanBusyRef.current = false; goStep(STEPS.SCANNING); }}
+              >
+                ← Rescan barcode
               </button>
             </div>
           </div>
@@ -1273,6 +1313,9 @@ export default function MobileScannerPage() {
                 <span style={{ fontSize: '0.9rem', fontWeight: 700, color: theme.primary }}>Intelligence Engine</span>
               </div>
               <div className="mono" style={{ fontSize: '0.82rem', color: theme.muted }}>{lockedAwb}</div>
+              <div style={{ fontSize: '0.72rem', color: theme.mutedLight, marginTop: 6 }}>
+                Reading AWB label with Gemini Vision…
+              </div>
             </div>
             {['Client', 'Consignee', 'Destination', 'Pincode', 'Weight', 'Order No'].map((label) => (
               <div key={label} className="card" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -1283,6 +1326,15 @@ export default function MobileScannerPage() {
                 <div className="skeleton" style={{ width: 8, height: 8, borderRadius: '50%' }} />
               </div>
             ))}
+            <div style={{ textAlign: 'center', marginTop: 8 }}>
+              <button
+                className="btn btn-outline"
+                style={{ fontSize: '0.75rem', padding: '8px 20px' }}
+                onClick={() => { setErrorMsg('Cancelled by user.'); goStep(STEPS.ERROR); }}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
 

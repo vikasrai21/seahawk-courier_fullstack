@@ -290,24 +290,134 @@ function handleMobileScannerConnection(socket) {
     userEmail: session.userEmail,
   });
 
-  // Phone sends a scanned barcode
-  socket.on('scanner:scan', ({ awb, imageBase64, focusImageBase64, sessionContext }) => {
+  // Phone sends a scanned barcode — server handles OCR directly (no desktop tab required)
+  socket.on('scanner:scan', async ({ awb, imageBase64, focusImageBase64, sessionContext }) => {
     const currentSession = scanSessions.get(pin);
     if (!currentSession || currentSession.phoneSocketId !== socket.id) return;
 
     currentSession.scanCount++;
+    const cleanAwb = String(awb || '').trim();
+    logger.info(`Remote scan #${currentSession.scanCount}: AWB ${cleanAwb} via PIN ${pin}`);
 
-    logger.info(`Remote scan #${currentSession.scanCount}: AWB ${awb} via PIN ${pin}`);
-
-    // Relay to desktop with session context
+    // Also relay to desktop if it's open (for the ScanAWBPage live feed)
     io.to(currentSession.desktopSocketId).emit('scanner:remote-scan', {
-      awb: String(awb || '').trim(),
+      awb: cleanAwb,
       imageBase64: imageBase64 || null,
       focusImageBase64: focusImageBase64 || null,
       scanNumber: currentSession.scanCount,
       timestamp: new Date().toISOString(),
       sessionContext: sessionContext || {},
     });
+
+    // --- SERVER-SIDE OCR PIPELINE (runs regardless of desktop tab state) ---
+    if (!imageBase64 && !focusImageBase64) {
+      // No image — just acknowledge with AWB only
+      socket.emit('scanner:scan-processed', {
+        awb: cleanAwb,
+        status: 'pending_review',
+        clientCode: '',
+        clientName: '',
+        consignee: '',
+        destination: '',
+        pincode: '',
+        weight: 0,
+        amount: 0,
+        orderNo: '',
+        reviewRequired: true,
+        noImage: true,
+      });
+      return;
+    }
+
+    try {
+      const { extractShipmentFromImage } = require('../services/ocr.service');
+      const intelligenceEngine = require('../services/intelligenceEngine.service');
+      const correctionLearner = require('../services/correctionLearner.service');
+      const shipmentSvc = require('../services/shipment.service');
+
+      // Build context for AI prompt
+      const [clients, corrections] = await Promise.all([
+        intelligenceEngine.getActiveClientsForPrompt(),
+        correctionLearner.getTopCorrections(20),
+      ]);
+
+      const ocrOptions = {
+        knownAwb: cleanAwb,
+        clients,
+        corrections,
+        sessionContext: sessionContext || {},
+      };
+
+      // Score helper — prefer image with more extracted fields
+      const scoreOcr = (d) => {
+        if (!d?.success) return 0;
+        return [d.clientName, d.consignee, d.destination, d.pincode, d.orderNo, d.weight, d.amount]
+          .filter(v => typeof v === 'number' ? v > 0 : String(v || '').trim().length > 0).length;
+      };
+
+      const attempts = [];
+      if (focusImageBase64) attempts.push(extractShipmentFromImage(focusImageBase64, 'image/jpeg', ocrOptions));
+      if (imageBase64)      attempts.push(extractShipmentFromImage(imageBase64, 'image/jpeg', ocrOptions));
+
+      const settled = await Promise.allSettled(attempts);
+      const successful = settled
+        .filter(r => r.status === 'fulfilled' && r.value?.success)
+        .map(r => r.value)
+        .sort((a, b) => scoreOcr(b) - scoreOcr(a));
+
+      let ocrHints = null;
+      if (successful.length) {
+        ocrHints = await intelligenceEngine.resolveEntities(successful[0], { sessionContext: sessionContext || {} });
+      }
+
+      // Create/update shipment record
+      let shipment = null;
+      let meta = {};
+      try {
+        const result = await shipmentSvc.scanAwbAndUpdate(cleanAwb, currentSession.userId, null, {
+          captureOnly: true,
+          source: 'mobile_scanner',
+          ocrHints,
+          sessionContext: sessionContext || {},
+        });
+        shipment = result.shipment;
+        meta = result.meta || {};
+      } catch (svcErr) {
+        logger.warn(`[Scanner OCR] shipment upsert failed: ${svcErr.message}`);
+      }
+
+      const intel = ocrHints?._intelligence || {};
+      const clientCode = ocrHints?.clientCode || shipment?.clientCode || '';
+      const clientName = ocrHints?.clientName || shipment?.client?.company || clientCode;
+
+      socket.emit('scanner:scan-processed', {
+        awb: cleanAwb,
+        shipmentId: shipment?.id || null,
+        status: 'pending_review',
+        clientCode,
+        clientName,
+        consignee: ocrHints?.consignee || shipment?.consignee || '',
+        destination: ocrHints?.destination || shipment?.destination || '',
+        pincode: ocrHints?.pincode || shipment?.pincode || '',
+        weight: ocrHints?.weight || shipment?.weight || 0,
+        amount: ocrHints?.amount || shipment?.amount || 0,
+        orderNo: ocrHints?.orderNo || '',
+        reviewRequired: true,
+        ocrExtracted: ocrHints || null,
+        intelligence: intel,
+      });
+
+      logger.info(`[Scanner OCR] AWB ${cleanAwb} → client=${clientCode} dest=${ocrHints?.destination || 'NA'}`);
+    } catch (err) {
+      logger.error(`[Scanner OCR] Failed for AWB ${cleanAwb}: ${err.message}`);
+      socket.emit('scanner:scan-processed', {
+        awb: cleanAwb,
+        status: 'error',
+        error: err.message.includes('GEMINI_API_KEY')
+          ? 'AI Vision is not configured. Please set GEMINI_API_KEY on Railway.'
+          : `OCR failed: ${err.message}`,
+      });
+    }
   });
 
   socket.on('scanner:approval-submit', ({ shipmentId, awb, fields }, callback) => {
