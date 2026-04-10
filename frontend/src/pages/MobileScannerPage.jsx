@@ -19,7 +19,9 @@ const LOCK_TO_CAPTURE_DELAY = 120; // faster transition after barcode lock
 const STEPS = {
   IDLE: 'IDLE',
   SCANNING: 'SCANNING',
-  BARCODE_LOCKED: 'BARCODE_LOCKED',
+  // BARCODE_LOCKED removed: the locked state is now a visual overlay within SCANNING,
+  // not a separate step. The lifecycle is: SCANNING → CAPTURING → PREVIEW → PROCESSING
+  // → REVIEWING → APPROVING → SUCCESS (or ERROR at any point).
   CAPTURING: 'CAPTURING',
   PREVIEW: 'PREVIEW',
   PROCESSING: 'PROCESSING',
@@ -425,6 +427,16 @@ export default function MobileScannerPage() {
   const autoCaptureTriggeredRef = useRef(false);
   const currentStepRef = useRef(STEPS.IDLE);
   const lockToCaptureTimerRef = useRef(null);
+  // Stable ref to the latest handleBarcodeDetected callback.
+  // startBarcodeScanner captures this ref (not the function directly) so the
+  // scanner always calls the current version — fixes the stale-closure bug where
+  // the scanner was locked to the first-render handleBarcodeDetected and would
+  // miss sessionCtx updates (duplicate detection, scan counts, etc.).
+  const handleBarcodeDetectedRef = useRef(null);
+  // Stable ref for the scannedAwbs Set so duplicate detection inside the scanner
+  // callback always sees the latest state, not the value at the time the callback
+  // was memoized.
+  const scannedAwbsRef = useRef(new Set());
 
   const saveOfflineQueue = useCallback((nextQueue) => {
     setOfflineQueue(nextQueue);
@@ -613,22 +625,11 @@ export default function MobileScannerPage() {
     await stopBarcodeScanner(); // stop prior reader but KEEP video stream alive
 
     try {
-      // ── Start camera only if not already running ─────────────────────────
-      if (!videoRef.current.srcObject) {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: 'environment',
-            width:  { ideal: 1920 },
-            height: { ideal: 1080 },
-            // Continuous autofocus/autoexposure = faster barcode lock on Trackon slips
-            advanced: [{ focusMode: 'continuous' }, { exposureMode: 'continuous' }],
-          },
-        });
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
-
-      // ── Try Scanbot first if licensed ────────────────────────────────────
+      // ── Scanbot path ─────────────────────────────────────────────────────
+      // When Scanbot is licensed, let it own its camera entirely.
+      // We do NOT call getUserMedia here — Scanbot manages its own stream
+      // inside scanbot-camera-container. This avoids two simultaneous camera
+      // consumers and means the persistent-video element stays empty (no srcObject).
       if (SCANBOT_LICENSE) {
         try {
           const ScanbotSDK = (await import('scanbot-web-sdk')).default;
@@ -641,23 +642,47 @@ export default function MobileScannerPage() {
             onBarcodesDetected: (result) => {
               if (scanBusyRef.current) return;
               const barcode = result?.barcodes?.[0];
-              if (barcode?.text) handleBarcodeDetected(barcode.text);
+              // Use ref to always call the current handler, never a stale closure.
+              if (barcode?.text) handleBarcodeDetectedRef.current?.(barcode.text);
             },
             style: { window: { widthProportion: BARCODE_SCAN_REGION.widthPct, heightProportion: BARCODE_SCAN_REGION.heightPct } },
           };
           const scanner = await sdk.createBarcodeScanner(config);
           scanbotRef.current = { sdk, barcodeScanner: scanner };
-          return;
+          return; // ← Scanbot owns camera; skip getUserMedia + ZXing below
         } catch (err) {
           console.warn('Scanbot init failed, falling back to ZXing:', err.message);
         }
       }
 
-      // ── ZXing fallback ────────────────────────────────────────────────────
-      // Use decodeFromVideoElement (NOT decodeFromVideoDevice) so ZXing reads
-      // from our already-playing stream without touching the camera itself.
-      // This means the stream survives the SCANNING→CAPTURING step transition
-      // with zero flicker.
+      // ── ZXing path: own the camera via the persistent video element ───────
+      // Only this path uses getUserMedia, so there is never a double-consumer
+      // conflict with Scanbot.
+      if (!videoRef.current.srcObject) {
+        // Try with continuous autofocus/autoexposure for faster barcode lock.
+        // Wrapped in try/catch because 'advanced' constraints are not universally
+        // supported (notably on some iOS/Safari versions) and can throw
+        // OverconstrainedError or be silently ignored.
+        let stream = null;
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: 'environment',
+              width:  { ideal: 1920 },
+              height: { ideal: 1080 },
+              advanced: [{ focusMode: 'continuous' }, { exposureMode: 'continuous' }],
+            },
+          });
+        } catch {
+          // advanced constraints not supported on this browser — fall back to basics
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+          });
+        }
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
       const [{ BrowserMultiFormatReader }, zxingCore] = await Promise.all([
         import('@zxing/browser'),
         import('@zxing/library'),
@@ -674,25 +699,32 @@ export default function MobileScannerPage() {
         ]],
         [zxingCore.DecodeHintType.TRY_HARDER, true],
         [zxingCore.DecodeHintType.ASSUME_GS1, false],
-      ]), 40); // 40 ms — twice as fast as before
+      ]), 40); // 40 ms scan interval — 2× faster than before
       scannerRef.current = reader;
 
+      // decodeFromVideoElement reads from our already-playing stream without
+      // touching the camera. The stream survives SCANNING→CAPTURING with zero flicker.
+      // We call via ref so this never closes over a stale handleBarcodeDetected.
       reader.decodeFromVideoElement(videoRef.current, (result) => {
         if (scanBusyRef.current) return;
-        if (result) handleBarcodeDetected(result.getText());
+        if (result) handleBarcodeDetectedRef.current?.(result.getText());
       });
     } catch (err) {
       setErrorMsg('Camera access failed: ' + err.message);
     }
   }, [stopBarcodeScanner]);
+  // Note: handleBarcodeDetected is intentionally NOT in the dep array here.
+  // The scanner is set up once per SCANNING entry; the ref ensures it always
+  // calls the latest callback without needing to restart the scanner.
 
   const handleBarcodeDetected = useCallback((rawText) => {
     const awb = String(rawText || '').trim().replace(/\s+/g, '').toUpperCase();
     if (!awb || awb.length < 6 || scanBusyRef.current || currentStepRef.current !== STEPS.SCANNING) return;
     scanBusyRef.current = true;
 
-    // Duplicate detection
-    if (sessionCtx.scannedAwbs.has(awb)) {
+    // Duplicate detection — read from the stable ref so this check is never stale
+    // even when the scanner callback was closed over an old render.
+    if (scannedAwbsRef.current.has(awb)) {
       vibrate([100, 50, 100, 50, 100]);
       playErrorBeep();
       setDuplicateWarning(awb);
@@ -705,11 +737,12 @@ export default function MobileScannerPage() {
     playCaptureBeep();
     setLockedAwb(awb);
 
-    // Update session
+    // Update session — also keep scannedAwbsRef in sync for future duplicate checks.
     setSessionCtx(prev => {
       const next = { ...prev, scanNumber: prev.scanNumber + 1 };
       next.scannedAwbs = new Set(prev.scannedAwbs);
       next.scannedAwbs.add(awb);
+      scannedAwbsRef.current = next.scannedAwbs; // keep stable ref in sync
       return next;
     });
 
@@ -719,7 +752,13 @@ export default function MobileScannerPage() {
         goStep(STEPS.CAPTURING);
       }
     }, LOCK_TO_CAPTURE_DELAY);
-  }, [sessionCtx, goStep]);
+  }, [goStep]); // sessionCtx removed from deps — duplicate check now uses scannedAwbsRef
+
+  // Keep handleBarcodeDetectedRef pointing at the latest callback so the scanner
+  // (which is set up once per SCANNING entry) always calls current logic.
+  useEffect(() => {
+    handleBarcodeDetectedRef.current = handleBarcodeDetected;
+  }, [handleBarcodeDetected]);
 
   // Start scanning when step changes to SCANNING
   useEffect(() => {
@@ -1006,6 +1045,9 @@ export default function MobileScannerPage() {
     setErrorMsg('');
     setDuplicateWarning('');
     scanBusyRef.current = false;
+    // scannedAwbsRef is intentionally NOT cleared here — duplicates should be
+    // tracked across the entire session, not just one scan cycle. Clear it only
+    // if you add an explicit "new session" action.
     goStep(STEPS.SCANNING);
   }, [goStep]);
 
@@ -1098,7 +1140,10 @@ export default function MobileScannerPage() {
         {/* ═══ PERSISTENT CAMERA VIDEO ═══ */}
         {/* Lives outside all step divs so it NEVER gets unmounted/re-mounted.
             Both SCANNING and CAPTURING phases share this same element via videoRef.
-            This is what eliminates the black-screen flicker between steps. */}
+            This is what eliminates the black-screen flicker between steps.
+            Hidden when Scanbot is active because Scanbot renders into its own
+            container and owns its own camera stream — showing this element at
+            the same time would cause a double-consumer conflict. */}
         <video
           ref={videoRef}
           autoPlay playsInline muted
@@ -1106,7 +1151,8 @@ export default function MobileScannerPage() {
             position: 'absolute', inset: 0,
             width: '100%', height: '100%',
             objectFit: 'cover', zIndex: 0,
-            display: (step === STEPS.SCANNING || step === STEPS.CAPTURING) ? 'block' : 'none',
+            display: (step === STEPS.SCANNING || step === STEPS.CAPTURING) && !scanbotRef.current
+              ? 'block' : 'none',
           }}
         />
 
@@ -1148,6 +1194,17 @@ export default function MobileScannerPage() {
         <div className={stepClass(STEPS.CAPTURING)}>
           <div className="cam-viewport" style={{ background: 'transparent' }}>
             {/* No video element here — uses the persistent one above */}
+            {/* Brief "barcode locked" overlay shown only until the reused stream
+                is confirmed stable. With the persistent-video fix this is nearly
+                instantaneous for the ZXing path; the Scanbot path may show it
+                briefly while a new stream starts. */}
+            {!captureCameraReady && (
+              <div style={{ position: 'absolute', inset: 0, zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, background: 'rgba(15,23,42,0.82)', backdropFilter: 'blur(4px)', color: 'white' }}>
+                <CheckCircle2 size={44} color="#34D399" />
+                <div className="mono" style={{ fontSize: '1.4rem', fontWeight: 700, color: '#34D399' }}>{lockedAwb}</div>
+                <div style={{ color: 'rgba(255,255,255,0.72)', fontSize: '0.8rem' }}>Barcode locked · Preparing camera…</div>
+              </div>
+            )}
             <div className="cam-overlay">
               <div ref={guideRef} className={`scan-guide ${docDetected ? 'detected' : ''}`} style={{ width: `${DOC_CAPTURE_REGION.widthPct * 100}%`, height: `${DOC_CAPTURE_REGION.heightPct * 100}%` }}>
                 <div className="scan-guide-corner corner-tl" />
@@ -1171,9 +1228,11 @@ export default function MobileScannerPage() {
                 Place AWB slip inside the frame
               </div>
               <div style={{ color: docDetected ? 'rgba(16,185,129,0.95)' : 'rgba(255,255,255,0.72)', fontSize: '0.72rem', fontWeight: 700 }}>
-                {docDetected ? 'Document detected - auto-capturing' : 'Auto-detecting document edges...'}
+                {!captureCameraReady ? 'Preparing camera…' : docDetected ? 'Document detected - auto-capturing' : 'Auto-detecting document edges...'}
               </div>
-              <button className="capture-btn" onClick={handleCapturePhoto}>
+              {/* disabled until captureCameraReady to prevent capturing before
+                  the stream/layout is confirmed stable */}
+              <button className="capture-btn" onClick={handleCapturePhoto} disabled={!captureCameraReady}>
                 <div className="capture-btn-inner" />
               </button>
             </div>
