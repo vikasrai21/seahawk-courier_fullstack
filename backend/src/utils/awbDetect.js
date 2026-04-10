@@ -62,11 +62,11 @@ function detectCourier(awb) {
     return { courier: 'DHL', confidence: 'high', normalized: a };
   }
 
-  // ── Primetrack vs Trackon disambiguation ───────────────────────────────
-  // Both use 12-digit numbers starting with 1 or 5 or 2
-  // Trackon:   100..., 500...
-  // Primetrack: 200040..., 200042..., 200058485..., 200055477... (mixed!)
-  // Strategy: try to match known Primetrack prefixes first
+  // ── Trackon / Prime Track family ──────────────────────────────────────
+  // Real Seahawk samples show Trackon branded slips with 12-digit barcodes
+  // beginning with 100..., 200..., and 500....
+  // We normalize the whole family to Trackon because that is the live
+  // carrier integration available in this system.
 
   // 12 digits starting with 100 → Trackon (high confidence)
   if (/^100\d{9}$/.test(a)) {
@@ -76,17 +76,9 @@ function detectCourier(awb) {
   if (/^500\d{9}$/.test(a)) {
     return { courier: 'TRACKON', confidence: 'high', normalized: a };
   }
-  // 12 digits starting with 20004 or 20040 → Primetrack
-  if (/^200(04|40)\d{7}$/.test(a)) {
-    return { courier: 'PRIMETRACK', confidence: 'high', normalized: a };
-  }
-  // 12 digits starting with 20005848 or 20005849 → Primetrack
-  if (/^2000584[5-9]\d{4}$/.test(a)) {
-    return { courier: 'PRIMETRACK', confidence: 'medium', normalized: a };
-  }
-  // 12 digits starting with 200 but ambiguous → try both
+  // 12 digits starting with 200 on Trackon Prime Track slips
   if (/^200\d{9}$/.test(a)) {
-    return { courier: 'PRIMETRACK_OR_TRACKON', confidence: 'low', normalized: a, tryBoth: true };
+    return { courier: 'TRACKON', confidence: 'medium', normalized: a, service: 'PRIME_TRACK' };
   }
 
   // Unknown

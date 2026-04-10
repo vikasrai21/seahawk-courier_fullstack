@@ -17,6 +17,7 @@ const importLedger = require('./import-ledger.service');
 const riskAnalysis = require('./riskAnalysis.service');
 const queueSvc     = require('./queue.service');
 const clientMatcher = require('./clientMatcher.service');
+const { detectCourier } = require('../utils/awbDetect');
 
 const TRACKABLE_COURIERS = new Set(['Delhivery', 'Trackon', 'DTDC', 'BlueDart', 'FedEx', 'DHL']);
 const TERMINAL_STATUSES = new Set(['Delivered', 'RTO', 'Cancelled']);
@@ -381,10 +382,14 @@ async function getMyShipments(clientCode, { page = 1, limit = 25, search, status
 function autoDetectCourier(awbStr) {
   const awb = String(awbStr || '').toUpperCase().trim();
   if (!awb) return 'Delhivery';
-  if (/^\d{12}$/.test(awb)) return 'Trackon'; // Typically 12 digits
-  if (/^\d{13,14}$/.test(awb)) return 'Delhivery'; // Typically 13-14 digits
-  if (/^[A-Z]{1,2}\d{8,10}$/.test(awb)) return 'DTDC'; // Alphanumeric
-  return 'Delhivery'; // Fallback
+  const detected = detectCourier(awb);
+  if (detected?.courier === 'TRACKON') return 'Trackon';
+  if (detected?.courier === 'DTDC') return 'DTDC';
+  if (detected?.courier === 'DELHIVERY') return 'Delhivery';
+  if (/^\d{12}$/.test(awb)) return 'Trackon';
+  if (/^\d{13,14}$/.test(awb)) return 'Delhivery';
+  if (/^[A-Z]{1,2}\d{8,10}$/.test(awb)) return 'DTDC';
+  return 'Delhivery';
 }
 
 function extractPincode(value) {

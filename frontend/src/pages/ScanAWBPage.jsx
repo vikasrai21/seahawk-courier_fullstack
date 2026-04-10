@@ -30,6 +30,7 @@ import {
   Save,
   Edit,
   Table,
+  Play,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { exportJsonToExcel, readExcelAsJson } from '../utils/excel';
@@ -76,6 +77,14 @@ const playError = () => {
     osc.stop(ctx.currentTime + 0.3);
   } catch (e) {
     console.debug('Error tone failed', e);
+  }
+};
+
+const vibrate = (pattern) => {
+  try {
+    navigator?.vibrate?.(pattern);
+  } catch (e) {
+    console.debug('Vibration failed', e);
   }
 };
 
@@ -136,6 +145,7 @@ const buildIntakeRow = (shipment = {}, meta = {}, awbValue = '') => {
   const parts = dateStr.split('-');
   const formattedDate = parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateStr;
   return {
+    shipmentId: shipment?.id || null,
     date: formattedDate,
     clientCode: shipment?.clientCode || meta?.clientSuggestion?.suggestedClientCode || 'MISC',
     awb: awbValue || shipment?.awb || '',
@@ -210,12 +220,48 @@ const BARCODE_FORMATS = [
   BarcodeFormat.PDF_417,
 ];
 
+const NATIVE_BARCODE_FORMATS = [
+  'code_128',
+  'code_39',
+  'code_93',
+  'codabar',
+  'ean_13',
+  'ean_8',
+  'itf',
+  'qr_code',
+];
+
 const createBarcodeHints = () => {
   const hints = new Map();
   hints.set(DecodeHintType.POSSIBLE_FORMATS, BARCODE_FORMATS);
   hints.set(DecodeHintType.TRY_HARDER, true);
   hints.set(DecodeHintType.ASSUME_GS1, true);
   return hints;
+};
+
+const normalizeBarcodeCandidate = (rawValue = '') => {
+  const raw = String(rawValue || '').toUpperCase();
+  const compact = raw.replace(/\s+/g, '');
+  const candidates = [];
+
+  const push = (value) => {
+    const normalized = String(value || '').replace(/[^A-Z0-9]/g, '');
+    if (!normalized || candidates.includes(normalized)) return;
+    candidates.push(normalized);
+  };
+
+  push(compact);
+  (raw.match(/\b\d{12,14}\b/g) || []).forEach(push);
+  (raw.match(/\b[A-Z]{1,2}\d{8,11}\b/g) || []).forEach(push);
+
+  const prioritized = [
+    ...candidates.filter((value) => /^(100|200|500)\d{9}$/.test(value)),
+    ...candidates.filter((value) => /^\d{13,14}$/.test(value)),
+    ...candidates.filter((value) => /^[A-Z]{1,2}\d{8,11}$/.test(value)),
+    ...candidates,
+  ];
+
+  return prioritized.find(Boolean) || '';
 };
 
 export default function ScanAWBPage({ toast }) {
@@ -236,6 +282,7 @@ export default function ScanAWBPage({ toast }) {
   const [lastFeedback, setLastFeedback] = useState(null);
   const [continuousScan, setContinuousScan] = useState(true);
   const [smartAssist, setSmartAssist] = useState(true);
+  const [showManualEntry, setShowManualEntry] = useState(false);
   const [pendingDecoded, setPendingDecoded] = useState('');
   const [spreadsheetName, setSpreadsheetName] = useState('');
   // ── Mobile Bridge State ──────────────────────────────────────────────
@@ -311,6 +358,10 @@ export default function ScanAWBPage({ toast }) {
     } catch (err) {
       console.debug('Camera reset failed', err);
     }
+    if (videoRef.current?.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach((track) => track.stop());
+      videoRef.current.srcObject = null;
+    }
     scannerRef.current = null;
     resetScannerFlow(false);
   };
@@ -328,6 +379,36 @@ export default function ScanAWBPage({ toast }) {
     setApprovedRows((prev) => [row, ...prev].slice(0, 120));
     return row;
   };
+
+  const deleteScanArtifacts = useCallback(async ({ awb: targetAwb, shipmentId = null, permanent = false }) => {
+    if (!targetAwb && !shipmentId) return;
+
+    if (permanent && shipmentId && isAdmin) {
+      try {
+        await api.delete(`/shipments/${shipmentId}`);
+      } catch (err) {
+        toast?.(err.message || 'Could not delete shipment record from server.', 'error');
+        return;
+      }
+    }
+
+    setRecentScans((prev) => prev.filter((scan) => {
+      if (shipmentId && scan.data?.id === shipmentId) return false;
+      if (targetAwb && scan.awb === targetAwb) return false;
+      return true;
+    }));
+    setReviewQueue((prev) => prev.filter((item) => {
+      if (shipmentId && item.shipment?.id === shipmentId) return false;
+      if (targetAwb && item.awb === targetAwb) return false;
+      return true;
+    }));
+    setApprovedRows((prev) => prev.filter((row) => {
+      if (shipmentId && row.shipmentId === shipmentId) return false;
+      if (targetAwb && row.awb === targetAwb) return false;
+      return true;
+    }));
+    toast?.(permanent && shipmentId && isAdmin ? 'Shipment deleted.' : 'Entry removed from scanner queue.', 'success');
+  }, [isAdmin, toast]);
 
   const queueReviewScan = (entry) => {
     setReviewQueue((prev) => [...prev, entry]);
@@ -423,6 +504,7 @@ export default function ScanAWBPage({ toast }) {
       setMobileStatus('connected');
       setShowMobileModal(false);
       playSuccess();
+      vibrate([40, 30, 60]);
       toast?.('📱 Mobile phone connected! Start scanning barcodes.', 'success');
     };
 
@@ -538,7 +620,7 @@ export default function ScanAWBPage({ toast }) {
   };
 
   const processSingleScan = async (rawAwb, imageBase64 = null, focusImageBase64 = null) => {
-    const currentAwb = String(rawAwb || '').trim();
+    const currentAwb = normalizeBarcodeCandidate(rawAwb) || String(rawAwb || '').trim().toUpperCase();
     if (!currentAwb) return null;
 
     setLoading(true);
@@ -557,6 +639,7 @@ export default function ScanAWBPage({ toast }) {
       const shipment = result.shipment || null;
       const meta = result.meta || {};
       playSuccess();
+      vibrate([35, 20, 60]);
       triggerFeedback('success');
       setCapturedShipment(shipment);
       setCapturedMeta(meta);
@@ -597,6 +680,7 @@ export default function ScanAWBPage({ toast }) {
       }
     } catch (err) {
       playError();
+      vibrate([120, 60, 120]);
       triggerFeedback('error');
       setCameraError(err.message || 'Scan failed');
       addRecentScan(buildScanEntry(currentAwb, courier, null, {}, err.message || 'Scan failed'));
@@ -636,6 +720,7 @@ export default function ScanAWBPage({ toast }) {
       const updatedShipment = payload.data;
       if (updatedShipment) {
         playSuccess();
+        vibrate([35, 20, 60]);
         toast?.(`Verified & Saved: ${reviewScan.awb}`, 'success');
         addRecentScan(buildScanEntry(reviewScan.awb, reviewScan.courier, updatedShipment, reviewScan.meta));
         addApprovedRow(updatedShipment, reviewScan.meta, reviewScan.awb);
@@ -677,40 +762,19 @@ export default function ScanAWBPage({ toast }) {
 
   const removeActiveReview = () => {
     if (!reviewScan) return;
-    addRecentScan(buildScanEntry(
-      reviewScan.awb,
-      reviewScan.courier,
-      reviewScan.shipment,
-      { ...(reviewScan.meta || {}), reviewDeferred: true },
-    ));
-    if (mobileStatus === 'connected') {
-      socket.emit('scanner:scan-processed', {
-        pin: mobilePIN,
-        awb: reviewScan.awb,
-        shipmentId: reviewScan.shipment?.id || null,
-        status: 'review_deferred',
-        clientCode: reviewScan.meta?.clientSuggestion?.suggestedClientCode || reviewScan.shipment?.clientCode || '',
-        clientName: reviewScan.meta?.clientSuggestion?.suggestedClientName || reviewScan.shipment?.client?.company || '',
-        consignee: reviewScan.shipment?.consignee || '',
-        destination: reviewScan.shipment?.destination || '',
-        pincode: reviewScan.shipment?.pincode || reviewScan.meta?.ocrExtracted?.pincode || '',
-        weight: reviewScan.shipment?.weight || 0,
-        amount: reviewScan.shipment?.amount || 0,
-        orderNo: extractOrderNo(reviewScan.shipment, reviewScan.meta),
-        reviewRequired: true,
-      });
-    }
-    setReviewQueue((prev) => prev.slice(1));
-    toast?.(`Deferred ${reviewScan.awb} without saving changes`, 'warning');
+    deleteScanArtifacts({
+      awb: reviewScan.awb,
+      shipmentId: reviewScan.shipment?.id || null,
+      permanent: false,
+    });
   };
 
   const startCameraScan = async () => {
     setCameraError('');
+    setShowManualEntry(false);
 
     try {
       await stopCamera();
-      const scanner = new BrowserMultiFormatReader(createBarcodeHints(), 80);
-      scannerRef.current = scanner;
       setCameraActive(true);
       setScannerStage('barcode');
       setPendingDecoded('');
@@ -722,23 +786,79 @@ export default function ScanAWBPage({ toast }) {
         frameRate: { ideal: 30, max: 60 },
       };
 
+      const lockBarcode = (rawValue) => {
+        const scannedValue = normalizeBarcodeCandidate(rawValue);
+        const now = Date.now();
+        if (!scannedValue) return;
+        if (scanBusyRef.current) return;
+        if (now < scanLockUntilRef.current && scannedValue === lastDecodedRef.current) return;
+
+        scanBusyRef.current = true;
+        scanLockUntilRef.current = now + 4000;
+        lastDecodedRef.current = scannedValue;
+        setAwb(scannedValue);
+        setPendingDecoded(scannedValue);
+        setScannerStage('document');
+        playSuccess();
+        vibrate([40]);
+        triggerFeedback('success');
+      };
+
+      if (typeof window !== 'undefined' && typeof window.BarcodeDetector !== 'undefined') {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+
+        let supportedFormats = NATIVE_BARCODE_FORMATS;
+        try {
+          const available = await window.BarcodeDetector.getSupportedFormats();
+          supportedFormats = NATIVE_BARCODE_FORMATS.filter((format) => available.includes(format));
+          if (!supportedFormats.length) supportedFormats = NATIVE_BARCODE_FORMATS;
+        } catch {}
+
+        const detector = new window.BarcodeDetector({ formats: supportedFormats });
+        let timerId = null;
+        let stopped = false;
+
+        const tick = async () => {
+          if (stopped) return;
+          const video = videoRef.current;
+          if (!video || video.readyState < 2) {
+            timerId = window.setTimeout(tick, 40);
+            return;
+          }
+          try {
+            const codes = await detector.detect(video);
+            if (codes.length > 0 && codes[0].rawValue) {
+              lockBarcode(codes[0].rawValue);
+            }
+          } catch (err) {
+            if (err?.name !== 'NotFoundException') {
+              setCameraError(err.message || 'Unable to read barcode from camera');
+            }
+          }
+          if (!stopped) timerId = window.setTimeout(tick, 35);
+        };
+
+        scannerRef.current = {
+          reset: async () => {
+            stopped = true;
+            if (timerId) window.clearTimeout(timerId);
+          },
+        };
+
+        window.setTimeout(tick, 250);
+        return;
+      }
+
+      const scanner = new BrowserMultiFormatReader(createBarcodeHints(), 60);
+      scannerRef.current = scanner;
+
       const decodeCallback = async (result, err) => {
         if (result) {
-          const scannedValue = String(result.getText() || '').trim();
-          const now = Date.now();
-          if (!scannedValue) return;
-          if (scanBusyRef.current) return;
-          if (now < scanLockUntilRef.current && scannedValue === lastDecodedRef.current) return;
-
-          scanBusyRef.current = true;
-          scanLockUntilRef.current = now + 5000;
-          lastDecodedRef.current = scannedValue;
-          setAwb(scannedValue);
-          setPendingDecoded(scannedValue);
-          setScannerStage('document');
-          playSuccess();
-          triggerFeedback('success');
-
+          lockBarcode(result.getText());
           return;
         }
 
@@ -754,6 +874,7 @@ export default function ScanAWBPage({ toast }) {
       }
     } catch (err) {
       setCameraError(err.message || 'Camera access failed');
+      vibrate([120, 60, 120]);
       await stopCamera();
     }
   };
@@ -769,6 +890,7 @@ export default function ScanAWBPage({ toast }) {
 
     setCameraError('');
     setScannerStage('processing');
+    vibrate([20]);
 
     const result = await processSingleScan(pendingDecoded, frames?.imageBase64 || null, frames?.focusImageBase64 || null);
     if (result?.mode === 'error') {
@@ -919,7 +1041,6 @@ export default function ScanAWBPage({ toast }) {
       toast?.('No verified scans to copy', 'warning');
       return;
     }
-    const headers = ['S.NO', 'DATE', 'Clients', 'Awb No', 'CONSIGNEE', 'DESTINATION', 'PINCODE', 'WEIGHT', 'AMOU', 'COURIERS', 'ORDER NO', 'VALUE'];
     const rows = approvedRows.map((row, index) => {
       return [
         index + 1,
@@ -936,9 +1057,9 @@ export default function ScanAWBPage({ toast }) {
         row.amount
       ];
     });
-    const tsv = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
+    const tsv = rows.map((r) => r.join('\t')).join('\n');
     navigator.clipboard?.writeText(tsv);
-    toast?.(`Copied ${rows.length} rows to clipboard! Ready to paste into Excel.`, 'success');
+    toast?.(`Copied ${rows.length} content rows to clipboard.`, 'success');
   };
 
   const exportFaults = () => {
@@ -1059,7 +1180,7 @@ export default function ScanAWBPage({ toast }) {
               <table className="min-w-full text-left text-[11px]">
                 <thead className="bg-slate-50 dark:bg-slate-800/80 text-slate-500 uppercase tracking-widest">
                   <tr>
-                    {['DATE', 'CLIENT', 'AWB', 'CONSIGNEE', 'DESTINATION', 'PIN', 'WEIGHT', 'VALUE', 'ORDER NO', 'COURIER'].map((header) => (
+                    {['DATE', 'CLIENT', 'AWB', 'CONSIGNEE', 'DESTINATION', 'PIN', 'WEIGHT', 'VALUE', 'ORDER NO', 'COURIER', 'ACTIONS'].map((header) => (
                       <th key={header} className="px-4 py-3 font-black">{header}</th>
                     ))}
                   </tr>
@@ -1077,6 +1198,15 @@ export default function ScanAWBPage({ toast }) {
                       <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-200">{row.amount || '—'}</td>
                       <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-200">{row.orderNo || '—'}</td>
                       <td className="px-4 py-3 font-bold text-slate-700 dark:text-slate-200">{row.courier || '—'}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => deleteScanArtifacts({ awb: row.awb, shipmentId: row.shipmentId || null, permanent: false })}
+                          className="rounded-xl bg-rose-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-rose-600"
+                        >
+                          Delete
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -1160,50 +1290,99 @@ export default function ScanAWBPage({ toast }) {
 
                 {scanMode === 'single' ? (
                   <div>
-                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">AWB Input</label>
-                    <div className="relative group/input">
-                      <input
-                        ref={inputRef}
-                        className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-6 py-4 text-3xl font-black text-slate-800 dark:text-white font-mono placeholder:text-slate-200 tabular-nums focus:ring-2 focus:ring-blue-500/10 transition-all"
-                        placeholder="Scan or type AWB"
-                        value={awb}
-                        onChange={(e) => setAwb(e.target.value)}
-                        disabled={loading}
-                        autoFocus
-                      />
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={startMobileSession}
-                          className={`p-3 rounded-xl transition-all ${mobileStatus === 'connected' ? 'bg-blue-500 text-white animate-pulse shadow-lg shadow-blue-500/30' : 'bg-white dark:bg-slate-700 text-slate-400 hover:text-blue-500 shadow-sm'}`}
-                          disabled={loading}
-                          title={mobileStatus === 'connected' ? 'Mobile phone connected — scanning remotely' : 'Connect mobile phone camera'}
-                        >
-                          <Smartphone size={20} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={cameraActive ? stopCamera : startCameraScan}
-                          className={`p-3 rounded-xl transition-all ${cameraActive ? 'bg-emerald-500 text-white animate-pulse' : 'bg-white dark:bg-slate-700 text-slate-400 hover:text-emerald-500 shadow-sm'}`}
-                          disabled={loading}
-                          title={cameraActive ? 'Stop camera scanner' : 'Start barcode scanner'}
-                        >
-                          <ScanLine size={20} />
-                        </button>
-                        {pendingDecoded && (
+                    {!cameraActive && !pendingDecoded && !showManualEntry && !awb.trim() ? (
+                      <div className="rounded-[28px] border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:to-slate-900 p-6">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+                          <div>
+                            <div className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-600">Scanner Ready</div>
+                            <div className="mt-2 text-2xl font-black text-slate-900 dark:text-white">Start scanning slips</div>
+                            <p className="mt-2 text-sm font-bold text-slate-500 max-w-[480px]">
+                              Keep the desktop screen simple for ops. Start the camera, lock the barcode, then capture the slip only after the AWB is confirmed.
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 min-w-[220px]">
+                            <div className="rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 px-4 py-3">
+                              <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Scanned</div>
+                              <div className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{successfulCaptures}</div>
+                            </div>
+                            <div className="rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 px-4 py-3">
+                              <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">In Queue</div>
+                              <div className="mt-1 text-2xl font-black text-slate-900 dark:text-white">{pendingReviewCount}</div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-5 flex flex-wrap items-center gap-3">
                           <button
                             type="button"
-                            onClick={capturePendingDocument}
-                            className="p-3 rounded-xl bg-slate-900 text-white shadow-sm hover:bg-slate-800 transition-colors"
-                            disabled={loading}
-                            title="Capture the aligned airwaybill"
+                            onClick={startCameraScan}
+                            className="inline-flex items-center gap-3 rounded-[20px] bg-slate-900 px-6 py-4 text-[11px] font-black uppercase tracking-[0.3em] text-white shadow-xl shadow-slate-900/10"
                           >
-                            <Camera size={20} />
+                            <Play size={16} /> Start Scan
                           </button>
-                        )}
-                        <button type="submit" className="hidden" />
+                          <button
+                            type="button"
+                            onClick={startMobileSession}
+                            className={`inline-flex items-center gap-2 rounded-2xl px-4 py-4 text-[10px] font-black uppercase tracking-widest transition-all ${mobileStatus === 'connected' ? 'bg-blue-500 text-white animate-pulse shadow-lg shadow-blue-500/30' : 'bg-blue-500/10 text-blue-600'}`}
+                          >
+                            <Smartphone size={16} /> Mobile Link
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowManualEntry(true)}
+                            className="inline-flex items-center gap-2 rounded-2xl bg-slate-100 dark:bg-slate-800 px-4 py-4 text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-200"
+                          >
+                            <Edit size={14} /> Manual Entry
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <>
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2 block ml-1">AWB Input</label>
+                        <div className="relative group/input">
+                          <input
+                            ref={inputRef}
+                            className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-6 py-4 text-3xl font-black text-slate-800 dark:text-white font-mono placeholder:text-slate-200 tabular-nums focus:ring-2 focus:ring-blue-500/10 transition-all"
+                            placeholder="Scan or type AWB"
+                            value={awb}
+                            onChange={(e) => setAwb(e.target.value)}
+                            disabled={loading}
+                            autoFocus
+                          />
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={startMobileSession}
+                              className={`p-3 rounded-xl transition-all ${mobileStatus === 'connected' ? 'bg-blue-500 text-white animate-pulse shadow-lg shadow-blue-500/30' : 'bg-white dark:bg-slate-700 text-slate-400 hover:text-blue-500 shadow-sm'}`}
+                              disabled={loading}
+                              title={mobileStatus === 'connected' ? 'Mobile phone connected — scanning remotely' : 'Connect mobile phone camera'}
+                            >
+                              <Smartphone size={20} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cameraActive ? stopCamera : startCameraScan}
+                              className={`p-3 rounded-xl transition-all ${cameraActive ? 'bg-emerald-500 text-white animate-pulse' : 'bg-white dark:bg-slate-700 text-slate-400 hover:text-emerald-500 shadow-sm'}`}
+                              disabled={loading}
+                              title={cameraActive ? 'Stop camera scanner' : 'Start barcode scanner'}
+                            >
+                              <ScanLine size={20} />
+                            </button>
+                            {pendingDecoded && (
+                              <button
+                                type="button"
+                                onClick={capturePendingDocument}
+                                className="p-3 rounded-xl bg-slate-900 text-white shadow-sm hover:bg-slate-800 transition-colors"
+                                disabled={loading}
+                                title="Capture the aligned airwaybill"
+                              >
+                                <Camera size={20} />
+                              </button>
+                            )}
+                            <button type="submit" className="hidden" />
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div>
@@ -1460,9 +1639,14 @@ export default function ScanAWBPage({ toast }) {
                   </div>
 
                   <div className="pt-4 flex items-center justify-between border-t border-slate-100">
-                    <button type="button" onClick={removeActiveReview} className="px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 transition" disabled={savingReview}>
-                      Skip
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={deferActiveReview} className="px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 transition" disabled={savingReview}>
+                        Later
+                      </button>
+                      <button type="button" onClick={removeActiveReview} className="px-4 py-2.5 rounded-xl bg-rose-500/10 text-xs font-black uppercase tracking-widest text-rose-600 transition" disabled={savingReview}>
+                        Delete
+                      </button>
+                    </div>
                     <button type="submit" disabled={savingReview} className="px-8 py-3 rounded-[14px] bg-slate-900 text-white text-xs font-black uppercase tracking-widest hover:bg-slate-800 transition-colors flex items-center gap-2">
                        {savingReview ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save size={16} />} Approve & Save
                     </button>
@@ -1566,18 +1750,36 @@ export default function ScanAWBPage({ toast }) {
                       <LogStat icon={<Database size={12} />} label="Tracking" value={scan.meta?.trackingUnavailable ? 'Pending sync' : 'Live'} />
                       <div className="col-span-2 pt-2 flex items-center justify-between gap-3">
                         <StatusBadge status={scan.data.status || 'Booked'} />
-                        <button
-                          type="button"
-                          onClick={() => navigate(`/track/${scan.awb}`)}
-                          className="inline-flex items-center gap-2 rounded-2xl bg-slate-100 dark:bg-slate-800 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-200"
-                        >
-                          <ExternalLink size={11} /> Open Track
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => deleteScanArtifacts({ awb: scan.awb, shipmentId: scan.data?.id || null, permanent: false })}
+                            className="inline-flex items-center gap-2 rounded-2xl bg-rose-500/10 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-rose-600"
+                          >
+                            <X size={11} /> Remove
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => navigate(`/track/${scan.awb}`)}
+                            className="inline-flex items-center gap-2 rounded-2xl bg-slate-100 dark:bg-slate-800 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-200"
+                          >
+                            <ExternalLink size={11} /> Open Track
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-900/10 text-rose-500 text-[10px] font-bold italic relative z-10">
-                      <Info size={12} /> {scan.error || 'Engagement failure on network layer.'}
+                    <div className="space-y-3 relative z-10">
+                      <div className="flex items-center gap-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-900/10 text-rose-500 text-[10px] font-bold italic">
+                        <Info size={12} /> {scan.error || 'Engagement failure on network layer.'}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => deleteScanArtifacts({ awb: scan.awb, shipmentId: scan.data?.id || null, permanent: false })}
+                        className="inline-flex items-center gap-2 rounded-2xl bg-rose-500/10 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-rose-600"
+                      >
+                        <X size={11} /> Remove
+                      </button>
                     </div>
                   )}
 
@@ -1591,7 +1793,7 @@ export default function ScanAWBPage({ toast }) {
         </div>
 
         {/* ── Excel Ledger View (The Tabular Copiable Table) ────────────────── */}
-        {recentScans.length > 0 && (
+        {approvedRows.length > 0 && (
           <div className="pt-12 animate-in slide-in-from-bottom-8 duration-700">
              <div className="flex items-center justify-between mb-4 px-2">
                <div className="flex items-center gap-3">
@@ -1624,26 +1826,33 @@ export default function ScanAWBPage({ toast }) {
                      <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 whitespace-nowrap">COURIERS</th>
                      <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">ORDER NO</th>
                      <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 text-right">VALUE</th>
+                     <th className="px-5 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">ACTIONS</th>
                    </tr>
                  </thead>
                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                   {recentScans.filter((s) => s.status === 'success' || s.status === 'error').map((scan, idx) => {
-                     const dateStr = scan.data?.date || new Date().toISOString().slice(0, 10);
-                     const parts = dateStr.split('-');
-                     const formattedDate = parts.length === 3 ? `${parts[2]}-${parts[1]}-${parts[0]}` : dateStr;
+                   {approvedRows.map((row, idx) => {
                      return (
                      <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors group">
                        <td className="px-5 py-3 text-xs font-bold text-slate-400">{idx + 1}</td>
-                       <td className="px-5 py-3 text-xs font-bold text-slate-700 whitespace-nowrap">{formattedDate}</td>
-                       <td className="px-5 py-3 text-[10px] font-black text-slate-700 uppercase">{scan.data?.clientCode || 'MISC'}</td>
-                       <td className="px-5 py-3 font-mono text-xs font-black text-slate-900">{scan.awb}</td>
-                       <td className="px-5 py-3 text-xs font-bold text-slate-600 truncate max-w-[150px] uppercase">{scan.data?.consignee || '-'}</td>
-                       <td className="px-5 py-3 text-xs font-bold text-slate-700 uppercase">{scan.data?.destination || '-'}</td>
-                       <td className="px-5 py-3 text-xs font-bold tabular-nums text-right text-slate-600">{Number(scan.data?.weight || 0).toFixed(3)}</td>
+                       <td className="px-5 py-3 text-xs font-bold text-slate-700 whitespace-nowrap">{row.date}</td>
+                       <td className="px-5 py-3 text-[10px] font-black text-slate-700 uppercase">{row.clientCode || 'MISC'}</td>
+                       <td className="px-5 py-3 font-mono text-xs font-black text-slate-900">{row.awb}</td>
+                       <td className="px-5 py-3 text-xs font-bold text-slate-600 truncate max-w-[150px] uppercase">{row.consignee || '-'}</td>
+                       <td className="px-5 py-3 text-xs font-bold text-slate-700 uppercase">{row.destination || '-'}</td>
+                       <td className="px-5 py-3 text-xs font-bold tabular-nums text-right text-slate-600">{row.weight}</td>
                        <td className="px-5 py-3 text-xs font-bold tabular-nums text-right text-slate-400">-</td>
-                       <td className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase whitespace-nowrap">{(scan.data?.courier || scan.courier || '').toUpperCase()}</td>
-                       <td className="px-5 py-3 text-xs font-bold text-slate-400">-</td>
-                       <td className="px-5 py-3 text-xs font-bold tabular-nums text-right text-slate-600">{scan.data?.amount ? scan.data.amount : '-'}</td>
+                       <td className="px-5 py-3 text-[10px] font-black text-slate-500 uppercase whitespace-nowrap">{(row.courier || '').toUpperCase()}</td>
+                       <td className="px-5 py-3 text-xs font-bold text-slate-400">{row.orderNo || '-'}</td>
+                       <td className="px-5 py-3 text-xs font-bold tabular-nums text-right text-slate-600">{row.amount || '-'}</td>
+                       <td className="px-5 py-3">
+                         <button
+                           type="button"
+                           onClick={() => deleteScanArtifacts({ awb: row.awb, shipmentId: row.shipmentId || null, permanent: false })}
+                           className="rounded-xl bg-rose-500/10 px-3 py-2 text-[9px] font-black uppercase tracking-widest text-rose-600"
+                         >
+                           Delete
+                         </button>
+                       </td>
                      </tr>
                    )})}
                  </tbody>
