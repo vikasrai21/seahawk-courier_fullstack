@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { io } from 'socket.io-client';
+import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import {
   Camera, Check, AlertCircle, RotateCcw, Send, ChevronRight, Volume2, VolumeX,
   Wifi, WifiOff, Zap, Package, ScanLine, Shield, RefreshCw, X, Brain,
@@ -8,7 +9,7 @@ import {
 } from 'lucide-react';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
-const SOCKET_URL = import.meta.env.VITE_API_URL || window.location.origin;
+
 const SCANBOT_LICENSE = import.meta.env.VITE_SCANBOT_LICENSE_KEY || '';
 // Barcode strip: wide landscape rectangle — Trackon/DTDC barcodes are horizontal
 const BARCODE_SCAN_REGION = { w: '90vw', h: '18vw' };  // aspect ~5:1, always landscape
@@ -391,14 +392,13 @@ const sourceLabel = (source) => {
 // ═══════════════════════════════════════════════════════════════════════════
 // Component
 // ═══════════════════════════════════════════════════════════════════════════
-export default function MobileScannerPage() {
-  const { pin } = useParams();
+export default function DirectMobileScannerPage() {
   const navigate = useNavigate();
-  const offlineQueueKey = `${OFFLINE_QUEUE_KEY_PREFIX}:${pin || 'unknown'}`;
+  const { user } = useAuth();
+  const offlineQueueKey = `${OFFLINE_QUEUE_KEY_PREFIX}:direct`;
 
   // ── Connection ──
-  const [socket, setSocket] = useState(null);
-  const [connStatus, setConnStatus] = useState('connecting'); // connecting | paired | disconnected
+  const [connStatus, setConnStatus] = useState('paired'); // paired | disconnected
   const [errorMsg, setErrorMsg] = useState('');
 
   // ── State machine ──
@@ -473,14 +473,16 @@ export default function MobileScannerPage() {
     return nextItem;
   }, [offlineQueue, saveOfflineQueue]);
 
-  const flushOfflineQueue = useCallback(() => {
-    if (!socket || !socket.connected || !offlineQueue.length) return;
-    offlineQueue.forEach((item) => {
-      if (!item?.payload?.awb || !item?.payload?.imageBase64) return;
-      socket.emit('scanner:scan', item.payload);
-    });
+  const flushOfflineQueue = useCallback(async () => {
+    if (!offlineQueue.length || !navigator.onLine) return;
+    for (const item of offlineQueue) {
+      if (!item?.payload?.awb || !item?.payload?.imageBase64) continue;
+      try {
+        await api.post('/shipments/scan-mobile', item.payload);
+      } catch (err) {}
+    }
     saveOfflineQueue([]);
-  }, [socket, offlineQueue, saveOfflineQueue]);
+  }, [offlineQueue, saveOfflineQueue]);
 
   // ── Step transition helper ──
   const goStep = useCallback((next) => {
@@ -491,91 +493,11 @@ export default function MobileScannerPage() {
     currentStepRef.current = step;
   }, [step]);
 
-  // ════════════════════════════════════════════════════════════════════════
-  // SOCKET CONNECTION
-  // ════════════════════════════════════════════════════════════════════════
   useEffect(() => {
-    if (!pin) { setErrorMsg('No PIN provided.'); return; }
-
-    const s = io(SOCKET_URL, {
-      auth: { scannerPin: pin },
-      transports: ['websocket', 'polling'],
-      reconnection: true,
-      reconnectionDelay: 1500,
-      reconnectionAttempts: 20,
-    });
-
-    s.on('connect', () => setConnStatus('connecting'));
-    s.on('scanner:paired', () => {
-      setConnStatus('paired');
-      goStep(STEPS.SCANNING);
-    });
-    s.on('scanner:error', ({ message }) => {
-      setErrorMsg(message);
-      setConnStatus('disconnected');
-    });
-    s.on('scanner:session-ended', () => {
-      setConnStatus('disconnected');
-      setErrorMsg('Session ended by desktop.');
-    });
-    s.on('disconnect', () => setConnStatus('disconnected'));
-    s.on('reconnect', () => { if (connStatus === 'paired') goStep(STEPS.SCANNING); });
-
-    // Desktop processed our scan
-    s.on('scanner:scan-processed', (data) => {
-      if (data.status === 'error') {
-        setFlash('error');
-        playErrorBeep();
-        vibrate([100, 50, 100]);
-        goStep(STEPS.ERROR);
-        setErrorMsg(data.error || 'Scan failed on desktop.');
-        return;
-      }
-
-      setReviewData(data);
-      setReviewForm({
-        clientCode: data.clientCode || '',
-        consignee: data.consignee || '',
-        destination: data.destination || '',
-        pincode: data.pincode || '',
-        weight: data.weight || 0,
-        amount: data.amount || 0,
-        orderNo: data.orderNo || '',
-      });
-      setProcessingFields({});
-
-      if (data.reviewRequired) {
-        goStep(STEPS.REVIEWING);
-      } else {
-        // Auto-approved
-        playSuccessBeep();
-        vibrate([50, 30, 50]);
-        setLastSuccess({ awb: data.awb, clientCode: data.clientCode, clientName: data.clientName });
-        goStep(STEPS.SUCCESS);
-      }
-    });
-
-    // Desktop approved our mobile-submitted approval
-    s.on('scanner:approval-result', ({ success, message, awb }) => {
-      if (success) {
-        playSuccessBeep();
-        vibrate([50, 30, 50]);
-        setFlash('success');
-        setLastSuccess({ awb: reviewData?.awb || awb, clientCode: reviewForm.clientCode, clientName: reviewData?.clientName || reviewForm.clientCode });
-        goStep(STEPS.SUCCESS);
-      } else {
-        playErrorBeep();
-        setErrorMsg(message || 'Approval failed.');
-      }
-    });
-
-    s.on('scanner:ready-for-next', () => {
-      // Desktop is ready — ensure we're in a state to scan again
-    });
-
-    setSocket(s);
-    return () => { s.disconnect(); };
-  }, [pin]);
+    if (!user) { navigate('/'); return; }
+    setConnStatus('paired');
+    goStep(STEPS.SCANNING);
+  }, [user, navigate, goStep]);
 
   useEffect(() => {
     try {
@@ -589,10 +511,10 @@ export default function MobileScannerPage() {
   }, [offlineQueueKey]);
 
   useEffect(() => {
-    if (connStatus === 'paired' && socket?.connected && offlineQueue.length) {
+    if (connStatus === 'paired' && offlineQueue.length) {
       flushOfflineQueue();
     }
-  }, [connStatus, socket, offlineQueue.length, flushOfflineQueue]);
+  }, [connStatus, offlineQueue.length, flushOfflineQueue]);
 
   // ════════════════════════════════════════════════════════════════════════
   // CAMERA (Barcode Scanning)
@@ -937,7 +859,7 @@ export default function MobileScannerPage() {
   // SEND TO DESKTOP (OCR Pipeline)
   // ════════════════════════════════════════════════════════════════════════
 
-  const submitForProcessing = useCallback(() => {
+  const submitForProcessing = useCallback(async () => {
     if (!lockedAwb || !capturedImage) return;
     goStep(STEPS.PROCESSING);
 
@@ -960,7 +882,7 @@ export default function MobileScannerPage() {
       sessionContext: ctxPayload,
     };
 
-    if (!socket || !socket.connected || connStatus !== 'paired') {
+    if (!navigator.onLine) {
       enqueueOfflineScan(payload);
       playSuccessBeep();
       setLastSuccess({ awb: lockedAwb, clientCode: 'OFFLINE', clientName: 'Queued Offline', offlineQueued: true });
@@ -968,52 +890,77 @@ export default function MobileScannerPage() {
       return;
     }
 
-    socket.emit('scanner:scan', payload);
+    try {
+      const res = await api.post('/shipments/scan-mobile', payload);
+      const data = res.data;
 
-    // Timeout fallback — 40s to give Gemini Vision enough time on slow connections
-    setTimeout(() => {
-      if (currentStepRef.current === STEPS.PROCESSING) {
-        setErrorMsg('OCR timed out after 40 seconds. Check that GEMINI_API_KEY is set on Railway, then try again.');
+      if (data.status === 'error' || !data.success) {
+        setFlash('error');
+        playErrorBeep();
+        vibrate([100, 50, 100]);
         goStep(STEPS.ERROR);
+        setErrorMsg(data.error || data.message || 'Scan failed.');
+        return;
       }
-    }, 40000);
-  }, [socket, lockedAwb, capturedImage, sessionCtx, goStep, connStatus, enqueueOfflineScan]);
+
+      setReviewData(data);
+      setReviewForm({
+        clientCode: data.clientCode || '',
+        consignee: data.consignee || '',
+        destination: data.destination || '',
+        pincode: data.pincode || '',
+        weight: data.weight || 0,
+        amount: data.amount || 0,
+        orderNo: data.orderNo || '',
+      });
+      setProcessingFields({});
+
+      if (data.reviewRequired) {
+        goStep(STEPS.REVIEWING);
+      } else {
+        // Auto-approved
+        playSuccessBeep();
+        vibrate([50, 30, 50]);
+        setLastSuccess({ awb: data.awb, clientCode: data.clientCode, clientName: data.clientName });
+        goStep(STEPS.SUCCESS);
+      }
+    } catch (err) {
+      setErrorMsg(err.response?.data?.message || 'Server error. Please try again.');
+      goStep(STEPS.ERROR);
+    }
+  }, [lockedAwb, capturedImage, sessionCtx, goStep, enqueueOfflineScan]);
 
   // ════════════════════════════════════════════════════════════════════════
   // APPROVAL
   // ════════════════════════════════════════════════════════════════════════
 
-  const submitApproval = useCallback(() => {
-    if (!socket || !reviewData) return;
+  const submitApproval = useCallback(async () => {
+    if (!reviewData) return;
     goStep(STEPS.APPROVING);
 
-    // Record corrections for learning system
-    if (reviewData.ocrExtracted || reviewData) {
-      const ocrFields = {
-        clientCode: reviewData.clientCode || '',
-        clientName: reviewData.clientName || '',
-        consignee: reviewData.consignee || '',
-        destination: reviewData.destination || '',
-      };
-      const approvedFields = {
-        clientCode: reviewForm.clientCode || '',
-        clientName: reviewForm.clientCode || '', // clientCode is our working field
-        consignee: reviewForm.consignee || '',
-        destination: reviewForm.destination || '',
-      };
+    const ocrFields = {
+      clientCode: reviewData.clientCode || '',
+      clientName: reviewData.clientName || '',
+      consignee: reviewData.consignee || '',
+      destination: reviewData.destination || '',
+    };
+    const approvedFields = {
+      clientCode: reviewForm.clientCode || '',
+      clientName: reviewForm.clientCode || '',
+      consignee: reviewForm.consignee || '',
+      destination: reviewForm.destination || '',
+    };
 
-      // Send corrections to learning system via socket
-      socket.emit('scanner:learn-corrections', {
-        pin,
-        ocrFields,
-        approvedFields,
-      });
-    }
+    try {
+      // 1. Send corrections to learning system
+      if (reviewData.ocrExtracted || reviewData) {
+        try {
+          await api.post('/shipments/learn-corrections', { ocrFields, approvedFields });
+        } catch {}
+      }
 
-    socket.emit('scanner:approval-submit', {
-      shipmentId: reviewData.shipmentId,
-      awb: reviewData.awb || lockedAwb,
-      fields: {
+      // 2. Save final shipment data
+      const fields = {
         clientCode: reviewForm.clientCode,
         consignee: reviewForm.consignee,
         destination: reviewForm.destination,
@@ -1021,31 +968,40 @@ export default function MobileScannerPage() {
         weight: parseFloat(reviewForm.weight) || 0,
         amount: parseFloat(reviewForm.amount) || 0,
         orderNo: reviewForm.orderNo || '',
-      },
-    }, (response) => {
-      if (response?.success) {
-        // Wait for approval-result from desktop
-      } else {
-        goStep(STEPS.REVIEWING);
-        setErrorMsg(response?.message || 'Approval failed.');
-      }
-    });
+      };
 
-    // Update session client frequency
-    if (reviewForm.clientCode && reviewForm.clientCode !== 'MISC') {
-      setSessionCtx(prev => {
-        const freq = { ...prev.clientFreq };
-        freq[reviewForm.clientCode] = (freq[reviewForm.clientCode] || 0) + 1;
-        const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
-        return {
-          ...prev,
-          clientFreq: freq,
-          dominantClient: sorted[0]?.[1] >= 2 ? sorted[0][0] : null,
-          dominantClientCount: sorted[0]?.[1] || 0,
-        };
-      });
+      if (reviewData.shipmentId) {
+        await api.put(`/shipments/${reviewData.shipmentId}`, fields);
+      } else {
+        // Technically scanMobile creates a shipment natively, so shipmentId usually exists, but just in case:
+        await api.post('/shipments', { awb: reviewData.awb || lockedAwb, ...fields });
+      }
+
+      playSuccessBeep();
+      vibrate([50, 30, 50]);
+      setFlash('success');
+      setLastSuccess({ awb: reviewData?.awb || lockedAwb, clientCode: reviewForm.clientCode, clientName: reviewForm.clientCode });
+      goStep(STEPS.SUCCESS);
+
+      // Update session client frequency
+      if (reviewForm.clientCode && reviewForm.clientCode !== 'MISC') {
+        setSessionCtx(prev => {
+          const freq = { ...prev.clientFreq };
+          freq[reviewForm.clientCode] = (freq[reviewForm.clientCode] || 0) + 1;
+          const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+          return {
+            ...prev,
+            clientFreq: freq,
+            dominantClient: sorted[0]?.[1] >= 2 ? sorted[0][0] : null,
+            dominantClientCount: sorted[0]?.[1] || 0,
+          };
+        });
+      }
+    } catch (err) {
+      goStep(STEPS.REVIEWING);
+      setErrorMsg(err.response?.data?.message || 'Approval failed.');
     }
-  }, [socket, reviewData, reviewForm, lockedAwb, pin, goStep]);
+  }, [reviewData, reviewForm, lockedAwb, goStep]);
 
   // ════════════════════════════════════════════════════════════════════════
   // RESET / NEXT SCAN
@@ -1198,7 +1154,7 @@ export default function MobileScannerPage() {
             </div>
             <div className="cam-hud">
               <div className="cam-hud-chip">
-                <Wifi size={12} /> {pin}
+                <Wifi size={12} /> {user?.name || 'Scanner'}
               </div>
               <div className="cam-hud-chip" style={{ gap: 4 }}>
                 <Package size={12} /> {sessionCtx.scanNumber}

@@ -505,7 +505,7 @@ export default function ScanAWBPage({ toast }) {
       const sourceHeight = video.videoHeight;
 
       const fullCanvas = document.createElement('canvas');
-      fullCanvas.width = Math.min(1600, sourceWidth);
+      fullCanvas.width = Math.min(1200, sourceWidth);
       fullCanvas.height = Math.max(1, Math.round((fullCanvas.width / sourceWidth) * sourceHeight));
       const fullCtx = fullCanvas.getContext('2d');
       if (!fullCtx) return null;
@@ -522,15 +522,15 @@ export default function ScanAWBPage({ toast }) {
       const cropX = Math.max(0, Math.round((sourceWidth - cropWidth) / 2));
       const cropY = Math.max(0, Math.round((sourceHeight - cropHeight) / 2));
       const focusCanvas = document.createElement('canvas');
-      focusCanvas.width = Math.min(1600, cropWidth);
+      focusCanvas.width = Math.min(1200, cropWidth);
       focusCanvas.height = Math.max(1, Math.round((focusCanvas.width / cropWidth) * cropHeight));
       const focusCtx = focusCanvas.getContext('2d');
       if (!focusCtx) return null;
       focusCtx.drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, focusCanvas.width, focusCanvas.height);
 
       return {
-        imageBase64: fullCanvas.toDataURL('image/jpeg', 0.78).split(',')[1] || null,
-        focusImageBase64: focusCanvas.toDataURL('image/jpeg', 0.86).split(',')[1] || null,
+        imageBase64: fullCanvas.toDataURL('image/jpeg', 0.65).split(',')[1] || null,
+        focusImageBase64: focusCanvas.toDataURL('image/jpeg', 0.65).split(',')[1] || null,
       };
     } catch (_err) {
       return null;

@@ -291,10 +291,96 @@ const learnCorrections = asyncHandler(async (req, res) => {
   R.ok(res, { saved: saved.length, corrections: saved }, 'Corrections recorded for learning');
 });
 
+const scanMobile = asyncHandler(async (req, res) => {
+  const { awb, imageBase64, focusImageBase64, sessionContext } = req.body;
+  const cleanAwb = String(awb || '').trim();
+
+  if (!imageBase64 && !focusImageBase64) {
+    return res.status(400).json({ success: false, message: 'Image base64 is required.' });
+  }
+
+  const { extractShipmentFromImage } = require('../services/ocr.service');
+  const intelligenceEngine = require('../services/intelligenceEngine.service');
+  const correctionLearner = require('../services/correctionLearner.service');
+  const shipmentSvc = require('../services/shipment.service');
+  const logger = require('../utils/logger');
+
+  const [clients, corrections] = await Promise.all([
+    intelligenceEngine.getActiveClientsForPrompt(),
+    correctionLearner.getTopCorrections(20),
+  ]);
+
+  const ocrOptions = {
+    knownAwb: cleanAwb,
+    clients,
+    corrections,
+    sessionContext: sessionContext || {},
+  };
+
+  const scoreOcr = (d) => {
+    if (!d?.success) return 0;
+    return [d.clientName, d.consignee, d.destination, d.pincode, d.orderNo, d.weight, d.amount]
+      .filter(v => typeof v === 'number' ? v > 0 : String(v || '').trim().length > 0).length;
+  };
+
+  const attempts = [];
+  if (focusImageBase64) attempts.push(extractShipmentFromImage(focusImageBase64, 'image/jpeg', ocrOptions));
+  if (imageBase64)      attempts.push(extractShipmentFromImage(imageBase64, 'image/jpeg', ocrOptions));
+
+  const settled = await Promise.allSettled(attempts);
+  const successful = settled
+    .filter(r => r.status === 'fulfilled' && r.value?.success)
+    .map(r => r.value)
+    .sort((a, b) => scoreOcr(b) - scoreOcr(a));
+
+  let ocrHints = null;
+  if (successful.length) {
+    ocrHints = await intelligenceEngine.resolveEntities(successful[0], { sessionContext: sessionContext || {} });
+  }
+
+  let shipment = null;
+  try {
+    const result = await shipmentSvc.scanAwbAndUpdate(cleanAwb, req.user?.id, null, {
+      captureOnly: true,
+      source: 'mobile_scanner_direct',
+      ocrHints,
+      sessionContext: sessionContext || {},
+    });
+    shipment = result.shipment;
+  } catch (svcErr) {
+    logger.warn(`[Mobile Scanner OCR] shipment upsert failed: ${svcErr.message}`);
+  }
+
+  const intel = ocrHints?._intelligence || {};
+  const clientCode = ocrHints?.clientCode || shipment?.clientCode || '';
+  const clientName = ocrHints?.clientName || shipment?.client?.company || clientCode;
+
+  const resultPayload = {
+    success: true,
+    awb: cleanAwb,
+    shipmentId: shipment?.id || null,
+    status: 'pending_review',
+    clientCode,
+    clientName,
+    consignee: ocrHints?.consignee || shipment?.consignee || '',
+    destination: ocrHints?.destination || shipment?.destination || '',
+    pincode: ocrHints?.pincode || shipment?.pincode || '',
+    weight: ocrHints?.weight || shipment?.weight || 0,
+    amount: ocrHints?.amount || shipment?.amount || 0,
+    orderNo: ocrHints?.orderNo || '',
+    reviewRequired: true,
+    ocrExtracted: ocrHints || null,
+    intelligence: intel,
+  };
+
+  R.ok(res, resultPayload, 'Mobile scan processed successfully');
+});
+
 module.exports = { getAll, getOne, create, update, patchStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getValidStatuses, deleteShipment: remove,
   getImportLedger,
   scanAwb,
   scanAwbBulk,
   scanImage,
+  scanMobile,
   learnCorrections
 };

@@ -62,6 +62,7 @@ const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const SupportTicketsPage = lazy(() => import('./pages/SupportTicketsPage'));
 const OwnerAuditPage = lazy(() => import('./pages/OwnerAuditPage'));
 const MobileScannerPage = lazy(() => import('./pages/MobileScannerPage'));
+const DirectMobileScannerPage = lazy(() => import('./pages/DirectMobileScannerPage'));
 
 function AuthLoadingScreen() {
   return (
@@ -156,6 +157,7 @@ function AppRoutes() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/mobile-scanner" element={<MobileScannerPage />} />
             <Route path="/mobile-scanner/:pin" element={<MobileScannerPage />} />
+            <Route path="/scan-mobile" element={<StaffRoute><DirectMobileScannerPage /></StaffRoute>} />
             <Route path="/change-password" element={<PrivateRoute><ChangePasswordPage /></PrivateRoute>} />
 
             <Route path="/portal" element={<ClientRoute>{withToast(ClientPortalPage)}</ClientRoute>} />

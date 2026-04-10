@@ -177,7 +177,7 @@ async function initSocket(server) {
       const session = scanSessions.get(pin);
       if (!session || session.desktopSocketId !== socket.id) return;
       if (session.phoneSocketId) {
-        io.to(session.phoneSocketId).emit('scanner:scan-feedback', {
+        io.to(session.phoneSocketId).emit('scanner:scan-processed', {
           awb,
           shipmentId,
           status,
