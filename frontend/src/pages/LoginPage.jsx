@@ -143,7 +143,7 @@ export default function LoginPage() {
               Email Address
             </label>
             <input
-              type="email" name="email" autoComplete="username" autoFocus
+              type="email" id="email" name="email" autoComplete="username" autoFocus
               placeholder="admin@seahawk.com"
               value={email} onChange={e => setEmail(e.target.value)} required
               style={{ width: '100%', padding: '11px 14px', borderRadius: 10, background: '#f7faff', border: '1.5px solid #e2eaf5', color: '#0b1f3a', fontSize: 14, outline: 'none', boxSizing: 'border-box', marginBottom: 16, fontFamily: 'inherit', transition: 'border-color 0.2s' }}
@@ -156,7 +156,7 @@ export default function LoginPage() {
             </label>
             <div style={{ position: 'relative', marginBottom: 28 }}>
               <input
-                type={showPass ? 'text' : 'password'} name="password" autoComplete="current-password"
+                type={showPass ? 'text' : 'password'} id="password" name="password" autoComplete="current-password"
                 placeholder="••••••••"
                 value={password} onChange={e => setPassword(e.target.value)} required
                 style={{ width: '100%', padding: '11px 44px 11px 14px', borderRadius: 10, background: '#f7faff', border: '1.5px solid #e2eaf5', color: '#0b1f3a', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', transition: 'border-color 0.2s' }}

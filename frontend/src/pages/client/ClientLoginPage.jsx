@@ -65,6 +65,7 @@ export default function ClientLoginPage() {
               <label style={{ display: 'block', fontSize: '.78rem', fontWeight: 700, color: '#374151', marginBottom: 6 }}>Email Address</label>
               <input
                 type="email"
+                id="email"
                 name="email"
                 autoComplete="username"
                 value={form.email}
@@ -78,6 +79,7 @@ export default function ClientLoginPage() {
               <label style={{ display: 'block', fontSize: '.78rem', fontWeight: 700, color: '#374151', marginBottom: 6 }}>Password</label>
               <input
                 type="password"
+                id="password"
                 name="password"
                 autoComplete="current-password"
                 value={form.password}

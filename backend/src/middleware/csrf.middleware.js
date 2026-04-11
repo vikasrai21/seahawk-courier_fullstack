@@ -23,7 +23,7 @@ function issueCsrfCookie(req, res, next) {
       httpOnly: false,    // Must be readable by JS to send in header
       secure: config.cookie.secure,
       sameSite: config.cookie.sameSite,
-      maxAge: 24 * 60 * 60 * 1000, // 24h
+      maxAge: config.cookie.maxAge, // 30d (matches refresh token)
     });
   }
   next();
