@@ -165,13 +165,16 @@ export default function DashboardPage() {
   const [opsData, setOpsData] = useState(null);
   const [smartRevenue, setSmartRevenue] = useState(null);
   const [, setTick] = useState(Date.now());
+  const [showScannerBanner, setShowScannerBanner] = useState(false);
 
+  // Show a scanner shortcut banner on mobile — but don't force-redirect.
+  // User stays on the full portal and can choose to open the scanner.
   useEffect(() => {
     const canUseMobileScanner = isAdmin || hasRole('OPS_MANAGER') || hasRole('STAFF');
-    if (!canUseMobileScanner) return;
-    if (!isLikelyMobileBrowser()) return;
-    navigate('/scan-mobile', { replace: true });
-  }, [navigate, isAdmin, hasRole]);
+    if (canUseMobileScanner && isLikelyMobileBrowser()) {
+      setShowScannerBanner(true);
+    }
+  }, [isAdmin, hasRole]);
 
   const currentRange = useMemo(() => getRange(range, customFrom, customTo), [range, customFrom, customTo]);
   const previousRange = useMemo(() => getPreviousRange(range, customFrom, customTo), [range, customFrom, customTo]);
@@ -283,6 +286,35 @@ export default function DashboardPage() {
             onCustomFromChange={setCustomFrom}
             onCustomToChange={setCustomTo}
           />
+
+          {/* Mobile scanner shortcut banner */}
+          {showScannerBanner && (
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 px-5 py-3 dark:border-orange-800/40 dark:from-orange-900/20 dark:to-amber-900/10">
+              <div className="flex items-center gap-3">
+                <div className="rounded-xl bg-orange-500/10 p-2 text-orange-600">
+                  <ScanLine size={18} strokeWidth={2.5} />
+                </div>
+                <div>
+                  <div className="text-xs font-black text-orange-700 dark:text-orange-300">Mobile Scanner Ready</div>
+                  <div className="text-[10px] text-orange-600/70 dark:text-orange-400/60">Tap to open barcode scanner</div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => navigate('/scan-mobile')}
+                  className="rounded-xl bg-orange-500 px-4 py-2 text-xs font-black text-white shadow-sm transition hover:bg-orange-600 active:scale-95"
+                >
+                  Open Scanner
+                </button>
+                <button
+                  onClick={() => setShowScannerBanner(false)}
+                  className="rounded-xl border border-orange-200 bg-white px-3 py-2 text-xs font-bold text-orange-600 transition hover:bg-orange-50 dark:border-orange-700 dark:bg-transparent dark:text-orange-400"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
 
           <DashboardAlerts actions={actions} rtoAlerts={rtoAlerts} />
 

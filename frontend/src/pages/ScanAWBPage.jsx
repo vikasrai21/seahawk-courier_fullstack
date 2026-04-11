@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   ScanLine,
@@ -235,7 +234,8 @@ const createBarcodeHints = () => {
   const hints = new Map();
   hints.set(DecodeHintType.POSSIBLE_FORMATS, BARCODE_FORMATS);
   hints.set(DecodeHintType.TRY_HARDER, true);
-  hints.set(DecodeHintType.ASSUME_GS1, true);
+  hints.set(DecodeHintType.ASSUME_GS1, false); // false = don't mangle ITF/numeric barcodes (Trackon fix)
+  hints.set(DecodeHintType.CHARACTER_SET, 'UTF-8');
   return hints;
 };
 
@@ -254,9 +254,20 @@ const normalizeBarcodeCandidate = (rawValue = '') => {
   (raw.match(/\b\d{12,14}\b/g) || []).forEach(push);
   (raw.match(/\b[A-Z]{1,2}\d{8,11}\b/g) || []).forEach(push);
 
+  // ITF decoders sometimes prepend a leading 0 as a check digit artifact.
+  // e.g. "0500602752638" → strip to "500602752638" (valid Trackon AWB).
+  candidates.forEach((c) => {
+    if (/^0\d{12}$/.test(c)) push(c.slice(1));
+  });
+
   const prioritized = [
-    ...candidates.filter((value) => /^(100|200|500)\d{9}$/.test(value)),
+    // Trackon AWBs: 12 digits starting with 1, 2, or 5
+    ...candidates.filter((value) => /^[125]\d{11}$/.test(value)),
+    // Other known 12-digit numeric AWBs (e.g. Delhivery)
+    ...candidates.filter((value) => /^\d{12}$/.test(value)),
+    // 13–14 digit numeric (EAN/UPC fallthrough)
     ...candidates.filter((value) => /^\d{13,14}$/.test(value)),
+    // Alpha-numeric (DTDC, Bluedart, etc.)
     ...candidates.filter((value) => /^[A-Z]{1,2}\d{8,11}$/.test(value)),
     ...candidates,
   ];
@@ -805,55 +816,82 @@ export default function ScanAWBPage({ toast }) {
       };
 
       if (typeof window !== 'undefined' && typeof window.BarcodeDetector !== 'undefined') {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
-        }
+        let useNative = true;
+        let stream = null;
 
-        let supportedFormats = NATIVE_BARCODE_FORMATS;
         try {
-          const available = await window.BarcodeDetector.getSupportedFormats();
-          supportedFormats = NATIVE_BARCODE_FORMATS.filter((format) => available.includes(format));
-          if (!supportedFormats.length) supportedFormats = NATIVE_BARCODE_FORMATS;
-        } catch {}
+          stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            await videoRef.current.play();
+          }
 
-        const detector = new window.BarcodeDetector({ formats: supportedFormats });
-        let timerId = null;
-        let stopped = false;
+          let supportedFormats = NATIVE_BARCODE_FORMATS;
+          try {
+            const available = await window.BarcodeDetector.getSupportedFormats();
+            supportedFormats = NATIVE_BARCODE_FORMATS.filter((format) => available.includes(format));
+            if (!supportedFormats.length) supportedFormats = NATIVE_BARCODE_FORMATS;
+          } catch {}
 
-        const tick = async () => {
-          if (stopped) return;
-          const video = videoRef.current;
-          if (!video || video.readyState < 2) {
-            timerId = window.setTimeout(tick, 40);
+          // ITF is required for Trackon 12-digit numeric barcodes.
+          // If the device's native detector doesn't support it, fall through to
+          // ZXing which handles ITF reliably on all platforms.
+          if (!supportedFormats.includes('itf')) {
+            console.log('[Scanner] Native BarcodeDetector lacks ITF support — using ZXing for Trackon compatibility');
+            useNative = false;
+          }
+
+          if (useNative) {
+            const detector = new window.BarcodeDetector({ formats: supportedFormats });
+            let timerId = null;
+            let stopped = false;
+
+            const tick = async () => {
+              if (stopped) return;
+              const video = videoRef.current;
+              if (!video || video.readyState < 2) {
+                timerId = window.setTimeout(tick, 40);
+                return;
+              }
+              try {
+                const codes = await detector.detect(video);
+                if (codes.length > 0 && codes[0].rawValue) {
+                  lockBarcode(codes[0].rawValue);
+                }
+              } catch (err) {
+                if (err?.name !== 'NotFoundException') {
+                  setCameraError(err.message || 'Unable to read barcode from camera');
+                }
+              }
+              if (!stopped) timerId = window.setTimeout(tick, 35);
+            };
+
+            scannerRef.current = {
+              reset: async () => {
+                stopped = true;
+                if (timerId) window.clearTimeout(timerId);
+              },
+            };
+
+            window.setTimeout(tick, 250);
+            return; // native path active
+          }
+        } catch (streamErr) {
+          // Stream failed before we could even check native support — will fall through to ZXing below
+          if (!videoRef.current?.srcObject) {
+            setCameraError(streamErr.message || 'Camera access failed');
+            vibrate([120, 60, 120]);
+            await stopCamera();
             return;
           }
-          try {
-            const codes = await detector.detect(video);
-            if (codes.length > 0 && codes[0].rawValue) {
-              lockBarcode(codes[0].rawValue);
-            }
-          } catch (err) {
-            if (err?.name !== 'NotFoundException') {
-              setCameraError(err.message || 'Unable to read barcode from camera');
-            }
-          }
-          if (!stopped) timerId = window.setTimeout(tick, 35);
-        };
-
-        scannerRef.current = {
-          reset: async () => {
-            stopped = true;
-            if (timerId) window.clearTimeout(timerId);
-          },
-        };
-
-        window.setTimeout(tick, 250);
-        return;
+        }
+        // If useNative is false (ITF missing), fall through to ZXing.
+        // The video stream is already running so ZXing will reuse it.
       }
 
-      const scanner = new BrowserMultiFormatReader(createBarcodeHints(), 60);
+      // ZXing path — handles ITF (Trackon) + Code128 (DTDC/Delhivery) on all browsers.
+      // Interval 40ms ≈ 25fps scan — fast enough for real-world barcode reads.
+      const scanner = new BrowserMultiFormatReader(createBarcodeHints(), 40);
       scannerRef.current = scanner;
 
       const decodeCallback = async (result, err) => {
@@ -867,7 +905,10 @@ export default function ScanAWBPage({ toast }) {
         }
       };
 
-      if (typeof scanner.decodeFromConstraints === 'function') {
+      // If the stream is already running (native ITF fallthrough), use the video element directly.
+      if (videoRef.current?.srcObject) {
+        scanner.decodeFromVideoElement(videoRef.current, decodeCallback);
+      } else if (typeof scanner.decodeFromConstraints === 'function') {
         await scanner.decodeFromConstraints({ video: videoConstraints }, videoRef.current, decodeCallback);
       } else {
         await scanner.decodeFromVideoDevice(undefined, videoRef.current, decodeCallback);

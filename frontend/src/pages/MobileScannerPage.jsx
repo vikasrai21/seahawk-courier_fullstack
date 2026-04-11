@@ -667,8 +667,12 @@ export default function MobileScannerPage() {
       }
 
       // ── Path 1: Native BarcodeDetector (Chrome Android, iOS 17+) ─────────
-      // This runs in the browser's GPU/native layer — sub-100ms, no WASM needed.
+      // ITF support check is critical — Trackon uses 12-digit ITF numeric barcodes.
+      // If the device doesn't support ITF natively, we fall through to ZXing which
+      // handles it correctly on all platforms.
       if (typeof window.BarcodeDetector !== 'undefined') {
+        let useNative = true;
+
         let supportedFormats = NATIVE_BARCODE_FORMATS;
         try {
           const available = await window.BarcodeDetector.getSupportedFormats();
@@ -676,43 +680,52 @@ export default function MobileScannerPage() {
           if (!supportedFormats.length) supportedFormats = NATIVE_BARCODE_FORMATS;
         } catch { /* use defaults */ }
 
-        const detector = new window.BarcodeDetector({ formats: supportedFormats });
-        let rafId = null;
+        if (!supportedFormats.includes('itf')) {
+          // This device's native detector can't read Trackon barcodes — use ZXing.
+          console.log('[MobileScanner] Native BarcodeDetector lacks ITF — falling back to ZXing');
+          useNative = false;
+        }
 
-        const tick = async () => {
-          if (scanBusyRef.current || currentStepRef.current !== STEPS.SCANNING) return;
-          const video = videoRef.current;
-          if (!video || video.readyState < 2) {
-            rafId = requestAnimationFrame(tick);
-            return;
-          }
-          try {
-            const barcodes = await detector.detect(video);
-            if (barcodes.length > 0 && barcodes[0].rawValue) {
-              handleBarcodeDetectedRef.current?.(barcodes[0].rawValue);
+        if (useNative) {
+          const detector = new window.BarcodeDetector({ formats: supportedFormats });
+          let rafId = null;
+
+          const tick = async () => {
+            if (scanBusyRef.current || currentStepRef.current !== STEPS.SCANNING) return;
+            const video = videoRef.current;
+            if (!video || video.readyState < 2) {
+              rafId = requestAnimationFrame(tick);
+              return;
             }
-          } catch { /* frame not ready */ }
-          // ~15ms between frames = ~60fps scanning
-          if (currentStepRef.current === STEPS.SCANNING) {
-            rafId = requestAnimationFrame(() => setTimeout(tick, 15));
-          }
-        };
+            try {
+              const barcodes = await detector.detect(video);
+              if (barcodes.length > 0 && barcodes[0].rawValue) {
+                handleBarcodeDetectedRef.current?.(barcodes[0].rawValue);
+              }
+            } catch { /* frame not ready */ }
+            // ~15ms between frames = ~60fps scanning
+            if (currentStepRef.current === STEPS.SCANNING) {
+              rafId = requestAnimationFrame(() => setTimeout(tick, 15));
+            }
+          };
 
-        // Store a cleanup handle in scannerRef
-        scannerRef.current = {
-          _type: 'native',
-          reset: () => {
-            if (rafId) cancelAnimationFrame(rafId);
-            rafId = null;
-          },
-        };
+          scannerRef.current = {
+            _type: 'native',
+            reset: () => {
+              if (rafId) cancelAnimationFrame(rafId);
+              rafId = null;
+            },
+          };
 
-        // Start after a short delay to let the video settle
-        setTimeout(tick, 300);
-        return; // ← native path active, skip ZXing
+          setTimeout(tick, 300);
+          return; // ← native path active, skip ZXing
+        }
+        // useNative=false: fall through to ZXing below
       }
 
-      // ── Path 2: ZXing fallback (Safari iOS < 17, older browsers) ─────────
+      // ── Path 2: ZXing (Safari iOS < 17, or native path lacked ITF) ───────
+      // ZXing handles ITF (Trackon), Code128 (DTDC/Delhivery) and more.
+      // 40ms interval ≈ 25fps — fast enough without hammering the CPU.
       const [{ BrowserMultiFormatReader }, zxingCore] = await Promise.all([
         import('@zxing/browser'),
         import('@zxing/library'),
@@ -733,8 +746,8 @@ export default function MobileScannerPage() {
         [zxingCore.DecodeHintType.CHARACTER_SET, 'UTF-8'],
       ]);
 
-      // 80ms scan interval — balance between speed and battery on iOS
-      const reader = new BrowserMultiFormatReader(hints, 80);
+      // 40ms scan interval ≈ 25fps — fast for real-world barcodes, easy on the battery
+      const reader = new BrowserMultiFormatReader(hints, 40);
       scannerRef.current = reader;
 
       reader.decodeFromVideoElement(videoRef.current, (result) => {
