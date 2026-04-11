@@ -40,6 +40,7 @@ export function AuthProvider({ children }) {
 
     const token = res.data?.accessToken;
     if (!token) throw new Error('Login failed — no token received');
+    tokenManager.setRemember(rememberMe);
     tokenManager.set(token);
     const u = res.data?.user;
     if (!u) throw new Error('Login failed — no user received');

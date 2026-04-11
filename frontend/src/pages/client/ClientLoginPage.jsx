@@ -60,7 +60,7 @@ export default function ClientLoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} autoComplete="on" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <form onSubmit={handleSubmit} autoComplete="on" name="client-login" method="post" action="/portal/login" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
               <label style={{ display: 'block', fontSize: '.78rem', fontWeight: 700, color: '#374151', marginBottom: 6 }}>Email Address</label>
               <input

@@ -138,7 +138,7 @@ export default function LoginPage() {
             }}>⚠️ {error}</div>
           )}
 
-          <form onSubmit={handleSubmit} autoComplete="on">
+          <form onSubmit={handleSubmit} autoComplete="on" name="login" method="post" action="/login">
             <label style={{ display: 'block', color: '#5a6b80', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
               Email Address
             </label>
