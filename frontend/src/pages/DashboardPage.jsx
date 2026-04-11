@@ -166,12 +166,6 @@ export default function DashboardPage() {
   const [smartRevenue, setSmartRevenue] = useState(null);
   const [, setTick] = useState(Date.now());
 
-  useEffect(() => {
-    const canUseMobileScanner = isAdmin || hasRole('OPS_MANAGER') || hasRole('STAFF');
-    if (!canUseMobileScanner) return;
-    if (!isLikelyMobileBrowser()) return;
-    navigate('/scan-mobile', { replace: true });
-  }, [navigate, isAdmin, hasRole]);
 
   const currentRange = useMemo(() => getRange(range, customFrom, customTo), [range, customFrom, customTo]);
   const previousRange = useMemo(() => getPreviousRange(range, customFrom, customTo), [range, customFrom, customTo]);

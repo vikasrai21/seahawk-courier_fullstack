@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import {
   Camera, Check, AlertCircle, RotateCcw, Send, ChevronRight, Volume2, VolumeX,
   Wifi, WifiOff, Zap, Package, ScanLine, Shield, RefreshCw, X, Brain,
-  BarChart3, History, Clock, CheckCircle2
+  BarChart3, History, Clock, CheckCircle2, ArrowLeft, Trash2, CloudUpload
 } from 'lucide-react';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -26,10 +26,8 @@ const NATIVE_BARCODE_FORMATS = [
 
 const STEPS = {
   IDLE: 'IDLE',
+  HOME: 'HOME',
   SCANNING: 'SCANNING',
-  // BARCODE_LOCKED removed: the locked state is now a visual overlay within SCANNING,
-  // not a separate step. The lifecycle is: SCANNING → CAPTURING → PREVIEW → PROCESSING
-  // → REVIEWING → APPROVING → SUCCESS (or ERROR at any point).
   CAPTURING: 'CAPTURING',
   PREVIEW: 'PREVIEW',
   PROCESSING: 'PROCESSING',
@@ -76,29 +74,24 @@ const speak = (text) => {
 
 // ─── Styles ─────────────────────────────────────────────────────────────────
 const theme = {
-  bg: '#FAFBFD',
-  surface: '#FFFFFF',
-  border: 'rgba(0,0,0,0.06)',
-  text: '#111827',
-  muted: '#6B7280',
-  mutedLight: '#9CA3AF',
-  primary: '#4F46E5',
-  primaryLight: '#EEF2FF',
-  success: '#059669',
-  successLight: '#ECFDF5',
-  warning: '#D97706',
-  warningLight: '#FFFBEB',
-  error: '#DC2626',
-  errorLight: '#FEF2F2',
+  bg: '#FAFBFD', surface: '#FFFFFF', border: 'rgba(0,0,0,0.06)',
+  text: '#111827', muted: '#6B7280', mutedLight: '#9CA3AF',
+  primary: '#4F46E5', primaryLight: '#EEF2FF',
+  success: '#059669', successLight: '#ECFDF5',
+  warning: '#D97706', warningLight: '#FFFBEB',
+  error: '#DC2626', errorLight: '#FEF2F2',
 };
+
+// For shorthand in CSS
+const T = theme;
 
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
 
 .msp-root {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background: ${theme.bg};
-  color: ${theme.text};
+  background: #F8FAFC;
+  color: ${T.text};
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -126,17 +119,10 @@ const css = `
   opacity: 1; transform: none;
   pointer-events: all; z-index: 2;
 }
-.msp-step.exiting {
-  opacity: 0; transform: none;
-  pointer-events: none;
-}
 
 /* ── Camera viewport ── */
 .cam-viewport {
   position: relative; width: 100%; flex: 1;
-  /* Use the full screen height as the sizing context so the scan-guide
-     height-percentages always reference the actual screen, not the element's
-     own unknown height (which can collapse when the <video> is outside). */
   min-height: 100dvh;
   background: transparent; overflow: hidden;
 }
@@ -146,7 +132,6 @@ const css = `
 .cam-overlay {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  /* Must sit ABOVE the persistent background video (z-index 0) */
   z-index: 3;
 }
 
@@ -206,169 +191,131 @@ const css = `
   z-index: 3;
 }
 
-/* ── Cards ── */
+/* ── Cards / Buttons ── */
 .card {
-  background: ${theme.surface}; border: 1px solid ${theme.border};
-  border-radius: 16px; padding: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  background: ${T.surface}; border: 1px solid ${T.border};
+  border-radius: 16px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
-
-/* ── Buttons ── */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   padding: 14px 24px; border-radius: 12px; border: none;
   font-family: inherit; font-size: 0.9rem; font-weight: 600;
-  cursor: pointer; transition: all 0.2s;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
 .btn:active { transform: scale(0.97); }
-.btn-primary {
-  background: linear-gradient(135deg, #4F46E5, #6366F1);
-  color: white;
-}
+.btn-primary { background: linear-gradient(135deg, #4F46E5, #6366F1); color: white; }
 .btn-primary:hover { box-shadow: 0 4px 14px rgba(79,70,229,0.35); }
-.btn-success {
-  background: linear-gradient(135deg, #059669, #10B981);
-  color: white;
-}
-.btn-outline {
-  background: ${theme.surface}; border: 1.5px solid ${theme.border};
-  color: ${theme.text};
-}
-.btn-danger { background: ${theme.errorLight}; color: ${theme.error}; }
+.btn-success { background: linear-gradient(135deg, #059669, #10B981); color: white; }
+.btn-outline { background: ${T.surface}; border: 1.5px solid ${T.border}; color: ${T.text}; }
 .btn-lg { padding: 16px 32px; font-size: 1rem; border-radius: 14px; }
 .btn-full { width: 100%; }
-.btn:disabled {
-  opacity: 0.5; cursor: default;
-}
+.btn:disabled { opacity: 0.5; cursor: default; }
 
-/* ── Capture button (circular) ── */
 .capture-btn {
   width: 72px; height: 72px; border-radius: 50%;
   background: white; border: 4px solid rgba(255,255,255,0.4);
-  cursor: pointer; position: relative;
-  transition: transform 0.15s;
+  cursor: pointer; position: relative; transition: transform 0.15s;
   box-shadow: 0 4px 20px rgba(0,0,0,0.25);
 }
 .capture-btn:active { transform: scale(0.92); }
-.capture-btn-inner {
-  position: absolute; inset: 4px; border-radius: 50%;
-  background: white; border: 2px solid #E5E7EB;
-}
+.capture-btn-inner { position: absolute; inset: 4px; border-radius: 50%; background: white; border: 2px solid #E5E7EB; }
 
-/* ── Preview image ── */
-.preview-img {
-  width: 100%; border-radius: 12px;
-  object-fit: contain; max-height: 50vh;
-  background: #F1F5F9;
-}
+.preview-img { width: 100%; border-radius: 12px; object-fit: contain; max-height: 50vh; background: #F1F5F9; }
 
-/* ── Field card in review ── */
+/* ── Field cards ── */
 .field-card {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 12px 14px;
-  background: ${theme.surface}; border: 1px solid ${theme.border};
-  border-radius: 12px;
+  display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px;
+  background: ${T.surface}; border: 1px solid ${T.border}; border-radius: 12px;
 }
-.field-card.warning { border-color: ${theme.warning}; background: ${theme.warningLight}; }
-.field-card.error-field { border-color: ${theme.error}; background: ${theme.errorLight}; }
-.field-label {
-  font-size: 0.65rem; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.05em;
-  color: ${theme.muted}; margin-bottom: 2px;
-}
-.field-value {
-  font-size: 0.85rem; font-weight: 600;
-  color: ${theme.text};
-}
+.field-card.warning { border-color: ${T.warning}; background: ${T.warningLight}; }
+.field-label { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: ${T.muted}; margin-bottom: 2px; }
 .field-input {
-  width: 100%; background: ${theme.bg}; border: 1px solid ${theme.border};
+  width: 100%; background: ${T.bg}; border: 1px solid ${T.border};
   border-radius: 8px; padding: 8px 10px;
-  font-family: inherit; font-size: 0.82rem; font-weight: 500;
-  color: ${theme.text}; outline: none;
+  font-family: inherit; font-size: 0.82rem; font-weight: 500; color: ${T.text}; outline: none;
 }
-.field-input:focus { border-color: ${theme.primary}; box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
+.field-input:focus { border-color: ${T.primary}; box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
 
-/* ── Confidence dot ── */
-.conf-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  flex-shrink: 0; margin-top: 4px;
-}
-.conf-high { background: ${theme.success}; }
-.conf-med { background: ${theme.warning}; }
-.conf-low { background: ${theme.error}; }
+/* ── Confidence dots ── */
+.conf-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+.conf-high { background: ${T.success}; }
+.conf-med  { background: ${T.warning}; }
+.conf-low  { background: ${T.error}; }
 
-/* ── Source badge ── */
-.source-badge {
-  font-size: 0.6rem; padding: 2px 6px; border-radius: 6px;
-  font-weight: 600; display: inline-flex; align-items: center; gap: 3px;
-}
-.source-learned { background: #F5F3FF; color: #7C3AED; }
-.source-ai { background: ${theme.primaryLight}; color: ${theme.primary}; }
-.source-history { background: ${theme.warningLight}; color: ${theme.warning}; }
-.source-pincode { background: ${theme.successLight}; color: ${theme.success}; }
+/* ── Source badges ── */
+.source-badge { font-size: 0.6rem; padding: 2px 6px; border-radius: 6px; font-weight: 600; display: inline-flex; align-items: center; gap: 3px; }
+.source-learned  { background: #F5F3FF; color: #7C3AED; }
+.source-ai       { background: ${T.primaryLight}; color: ${T.primary}; }
+.source-history  { background: ${T.warningLight}; color: ${T.warning}; }
+.source-pincode  { background: ${T.successLight}; color: ${T.success}; }
 
-/* ── Shimmer skeleton ── */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
+/* ── Shimmer ── */
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 .skeleton {
   background: linear-gradient(90deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s ease-in-out infinite;
-  border-radius: 8px;
+  background-size: 200% 100%; animation: shimmer 1.5s ease-in-out infinite; border-radius: 8px;
 }
 
-/* ── Success checkmark ── */
-@keyframes checkDraw {
-  0% { stroke-dashoffset: 48; }
-  100% { stroke-dashoffset: 0; }
-}
-@keyframes circleDraw {
-  0% { stroke-dashoffset: 200; }
-  100% { stroke-dashoffset: 0; }
-}
-.success-check-circle {
-  stroke-dasharray: 200; stroke-dashoffset: 200;
-  animation: circleDraw 0.6s ease-out 0.1s forwards;
-}
-.success-check-mark {
-  stroke-dasharray: 48; stroke-dashoffset: 48;
-  animation: checkDraw 0.5s ease-out 0.5s forwards;
-}
+/* ── Success animation ── */
+@keyframes checkDraw { 0% { stroke-dashoffset: 48; } 100% { stroke-dashoffset: 0; } }
+@keyframes circleDraw { 0% { stroke-dashoffset: 200; } 100% { stroke-dashoffset: 0; } }
+.success-check-circle { stroke-dasharray: 200; stroke-dashoffset: 200; animation: circleDraw 0.6s ease-out 0.1s forwards; }
+.success-check-mark { stroke-dasharray: 48; stroke-dashoffset: 48; animation: checkDraw 0.5s ease-out 0.5s forwards; }
 
-/* ── Flash overlay ── */
+/* ── Flash / Shake ── */
 @keyframes flash { 0% { opacity: 0.8; } 100% { opacity: 0; } }
-.flash-overlay {
-  position: fixed; inset: 0; z-index: 50;
-  pointer-events: none;
-  animation: flash 0.3s ease-out forwards;
-}
-.flash-white { background: white; }
+.flash-overlay { position: fixed; inset: 0; z-index: 50; pointer-events: none; animation: flash 0.3s ease-out forwards; }
+.flash-white   { background: white; }
 .flash-success { background: rgba(5,150,105,0.2); }
-.flash-error { background: rgba(220,38,38,0.2); }
-
-/* ── Duplicate warning ── */
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  20%, 60% { transform: translateX(-6px); }
-  40%, 80% { transform: translateX(6px); }
-}
+.flash-error   { background: rgba(220,38,38,0.2); }
+@keyframes shake { 0%,100% { transform:translateX(0); } 20%,60% { transform:translateX(-6px); } 40%,80% { transform:translateX(6px); } }
 .shake { animation: shake 0.5s ease-in-out; }
 
-/* ── Offline banner ── */
 .offline-banner {
-  background: ${theme.warningLight}; color: ${theme.warning};
+  background: ${T.warningLight}; color: ${T.warning};
   text-align: center; padding: 6px; font-size: 0.72rem; font-weight: 600;
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 99;
 }
+.scroll-panel { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px 20px; }
 
-/* ── Scrollable panel ── */
-.scroll-panel {
-  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  padding: 16px 20px;
+/* ── Bridged Home Header ── */
+.home-header {
+  background: linear-gradient(135deg, #FFFFFF 0%, #F1F5F9 100%);
+  padding: 20px 20px 32px; position: relative; overflow: hidden;
+  border-bottom: 1px solid #E2E8F0;
 }
+.home-header::after {
+  content: ''; position: absolute;
+  bottom: -22px; left: 0; right: 0; height: 44px;
+  background: #F8FAFC;
+  border-radius: 60% 60% 0 0 / 22px 22px 0 0;
+  border-top: 1px solid #E2E8F0;
+}
+.home-logo-row {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px;
+}
+.home-logo-text {
+  font-size: 1.05rem; font-weight: 800; color: #0F172A; letter-spacing: -0.01em;
+  display: flex; align-items: center; gap: 8px;
+}
+.home-logo-badge {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0; border-radius: 20px;
+  padding: 5px 12px; font-size: 0.68rem; font-weight: 600; color: #475569;
+  display: flex; align-items: center; gap: 5px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+.action-buttons-row {
+  display: flex; gap: 10px; margin-top: 20px; width: 100%;
+}
+.action-btn {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px; border-radius: 12px; border: 1px solid #E2E8F0;
+  background: #FFFFFF; color: #475569; font-size: 0.72rem; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+}
+.action-btn:active { transform: scale(0.96); background: #F8FAFC; }
+.action-btn.danger { color: #DC2626; border-color: #FECACA; background: #FEF2F2; }
 `;
 
 // ─── Confidence helpers ─────────────────────────────────────────────────────
@@ -487,6 +434,15 @@ export default function MobileScannerPage() {
     setStep(next);
   }, []);
 
+  const handleEndSession = useCallback(() => {
+    if (socket) socket.disconnect();
+    navigate('/app');
+  }, [socket, navigate]);
+
+  const handleSaveAndUpload = useCallback(() => {
+    flushOfflineQueue();
+  }, [flushOfflineQueue]);
+
   useEffect(() => {
     currentStepRef.current = step;
   }, [step]);
@@ -508,7 +464,7 @@ export default function MobileScannerPage() {
     s.on('connect', () => setConnStatus('connecting'));
     s.on('scanner:paired', () => {
       setConnStatus('paired');
-      goStep(STEPS.SCANNING);
+      goStep(STEPS.HOME);
     });
     s.on('scanner:error', ({ message }) => {
       setErrorMsg(message);
@@ -1137,7 +1093,7 @@ export default function MobileScannerPage() {
 
         {/* ═══ IDLE / CONNECTING ═══ */}
         <div className={stepClass(STEPS.IDLE)}>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 24 }}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 24, background: '#F8FAFC' }}>
             <div style={{ width: 64, height: 64, borderRadius: '50%', background: theme.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               {connStatus === 'connecting' ? <RefreshCw size={28} color={theme.primary} style={{ animation: 'spin 1s linear infinite' }} /> : <WifiOff size={28} color={theme.error} />}
             </div>
@@ -1152,6 +1108,74 @@ export default function MobileScannerPage() {
                 <RefreshCw size={16} /> Reconnect
               </button>
             )}
+          </div>
+        </div>
+
+        {/* ═══ HOME SCREEN ═══ */}
+        <div className={stepClass(STEPS.HOME)}>
+          <div className="home-header">
+            <div className="home-logo-row">
+              <div className="home-logo-text">
+                <img src="/images/logo.png" alt="Sea Hawk" style={{ height: 28, width: 'auto', objectFit: 'contain', padding: 2, background:'white', borderRadius:6, border:'1px solid #E2E8F0' }} />
+                <span>Seahawk Bridge</span>
+              </div>
+              <div className="home-logo-badge">
+                <Shield size={13} color={T.primary} />
+                <span>Linked: {pin}</span>
+              </div>
+            </div>
+            <div className="action-buttons-row">
+              <button className="action-btn" onClick={() => navigate('/app')}>
+                <ArrowLeft size={14} /> Go Back
+              </button>
+              <button className="action-btn" onClick={handleSaveAndUpload}>
+                <CloudUpload size={14} /> {offlineQueue.length > 0 ? `Sync (${offlineQueue.length})` : 'Synced'}
+              </button>
+              <button className="action-btn danger" onClick={handleEndSession}>
+                <Trash2 size={14} /> End Session
+              </button>
+            </div>
+          </div>
+
+          <div style={{ padding: '0 20px', marginTop: -24, position: 'relative', zIndex: 10 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+              <div className="card" style={{ padding: '12px 10px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.3rem', fontWeight: 800 }}>{sessionCtx.scanNumber}</div>
+                <div style={{ fontSize: '0.58rem', fontWeight: 600, color: T.muted, textTransform: 'uppercase', marginTop: 3 }}>Scanned</div>
+              </div>
+              <div className="card" style={{ padding: '12px 10px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.3rem', fontWeight: 800 }}>{offlineQueue.length}</div>
+                <div style={{ fontSize: '0.58rem', fontWeight: 600, color: T.muted, textTransform: 'uppercase', marginTop: 3 }}>Queued</div>
+              </div>
+              <div className="card" style={{ padding: '12px 10px', textAlign: 'center' }}>
+                <div style={{ fontSize: '1.3rem', fontWeight: 800 }}>{pin}</div>
+                <div style={{ fontSize: '0.58rem', fontWeight: 600, color: T.muted, textTransform: 'uppercase', marginTop: 3 }}>Terminal</div>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 20 }}>
+              <div style={{ position: 'absolute', width: 120, height: 120, borderRadius: '50%', border: `2.5px solid ${T.primary}`, animation: 'pulseRing 2.2s ease-out infinite', opacity: 0 }} />
+              <button
+                className="btn-primary"
+                style={{ width: 104, height: 104, borderRadius: '50%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 4, border: 'none', boxShadow: `0 8px 36px rgba(79,70,229,0.35), 0 0 0 6px rgba(79,70,229,0.12)` }}
+                onClick={() => goStep(STEPS.SCANNING)}
+              >
+                <Camera size={34} color="white" />
+                <span style={{ fontSize: '0.6rem', fontWeight: 800, color: 'white', textTransform: 'uppercase' }}>Scan</span>
+              </button>
+            </div>
+            <div style={{ fontSize: '0.82rem', color: T.muted, fontWeight: 500 }}>
+              Tap to start scanning for terminal {pin}
+            </div>
+          </div>
+
+          <div style={{ background: 'white', borderTop: `1px solid ${T.border}`, padding: '16px 20px' }}>
+             <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: T.muted, fontSize: '0.7rem', fontWeight: 600 }}>
+                <Wifi size={12} color={T.success} /> 
+                System Connected & Secure
+             </div>
           </div>
         </div>
 
@@ -1197,9 +1221,13 @@ export default function MobileScannerPage() {
               </div>
             </div>
             <div className="cam-hud">
-              <div className="cam-hud-chip">
-                <Wifi size={12} /> {pin}
-              </div>
+              <button
+                onClick={() => goStep(STEPS.HOME)}
+                style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 20, padding: '5px 12px', color: 'white', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', backdropFilter: 'blur(8px)' }}
+              >
+                <ArrowLeft size={14} />
+                <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>Home</span>
+              </button>
               <div className="cam-hud-chip" style={{ gap: 4 }}>
                 <Package size={12} /> {sessionCtx.scanNumber}
                 {typeof window !== 'undefined' && typeof window.BarcodeDetector !== 'undefined'
@@ -1250,9 +1278,13 @@ export default function MobileScannerPage() {
               </div>
             </div>
             <div className="cam-hud">
-              <div className="cam-hud-chip mono" style={{ fontSize: '0.68rem' }}>
-                <ScanLine size={12} /> {lockedAwb}
-              </div>
+              <button
+                onClick={() => goStep(STEPS.HOME)}
+                style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 20, padding: '5px 12px', color: 'white', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer', backdropFilter: 'blur(8px)' }}
+              >
+                <ArrowLeft size={14} />
+                <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>Cancel</span>
+              </button>
               {offlineQueue.length > 0 && (
                 <div className="cam-hud-chip">
                   <Clock size={12} /> {offlineQueue.length} queued
