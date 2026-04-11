@@ -14,10 +14,13 @@ const refreshCookieOpts = {
 };
 
 const login = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, rememberMe = true } = req.body;
   const meta = { ip: req.ip, userAgent: req.headers['user-agent'] };
   const { accessToken, refreshToken, user } = await authService.login(email, password, meta);
-  res.cookie('refreshToken', refreshToken, refreshCookieOpts);
+  const cookieOpts = rememberMe
+    ? refreshCookieOpts
+    : { ...refreshCookieOpts, maxAge: undefined };
+  res.cookie('refreshToken', refreshToken, cookieOpts);
   await auditLog({ userId: user.id, userEmail: user.email, action: 'LOGIN', entity: 'AUTH', ip: req.ip });
   R.ok(res, { accessToken, user }, 'Login successful');
 });

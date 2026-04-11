@@ -9,6 +9,7 @@ export default function ClientLoginPage() {
   const [form, setForm]       = useState({ email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
 
   // If already logged in as CLIENT, go to portal
   useEffect(() => {
@@ -22,7 +23,7 @@ export default function ClientLoginPage() {
     setError('');
     setLoading(true);
     try {
-      const loggedIn = await login(form.email, form.password);
+      const loggedIn = await login(form.email, form.password, rememberMe);
       if (loggedIn?.mustChangePassword) {
         navigate('/change-password?required=1', { replace: true });
       } else if (loggedIn.role === 'CLIENT') {
@@ -59,11 +60,13 @@ export default function ClientLoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <form onSubmit={handleSubmit} autoComplete="on" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div>
               <label style={{ display: 'block', fontSize: '.78rem', fontWeight: 700, color: '#374151', marginBottom: 6 }}>Email Address</label>
               <input
                 type="email"
+                name="email"
+                autoComplete="username"
                 value={form.email}
                 onChange={e => setForm(f => ({...f, email: e.target.value}))}
                 placeholder="your@email.com"
@@ -75,6 +78,8 @@ export default function ClientLoginPage() {
               <label style={{ display: 'block', fontSize: '.78rem', fontWeight: 700, color: '#374151', marginBottom: 6 }}>Password</label>
               <input
                 type="password"
+                name="password"
+                autoComplete="current-password"
                 value={form.password}
                 onChange={e => setForm(f => ({...f, password: e.target.value}))}
                 placeholder=""
@@ -82,6 +87,15 @@ export default function ClientLoginPage() {
                 style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #e5e7eb', borderRadius: 8, fontSize: '.9rem', outline: 'none', boxSizing: 'border-box' }}
               />
             </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.78rem', color: '#475569', userSelect: 'none' }}>
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                style={{ width: 14, height: 14 }}
+              />
+              Remember me on this device
+            </label>
             <button
               type="submit"
               disabled={loading}

@@ -70,6 +70,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -80,7 +81,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError(''); setLoading(true);
     try {
-      const user = await login(email.trim(), password);
+      const user = await login(email.trim(), password, rememberMe);
       if (user?.mustChangePassword) navigate('/change-password?required=1', { replace: true });
       else if (user?.role === 'CLIENT') navigate('/portal', { replace: true });
       else navigate('/app', { replace: true });
@@ -137,12 +138,12 @@ export default function LoginPage() {
             }}>⚠️ {error}</div>
           )}
 
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} autoComplete="on">
             <label style={{ display: 'block', color: '#5a6b80', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>
               Email Address
             </label>
             <input
-              type="email" autoComplete="email" autoFocus
+              type="email" name="email" autoComplete="username" autoFocus
               placeholder="admin@seahawk.com"
               value={email} onChange={e => setEmail(e.target.value)} required
               style={{ width: '100%', padding: '11px 14px', borderRadius: 10, background: '#f7faff', border: '1.5px solid #e2eaf5', color: '#0b1f3a', fontSize: 14, outline: 'none', boxSizing: 'border-box', marginBottom: 16, fontFamily: 'inherit', transition: 'border-color 0.2s' }}
@@ -155,7 +156,7 @@ export default function LoginPage() {
             </label>
             <div style={{ position: 'relative', marginBottom: 28 }}>
               <input
-                type={showPass ? 'text' : 'password'} autoComplete="current-password"
+                type={showPass ? 'text' : 'password'} name="password" autoComplete="current-password"
                 placeholder="••••••••"
                 value={password} onChange={e => setPassword(e.target.value)} required
                 style={{ width: '100%', padding: '11px 44px 11px 14px', borderRadius: 10, background: '#f7faff', border: '1.5px solid #e2eaf5', color: '#0b1f3a', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', transition: 'border-color 0.2s' }}
@@ -166,6 +167,16 @@ export default function LoginPage() {
                 {showPass ? '🙈' : '👁️'}
               </button>
             </div>
+
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#5a6b80', marginBottom: 18, userSelect: 'none' }}>
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                style={{ width: 14, height: 14 }}
+              />
+              Remember me on this device
+            </label>
 
             <button type="submit" disabled={loading} style={{
               width: '100%', padding: '13px',

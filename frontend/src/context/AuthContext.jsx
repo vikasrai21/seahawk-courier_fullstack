@@ -34,9 +34,9 @@ export function AuthProvider({ children }) {
     return () => setUnauthorizedHandler(null);
   }, []);
 
-  const login = useCallback(async (email, password) => {
+  const login = useCallback(async (email, password, rememberMe = true) => {
     await seedCsrfCookie();
-    const res = await api.post('/auth/login', { email, password });
+    const res = await api.post('/auth/login', { email, password, rememberMe });
 
     const token = res.data?.accessToken;
     if (!token) throw new Error('Login failed — no token received');
