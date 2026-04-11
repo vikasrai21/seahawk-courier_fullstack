@@ -615,6 +615,11 @@ export default function MobileScannerPage() {
     saveOfflineQueue([]);
   }, [socket, offlineQueue, saveOfflineQueue]);
 
+  // ── Step transition helper ──
+  const goStep = useCallback((next) => {
+    setStep(next);
+  }, []);
+
   const addToQueue = useCallback((item) => {
     setSessionCtx((prev) => ({
       ...prev,
@@ -647,11 +652,6 @@ export default function MobileScannerPage() {
     }
     window.alert('Everything is already synced.');
   }, [offlineQueue.length, flushOfflineQueue]);
-
-  // ── Step transition helper ──
-  const goStep = useCallback((next) => {
-    setStep(next);
-  }, []);
 
   useEffect(() => {
     currentStepRef.current = step;
