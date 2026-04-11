@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   Camera, Check, AlertCircle, RotateCcw, Send, Volume2, VolumeX,
   Wifi, WifiOff, Package, ScanLine, RefreshCw, X, Brain,
-  Clock, CheckCircle2, List,
+  Clock, CheckCircle2, List, ArrowLeft, Trash2, CloudUpload
 } from 'lucide-react';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ const css = `
 
 .msp-root {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background: #0F172A; color: ${T.text};
+  background: #F8FAFC; color: ${T.text};
   min-height: 100dvh; display: flex; flex-direction: column;
   overflow: hidden; position: relative;
   user-select: none; -webkit-user-select: none;
@@ -241,46 +241,50 @@ const css = `
 .home-root {
   display: flex; flex-direction: column;
   min-height: 100dvh; overflow-y: auto;
-  background: #0F172A;
+  background: #F8FAFC;
 }
 
 /* ── Header ── */
 .home-header {
-  background: linear-gradient(135deg, #1E3A8A 0%, #3730A3 55%, #4F46E5 100%);
+  background: linear-gradient(135deg, #FFFFFF 0%, #F1F5F9 100%);
   padding: 20px 20px 36px; position: relative; overflow: hidden;
+  border-bottom: 1px solid #E2E8F0;
 }
 .home-header::before {
   content: ''; position: absolute; top: -40px; right: -40px;
   width: 180px; height: 180px; border-radius: 50%;
-  background: rgba(255,255,255,0.05);
+  background: rgba(79,70,229,0.03);
 }
 .home-header::after {
   content: ''; position: absolute;
   bottom: -22px; left: 0; right: 0; height: 44px;
-  background: #0F172A;
+  background: #F8FAFC;
   border-radius: 60% 60% 0 0 / 22px 22px 0 0;
+  border-top: 1px solid #E2E8F0;
 }
 .home-logo-row {
   display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px;
 }
 .home-logo-text {
-  font-size: 1.08rem; font-weight: 800; color: white; letter-spacing: -0.01em;
+  font-size: 1.08rem; font-weight: 800; color: #0F172A; letter-spacing: -0.01em;
   display: flex; align-items: center; gap: 8px;
 }
 .home-logo-badge {
-  background: rgba(255,255,255,0.15); backdrop-filter: blur(8px);
-  border: 1px solid rgba(255,255,255,0.2); border-radius: 20px;
-  padding: 5px 12px; font-size: 0.72rem; font-weight: 600; color: rgba(255,255,255,0.92);
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0; border-radius: 20px;
+  padding: 5px 12px; font-size: 0.72rem; font-weight: 600; color: #475569;
   display: flex; align-items: center; gap: 5px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
 }
 .home-stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
 .home-stat-card {
-  background: rgba(255,255,255,0.1); backdrop-filter: blur(8px);
-  border: 1px solid rgba(255,255,255,0.15); border-radius: 12px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0; border-radius: 12px;
   padding: 11px 10px; text-align: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.02);
 }
-.home-stat-val { font-size: 1.3rem; font-weight: 800; color: white; line-height: 1; }
-.home-stat-label { font-size: 0.58rem; font-weight: 600; color: rgba(255,255,255,0.55); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px; }
+.home-stat-val { font-size: 1.3rem; font-weight: 800; color: #0F172A; line-height: 1; }
+.home-stat-label { font-size: 0.58rem; font-weight: 600; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px; }
 
 /* ── Scan CTA ── */
 .home-scan-section { display: flex; flex-direction: column; align-items: center; padding: 36px 20px 28px; }
@@ -298,31 +302,44 @@ const css = `
   background: linear-gradient(145deg, #4F46E5, #6366F1);
   border: none; cursor: pointer; touch-action: manipulation;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-  box-shadow: 0 8px 36px rgba(79,70,229,0.55), 0 0 0 6px rgba(79,70,229,0.12);
+  box-shadow: 0 8px 36px rgba(79,70,229,0.35), 0 0 0 6px rgba(79,70,229,0.12);
   transition: transform 0.15s, box-shadow 0.15s;
   position: relative; z-index: 1;
 }
-.home-scan-btn:active { transform: scale(0.93); box-shadow: 0 4px 18px rgba(79,70,229,0.4); }
+.home-scan-btn:active { transform: scale(0.93); box-shadow: 0 4px 18px rgba(79,70,229,0.25); }
 .home-scan-btn-label { font-size: 0.6rem; font-weight: 800; color: white; text-transform: uppercase; letter-spacing: 0.06em; }
-.home-cta-text { font-size: 0.82rem; color: rgba(255,255,255,0.5); font-weight: 500; }
+.home-cta-text { font-size: 0.82rem; color: #64748B; font-weight: 500; }
+
+.action-buttons-row {
+  display: flex; gap: 12px; margin-top: 24px; width: 100%; max-width: 300px;
+}
+.action-btn {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px; border-radius: 12px; border: 1px solid #E2E8F0;
+  background: #FFFFFF; color: #475569; font-size: 0.75rem; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+}
+.action-btn:active { transform: scale(0.96); background: #F8FAFC; }
+.action-btn.danger { color: #DC2626; border-color: #FECACA; background: #FEF2F2; }
 
 /* ── Queue ── */
 .home-queue-section {
-  flex: 1; background: #1E293B; border-radius: 20px 20px 0 0;
+  flex: 1; background: #FFFFFF; border-radius: 20px 20px 0 0;
   overflow: hidden; display: flex; flex-direction: column; min-height: 280px;
+  border-top: 1px solid #E2E8F0; box-shadow: 0 -4px 20px rgba(0,0,0,0.02);
 }
 .home-queue-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 20px 12px; border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding: 16px 20px 12px; border-bottom: 1px solid #E2E8F0;
 }
 .home-queue-title-text {
-  font-size: 0.65rem; font-weight: 700; color: rgba(255,255,255,0.45);
+  font-size: 0.65rem; font-weight: 700; color: #64748B;
   text-transform: uppercase; letter-spacing: 0.08em;
   display: flex; align-items: center; gap: 6px;
 }
 .home-queue-badge {
   font-size: 0.65rem; font-weight: 700;
-  background: rgba(79,70,229,0.28); color: #818CF8;
+  background: #EEF2FF; color: #4F46E5;
   padding: 2px 9px; border-radius: 10px;
 }
 .home-queue-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
@@ -330,22 +347,22 @@ const css = `
 @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 .queue-item {
   display: flex; align-items: center; gap: 12px;
-  padding: 12px 20px; border-bottom: 1px solid rgba(255,255,255,0.04);
+  padding: 12px 20px; border-bottom: 1px solid #F1F5F9;
   animation: slideIn 0.3s ease-out;
 }
-.queue-item:active { background: rgba(255,255,255,0.04); }
+.queue-item:active { background: #F8FAFC; }
 .queue-check {
   width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
-  background: rgba(5,150,105,0.18); border: 1.5px solid rgba(16,185,129,0.4);
+  background: #ECFDF5; border: 1.5px solid #10B981;
   display: flex; align-items: center; justify-content: center;
 }
-.queue-awb { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; font-weight: 600; color: white; }
-.queue-meta { font-size: 0.64rem; color: rgba(255,255,255,0.4); margin-top: 2px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.queue-client-tag { background: rgba(79,70,229,0.22); color: #818CF8; padding: 1px 6px; border-radius: 4px; }
-.queue-offline-tag { background: rgba(217,119,6,0.22); color: #FBBF24; padding: 1px 6px; border-radius: 4px; }
-.queue-weight { font-size: 0.72rem; font-weight: 700; color: rgba(99,102,241,0.85); margin-left: auto; flex-shrink: 0; }
+.queue-awb { font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; font-weight: 600; color: #0F172A; }
+.queue-meta { font-size: 0.64rem; color: #64748B; margin-top: 2px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.queue-client-tag { background: #EEF2FF; color: #4F46E5; padding: 1px 6px; border-radius: 4px; }
+.queue-offline-tag { background: #FFFBEB; color: #D97706; padding: 1px 6px; border-radius: 4px; }
+.queue-weight { font-size: 0.72rem; font-weight: 700; color: #4F46E5; margin-left: auto; flex-shrink: 0; }
 .queue-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 44px 20px; gap: 12px; }
-.queue-empty-text { font-size: 0.8rem; color: rgba(255,255,255,0.28); font-weight: 500; text-align: center; line-height: 1.5; }
+.queue-empty-text { font-size: 0.8rem; color: #94A3B8; font-weight: 500; text-align: center; line-height: 1.5; }
 `;
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -434,6 +451,29 @@ export default function DirectMobileScannerPage() {
     }
     saveOfflineQueue([]);
   }, [offlineQueue, saveOfflineQueue]);
+
+  const terminateSession = useCallback(() => {
+    if (window.confirm("Are you sure you want to end this session? All local statistics will be reset.")) {
+      setSessionCtx({
+        scannedAwbs: new Set(),
+        clientFreq: {},
+        scanNumber: 0,
+        dominantClient: null,
+        dominantClientCount: 0,
+        startedAt: Date.now(),
+        scannedItems: [],
+      });
+    }
+  }, []);
+
+  const saveAndUpload = useCallback(() => {
+    if (offlineQueue.length > 0) {
+      flushOfflineQueue();
+      alert(`Flushing ${offlineQueue.length} offline items to the server.`);
+    } else {
+      alert("No pending offline scans to upload. Everything is synced!");
+    }
+  }, [offlineQueue, flushOfflineQueue]);
 
   const goStep = useCallback((next) => setStep(next), []);
   useEffect(() => { currentStepRef.current = step; }, [step]);
@@ -801,13 +841,22 @@ export default function DirectMobileScannerPage() {
 
             {/* Header with stats */}
             <div className="home-header">
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 16 }}>
+                <button 
+                  onClick={() => navigate('/app')}
+                  style={{ background:'white', border:'1px solid #E2E8F0', padding:'6px 12px', borderRadius:20, fontSize:'0.75rem', fontWeight:600, color:'#475569', display:'flex', alignItems:'center', gap:4, cursor:'pointer', boxShadow:'0 1px 3px rgba(0,0,0,0.02)' }}
+                >
+                  <ArrowLeft size={14} /> Go Back
+                </button>
+                <div className="home-logo-badge">
+                  <Wifi size={11} color={connStatus === 'paired' && navigator.onLine ? "#10B981" : "#EF4444"} />
+                  {user?.name || 'Staff'}
+                </div>
+              </div>
               <div className="home-logo-row">
                 <div className="home-logo-text">
-                  🦅 <span>Seahawk Scanner</span>
-                </div>
-                <div className="home-logo-badge">
-                  <Wifi size={11} />
-                  {user?.name || 'Staff'}
+                  <img src="/images/logo.png" alt="Sea Hawk Logo" style={{ height: 28, width: 'auto', objectFit: 'contain', padding: 2, background:'white', borderRadius:6, border:'1px solid #E2E8F0' }} />
+                  <span>Seahawk Scanner</span>
                 </div>
               </div>
               <div className="home-stats-row">
@@ -843,8 +892,19 @@ export default function DirectMobileScannerPage() {
               <div className="home-cta-text">
                 {sessionCtx.scanNumber === 0 ? 'Tap to start your first scan' : 'Tap to scan next parcel'}
               </div>
+
+              {/* Action Buttons Row */}
+              <div className="action-buttons-row">
+                <button className="action-btn" onClick={saveAndUpload}>
+                  <CloudUpload size={14} /> {offlineQueue.length > 0 ? `Upload (${offlineQueue.length})` : 'Synced'}
+                </button>
+                <button className="action-btn danger" onClick={terminateSession}>
+                  <Trash2 size={14} /> End Session
+                </button>
+              </div>
+
               {offlineQueue.length > 0 && (
-                <div style={{ marginTop:10, fontSize:'0.7rem', color:T.warning, fontWeight:600, display:'flex', alignItems:'center', gap:5 }}>
+                <div style={{ marginTop:14, fontSize:'0.7rem', color:T.warning, fontWeight:600, display:'flex', alignItems:'center', gap:5 }}>
                   <Clock size={12} /> {offlineQueue.length} offline scan{offlineQueue.length > 1 ? 's' : ''} pending sync
                 </div>
               )}

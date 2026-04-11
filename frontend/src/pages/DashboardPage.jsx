@@ -71,8 +71,7 @@ function isLikelyMobileBrowser() {
   if (typeof window === 'undefined') return false;
   const ua = String(navigator.userAgent || '').toLowerCase();
   const mobileUA = /android|iphone|ipod|iemobile|blackberry|opera mini|mobile/.test(ua);
-  const coarsePointer = window.matchMedia?.('(pointer: coarse)').matches;
-  return mobileUA || !!coarsePointer;
+  return mobileUA;
 }
 
 function Filters({ range, onRangeChange, customFrom, customTo, onCustomFromChange, onCustomToChange }) {
