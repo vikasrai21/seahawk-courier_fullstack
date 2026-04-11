@@ -524,6 +524,15 @@ export default function ScanAWBPage({ toast }) {
       toast?.(`📱 Phone disconnected. ${totalScans} scans completed.`, 'warning');
     };
 
+    const onSessionEnded = ({ reason, totalScans }) => {
+      setMobileStatus('idle');
+      setMobilePIN('');
+      setMobileQRData('');
+      setMobileSessionStartedAt(null);
+      setShowMobileModal(false);
+      toast?.(reason || `Scanner session ended. ${totalScans || 0} scans completed.`, 'warning');
+    };
+
     const onRemoteScan = async ({ awb, imageBase64, focusImageBase64, scanNumber }) => {
       if (!awb) return;
       setMobileScanCount((prev) => scanNumber || prev + 1);
@@ -579,12 +588,14 @@ export default function ScanAWBPage({ toast }) {
 
     socket.on('scanner:phone-connected', onPhoneConnected);
     socket.on('scanner:phone-disconnected', onPhoneDisconnected);
+    socket.on('scanner:session-ended', onSessionEnded);
     socket.on('scanner:remote-scan', onRemoteScan);
     socket.on('scanner:approval-submitted', onApprovalSubmitted);
 
     return () => {
       socket.off('scanner:phone-connected', onPhoneConnected);
       socket.off('scanner:phone-disconnected', onPhoneDisconnected);
+      socket.off('scanner:session-ended', onSessionEnded);
       socket.off('scanner:remote-scan', onRemoteScan);
       socket.off('scanner:approval-submitted', onApprovalSubmitted);
     };

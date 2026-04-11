@@ -452,6 +452,29 @@ function handleMobileScannerConnection(socket) {
     }
   });
 
+  socket.on('scanner:end-session', ({ reason } = {}) => {
+    const currentSession = scanSessions.get(pin);
+    if (!currentSession || currentSession.phoneSocketId !== socket.id) return;
+
+    io.to(currentSession.desktopSocketId).emit('scanner:session-ended', {
+      pin,
+      reason: reason || 'Mobile ended the session',
+      initiatedBy: 'phone',
+      totalScans: currentSession.scanCount,
+    });
+
+    socket.emit('scanner:session-ended', {
+      pin,
+      reason: reason || 'Session ended',
+      initiatedBy: 'phone',
+      totalScans: currentSession.scanCount,
+    });
+
+    scanSessions.delete(pin);
+    logger.info(`Mobile scanner ended session: PIN ${pin}, ${currentSession.scanCount} scans completed`);
+    socket.disconnect(true);
+  });
+
   // Phone disconnects
   socket.on('disconnect', () => {
     const currentSession = scanSessions.get(pin);

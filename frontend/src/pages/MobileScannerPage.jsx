@@ -633,8 +633,11 @@ export default function MobileScannerPage() {
 
   const terminateSession = useCallback(() => {
     if (!window.confirm('End this mobile scanner session on the phone?')) return;
-    try { socket?.disconnect(); } catch {}
-    navigate('/');
+    if (socket?.connected) {
+      socket.emit('scanner:end-session', { reason: 'Mobile ended the session' });
+    } else {
+      navigate('/');
+    }
   }, [socket, navigate]);
 
   const saveAndUpload = useCallback(() => {
@@ -679,9 +682,10 @@ export default function MobileScannerPage() {
       setErrorMsg(message);
       setConnStatus('disconnected');
     });
-    s.on('scanner:session-ended', () => {
+    s.on('scanner:session-ended', ({ reason }) => {
       setConnStatus('disconnected');
-      setErrorMsg('Session ended by desktop.');
+      setErrorMsg(reason || 'Session ended by desktop.');
+      navigate('/');
     });
     s.on('disconnect', () => setConnStatus('disconnected'));
     s.on('reconnect', () => { if (connStatus === 'paired') goStep(STEPS.SCANNING); });
@@ -756,7 +760,7 @@ export default function MobileScannerPage() {
 
     setSocket(s);
     return () => { s.disconnect(); };
-  }, [pin, addToQueue, reviewData, reviewForm, goStep]);
+  }, [pin, addToQueue, reviewData, reviewForm, goStep, navigate]);
 
   useEffect(() => {
     try {
