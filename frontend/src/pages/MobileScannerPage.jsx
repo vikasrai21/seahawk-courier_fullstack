@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 import {
   Camera, Check, AlertCircle, RotateCcw, Send, ChevronRight, Volume2, VolumeX,
   Wifi, WifiOff, Zap, Package, ScanLine, Shield, RefreshCw, X, Brain,
-  BarChart3, History, Clock, CheckCircle2
+  BarChart3, History, Clock, CheckCircle2, List, ArrowLeft, Trash2, CloudUpload
 } from 'lucide-react';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -369,6 +369,126 @@ const css = `
   flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
   padding: 16px 20px;
 }
+
+/* ════════════════════════════════════════════════════════
+   HOME SCREEN (aligned with direct mobile scanner)
+   ════════════════════════════════════════════════════════ */
+.home-root {
+  display: flex; flex-direction: column;
+  min-height: 100dvh; overflow-y: auto;
+  background: #F8FAFC;
+}
+.home-header {
+  background: linear-gradient(135deg, #FFFFFF 0%, #F1F5F9 100%);
+  padding: 20px 20px 36px; position: relative; overflow: hidden;
+  border-bottom: 1px solid #E2E8F0;
+}
+.home-header::before {
+  content: ''; position: absolute; top: -40px; right: -40px;
+  width: 180px; height: 180px; border-radius: 50%;
+  background: rgba(79,70,229,0.03);
+}
+.home-header::after {
+  content: ''; position: absolute;
+  bottom: -22px; left: 0; right: 0; height: 44px;
+  background: #F8FAFC;
+  border-radius: 60% 60% 0 0 / 22px 22px 0 0;
+  border-top: 1px solid #E2E8F0;
+}
+.home-logo-row {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px;
+}
+.home-logo-text {
+  font-size: 1.08rem; font-weight: 800; color: #0F172A; letter-spacing: -0.01em;
+  display: flex; align-items: center; gap: 8px;
+}
+.home-logo-badge {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0; border-radius: 20px;
+  padding: 5px 12px; font-size: 0.72rem; font-weight: 600; color: #475569;
+  display: flex; align-items: center; gap: 5px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+.home-stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.home-stat-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0; border-radius: 12px;
+  padding: 11px 10px; text-align: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+}
+.home-stat-val { font-size: 1.3rem; font-weight: 800; color: #0F172A; line-height: 1; }
+.home-stat-label { font-size: 0.58rem; font-weight: 600; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px; }
+.home-scan-section { display: flex; flex-direction: column; align-items: center; padding: 36px 20px 28px; }
+@keyframes pulseRing { 0% { transform: scale(1); opacity: 0.55; } 100% { transform: scale(1.6); opacity: 0; } }
+.home-scan-btn-wrap { position: relative; display: flex; align-items: center; justify-content: center; margin-bottom: 20px; }
+.home-scan-ring {
+  position: absolute; width: 120px; height: 120px; border-radius: 50%;
+  border: 2.5px solid #6366F1;
+  animation: pulseRing 2.2s ease-out infinite;
+}
+.home-scan-ring2 { animation-delay: 0.8s; }
+.home-scan-btn {
+  width: 104px; height: 104px; border-radius: 50%;
+  background: linear-gradient(145deg, #4F46E5, #6366F1);
+  border: none; cursor: pointer; touch-action: manipulation;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  box-shadow: 0 8px 36px rgba(79,70,229,0.35), 0 0 0 6px rgba(79,70,229,0.12);
+  transition: transform 0.15s, box-shadow 0.15s;
+  position: relative; z-index: 1;
+}
+.home-scan-btn:active { transform: scale(0.93); box-shadow: 0 4px 18px rgba(79,70,229,0.25); }
+.home-scan-btn-label { font-size: 0.6rem; font-weight: 800; color: white; text-transform: uppercase; letter-spacing: 0.06em; }
+.home-cta-text { font-size: 0.82rem; color: #64748B; font-weight: 500; }
+.action-buttons-row {
+  display: flex; gap: 12px; margin-top: 24px; width: 100%; max-width: 300px;
+}
+.action-btn {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px; border-radius: 12px; border: 1px solid #E2E8F0;
+  background: #FFFFFF; color: #475569; font-size: 0.75rem; font-weight: 600;
+  cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+}
+.action-btn:active { transform: scale(0.96); background: #F8FAFC; }
+.action-btn.danger { color: #DC2626; border-color: #FECACA; background: #FEF2F2; }
+.home-queue-section {
+  flex: 1; background: #FFFFFF; border-radius: 20px 20px 0 0;
+  overflow: hidden; display: flex; flex-direction: column; min-height: 280px;
+  border-top: 1px solid #E2E8F0; box-shadow: 0 -4px 20px rgba(0,0,0,0.02);
+}
+.home-queue-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px 12px; border-bottom: 1px solid #E2E8F0;
+}
+.home-queue-title-text {
+  font-size: 0.65rem; font-weight: 700; color: #64748B;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  display: flex; align-items: center; gap: 6px;
+}
+.home-queue-badge {
+  font-size: 0.65rem; font-weight: 700;
+  background: #EEF2FF; color: #4F46E5;
+  padding: 2px 9px; border-radius: 10px;
+}
+.home-queue-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+@keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+.queue-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 20px; border-bottom: 1px solid #F1F5F9;
+  animation: slideIn 0.3s ease-out;
+}
+.queue-item:active { background: #F8FAFC; }
+.queue-check {
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  background: #ECFDF5; border: 1.5px solid #10B981;
+  display: flex; align-items: center; justify-content: center;
+}
+.queue-awb { font-family: 'JetBrains Mono', 'SF Mono', monospace; font-size: 0.8rem; font-weight: 600; color: #0F172A; }
+.queue-meta { font-size: 0.64rem; color: #64748B; margin-top: 2px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.queue-client-tag { background: #EEF2FF; color: #4F46E5; padding: 1px 6px; border-radius: 4px; }
+.queue-offline-tag { background: #FFFBEB; color: #D97706; padding: 1px 6px; border-radius: 4px; }
+.queue-weight { font-size: 0.72rem; font-weight: 700; color: #4F46E5; margin-left: auto; flex-shrink: 0; }
+.queue-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 44px 20px; gap: 12px; }
+.queue-empty-text { font-size: 0.8rem; color: #94A3B8; font-weight: 500; text-align: center; line-height: 1.5; }
 `;
 
 // ─── Confidence helpers ─────────────────────────────────────────────────────
@@ -386,6 +506,11 @@ const sourceLabel = (source) => {
   if (source === 'fuzzy_history' || source === 'consignee_pattern') return { className: 'source-badge source-history', icon: '📊', text: 'History' };
   if (source === 'delhivery_pincode' || source === 'india_post' || source === 'pincode_lookup' || source === 'indiapost_lookup') return { className: 'source-badge source-pincode', icon: '📍', text: 'Pincode' };
   return null;
+};
+
+const fmtDuration = (ms) => {
+  const m = Math.floor(ms / 60000);
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -417,6 +542,8 @@ export default function MobileScannerPage() {
   const [docDetected, setDocDetected] = useState(false);
   const [docStableTicks, setDocStableTicks] = useState(0);
   const [captureCameraReady, setCaptureCameraReady] = useState(false);
+  const [sessionDuration, setSessionDuration] = useState('0m');
+  const [pairedLabel, setPairedLabel] = useState('Connected');
 
   // ── Session context ──
   const [sessionCtx, setSessionCtx] = useState({
@@ -426,6 +553,7 @@ export default function MobileScannerPage() {
     dominantClient: null,
     dominantClientCount: 0,
     startedAt: Date.now(),
+    scannedItems: [],
   });
 
   // ── Settings ──
@@ -451,6 +579,11 @@ export default function MobileScannerPage() {
   // callback always sees the latest state, not the value at the time the callback
   // was memoized.
   const scannedAwbsRef = useRef(new Set());
+
+  useEffect(() => {
+    const t = setInterval(() => setSessionDuration(fmtDuration(Date.now() - sessionCtx.startedAt)), 30000);
+    return () => clearInterval(t);
+  }, [sessionCtx.startedAt]);
 
   const saveOfflineQueue = useCallback((nextQueue) => {
     setOfflineQueue(nextQueue);
@@ -482,6 +615,36 @@ export default function MobileScannerPage() {
     saveOfflineQueue([]);
   }, [socket, offlineQueue, saveOfflineQueue]);
 
+  const addToQueue = useCallback((item) => {
+    setSessionCtx((prev) => ({
+      ...prev,
+      scannedItems: [{ ...item, time: Date.now() }, ...prev.scannedItems],
+    }));
+  }, []);
+
+  const handleStartScanning = useCallback(() => {
+    if (connStatus !== 'paired') {
+      setErrorMsg('Phone is not connected to the desktop session.');
+      return;
+    }
+    setErrorMsg('');
+    goStep(STEPS.SCANNING);
+  }, [connStatus, goStep]);
+
+  const terminateSession = useCallback(() => {
+    if (!window.confirm('End this mobile scanner session on the phone?')) return;
+    try { socket?.disconnect(); } catch {}
+    navigate('/');
+  }, [socket, navigate]);
+
+  const saveAndUpload = useCallback(() => {
+    if (offlineQueue.length > 0) {
+      flushOfflineQueue();
+      return;
+    }
+    window.alert('Everything is already synced.');
+  }, [offlineQueue.length, flushOfflineQueue]);
+
   // ── Step transition helper ──
   const goStep = useCallback((next) => {
     setStep(next);
@@ -506,9 +669,11 @@ export default function MobileScannerPage() {
     });
 
     s.on('connect', () => setConnStatus('connecting'));
-    s.on('scanner:paired', () => {
+    s.on('scanner:paired', ({ userEmail }) => {
       setConnStatus('paired');
-      goStep(STEPS.SCANNING);
+      setPairedLabel(userEmail ? userEmail.split('@')[0] : 'Connected');
+      setErrorMsg('');
+      goStep(STEPS.IDLE);
     });
     s.on('scanner:error', ({ message }) => {
       setErrorMsg(message);
@@ -550,7 +715,15 @@ export default function MobileScannerPage() {
         // Auto-approved
         playSuccessBeep();
         vibrate([50, 30, 50]);
-        setLastSuccess({ awb: data.awb, clientCode: data.clientCode, clientName: data.clientName });
+        const item = {
+          awb: data.awb,
+          clientCode: data.clientCode,
+          clientName: data.clientName,
+          destination: data.destination || '',
+          weight: data.weight || 0,
+        };
+        setLastSuccess(item);
+        addToQueue(item);
         goStep(STEPS.SUCCESS);
       }
     });
@@ -561,7 +734,15 @@ export default function MobileScannerPage() {
         playSuccessBeep();
         vibrate([50, 30, 50]);
         setFlash('success');
-        setLastSuccess({ awb: reviewData?.awb || awb, clientCode: reviewForm.clientCode, clientName: reviewData?.clientName || reviewForm.clientCode });
+        const item = {
+          awb: reviewData?.awb || awb,
+          clientCode: reviewForm.clientCode,
+          clientName: reviewData?.clientName || reviewForm.clientCode,
+          destination: reviewForm.destination || '',
+          weight: parseFloat(reviewForm.weight) || 0,
+        };
+        setLastSuccess(item);
+        addToQueue(item);
         goStep(STEPS.SUCCESS);
       } else {
         playErrorBeep();
@@ -575,7 +756,7 @@ export default function MobileScannerPage() {
 
     setSocket(s);
     return () => { s.disconnect(); };
-  }, [pin]);
+  }, [pin, addToQueue, reviewData, reviewForm, goStep]);
 
   useEffect(() => {
     try {
@@ -783,13 +964,13 @@ export default function MobileScannerPage() {
     setLockedAwb(awb);
 
     // Update session — also keep scannedAwbsRef in sync for future duplicate checks.
-    setSessionCtx(prev => {
-      const next = { ...prev, scanNumber: prev.scanNumber + 1 };
-      next.scannedAwbs = new Set(prev.scannedAwbs);
-      next.scannedAwbs.add(awb);
-      scannedAwbsRef.current = next.scannedAwbs; // keep stable ref in sync
-      return next;
-    });
+      setSessionCtx(prev => {
+        const next = { ...prev, scanNumber: prev.scanNumber + 1 };
+        next.scannedAwbs = new Set(prev.scannedAwbs);
+        next.scannedAwbs.add(awb);
+        scannedAwbsRef.current = next.scannedAwbs; // keep stable ref in sync
+        return next;
+      });
 
     // Jump straight into document capture and keep the lock message as an overlay.
     lockToCaptureTimerRef.current = setTimeout(() => {
@@ -976,7 +1157,9 @@ export default function MobileScannerPage() {
     if (!socket || !socket.connected || connStatus !== 'paired') {
       enqueueOfflineScan(payload);
       playSuccessBeep();
-      setLastSuccess({ awb: lockedAwb, clientCode: 'OFFLINE', clientName: 'Queued Offline', offlineQueued: true });
+      const item = { awb: lockedAwb, clientCode: 'OFFLINE', clientName: 'Queued Offline', destination: '', weight: 0 };
+      setLastSuccess({ ...item, offlineQueued: true });
+      addToQueue(item);
       goStep(STEPS.SUCCESS);
       return;
     }
@@ -990,7 +1173,7 @@ export default function MobileScannerPage() {
         goStep(STEPS.ERROR);
       }
     }, 40000);
-  }, [socket, lockedAwb, capturedImage, sessionCtx, goStep, connStatus, enqueueOfflineScan]);
+  }, [socket, lockedAwb, capturedImage, sessionCtx, goStep, connStatus, enqueueOfflineScan, addToQueue]);
 
   // ════════════════════════════════════════════════════════════════════════
   // APPROVAL
@@ -1079,10 +1262,10 @@ export default function MobileScannerPage() {
     // scannedAwbsRef is intentionally NOT cleared here — duplicates should be
     // tracked across the entire session, not just one scan cycle. Clear it only
     // if you add an explicit "new session" action.
-    goStep(STEPS.SCANNING);
+    goStep(STEPS.IDLE);
   }, [goStep]);
 
-  // Auto-advance from SUCCESS
+  // Auto-return to the home screen after SUCCESS
   useEffect(() => {
     if (step === STEPS.SUCCESS) {
       autoNextTimer.current = setTimeout(resetForNextScan, AUTO_NEXT_DELAY);
@@ -1128,6 +1311,8 @@ export default function MobileScannerPage() {
       weight: { confidence: ocrData?.weightConfidence || 0, source: null },
     };
   }, [reviewData]);
+
+  const totalWeight = sessionCtx.scannedItems.reduce((sum, item) => sum + (item.weight || 0), 0);
 
   const intelligence = reviewData?.ocrExtracted?.intelligence || reviewData?.intelligence || null;
 
@@ -1186,6 +1371,113 @@ export default function MobileScannerPage() {
               ? 'block' : 'none',
           }}
         />
+
+        {/* ═══ IDLE / HOME ═══ */}
+        <div className={stepClass(STEPS.IDLE)}>
+          <div className="home-root">
+            <div className="home-header">
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <button
+                  onClick={() => navigate('/app/scan')}
+                  style={{ background: 'white', border: '1px solid #E2E8F0', padding: '6px 12px', borderRadius: 20, fontSize: '0.75rem', fontWeight: 600, color: '#475569', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
+                >
+                  <ArrowLeft size={14} /> Go Back
+                </button>
+                <div className="home-logo-badge">
+                  <Wifi size={11} color={connStatus === 'paired' && navigator.onLine ? '#10B981' : '#EF4444'} />
+                  {pairedLabel}
+                </div>
+              </div>
+              <div className="home-logo-row">
+                <div className="home-logo-text">
+                  <img src="/images/logo.png" alt="Sea Hawk Logo" style={{ height: 28, width: 'auto', objectFit: 'contain', padding: 2, background: 'white', borderRadius: 6, border: '1px solid #E2E8F0' }} />
+                  <span>Seahawk Scanner</span>
+                </div>
+              </div>
+              <div className="home-stats-row">
+                <div className="home-stat-card">
+                  <div className="home-stat-val">{sessionCtx.scanNumber}</div>
+                  <div className="home-stat-label">Scanned</div>
+                </div>
+                <div className="home-stat-card">
+                  <div className="home-stat-val">{totalWeight > 0 ? totalWeight.toFixed(1) : '0'}</div>
+                  <div className="home-stat-label">Total kg</div>
+                </div>
+                <div className="home-stat-card">
+                  <div className="home-stat-val">{sessionDuration}</div>
+                  <div className="home-stat-label">Session</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="home-scan-section">
+              <div className="home-scan-btn-wrap">
+                <div className="home-scan-ring" />
+                <div className="home-scan-ring home-scan-ring2" />
+                <button className="home-scan-btn" onClick={handleStartScanning}>
+                  <Camera size={34} color="white" />
+                  <span className="home-scan-btn-label">Scan</span>
+                </button>
+              </div>
+              <div className="home-cta-text">
+                {sessionCtx.scanNumber === 0 ? 'Tap to start your first scan' : 'Tap to scan next parcel'}
+              </div>
+
+              <div className="action-buttons-row">
+                <button className="action-btn" onClick={saveAndUpload}>
+                  <CloudUpload size={14} /> {offlineQueue.length > 0 ? `Upload (${offlineQueue.length})` : 'Synced'}
+                </button>
+                <button className="action-btn danger" onClick={terminateSession}>
+                  <Trash2 size={14} /> End Session
+                </button>
+              </div>
+
+              {offlineQueue.length > 0 && (
+                <div style={{ marginTop: 14, fontSize: '0.7rem', color: theme.warning, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Clock size={12} /> {offlineQueue.length} offline scan{offlineQueue.length > 1 ? 's' : ''} pending sync
+                </div>
+              )}
+            </div>
+
+            <div className="home-queue-section">
+              <div className="home-queue-head">
+                <div className="home-queue-title-text">
+                  <List size={11} />
+                  Accepted Consignments
+                </div>
+                {sessionCtx.scannedItems.length > 0 && (
+                  <div className="home-queue-badge">{sessionCtx.scannedItems.length}</div>
+                )}
+              </div>
+              <div className="home-queue-list">
+                {sessionCtx.scannedItems.length === 0 ? (
+                  <div className="queue-empty">
+                    <Package size={36} color="rgba(255,255,255,0.12)" />
+                    <div className="queue-empty-text">No consignments scanned yet.<br />Tap the button above to begin.</div>
+                  </div>
+                ) : (
+                  sessionCtx.scannedItems.map((item, idx) => (
+                    <div key={`${item.awb}-${idx}`} className="queue-item">
+                      <div className="queue-check">
+                        <Check size={13} color="#10B981" />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="queue-awb">{item.awb}</div>
+                        <div className="queue-meta">
+                          {item.clientCode === 'OFFLINE'
+                            ? <span className="queue-offline-tag">Offline</span>
+                            : item.clientCode && <span className="queue-client-tag">{item.clientCode}</span>}
+                          {item.destination && <span>{item.destination}</span>}
+                        </div>
+                      </div>
+                      {item.weight > 0 && <div className="queue-weight">{item.weight}kg</div>}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* ═══ SCANNING ═══ */}
         <div className={stepClass(STEPS.SCANNING)}>
