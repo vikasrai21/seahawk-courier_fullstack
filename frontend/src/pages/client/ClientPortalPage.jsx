@@ -283,6 +283,7 @@ export default function ClientPortalPage({ toast }) {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantInput, setAssistantInput] = useState('');
   const [assistantBusy, setAssistantBusy] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [assistantMessages, setAssistantMessages] = useState([
     { role: 'assistant', text: 'Hi! I can help with shipments, AWB tracking, pickups, NDRs, and support tickets.' },
   ]);
@@ -317,8 +318,26 @@ export default function ClientPortalPage({ toast }) {
         api.get(`/portal/shipments?${shipmentQ.toString()}`),
       ]);
 
-      setStats(sRes.data || {});
+      const statsData = sRes.data || {};
+      setStats(statsData);
       setShipments(shRes.data?.shipments || []);
+      // Drive bell notification dot from real data
+      const urgentCount = (statsData.totals?.ndr || 0) + (statsData.totals?.rto || 0);
+      setUnreadCount(urgentCount);
+      // Personalize the assistant greeting once stats load, if still at default
+      setAssistantMessages(prev => {
+        if (prev.length === 1 && prev[0].role === 'assistant') {
+          const ndrCount = statsData.totals?.ndr || 0;
+          const inTransit = statsData.totals?.inTransit || 0;
+          const name = user?.name?.split(' ')[0] || 'there';
+          let greeting = `Hi ${name}! `;
+          if (ndrCount > 0) greeting += `You have ${ndrCount} NDR${ndrCount > 1 ? 's' : ''} needing action`;
+          if (inTransit > 0) greeting += `${ndrCount > 0 ? ' and ' : ''}${inTransit} shipment${inTransit > 1 ? 's' : ''} in transit`;
+          greeting += ndrCount > 0 || inTransit > 0 ? '. How can I help?' : 'Your operations look stable. How can I help?';
+          return [{ role: 'assistant', text: greeting }];
+        }
+        return prev;
+      });
     } catch (e) {
       toast?.(e.message || 'Failed to load portal data', 'error');
     } finally {
@@ -550,32 +569,18 @@ export default function ClientPortalPage({ toast }) {
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <Link
             to="/portal/notifications"
-            style={{
-              textDecoration: 'none',
-              border: '1px solid #e2e8f0',
-              background: '#fff',
-              color: '#0f172a',
-              borderRadius: 999,
-              padding: '7px 12px',
-              fontSize: 11,
-              fontWeight: 900,
-              letterSpacing: '.04em',
-              textTransform: 'uppercase',
-            }}
-            title="Open notification preferences"
-          >
-            Alert Settings
-          </Link>
-          <Link
-            to="/portal/notifications"
-            style={{ position: 'relative', cursor: 'pointer', transition: 'transform 0.2s' }}
-            title="Notification preferences"
+            style={{ position: 'relative', cursor: 'pointer', transition: 'transform 0.2s', textDecoration: 'none' }}
+            title={unreadCount > 0 ? `${unreadCount} shipments need attention` : 'Notification preferences'}
           >
             <span style={{ fontSize: 20 }}>🔔</span>
-            <div style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, background: '#ef4444', borderRadius: '50%', border: '2px solid #fff' }} />
+            {unreadCount > 0 && (
+              <div style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, background: '#ef4444', borderRadius: 999, border: '2px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: '#fff', padding: '0 3px' }}>
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </div>
+            )}
           </Link>
           <div style={{ width: 1, height: 24, background: '#e2e8f0' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -595,6 +600,13 @@ export default function ClientPortalPage({ toast }) {
       </header>
 
       <main style={{ maxWidth: 1240, margin: '0 auto', padding: '28px 20px 40px', position: 'relative', zIndex: 1 }}>
+        <style>{`
+          @media (max-width: 768px) {
+            .portal-hero-grid { grid-template-columns: 1fr !important; }
+            .portal-hero-inner { grid-template-columns: 1fr !important; }
+            .portal-top-grid { grid-template-columns: 1fr !important; }
+          }
+        `}</style>
         <section className="portal-hero-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.35fr) minmax(280px,.75fr)', gap: 16, marginBottom: 18 }}>
           <PortalPanel
             tone="dark"
@@ -646,22 +658,26 @@ export default function ClientPortalPage({ toast }) {
                     <div style={{ fontSize: 10, color: '#475569', fontWeight: 600 }}>Last 24h</div>
                   </div>
                   <div style={{ display: 'grid', gap: 14 }}>
-                    {(stats?.recentActivity?.length > 0 ? stats.recentActivity : [
-                      { id: 1, type: 'delivered', icon: '✅', title: 'Shipment Delivered', desc: 'AWB #SHK-99281 reached DEL', time: '2m ago', color: '#4ade80' },
-                      { id: 2, type: 'issue', icon: '⚠️', title: 'NDR Raised', desc: 'Consignee rejected delivery', time: '14m ago', color: '#fb923c' },
-                      { id: 3, type: 'pickup', icon: '📦', title: 'Pickup Scheduled', desc: '35 parcels pending scan', time: '1h ago', color: '#60a5fa' }
-                    ]).slice(0, 3).map((act, i) => (
-                      <div key={act.id || i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,0.05)', display: 'grid', placeItems: 'center', fontSize: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
-                          {act.icon || '📌'}
+                    {stats?.recentActivity?.length > 0
+                      ? stats.recentActivity.slice(0, 3).map((act, i) => (
+                        <div key={act.id || i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,0.05)', display: 'grid', placeItems: 'center', fontSize: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
+                            {act.icon || '📌'}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: '#f1f5f9' }}>{act.title}</div>
+                            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{act.desc}</div>
+                          </div>
+                          <div style={{ marginLeft: 'auto', fontSize: 10, color: act.color || '#64748b', fontWeight: 600 }}>{act.time}</div>
                         </div>
-                        <div>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: '#f1f5f9' }}>{act.title}</div>
-                          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{act.desc}</div>
+                      ))
+                      : (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '18px 0' }}>
+                          <div style={{ fontSize: 22, opacity: 0.4 }}>📭</div>
+                          <div style={{ fontSize: 11, color: '#475569', textAlign: 'center', lineHeight: 1.5 }}>No recent activity.<br />Shipment updates will appear here.</div>
                         </div>
-                        <div style={{ marginLeft: 'auto', fontSize: 10, color: act.color || '#64748b', fontWeight: 600 }}>{act.time}</div>
-                      </div>
-                    ))}
+                      )
+                    }
                   </div>
                 </div>
 

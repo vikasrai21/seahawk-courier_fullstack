@@ -13,7 +13,7 @@ async function stats(req, res) {
   const baseWhere = { clientCode, date: { gte: startStr, lte: endStr } };
   const statusWhere = (statuses) => ({ ...baseWhere, status: { in: statuses } });
 
-  const [total, booked, inTransit, outForDelivery, delivered, rto, ndr, exception, trendRows] = await Promise.all([
+  const [total, booked, inTransit, outForDelivery, delivered, rto, ndr, exception, trendRows, recentShipments] = await Promise.all([
     prisma.shipment.count({ where: baseWhere }),
     prisma.shipment.count({ where: statusWhere(['Booked']) }),
     prisma.shipment.count({ where: statusWhere(['InTransit']) }),
@@ -28,7 +28,45 @@ async function stats(req, res) {
       _count: { id: true },
       orderBy: { date: 'asc' },
     }),
+    // Fetch the 3 most recently updated shipments for the activity feed
+    prisma.shipment.findMany({
+      where: { clientCode },
+      orderBy: { updatedAt: 'desc' },
+      take: 3,
+      select: { awb: true, status: true, destination: true, updatedAt: true },
+    }),
   ]);
+
+  // Convert recent shipments to activity feed events
+  const statusMeta = {
+    Delivered:      { icon: '✅', title: 'Shipment Delivered',   color: '#4ade80' },
+    NDR:            { icon: '⚠️', title: 'NDR Raised',           color: '#fb923c' },
+    RTO:            { icon: '↩️', title: 'Return Initiated',      color: '#f87171' },
+    InTransit:      { icon: '🚚', title: 'Shipment In Transit',   color: '#60a5fa' },
+    OutForDelivery: { icon: '📦', title: 'Out For Delivery',      color: '#34d399' },
+    Delayed:        { icon: '⏳', title: 'Shipment Delayed',      color: '#fbbf24' },
+    Booked:         { icon: '📋', title: 'Shipment Booked',       color: '#a78bfa' },
+  };
+  const now = Date.now();
+  const recentActivity = recentShipments.map((s, i) => {
+    const meta = statusMeta[s.status] || { icon: '📌', title: `Status: ${s.status}`, color: '#64748b' };
+    const diffMs = now - new Date(s.updatedAt).getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    const time = diffMin < 60
+      ? `${diffMin}m ago`
+      : diffMin < 1440
+        ? `${Math.floor(diffMin / 60)}h ago`
+        : `${Math.floor(diffMin / 1440)}d ago`;
+    return {
+      id: i + 1,
+      type: s.status.toLowerCase(),
+      icon: meta.icon,
+      title: meta.title,
+      desc: `AWB ${s.awb}${s.destination ? ` → ${s.destination}` : ''}`,
+      time,
+      color: meta.color,
+    };
+  });
 
   R.ok(res, {
     range: { key: range, from: startStr, to: endStr },
@@ -44,6 +82,7 @@ async function stats(req, res) {
       deliveredPct: total > 0 ? Number(((delivered / total) * 100).toFixed(1)) : 0,
     },
     trend: trendRows.map((r) => ({ date: r.date, shipments: r._count.id })),
+    recentActivity,
   });
 }
 
