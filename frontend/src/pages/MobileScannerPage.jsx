@@ -1,6 +1,7 @@
 ﻿import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
+import { cropRectForCoverVideo } from '../utils/videoCoverCrop.js';
 import {
   Camera, Check, AlertCircle, RotateCcw, Send, ChevronRight, Volume2, VolumeX,
   Wifi, WifiOff, Zap, Package, ScanLine, Shield, RefreshCw, X, Brain,
@@ -72,6 +73,17 @@ const speak = (text) => {
     u.rate = 1.2; u.pitch = 1.0; u.lang = 'en-IN';
     window.speechSynthesis.speak(u);
   } catch {}
+};
+
+const isProbablySecureContextForCamera = () => {
+  try {
+    if (typeof window === 'undefined') return false;
+    if (window.isSecureContext) return true;
+    const host = window.location?.hostname || '';
+    return host === 'localhost' || host === '127.0.0.1';
+  } catch {
+    return false;
+  }
 };
 
 // â”€â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -520,6 +532,16 @@ export default function MobileScannerPage() {
   const { pin } = useParams();
   const navigate = useNavigate();
   const offlineQueueKey = `${OFFLINE_QUEUE_KEY_PREFIX}:${pin || 'unknown'}`;
+  const TODAY_KEY = useMemo(() => `mobile_scanner_daily_count:${new Date().toISOString().slice(0, 10)}`, []);
+  const isE2eMock = useMemo(() => {
+    try {
+      if (typeof window === 'undefined') return false;
+      const qp = new URLSearchParams(window.location.search);
+      return qp.get('mock') === '1' || qp.get('e2e') === '1';
+    } catch {
+      return false;
+    }
+  }, []);
 
   // â”€â”€ Connection â”€â”€
   const [socket, setSocket] = useState(null);
@@ -581,6 +603,46 @@ export default function MobileScannerPage() {
   // was memoized.
   const scannedAwbsRef = useRef(new Set());
 
+  const ensureVideoStreamPlaying = useCallback(async () => {
+    if (!isProbablySecureContextForCamera()) {
+      throw new Error('Camera requires HTTPS (or localhost). Open this page over https:// on your phone.');
+    }
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      throw new Error('Camera not supported on this browser/device.');
+    }
+    if (!videoRef.current) {
+      throw new Error('Camera element not ready.');
+    }
+
+    const existing = videoRef.current.srcObject;
+    if (existing && typeof existing.getTracks === 'function') {
+      const tracks = existing.getTracks();
+      if (tracks.some((t) => t.readyState === 'live')) {
+        await videoRef.current.play();
+        return;
+      }
+    }
+
+    let stream = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+          advanced: [{ focusMode: 'continuous' }, { exposureMode: 'continuous' }],
+        },
+      });
+    } catch {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
+      });
+    }
+
+    videoRef.current.srcObject = stream;
+    await videoRef.current.play();
+  }, []);
+
   useEffect(() => {
     const t = setInterval(() => setSessionDuration(fmtDuration(Date.now() - sessionCtx.startedAt)), 30000);
     return () => clearInterval(t);
@@ -639,8 +701,16 @@ export default function MobileScannerPage() {
       return;
     }
     setErrorMsg('');
-    goStep(STEPS.SCANNING);
-  }, [connStatus, goStep]);
+    if (isE2eMock) {
+      goStep(STEPS.SCANNING);
+      return;
+    }
+    // iOS Safari: starting camera from a user gesture is more reliable than
+    // starting it in a React effect.
+    ensureVideoStreamPlaying()
+      .then(() => goStep(STEPS.SCANNING))
+      .catch((err) => setErrorMsg(err?.message || 'Camera access failed.'));
+  }, [connStatus, ensureVideoStreamPlaying, goStep, isE2eMock]);
 
   const handleManualAwbSubmit = useCallback((e) => {
     e?.preventDefault();
@@ -650,8 +720,16 @@ export default function MobileScannerPage() {
     setErrorMsg('');
     setManualAwb('');
     setLockedAwb(awb);
-    goStep(STEPS.CAPTURING);
-  }, [manualAwb, connStatus, goStep]);
+    if (isE2eMock) {
+      setCaptureCameraReady(true);
+      goStep(STEPS.CAPTURING);
+      return;
+    }
+    // Same iOS gesture reliability: prime the camera stream immediately.
+    ensureVideoStreamPlaying()
+      .then(() => goStep(STEPS.CAPTURING))
+      .catch((err) => setErrorMsg(err?.message || 'Camera access failed.'));
+  }, [manualAwb, connStatus, ensureVideoStreamPlaying, goStep, isE2eMock]);
 
   const terminateSession = useCallback(() => {
     if (!window.confirm('End this mobile scanner session on the phone?')) return;
@@ -678,6 +756,14 @@ export default function MobileScannerPage() {
   // SOCKET CONNECTION
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   useEffect(() => {
+    if (isE2eMock) {
+      setConnStatus('paired');
+      setPairedLabel('Mock Mode');
+      setErrorMsg('');
+      goStep(STEPS.IDLE);
+      return undefined;
+    }
+
     if (!pin) { setErrorMsg('No PIN provided.'); return; }
 
     const s = io(SOCKET_URL, {
@@ -777,7 +863,7 @@ export default function MobileScannerPage() {
 
     setSocket(s);
     return () => { s.disconnect(); };
-  }, [pin, addToQueue, reviewData, reviewForm, goStep, navigate]);
+  }, [pin, addToQueue, reviewData, reviewForm, goStep, navigate, isE2eMock]);
 
   useEffect(() => {
     try {
@@ -847,26 +933,7 @@ export default function MobileScannerPage() {
     await stopBarcodeScanner();
 
     try {
-      // â”€â”€ Ensure camera stream is running â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      if (!videoRef.current.srcObject) {
-        let stream = null;
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode: 'environment',
-              width:  { ideal: 1920 },
-              height: { ideal: 1080 },
-              advanced: [{ focusMode: 'continuous' }, { exposureMode: 'continuous' }],
-            },
-          });
-        } catch {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } },
-          });
-        }
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
+      await ensureVideoStreamPlaying();
 
       // â”€â”€ Path 1: Native BarcodeDetector (Chrome Android, iOS 17+) â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // ITF support check is critical â€” Trackon uses 12-digit ITF numeric barcodes.
@@ -890,13 +957,15 @@ export default function MobileScannerPage() {
 
         if (useNative) {
           const detector = new window.BarcodeDetector({ formats: supportedFormats });
-          let rafId = null;
+          let timerId = null;
+          let stopped = false;
 
           const tick = async () => {
+            if (stopped) return;
             if (scanBusyRef.current || currentStepRef.current !== STEPS.SCANNING) return;
             const video = videoRef.current;
             if (!video || video.readyState < 2) {
-              rafId = requestAnimationFrame(tick);
+              timerId = setTimeout(tick, 60);
               return;
             }
             try {
@@ -905,17 +974,18 @@ export default function MobileScannerPage() {
                 handleBarcodeDetectedRef.current?.(barcodes[0].rawValue);
               }
             } catch { /* frame not ready */ }
-            // ~15ms between frames = ~60fps scanning
+            // ~50-70ms between frames keeps CPU reasonable while still fast enough.
             if (currentStepRef.current === STEPS.SCANNING) {
-              rafId = requestAnimationFrame(() => setTimeout(tick, 15));
+              timerId = setTimeout(tick, 60);
             }
           };
 
           scannerRef.current = {
             _type: 'native',
             reset: () => {
-              if (rafId) cancelAnimationFrame(rafId);
-              rafId = null;
+              stopped = true;
+              if (timerId) clearTimeout(timerId);
+              timerId = null;
             },
           };
 
@@ -959,7 +1029,7 @@ export default function MobileScannerPage() {
     } catch (err) {
       setErrorMsg('Camera access failed: ' + err.message);
     }
-  }, [stopBarcodeScanner]);
+  }, [ensureVideoStreamPlaying, stopBarcodeScanner]);
   // Note: handleBarcodeDetected is intentionally NOT in the dep array here.
   // The scanner is set up once per SCANNING entry; the ref ensures it always
   // calls the latest callback without needing to restart the scanner.
@@ -1025,28 +1095,18 @@ export default function MobileScannerPage() {
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   const startDocumentCamera = useCallback(async () => {
+    if (isE2eMock) {
+      setCaptureCameraReady(true);
+      return;
+    }
     await stopBarcodeScanner(); // ensure barcode reader is off
     try {
-      // Reuse the stream that was already started by startBarcodeScanner.
-      // This is the key anti-flicker fix: the video element never goes dark
-      // between the barcode-scan phase and the document-capture phase.
-      if (videoRef.current?.srcObject) {
-        setCaptureCameraReady(true);
-        return;
-      }
-      // Fallback: start fresh stream if somehow the stream was lost
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }
-      });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        setCaptureCameraReady(true);
-      }
+      await ensureVideoStreamPlaying();
+      setCaptureCameraReady(true);
     } catch (err) {
       setErrorMsg('Camera access failed: ' + err.message);
     }
-  }, [stopBarcodeScanner]);
+  }, [ensureVideoStreamPlaying, stopBarcodeScanner, isE2eMock]);
 
   useEffect(() => {
     if (step === STEPS.CAPTURING) startDocumentCamera();
@@ -1067,14 +1127,12 @@ export default function MobileScannerPage() {
       const guide = guideRef.current;
       if (!video || !guide || !video.videoWidth || !video.videoHeight) return;
 
-      const videoRect = video.getBoundingClientRect();
-      const guideRect = guide.getBoundingClientRect();
-      const scaleX = video.videoWidth / Math.max(videoRect.width, 1);
-      const scaleY = video.videoHeight / Math.max(videoRect.height, 1);
-      const sx = Math.max(0, Math.floor((guideRect.left - videoRect.left) * scaleX));
-      const sy = Math.max(0, Math.floor((guideRect.top - videoRect.top) * scaleY));
-      const sw = Math.max(24, Math.floor(guideRect.width * scaleX));
-      const sh = Math.max(24, Math.floor(guideRect.height * scaleY));
+      const crop = cropRectForCoverVideo(video, guide);
+      if (!crop) return;
+      const sx = Math.max(0, Math.floor(crop.x));
+      const sy = Math.max(0, Math.floor(crop.y));
+      const sw = Math.max(24, Math.floor(crop.w));
+      const sh = Math.max(24, Math.floor(crop.h));
 
       const sampleCanvas = document.createElement('canvas');
       const sampleW = 96; const sampleH = 72;
@@ -1109,16 +1167,14 @@ export default function MobileScannerPage() {
     const guide = guideRef.current;
     if (!video || !guide || !video.videoWidth) return null;
 
-    const videoRect = video.getBoundingClientRect();
-    const guideRect = guide.getBoundingClientRect();
+    const crop = cropRectForCoverVideo(video, guide);
+    if (!crop) return null;
 
-    const scaleX = video.videoWidth / videoRect.width;
-    const scaleY = video.videoHeight / videoRect.height;
-
-    const cropX = Math.max(0, (guideRect.left - videoRect.left) * scaleX);
-    const cropY = Math.max(0, (guideRect.top - videoRect.top) * scaleY);
-    const cropW = Math.min(video.videoWidth - cropX, guideRect.width * scaleX);
-    const cropH = Math.min(video.videoHeight - cropY, guideRect.height * scaleY);
+    const cropX = crop.x;
+    const cropY = crop.y;
+    const cropW = crop.w;
+    const cropH = crop.h;
+    if (!cropW || !cropH) return null;
 
     const canvas = document.createElement('canvas');
     canvas.width = Math.min(1200, Math.round(cropW));
@@ -1146,6 +1202,14 @@ export default function MobileScannerPage() {
     goStep(STEPS.PREVIEW);
   }, [captureDocumentRegion, stopCamera, goStep]);
 
+  const handleMockCapturePhoto = useCallback(() => {
+    if (!isE2eMock) return;
+    const mockImage = 'data:image/jpeg;base64,ZmFrZS1tb2NrLWltYWdl';
+    setCapturedImage(mockImage);
+    stopCamera();
+    goStep(STEPS.PREVIEW);
+  }, [goStep, isE2eMock, stopCamera]);
+
   // Auto-capture is intentionally disabled â€” user presses the shutter button manually.
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -1155,6 +1219,21 @@ export default function MobileScannerPage() {
   const submitForProcessing = useCallback(() => {
     if (!lockedAwb || !capturedImage) return;
     goStep(STEPS.PROCESSING);
+    if (isE2eMock) {
+      setTimeout(() => {
+        const item = {
+          awb: lockedAwb,
+          clientCode: 'MOCKCL',
+          clientName: 'Mock Client',
+          destination: 'Delhi',
+          weight: 1.25,
+        };
+        setLastSuccess(item);
+        addToQueue(item);
+        goStep(STEPS.SUCCESS);
+      }, 250);
+      return;
+    }
 
     // Build session context for the intelligence engine
     const ctxPayload = {
@@ -1194,15 +1273,32 @@ export default function MobileScannerPage() {
         goStep(STEPS.ERROR);
       }
     }, 40000);
-  }, [socket, lockedAwb, capturedImage, sessionCtx, goStep, connStatus, enqueueOfflineScan, addToQueue]);
+  }, [socket, lockedAwb, capturedImage, sessionCtx, goStep, connStatus, enqueueOfflineScan, addToQueue, isE2eMock]);
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // APPROVAL
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   const submitApproval = useCallback(() => {
-    if (!socket || !reviewData) return;
+    if (!reviewData) return;
     goStep(STEPS.APPROVING);
+    if (isE2eMock) {
+      setTimeout(() => {
+        const item = {
+          awb: reviewData.awb || lockedAwb,
+          clientCode: reviewForm.clientCode || 'MOCKCL',
+          clientName: reviewData.clientName || reviewForm.clientCode || 'Mock Client',
+          destination: reviewForm.destination || '',
+          weight: parseFloat(reviewForm.weight) || 0,
+        };
+        setLastSuccess(item);
+        addToQueue(item);
+        setFlash('success');
+        goStep(STEPS.SUCCESS);
+      }, 200);
+      return;
+    }
+    if (!socket) return;
 
     // Record corrections for learning system
     if (reviewData.ocrExtracted || reviewData) {
@@ -1262,7 +1358,7 @@ export default function MobileScannerPage() {
         };
       });
     }
-  }, [socket, reviewData, reviewForm, lockedAwb, pin, goStep]);
+  }, [socket, reviewData, reviewForm, lockedAwb, pin, goStep, addToQueue, isE2eMock]);
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // RESET / NEXT SCAN
@@ -1355,24 +1451,26 @@ export default function MobileScannerPage() {
         )}
 
         {/* â•â•â• IDLE / CONNECTING â•â•â• */}
-        <div className={stepClass(STEPS.IDLE)}>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 24 }}>
-            <div style={{ width: 64, height: 64, borderRadius: '50%', background: theme.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {connStatus === 'connecting' ? <RefreshCw size={28} color={theme.primary} style={{ animation: 'spin 1s linear infinite' }} /> : <WifiOff size={28} color={theme.error} />}
-            </div>
-            <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 4 }}>
-                {connStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
+        {connStatus !== 'paired' && (
+          <div className={stepClass(STEPS.IDLE)}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 24 }}>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: theme.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {connStatus === 'connecting' ? <RefreshCw size={28} color={theme.primary} style={{ animation: 'spin 1s linear infinite' }} /> : <WifiOff size={28} color={theme.error} />}
               </div>
-              <div style={{ fontSize: '0.82rem', color: theme.muted }}>{errorMsg || `Connecting to session ${pin}`}</div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 4 }}>
+                  {connStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
+                </div>
+                <div style={{ fontSize: '0.82rem', color: theme.muted }}>{errorMsg || `Connecting to session ${pin}`}</div>
+              </div>
+              {connStatus === 'disconnected' && (
+                <button className="btn btn-primary" onClick={() => window.location.reload()}>
+                  <RefreshCw size={16} /> Reconnect
+                </button>
+              )}
             </div>
-            {connStatus === 'disconnected' && (
-              <button className="btn btn-primary" onClick={() => window.location.reload()}>
-                <RefreshCw size={16} /> Reconnect
-              </button>
-            )}
           </div>
-        </div>
+        )}
 
         {/* â•â•â• PERSISTENT CAMERA VIDEO â•â•â• */}
         {/* Lives outside all step divs so it NEVER gets unmounted/re-mounted.
@@ -1384,6 +1482,11 @@ export default function MobileScannerPage() {
         <video
           ref={videoRef}
           autoPlay playsInline muted
+          onClick={() => {
+            ensureVideoStreamPlaying().catch((err) => {
+              setErrorMsg(err?.message || 'Camera access failed.');
+            });
+          }}
           style={{
             position: 'absolute', inset: 0,
             width: '100%', height: '100%',
@@ -1452,6 +1555,7 @@ export default function MobileScannerPage() {
                 <div style={{ fontSize: '0.62rem', fontWeight: 700, color: theme.muted, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6, textAlign: 'center' }}>Can't scan? Enter AWB manually</div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <input
+                    data-testid="manual-awb-input"
                     value={manualAwb}
                     onChange={e => setManualAwb(e.target.value.toUpperCase())}
                     placeholder="e.g. 1234567890"
@@ -1468,6 +1572,7 @@ export default function MobileScannerPage() {
                   />
                   <button
                     type="submit"
+                    data-testid="manual-awb-submit"
                     disabled={manualAwb.trim().length < 6}
                     className="btn btn-primary"
                     style={{ padding: '9px 14px', fontSize: '0.78rem', borderRadius: 10, opacity: manualAwb.trim().length >= 6 ? 1 : 0.45 }}
@@ -1624,12 +1729,23 @@ export default function MobileScannerPage() {
               </div>
               <button
                 className="capture-btn"
+                data-testid="capture-photo-btn"
                 onClick={handleCapturePhoto}
                 disabled={!captureCameraReady}
                 style={{ opacity: captureCameraReady ? 1 : 0.4 }}
               >
                 <div className="capture-btn-inner" />
               </button>
+              {isE2eMock && (
+                <button
+                  type="button"
+                  data-testid="mock-capture-btn"
+                  onClick={handleMockCapturePhoto}
+                  style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', fontSize: '0.72rem', padding: '6px 12px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}
+                >
+                  Mock capture
+                </button>
+              )}
               <button
                 style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', fontSize: '0.72rem', padding: '6px 16px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}
                 onClick={() => { setLockedAwb(''); scanBusyRef.current = false; goStep(STEPS.SCANNING); }}
@@ -1656,7 +1772,7 @@ export default function MobileScannerPage() {
               <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => { setCapturedImage(null); goStep(STEPS.CAPTURING); }}>
                 <RotateCcw size={16} /> Retake
               </button>
-              <button className="btn btn-primary" style={{ flex: 2 }} onClick={submitForProcessing}>
+              <button data-testid="use-photo-btn" className="btn btn-primary" style={{ flex: 2 }} onClick={submitForProcessing}>
                 <Send size={16} /> Use Photo
               </button>
             </div>
@@ -1798,7 +1914,7 @@ export default function MobileScannerPage() {
               <button className="btn btn-outline" style={{ flex: 1 }} onClick={resetForNextScan}>
                 <X size={16} /> Skip
               </button>
-              <button className="btn btn-success btn-lg" style={{ flex: 2 }} onClick={submitApproval} disabled={step === STEPS.APPROVING}>
+              <button data-testid="approve-save-btn" className="btn btn-success btn-lg" style={{ flex: 2 }} onClick={submitApproval} disabled={step === STEPS.APPROVING}>
                 {step === STEPS.APPROVING ? <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={16} />}
                 {step === STEPS.APPROVING ? 'Saving...' : 'Approve & Save'}
               </button>
@@ -1830,7 +1946,7 @@ export default function MobileScannerPage() {
                 ? `${offlineQueue.length} queued for sync â€¢ Auto-continuing in 3s`
                 : `#${sessionCtx.scanNumber} scanned â€¢ Auto-continuing in 3s`}
             </div>
-            <button className="btn btn-primary btn-lg btn-full" onClick={resetForNextScan} style={{ maxWidth: 320 }}>
+            <button data-testid="scan-next-btn" className="btn btn-primary btn-lg btn-full" onClick={resetForNextScan} style={{ maxWidth: 320 }}>
               <Camera size={18} /> Scan Next Parcel
             </button>
           </div>

@@ -134,6 +134,17 @@ function ClientRoute({ children }) {
 
 function AuthGate({ children }) {
   const { loading } = useAuth();
+  const bypassAuthLoadingForMockScanner = (() => {
+    try {
+      if (typeof window === 'undefined') return false;
+      const path = window.location?.pathname || '';
+      const qp = new URLSearchParams(window.location?.search || '');
+      return path.startsWith('/mobile-scanner') && (qp.get('mock') === '1' || qp.get('e2e') === '1');
+    } catch {
+      return false;
+    }
+  })();
+  if (bypassAuthLoadingForMockScanner) return children;
   if (loading) return <AuthLoadingScreen />;
   return children;
 }

@@ -1,7 +1,9 @@
-import { test, expect } from '@playwright/test';
+'use strict';
+
+const { test, expect } = require('@playwright/test');
 
 test.describe('Mobile scanner mock flow', () => {
-  test('manual AWB to success without camera or socket', async ({ page }) => {
+  test('manual AWB to success without real camera/socket', async ({ page }) => {
     await page.goto('/mobile-scanner/TESTPIN123?mock=1&e2e=1');
     await page.waitForLoadState('domcontentloaded');
 
