@@ -326,7 +326,7 @@ async function bulkImport(shipments, userId) {
 async function getTodayStats() {
   const today = new Date().toISOString().split('T')[0];
   
-  if (redis.status === 'ready') {
+  if (redis?.status === 'ready') {
     const cached = await redis.get('stats:today').catch(() => null);
     if (cached) return JSON.parse(cached);
   }
@@ -344,14 +344,14 @@ async function getTodayStats() {
   }, { total: 0, delivered: 0, inTransit: 0, delayed: 0, amount: 0, weight: 0 });
   
   const result = { date: today, ...totals, byCourier, recentActivity };
-  if (redis.status === 'ready') redis.setex('stats:today', 3600, JSON.stringify(result)).catch(() => {});
+  if (redis?.status === 'ready') redis.setex('stats:today', 3600, JSON.stringify(result)).catch(() => {});
   return result;
 }
 
 async function getMonthlyStats(year, month) {
   const cacheKey = `stats:monthly:${year}:${month}`;
   
-  if (redis.status === 'ready') {
+  if (redis?.status === 'ready') {
     const cached = await redis.get(cacheKey).catch(() => null);
     if (cached) return JSON.parse(cached);
   }
@@ -360,7 +360,7 @@ async function getMonthlyStats(year, month) {
   const to   = `${year}-${String(month).padStart(2,'0')}-${new Date(year,month,0).getDate()}`;
   const rows = await prisma.shipment.findMany({ where: { date: { gte: from, lte: to } }, select: { date: true, clientCode: true, courier: true, status: true, amount: true, weight: true } });
   
-  if (redis.status === 'ready') redis.setex(cacheKey, 3600, JSON.stringify(rows)).catch(() => {});
+  if (redis?.status === 'ready') redis.setex(cacheKey, 3600, JSON.stringify(rows)).catch(() => {});
   return rows;
 }
 

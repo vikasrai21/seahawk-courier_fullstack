@@ -101,9 +101,30 @@ app.use('/api', apiLimiter);
 // ── Health ─────────────────────────────────────────────────────────────────
 app.get('/api/health', async (req, res) => {
   const prisma = require('./config/prisma');
+  const redisClient = require('./config/redis');
   try {
     await prisma.$queryRaw`SELECT 1`;
-    R.ok(res, { status: 'healthy', database: 'connected', uptime: Math.floor(process.uptime()), version: '8.0.0', env: config.env });
+    let redis = 'not_configured';
+    if (config.redis.url) {
+      try {
+        if (redisClient && redisClient.status === 'ready') {
+          await redisClient.ping();
+          redis = 'connected';
+        } else {
+          redis = 'unavailable';
+        }
+      } catch {
+        redis = 'error';
+      }
+    }
+    R.ok(res, {
+      status: 'healthy',
+      database: 'connected',
+      redis,
+      uptime: Math.floor(process.uptime()),
+      version: '8.0.0',
+      env: config.env,
+    });
   } catch {
     res.status(503).json({ success: false, status: 'unhealthy' });
   }
@@ -139,6 +160,11 @@ app.use('/api/support',        require('./routes/support.routes'));
 app.use('/api/courier-invoices', require('./routes/courier-invoice.routes'));
 app.use('/api/docs',           require('./routes/docs.routes'));
 app.use('/api/pincodes',      require('./routes/pincode.routes'));
+
+// ── Catch-all for API Routes ─────────────────────────────────────────────
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ success: false, message: 'Endpoint not found' });
+});
 
 // ── Serve React (production) ───────────────────────────────────────────────
 const frontendBuild = path.join(__dirname, '../public');

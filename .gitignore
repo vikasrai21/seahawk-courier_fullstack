@@ -44,6 +44,11 @@ backend/prisma/migrations/dev.db
 coverage/
 .nyc_output/
 
+# Playwright
+playwright-report/
+test-results/
+blob-report/
+
 # Temp
 *.tmp
 *.temp
@@ -65,3 +70,5 @@ RATE CARDS/
 
 # Sensitive local document artifacts
 /*.pdf
+
+.env.test

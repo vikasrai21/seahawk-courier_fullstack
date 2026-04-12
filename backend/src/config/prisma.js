@@ -1,7 +1,7 @@
 // src/config/prisma.js — Singleton Prisma client
 const logger = require('../utils/logger');
 
-if (process.env.NODE_ENV === 'test' || process.env.VITEST) {
+if ((process.env.NODE_ENV === 'test' || process.env.VITEST) && !process.env.INTEGRATION_TEST) {
   module.exports = require('./__mocks__/prisma.js');
 } else {
   const { PrismaClient } = require('@prisma/client');

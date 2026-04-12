@@ -2,27 +2,23 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    environment: 'node',
-    globals:     true,
-    setupFiles:  ['./src/tests/setup.js'],
+    globals: true,
     coverage: {
+      provider: 'istanbul',
       all: true,
-      reporter: ['text', 'json-summary', 'lcov'],
+      reporter: ['text', 'json-summary', 'html'],
       include: [
+        'src/controllers/**/*.js',
+        'src/services/**/*.js',
         'src/config/queue.js',
-        'src/rates/delhivery.js',
-        'src/rates/dtdc.js',
-        'src/rates/network.js',
-        'src/rates/trackon.js',
-        'src/utils/cache.js',
-        'src/utils/bootstrap-guard.js',
-        'src/utils/response.js',
+        'src/rates/**/*.js',
+        'src/utils/**/*.js',
         'src/validators/**/*.js',
       ],
       exclude: [
         'node_modules',
         'scripts/**',
-        'src/tests',
+        'src/tests/**',
       ],
     },
   },

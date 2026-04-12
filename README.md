@@ -219,7 +219,7 @@ Access at `http://localhost:3001`.
 5. Add remaining secrets: `JWT_SECRET`, `JWT_REFRESH_SECRET`, `NODE_ENV=production`, `CORS_ORIGIN`
 6. Railway runs `npm run build` then `npm start` — migrations run automatically via `prisma migrate deploy` in the build step
 
-Health check endpoint: `GET /api/health`
+Health check endpoint: `GET /api/health` — returns `database: connected` when PostgreSQL is reachable; `redis` is `connected`, `not_configured`, `unavailable`, or `error` depending on `REDIS_URL` and the Redis client state.
 
 ---
 
@@ -232,8 +232,11 @@ Lint (backend + frontend)
   → Backend tests (Vitest)
     → Frontend smoke test
       → Frontend build + bundle budget check
-        → Health check against deployed environment
+        → E2E tests (Playwright: public home, health API, staff + client login)
+          → Health check against deployed environment
 ```
+
+Local E2E (requires PostgreSQL, Redis, env vars as in Getting started, plus demo users: `cd backend && node src/utils/bootstrap-users.js --restore-demo`): start backend and frontend dev servers, then from the repo root run `npm ci`, `npx playwright install chromium`, and `npm run test:e2e`.
 
 - `develop` branch → auto-deploys to staging
 - `main` branch → auto-deploys to production

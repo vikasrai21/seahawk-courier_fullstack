@@ -1,17 +1,32 @@
-import { describe, it, expect, vi } from 'vitest';
+const request = require('supertest');
+const app = require('../../app');
 
-// Integration test stubs — full tests require a test DB
-// These verify the test setup works and serve as scaffolding
-describe('API integration (scaffolding)', () => {
-  it('health check route exists', () => {
-    // This test confirms the test setup works
-    expect(true).toBe(true);
+describe('API Health & Public Routes E2E', () => {
+  it('GET /api/health -> returns healthy status', async () => {
+    const res = await request(app).get('/api/health');
+    expect(res.status).toBe(200);
   });
 
-  it('response format is consistent', () => {
-    const successResponse = { success: true, message: 'OK', data: {} };
-    const errorResponse   = { success: false, message: 'Error' };
-    expect(successResponse.success).toBe(true);
-    expect(errorResponse.success).toBe(false);
+  it('GET /api/non-existent -> returns 404', async () => {
+    const res = await request(app).get('/api/this-does-not-exist-xyz');
+    expect(res.status).toBe(404);
+  });
+
+  it('POST /api/auth/login -> rejects empty body', async () => {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({});
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.body.success).toBe(false);
+  });
+
+  it('POST /api/auth/login -> rejects non-existent user', async () => {
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: 'nobody@doesnotexist.com', password: 'whatever' });
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.body.success).toBe(false);
   });
 });

@@ -12,8 +12,22 @@ export function AuthProvider({ children }) {
     let cancelled = false;
     (async () => {
       try {
+        const existingToken = tokenManager.get();
+        if (existingToken) {
+          // If a token exists, try using it first to avoid immediate logout on reload.
+          const me = await api.get('/auth/me');
+          if (!cancelled) {
+            setUser(me.data);
+            setLoading(false);
+          }
+          return;
+        }
+      } catch {
+        // Fall through to refresh if the stored token is invalid/expired.
+      }
+
+      try {
         const meRes = await refreshSession();
-        if (cancelled) return;
         if (!cancelled) setUser(meRes.data);
       } catch {
         if (!cancelled) { clearSession(); setUser(null); }

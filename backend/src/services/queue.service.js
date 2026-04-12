@@ -176,21 +176,25 @@ async function _runTrackingSync({ shipmentId, awb, carrier }) {
   try {
     const { syncTrackingEvents } = require('./carrier.service');
     const count = await syncTrackingEvents(shipmentId, awb, carrier);
-
-    await prisma.jobQueue.update({
-      where: { id: jobLog.id },
-      data:  { status: 'DONE', error: null, completedAt: new Date() },
-    });
+    
+    if (jobLog && jobLog.id) {
+      await prisma.jobQueue.update({
+        where: { id: jobLog.id },
+        data:  { status: 'DONE', error: null, completedAt: new Date() },
+      }).catch(() => {});
+    }
 
     // Check if any new NDR events need notifications
     await _checkAndSendTrackingNotifications(shipmentId);
 
     return { eventsAdded: count };
   } catch (err) {
-    await prisma.jobQueue.update({
-      where: { id: jobLog.id },
-      data:  { status: 'FAILED', error: err.message, completedAt: new Date() },
-    });
+    if (jobLog && jobLog.id) {
+      await prisma.jobQueue.update({
+        where: { id: jobLog.id },
+        data:  { status: 'FAILED', error: err.message, completedAt: new Date() },
+      }).catch(() => {});
+    }
     throw err;
   }
 }
