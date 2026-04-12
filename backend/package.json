@@ -26,7 +26,7 @@
     "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^5.10.0",
     "@socket.io/redis-adapter": "^8.3.0",
-    "axios": "^1.6.7",
+    "axios": "^1.15.0",
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.4.0",
     "compression": "^1.8.1",
