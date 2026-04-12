@@ -567,6 +567,9 @@ export default function MobileScannerPage() {
   const [sessionDuration, setSessionDuration] = useState('0m');
   const [pairedLabel, setPairedLabel] = useState('Connected');
   const [manualAwb, setManualAwb] = useState('');
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [scannerEngine, setScannerEngine] = useState('idle');
+  const [lastDetectionMeta, setLastDetectionMeta] = useState(null);
 
   // â”€â”€ Session context â”€â”€
   const [sessionCtx, setSessionCtx] = useState({
@@ -592,6 +595,7 @@ export default function MobileScannerPage() {
   const autoCaptureTriggeredRef = useRef(false);
   const currentStepRef = useRef(STEPS.IDLE);
   const lockToCaptureTimerRef = useRef(null);
+  const scannerStartedAtRef = useRef(0);
   // Stable ref to the latest handleBarcodeDetected callback.
   // startBarcodeScanner captures this ref (not the function directly) so the
   // scanner always calls the current version â€” fixes the stale-closure bug where
@@ -911,6 +915,7 @@ export default function MobileScannerPage() {
   // Use this when transitioning from SCANNING â†’ CAPTURING so there is no black-screen flicker.
   const stopBarcodeScanner = useCallback(async () => {
     try {
+      setScannerEngine('idle');
       if (scanbotRef.current) {
         try { await scanbotRef.current.barcodeScanner.dispose(); } catch {}
         scanbotRef.current = null;
@@ -933,6 +938,7 @@ export default function MobileScannerPage() {
     await stopBarcodeScanner();
 
     try {
+      scannerStartedAtRef.current = Date.now();
       await ensureVideoStreamPlaying();
 
       // â”€â”€ Path 1: Native BarcodeDetector (Chrome Android, iOS 17+) â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -956,6 +962,7 @@ export default function MobileScannerPage() {
         }
 
         if (useNative) {
+          setScannerEngine('native');
           const detector = new window.BarcodeDetector({ formats: supportedFormats });
           let timerId = null;
           let stopped = false;
@@ -971,6 +978,13 @@ export default function MobileScannerPage() {
             try {
               const barcodes = await detector.detect(video);
               if (barcodes.length > 0 && barcodes[0].rawValue) {
+                setLastDetectionMeta({
+                  value: barcodes[0].rawValue,
+                  format: String(barcodes[0].format || 'unknown'),
+                  engine: 'native',
+                  at: Date.now(),
+                  sinceStartMs: scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null,
+                });
                 handleBarcodeDetectedRef.current?.(barcodes[0].rawValue);
               }
             } catch { /* frame not ready */ }
@@ -1020,11 +1034,25 @@ export default function MobileScannerPage() {
 
       // 40ms scan interval â‰ˆ 25fps â€” fast for real-world barcodes, easy on the battery
       const reader = new BrowserMultiFormatReader(hints, 40);
+      setScannerEngine('zxing');
       scannerRef.current = reader;
 
       reader.decodeFromVideoElement(videoRef.current, (result) => {
         if (scanBusyRef.current) return;
-        if (result) handleBarcodeDetectedRef.current?.(result.getText());
+        if (result) {
+          let format = 'unknown';
+          try {
+            format = String(result.getBarcodeFormat?.() || 'unknown');
+          } catch {}
+          setLastDetectionMeta({
+            value: result.getText?.() || '',
+            format,
+            engine: 'zxing',
+            at: Date.now(),
+            sinceStartMs: scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null,
+          });
+          handleBarcodeDetectedRef.current?.(result.getText());
+        }
       });
     } catch (err) {
       setErrorMsg('Camera access failed: ' + err.message);
@@ -1432,6 +1460,20 @@ export default function MobileScannerPage() {
   const totalWeight = sessionCtx.scannedItems.reduce((sum, item) => sum + (item.weight || 0), 0);
 
   const intelligence = reviewData?.ocrExtracted?.intelligence || reviewData?.intelligence || null;
+  const diagnosticsRows = [
+    ['Step', step],
+    ['Connection', connStatus],
+    ['Engine', scannerEngine],
+    ['Camera', captureCameraReady ? 'ready' : 'waiting'],
+    ['Doc detect', docDetected ? `yes (${docStableTicks})` : 'no'],
+    ['Secure ctx', isProbablySecureContextForCamera() ? 'yes' : 'no'],
+    ['AWB lock', lockedAwb || '-'],
+    ['Queued', String(offlineQueue.length)],
+    ['Scans', String(sessionCtx.scanNumber)],
+    ['Last format', lastDetectionMeta?.format || '-'],
+    ['Last code', lastDetectionMeta?.value || '-'],
+    ['Decode ms', lastDetectionMeta?.sinceStartMs != null ? String(lastDetectionMeta.sinceStartMs) : '-'],
+  ];
 
   return (
     <>
@@ -1447,6 +1489,65 @@ export default function MobileScannerPage() {
             <div style={{ color: 'white', fontSize: '1.1rem', fontWeight: 700, textAlign: 'center' }}>DUPLICATE AWB</div>
             <div className="mono" style={{ color: 'rgba(255,255,255,0.9)', fontSize: '1.3rem', fontWeight: 700 }}>{duplicateWarning}</div>
             <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem' }}>Already scanned in this session</div>
+          </div>
+        )}
+
+        <button
+          type="button"
+          data-testid="scanner-diag-toggle"
+          onClick={() => setDiagnosticsOpen((v) => !v)}
+          style={{
+            position: 'fixed',
+            top: 12,
+            right: 12,
+            zIndex: 70,
+            border: '1px solid rgba(255,255,255,0.18)',
+            background: diagnosticsOpen ? 'rgba(79,70,229,0.92)' : 'rgba(15,23,42,0.72)',
+            color: '#fff',
+            borderRadius: 999,
+            padding: '8px 12px',
+            fontSize: '0.72rem',
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            backdropFilter: 'blur(10px)',
+            cursor: 'pointer',
+          }}
+        >
+          {diagnosticsOpen ? 'Hide Diag' : 'Show Diag'}
+        </button>
+
+        {diagnosticsOpen && (
+          <div
+            data-testid="scanner-diag-panel"
+            style={{
+              position: 'fixed',
+              top: 56,
+              right: 12,
+              zIndex: 69,
+              width: 'min(92vw, 320px)',
+              background: 'rgba(15,23,42,0.88)',
+              color: '#E5EEF8',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 18,
+              padding: 14,
+              backdropFilter: 'blur(14px)',
+              boxShadow: '0 12px 30px rgba(0,0,0,0.25)',
+            }}
+          >
+            <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10, color: '#A5B4FC' }}>
+              Scanner Diagnostics
+            </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {diagnosticsRows.map(([label, value]) => (
+                <div key={label} style={{ display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'flex-start', fontSize: '0.76rem' }}>
+                  <div style={{ color: 'rgba(226,232,240,0.72)', minWidth: 88 }}>{label}</div>
+                  <div className="mono" style={{ textAlign: 'right', wordBreak: 'break-word', maxWidth: 180 }}>{value}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 10, fontSize: '0.68rem', color: 'rgba(226,232,240,0.7)', lineHeight: 1.4 }}>
+              Use this to verify whether Trackon labels are being decoded as `ITF` and how quickly the first lock happens after scan start.
+            </div>
           </div>
         )}
 
