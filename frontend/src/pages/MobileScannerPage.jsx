@@ -2,6 +2,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { cropRectForCoverVideo } from '../utils/videoCoverCrop.js';
+import { normalizeBarcodeCandidate } from '../utils/barcode.js';
 import {
   Camera, Check, AlertCircle, RotateCcw, Send, ChevronRight, Volume2, VolumeX,
   Wifi, WifiOff, Zap, Package, ScanLine, Shield, RefreshCw, X, Brain,
@@ -28,36 +29,7 @@ const NATIVE_BARCODE_FORMATS = [
   'code_128', 'code_39', 'code_93', 'codabar',
   'ean_13', 'ean_8', 'itf', 'qr_code',
 ];
-
-const normalizeBarcodeCandidate = (rawValue = '') => {
-  const raw = String(rawValue || '').toUpperCase();
-  const compact = raw.replace(/\s+/g, '');
-  const candidates = [];
-
-  const push = (value) => {
-    const normalized = String(value || '').replace(/[^A-Z0-9]/g, '');
-    if (!normalized || candidates.includes(normalized)) return;
-    candidates.push(normalized);
-  };
-
-  push(compact);
-  (raw.match(/\b\d{12,14}\b/g) || []).forEach(push);
-  (raw.match(/\b[A-Z]{1,2}\d{8,11}\b/g) || []).forEach(push);
-
-  candidates.forEach((candidate) => {
-    if (/^0\d{12}$/.test(candidate)) push(candidate.slice(1));
-  });
-
-  const prioritized = [
-    ...candidates.filter((value) => /^[125]\d{11}$/.test(value)),
-    ...candidates.filter((value) => /^\d{12}$/.test(value)),
-    ...candidates.filter((value) => /^\d{13,14}$/.test(value)),
-    ...candidates.filter((value) => /^[A-Z]{1,2}\d{8,11}$/.test(value)),
-    ...candidates,
-  ];
-
-  return prioritized.find(Boolean) || '';
-};
+const PREFER_ZXING_FOR_TRACKON = true;
 
 const STEPS = {
   IDLE: 'IDLE',
@@ -567,6 +539,14 @@ export default function MobileScannerPage() {
   const navigate = useNavigate();
   const offlineQueueKey = `${OFFLINE_QUEUE_KEY_PREFIX}:${pin || 'unknown'}`;
   const TODAY_KEY = useMemo(() => `mobile_scanner_daily_count:${new Date().toISOString().slice(0, 10)}`, []);
+  const mockBarcodeRaw = useMemo(() => {
+    try {
+      if (typeof window === 'undefined') return '';
+      return new URLSearchParams(window.location.search).get('mockBarcodeRaw') || '';
+    } catch {
+      return '';
+    }
+  }, []);
   const isE2eMock = useMemo(() => {
     try {
       if (typeof window === 'undefined') return false;
@@ -995,10 +975,63 @@ export default function MobileScannerPage() {
       scannerStartedAtRef.current = Date.now();
       await ensureVideoStreamPlaying();
 
-      // â”€â”€ Path 1: Native BarcodeDetector (Chrome Android, iOS 17+) â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      // ITF support check is critical â€” Trackon uses 12-digit ITF numeric barcodes.
-      // If the device doesn't support ITF natively, we fall through to ZXing which
-      // handles it correctly on all platforms.
+      // â”€â”€ Path 1: Prefer ZXing for Trackon-style labels â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // Real phones often report native ITF support but still miss Trackon labels.
+      // ZXing is consistently better on these narrow 12-digit barcodes.
+      if (PREFER_ZXING_FOR_TRACKON) {
+        const [{ BrowserMultiFormatReader }, zxingCore] = await Promise.all([
+          import('@zxing/browser'),
+          import('@zxing/library'),
+        ]);
+
+        const hints = new Map([
+          [zxingCore.DecodeHintType.POSSIBLE_FORMATS, [
+            zxingCore.BarcodeFormat.CODE_128,  // Trackon, DTDC primary format
+            zxingCore.BarcodeFormat.ITF,       // Trackon 12-digit numeric AWBs
+            zxingCore.BarcodeFormat.CODE_39,
+            zxingCore.BarcodeFormat.CODE_93,
+            zxingCore.BarcodeFormat.CODABAR,
+            zxingCore.BarcodeFormat.EAN_13,
+            zxingCore.BarcodeFormat.EAN_8,
+          ]],
+          [zxingCore.DecodeHintType.TRY_HARDER, true],
+          [zxingCore.DecodeHintType.ASSUME_GS1, false],
+          [zxingCore.DecodeHintType.CHARACTER_SET, 'UTF-8'],
+        ]);
+
+        const reader = new BrowserMultiFormatReader(hints, 40);
+        setScannerEngine('zxing');
+        scannerRef.current = reader;
+
+        reader.decodeFromVideoElement(videoRef.current, (result) => {
+          if (scanBusyRef.current) return;
+          if (result) {
+            syncBarcodeFailCount(0); // reset on successful detection
+            let format = 'unknown';
+            try {
+              format = String(result.getBarcodeFormat?.() || 'unknown');
+            } catch {}
+            setLastDetectionMeta({
+              value: result.getText?.() || '',
+              format,
+              engine: 'zxing',
+              at: Date.now(),
+              sinceStartMs: scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null,
+            });
+            handleBarcodeDetectedRef.current?.(result.getText());
+          } else {
+            // ZXing fires the callback with null on every failed frame
+            const nextFailCount = barcodeFailCountRef.current + 1;
+            syncBarcodeFailCount(nextFailCount);
+            if (nextFailCount >= BARCODE_FAIL_THRESHOLD) {
+              switchToDocumentMode();
+            }
+          }
+        });
+        return;
+      }
+
+      // â”€â”€ Path 2: Native BarcodeDetector fallback (Chrome Android, iOS 17+) â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (typeof window.BarcodeDetector !== 'undefined') {
         let useNative = true;
 
@@ -1068,62 +1101,9 @@ export default function MobileScannerPage() {
           setTimeout(tick, 300);
           return; // â† native path active, skip ZXing
         }
-        // useNative=false: fall through to ZXing below
+        // useNative=false: surface the init error below
       }
-
-      // â”€â”€ Path 2: ZXing (Safari iOS < 17, or native path lacked ITF) â”€â”€â”€â”€â”€â”€â”€
-      // ZXing handles ITF (Trackon), Code128 (DTDC/Delhivery) and more.
-      // 40ms interval â‰ˆ 25fps â€” fast enough without hammering the CPU.
-      const [{ BrowserMultiFormatReader }, zxingCore] = await Promise.all([
-        import('@zxing/browser'),
-        import('@zxing/library'),
-      ]);
-
-      const hints = new Map([
-        [zxingCore.DecodeHintType.POSSIBLE_FORMATS, [
-          zxingCore.BarcodeFormat.CODE_128,  // Trackon, DTDC primary format
-          zxingCore.BarcodeFormat.ITF,        // Trackon 12-digit numeric AWBs
-          zxingCore.BarcodeFormat.CODE_39,
-          zxingCore.BarcodeFormat.CODE_93,
-          zxingCore.BarcodeFormat.CODABAR,
-          zxingCore.BarcodeFormat.EAN_13,
-          zxingCore.BarcodeFormat.EAN_8,
-        ]],
-        [zxingCore.DecodeHintType.TRY_HARDER, true],
-        [zxingCore.DecodeHintType.ASSUME_GS1, false],
-        [zxingCore.DecodeHintType.CHARACTER_SET, 'UTF-8'],
-      ]);
-
-      // 40ms scan interval â‰ˆ 25fps â€” fast for real-world barcodes, easy on the battery
-      const reader = new BrowserMultiFormatReader(hints, 40);
-      setScannerEngine('zxing');
-      scannerRef.current = reader;
-
-      reader.decodeFromVideoElement(videoRef.current, (result) => {
-        if (scanBusyRef.current) return;
-        if (result) {
-          syncBarcodeFailCount(0); // reset on successful detection
-          let format = 'unknown';
-          try {
-            format = String(result.getBarcodeFormat?.() || 'unknown');
-          } catch {}
-          setLastDetectionMeta({
-            value: result.getText?.() || '',
-            format,
-            engine: 'zxing',
-            at: Date.now(),
-            sinceStartMs: scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null,
-          });
-          handleBarcodeDetectedRef.current?.(result.getText());
-        } else {
-          // ZXing fires the callback with null on every failed frame
-          const nextFailCount = barcodeFailCountRef.current + 1;
-          syncBarcodeFailCount(nextFailCount);
-          if (nextFailCount >= BARCODE_FAIL_THRESHOLD) {
-            switchToDocumentMode();
-          }
-        }
-      });
+      throw new Error('Unable to initialize a barcode scanner on this device.');
     } catch (err) {
       setErrorMsg('Camera access failed: ' + err.message);
     }
@@ -1182,13 +1162,21 @@ export default function MobileScannerPage() {
       syncBarcodeFailCount(0);
       setScanMode('barcode'); // always start fresh in barcode mode
       startBarcodeScanner();
+      if (isE2eMock && mockBarcodeRaw) {
+        const timer = setTimeout(() => {
+          if (currentStepRef.current === STEPS.SCANNING) {
+            handleBarcodeDetectedRef.current?.(mockBarcodeRaw);
+          }
+        }, 50);
+        return () => clearTimeout(timer);
+      }
     }
     return () => {
       // When leaving SCANNING, stop only the barcode reader â€” keep the video stream
       // alive so CAPTURING can reuse it instantly with no black-frame flicker.
       if (step === STEPS.SCANNING) stopBarcodeScanner();
     };
-  }, [step, startBarcodeScanner, stopBarcodeScanner, syncBarcodeFailCount]);
+  }, [step, startBarcodeScanner, stopBarcodeScanner, syncBarcodeFailCount, isE2eMock, mockBarcodeRaw]);
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // PHOTO CAPTURE (Document mode)
@@ -1713,7 +1701,7 @@ export default function MobileScannerPage() {
               <div className="home-scan-btn-wrap">
                 <div className="home-scan-ring" />
                 <div className="home-scan-ring home-scan-ring2" />
-                <button className="home-scan-btn" onClick={handleStartScanning}>
+                <button data-testid="start-scan-btn" className="home-scan-btn" onClick={handleStartScanning}>
                   <Camera size={34} color="white" />
                   <span className="home-scan-btn-label">Scan</span>
                 </button>

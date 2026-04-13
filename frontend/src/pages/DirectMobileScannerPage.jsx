@@ -19,6 +19,7 @@ const NATIVE_BARCODE_FORMATS = [
   'code_128', 'code_39', 'code_93', 'codabar',
   'ean_13', 'ean_8', 'itf', 'qr_code',
 ];
+const PREFER_ZXING_FOR_TRACKON = true;
 
 const STEPS = {
   IDLE: 'IDLE',
@@ -534,6 +535,20 @@ export default function DirectMobileScannerPage() {
         await videoRef.current.play();
       }
 
+      if (PREFER_ZXING_FOR_TRACKON) {
+        const [{ BrowserMultiFormatReader }, zxingCore] = await Promise.all([import('@zxing/browser'), import('@zxing/library')]);
+        const hints = new Map([
+          [zxingCore.DecodeHintType.POSSIBLE_FORMATS, [zxingCore.BarcodeFormat.CODE_128, zxingCore.BarcodeFormat.ITF, zxingCore.BarcodeFormat.CODE_39, zxingCore.BarcodeFormat.CODE_93, zxingCore.BarcodeFormat.CODABAR, zxingCore.BarcodeFormat.EAN_13, zxingCore.BarcodeFormat.EAN_8]],
+          [zxingCore.DecodeHintType.TRY_HARDER, true],
+          [zxingCore.DecodeHintType.ASSUME_GS1, false],
+          [zxingCore.DecodeHintType.CHARACTER_SET, 'UTF-8'],
+        ]);
+        const reader = new BrowserMultiFormatReader(hints, 80);
+        scannerRef.current = reader;
+        reader.decodeFromVideoElement(videoRef.current, (result) => { if (!scanBusyRef.current && result) handleBarcodeDetectedRef.current?.(result.getText()); });
+        return;
+      }
+
       if (typeof window.BarcodeDetector !== 'undefined') {
         let fmts = NATIVE_BARCODE_FORMATS;
         try { const avail = await window.BarcodeDetector.getSupportedFormats(); fmts = NATIVE_BARCODE_FORMATS.filter(f => avail.includes(f)) || fmts; } catch {}
@@ -551,15 +566,7 @@ export default function DirectMobileScannerPage() {
         return;
       }
 
-      const [{ BrowserMultiFormatReader }, zxingCore] = await Promise.all([import('@zxing/browser'), import('@zxing/library')]);
-      const hints = new Map([
-        [zxingCore.DecodeHintType.POSSIBLE_FORMATS, [zxingCore.BarcodeFormat.CODE_128, zxingCore.BarcodeFormat.ITF, zxingCore.BarcodeFormat.CODE_39, zxingCore.BarcodeFormat.CODE_93, zxingCore.BarcodeFormat.CODABAR, zxingCore.BarcodeFormat.EAN_13, zxingCore.BarcodeFormat.EAN_8]],
-        [zxingCore.DecodeHintType.TRY_HARDER, true],
-        [zxingCore.DecodeHintType.CHARACTER_SET, 'UTF-8'],
-      ]);
-      const reader = new BrowserMultiFormatReader(hints, 80);
-      scannerRef.current = reader;
-      reader.decodeFromVideoElement(videoRef.current, (result) => { if (!scanBusyRef.current && result) handleBarcodeDetectedRef.current?.(result.getText()); });
+      throw new Error('Unable to initialize a barcode scanner on this device.');
     } catch (err) { setErrorMsg('Camera access failed: ' + err.message); }
   }, [stopBarcodeScanner]);
 
