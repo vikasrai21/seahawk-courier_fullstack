@@ -8,10 +8,11 @@ export default function ClientDeveloperHubPage({ toast }) {
   const [keys, setKeys] = useState([]);
   const [newKeyName, setNewKeyName] = useState('');
   const [createdToken, setCreatedToken] = useState('');
-  const [provider, setProvider] = useState('shopify');
+  const PROVIDERS = ['amazon', 'flipkart', 'myntra', 'ajio', 'custom'];
+  const [provider, setProvider] = useState('amazon');
   const [settings, setSettings] = useState({
     enabled: false,
-    sourceLabel: 'shopify',
+    sourceLabel: 'amazon',
     defaultWeightKg: 0.5,
     mappings: {
       referenceId: '',
@@ -145,12 +146,12 @@ export default function ClientDeveloperHubPage({ toast }) {
         <section className="bg-white rounded-xl border border-gray-200 p-5">
           <h2 className="text-lg font-bold text-gray-900 mb-2">Create API Key</h2>
           <p className="text-sm text-gray-600 mb-4">
-            Use these keys to push orders to Seahawk integration endpoints from your ERP/Shopify/WooCommerce bridge.
+            Use these keys to push orders to Seahawk integration endpoints from your ERP or marketplace bridge.
           </p>
           <form onSubmit={createKey} className="flex gap-2">
             <input
               className="input flex-1"
-              placeholder="e.g. Shopify Production Key"
+              placeholder="e.g. Amazon Marketplace Key"
               value={newKeyName}
               onChange={(e) => setNewKeyName(e.target.value)}
             />
@@ -199,14 +200,14 @@ export default function ClientDeveloperHubPage({ toast }) {
           <h2 className="text-lg font-bold text-gray-900 mb-2">Integration Quickstart</h2>
           <div className="text-sm text-gray-700 space-y-2">
             <div>1. Create API key above and store it in your server secrets manager.</div>
-            <div>2. Push orders to <code>/api/public/integrations/excel/import</code> with <code>x-api-key</code> header.</div>
+            <div>2. Push orders to <code>/api/public/integrations/ecommerce/:provider/:clientCode</code> with <code>x-api-key</code> header.</div>
             <div>3. Use Draft Queue in portal for staged orders and autonomous AWB binding in scanner flow.</div>
           </div>
         </section>
 
         <section className="bg-white rounded-xl border border-gray-200 p-5">
-          <h2 className="text-lg font-bold text-gray-900 mb-2">Shopify / WooCommerce Bridge</h2>
-          <p className="text-sm text-gray-600 mb-4">Configure mapping once and send order webhooks directly into Draft Queue.</p>
+          <h2 className="text-lg font-bold text-gray-900 mb-2">Marketplace / OMS Bridge</h2>
+          <p className="text-sm text-gray-600 mb-4">Configure mapping once and send Amazon/Flipkart/Myntra/Ajio (or custom OMS) webhooks directly into Draft Queue.</p>
           <form onSubmit={saveIntegrationSettings} className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               <select
@@ -219,8 +220,9 @@ export default function ClientDeveloperHubPage({ toast }) {
                   loadLogsAndDiagnostics(p);
                 }}
               >
-                <option value="shopify">Shopify</option>
-                <option value="woocommerce">WooCommerce</option>
+                {PROVIDERS.map((p) => (
+                  <option key={p} value={p}>{p[0].toUpperCase() + p.slice(1)}</option>
+                ))}
               </select>
               <input className="input" value={settings.sourceLabel || ''} onChange={(e) => setSettings((s) => ({ ...s, sourceLabel: e.target.value }))} placeholder="Source label" />
               <input type="number" step="0.1" className="input" value={settings.defaultWeightKg || 0.5} onChange={(e) => setSettings((s) => ({ ...s, defaultWeightKg: Number(e.target.value || 0.5) }))} placeholder="Default weight kg" />

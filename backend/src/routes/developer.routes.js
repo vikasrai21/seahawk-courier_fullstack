@@ -8,6 +8,8 @@ const { asyncHandler } = require('../middleware/errorHandler');
 
 router.use(authenticate);
 
+const SUPPORTED_PROVIDERS = ['amazon', 'flipkart', 'myntra', 'ajio', 'custom'];
+
 function resolveClientCode(req) {
   if (req.user?.role === 'CLIENT') return req.user.clientCode || null;
   return String(req.query?.clientCode || req.body?.clientCode || '').trim().toUpperCase() || null;
@@ -112,8 +114,8 @@ router.post('/integrations/settings', asyncHandler(async (req, res) => {
   if (!clientCode) return R.badRequest(res, 'clientCode is required');
 
   const provider = String(req.body?.provider || '').trim().toLowerCase();
-  if (!['shopify', 'woocommerce'].includes(provider)) {
-    return R.badRequest(res, 'provider must be shopify or woocommerce');
+  if (!SUPPORTED_PROVIDERS.includes(provider)) {
+    return R.badRequest(res, `provider must be one of: ${SUPPORTED_PROVIDERS.join(', ')}`);
   }
 
   const payload = {

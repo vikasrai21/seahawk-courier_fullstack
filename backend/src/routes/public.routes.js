@@ -20,6 +20,7 @@ const publicLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, message: { 
 const bookingLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, message: { success: false, message: 'Too many booking requests. Try again later.' } });
 const integrationLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 120, message: { success: false, message: 'Too many integration requests.' } });
 const importJsonParser = express.json({ limit: config.bodyLimits.importJson });
+const SUPPORTED_ECOM_PROVIDERS = ['amazon', 'flipkart', 'myntra', 'ajio', 'custom'];
 
 // ── GET /api/public/health ─────────────────────────────────────────────────
 router.get('/health', (_req, res) => {
@@ -303,11 +304,11 @@ router.post('/integrations/excel/import', integrationLimiter, importJsonParser, 
 });
 
 // ── POST /api/public/integrations/ecommerce/:provider/:clientCode ──────────
-// Shopify / WooCommerce webhook ingestion to Draft Queue.
+// Marketplace / OMS webhook ingestion to Draft Queue.
 router.post('/integrations/ecommerce/:provider/:clientCode', integrationLimiter, importJsonParser, async (req, res) => {
   const provider = String(req.params.provider || '').trim().toLowerCase();
   const clientCode = String(req.params.clientCode || '').trim().toUpperCase();
-  if (!['shopify', 'woocommerce'].includes(provider)) {
+  if (!SUPPORTED_ECOM_PROVIDERS.includes(provider)) {
     return res.status(400).json({ success: false, message: 'Unsupported provider.' });
   }
   if (!clientCode) return res.status(400).json({ success: false, message: 'clientCode is required in URL.' });
