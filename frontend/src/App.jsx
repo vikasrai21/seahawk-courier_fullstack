@@ -11,6 +11,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 
 const ClientPortalPage = lazy(() => import('./pages/client/ClientPortalPage'));
 const ClientShipmentsPage = lazy(() => import('./pages/client/ClientShipmentsPage'));
+const ClientOrdersQueuePage = lazy(() => import('./pages/client/ClientOrdersQueuePage'));
 const ClientBulkTrackPage = lazy(() => import('./pages/client/ClientBulkTrackPage'));
 const ClientNDRPage = lazy(() => import('./pages/client/ClientNDRPage'));
 const ClientPickupPage = lazy(() => import('./pages/client/ClientPickupPage'));
@@ -161,6 +162,7 @@ function AppRoutes() {
 
             <Route path="/portal" element={<ClientRoute>{withToast(ClientPortalPage)}</ClientRoute>} />
             <Route path="/portal/shipments" element={<ClientRoute>{withToast(ClientShipmentsPage)}</ClientRoute>} />
+            <Route path="/portal/drafts" element={<ClientRoute>{withToast(ClientOrdersQueuePage)}</ClientRoute>} />
             <Route path="/portal/bulk-track" element={<ClientRoute>{withToast(ClientBulkTrackPage)}</ClientRoute>} />
             <Route path="/portal/ndr" element={<ClientRoute>{withToast(ClientNDRPage)}</ClientRoute>} />
             <Route path="/portal/pickups" element={<ClientRoute>{withToast(ClientPickupPage)}</ClientRoute>} />

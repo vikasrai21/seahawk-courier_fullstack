@@ -15,43 +15,45 @@ enum UserRole {
 }
 
 model User {
-  id        Int      @id @default(autoincrement())
-  name      String
-  email     String   @unique
-  password  String
-  role      UserRole @default(STAFF)
-  branch    String?
-  phone     String?
-  active    Boolean  @default(true)
-  loginAttempts      Int       @default(0) @map("login_attempts")
-  lockedUntil        DateTime? @map("locked_until")
-  mustChangePassword Boolean   @default(false) @map("must_change_password")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-  shipmentsCreated        Shipment[]      @relation("CreatedBy")
-  shipmentsUpdated        Shipment[]      @relation("UpdatedBy")
+  id                      Int                 @id @default(autoincrement())
+  name                    String
+  email                   String              @unique
+  password                String
+  role                    UserRole            @default(STAFF)
+  branch                  String?
+  phone                   String?
+  active                  Boolean             @default(true)
+  loginAttempts           Int                 @default(0) @map("login_attempts")
+  lockedUntil             DateTime?           @map("locked_until")
+  mustChangePassword      Boolean             @default(false) @map("must_change_password")
+  createdAt               DateTime            @default(now()) @map("created_at")
+  updatedAt               DateTime            @updatedAt @map("updated_at")
+  shipmentsCreated        Shipment[]          @relation("CreatedBy")
+  shipmentsUpdated        Shipment[]          @relation("UpdatedBy")
   auditLogs               AuditLog[]
-  quotesCreated           Quote[]         @relation("QuoteCreatedBy")
-  courierInvoicesUploaded CourierInvoice[] @relation("InvoiceUploadedBy")
-  rateVersionsUploaded    RateVersion[]   @relation("RateVersionUploadedBy")
-  pickupAssignments       PickupRequest[] @relation("AssignedAgent")
+  quotesCreated           Quote[]             @relation("QuoteCreatedBy")
+  courierInvoicesUploaded CourierInvoice[]    @relation("InvoiceUploadedBy")
+  rateVersionsUploaded    RateVersion[]       @relation("RateVersionUploadedBy")
+  pickupAssignments       PickupRequest[]     @relation("AssignedAgent")
   refreshTokens           RefreshToken[]
   clientProfile           ClientUser?
   importedRows            ShipmentImportRow[] @relation("ImportRowCreatedBy")
+
   @@index([email])
   @@map("users")
 }
 
 model RefreshToken {
-  id        Int      @id @default(autoincrement())
-  token     String   @unique
-  userId    Int      @map("user_id")
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
+  id        Int       @id @default(autoincrement())
+  token     String    @unique
+  userId    Int       @map("user_id")
+  expiresAt DateTime  @map("expires_at")
+  createdAt DateTime  @default(now()) @map("created_at")
   revokedAt DateTime? @map("revoked_at")
   ip        String?
-  userAgent String?  @map("user_agent")
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent String?   @map("user_agent")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
   @@index([token])
   @@map("refresh_tokens")
@@ -61,14 +63,15 @@ model ClientUser {
   id         Int    @id @default(autoincrement())
   userId     Int    @unique @map("user_id")
   clientCode String @map("client_code") @db.VarChar(20)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  client Client @relation(fields: [clientCode], references: [code])
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client     Client @relation(fields: [clientCode], references: [code])
+
   @@map("client_users")
 }
 
 model Client {
-  id            Int        @id @default(autoincrement())
-  code          String     @unique @db.VarChar(20)
+  id            Int                 @id @default(autoincrement())
+  code          String              @unique @db.VarChar(20)
   company       String
   contact       String?
   phone         String?
@@ -77,18 +80,20 @@ model Client {
   gst           String?
   address       String?
   notes         String?
-  active        Boolean    @default(true)
-  walletBalance Float      @default(0) @map("wallet_balance")
-  createdAt     DateTime   @default(now()) @map("created_at")
-  updatedAt     DateTime   @updatedAt @map("updated_at")
-  shipments    Shipment[]
-  contracts    Contract[]
-  invoices     Invoice[]
-  quotes       Quote[]
-  pickups      PickupRequest[]
-  transactions WalletTransaction[]
-  clientUsers  ClientUser[]
-  importedRows ShipmentImportRow[]
+  active        Boolean             @default(true)
+  walletBalance Float               @default(0) @map("wallet_balance")
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+  shipments     Shipment[]
+  contracts     Contract[]
+  invoices      Invoice[]
+  quotes        Quote[]
+  pickups       PickupRequest[]
+  transactions  WalletTransaction[]
+  clientUsers   ClientUser[]
+  importedRows  ShipmentImportRow[]
+  DraftOrder    DraftOrder[]
+
   @@index([code])
   @@map("clients")
 }
@@ -110,44 +115,47 @@ model Contract {
   notes         String?
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
-  client Client @relation(fields: [clientCode], references: [code])
+  client        Client   @relation(fields: [clientCode], references: [code])
+
   @@index([clientCode])
   @@index([active])
   @@map("contracts")
 }
 
 model Shipment {
-  id          Int      @id @default(autoincrement())
-  date        String   @db.VarChar(10)
-  clientCode  String   @map("client_code") @db.VarChar(20)
-  awb         String   @unique @db.VarChar(50)
-  consignee   String?
-  destination String?
-  phone       String?
-  pincode     String?
-  weight      Float    @default(0)
-  amount      Float    @default(0)
-  courier     String?
-  department  String?
-  service     String   @default("Standard")
-  status      String   @default("Booked")
-  ndrStatus   String?  @map("ndr_status")
-  remarks     String?
-  labelUrl    String?  @map("label_url")
-  riskScore   Float?   @map("risk_score")
-  riskFactors Json?    @map("risk_factors")
-  marginAlert Boolean  @default(false) @map("margin_alert")
-  createdById Int?     @map("created_by_id")
-  updatedById Int?     @map("updated_by_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  client         Client         @relation(fields: [clientCode], references: [code])
-  createdBy      User?          @relation("CreatedBy", fields: [createdById], references: [id])
-  updatedBy      User?          @relation("UpdatedBy", fields: [updatedById], references: [id])
+  id             Int                 @id @default(autoincrement())
+  date           String              @db.VarChar(10)
+  clientCode     String              @map("client_code") @db.VarChar(20)
+  awb            String              @unique @db.VarChar(50)
+  consignee      String?
+  destination    String?
+  phone          String?
+  pincode        String?
+  weight         Float               @default(0)
+  amount         Float               @default(0)
+  courier        String?
+  department     String?
+  service        String              @default("Standard")
+  status         String              @default("Booked")
+  ndrStatus      String?             @map("ndr_status")
+  remarks        String?
+  labelUrl       String?             @map("label_url")
+  riskScore      Float?              @map("risk_score")
+  riskFactors    Json?               @map("risk_factors")
+  marginAlert    Boolean             @default(false) @map("margin_alert")
+  createdById    Int?                @map("created_by_id")
+  updatedById    Int?                @map("updated_by_id")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+  client         Client              @relation(fields: [clientCode], references: [code])
+  createdBy      User?               @relation("CreatedBy", fields: [createdById], references: [id])
+  updatedBy      User?               @relation("UpdatedBy", fields: [updatedById], references: [id])
   invoiceItems   InvoiceItem[]
   trackingEvents TrackingEvent[]
   ndrEvents      NDREvent[]
   importRows     ShipmentImportRow[]
+  DraftOrder     DraftOrder?
+
   @@index([date])
   @@index([clientCode])
   @@index([status])
@@ -159,33 +167,34 @@ model Shipment {
 }
 
 model ShipmentImportRow {
-  id          Int      @id @default(autoincrement())
-  batchKey    String   @map("batch_key")
-  sourceFile  String?  @map("source_file")
-  sourceSheet String?  @map("source_sheet")
-  rowNo       Int?     @map("row_no")
-  date        String   @db.VarChar(10)
-  clientCode  String   @map("client_code") @db.VarChar(20)
-  awb         String   @db.VarChar(50)
+  id          Int       @id @default(autoincrement())
+  batchKey    String    @map("batch_key")
+  sourceFile  String?   @map("source_file")
+  sourceSheet String?   @map("source_sheet")
+  rowNo       Int?      @map("row_no")
+  date        String    @db.VarChar(10)
+  clientCode  String    @map("client_code") @db.VarChar(20)
+  awb         String    @db.VarChar(50)
   consignee   String?
   destination String?
   phone       String?
   pincode     String?
-  weight      Float    @default(0)
-  amount      Float    @default(0)
+  weight      Float     @default(0)
+  amount      Float     @default(0)
   courier     String?
   department  String?
-  service     String   @default("Standard")
-  status      String   @default("Booked")
-  ndrStatus   String?  @map("ndr_status")
+  service     String    @default("Standard")
+  status      String    @default("Booked")
+  ndrStatus   String?   @map("ndr_status")
   remarks     String?
-  autoPriced  Boolean  @default(false) @map("auto_priced")
-  shipmentId  Int?     @map("shipment_id")
-  createdById Int?     @map("created_by_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  client    Client    @relation(fields: [clientCode], references: [code])
-  shipment  Shipment? @relation(fields: [shipmentId], references: [id])
-  createdBy User?     @relation("ImportRowCreatedBy", fields: [createdById], references: [id])
+  autoPriced  Boolean   @default(false) @map("auto_priced")
+  shipmentId  Int?      @map("shipment_id")
+  createdById Int?      @map("created_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  client      Client    @relation(fields: [clientCode], references: [code])
+  shipment    Shipment? @relation(fields: [shipmentId], references: [id])
+  createdBy   User?     @relation("ImportRowCreatedBy", fields: [createdById], references: [id])
+
   @@index([batchKey])
   @@index([date])
   @@index([clientCode])
@@ -205,7 +214,8 @@ model TrackingEvent {
   timestamp   DateTime @default(now())
   source      String   @default("MANUAL")
   rawData     Json?    @map("raw_data")
-  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  shipment    Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
   @@index([shipmentId])
   @@index([awb])
   @@index([timestamp])
@@ -213,18 +223,19 @@ model TrackingEvent {
 }
 
 model NDREvent {
-  id          Int      @id @default(autoincrement())
-  shipmentId  Int      @map("shipment_id")
-  awb         String   @db.VarChar(50)
+  id          Int       @id @default(autoincrement())
+  shipmentId  Int       @map("shipment_id")
+  awb         String    @db.VarChar(50)
   reason      String
-  description String?  @default("")
-  attemptNo   Int      @default(1) @map("attempt_no")
-  action      String   @default("PENDING")
-  newAddress  String?  @map("new_address")
+  description String?   @default("")
+  attemptNo   Int       @default(1) @map("attempt_no")
+  action      String    @default("PENDING")
+  newAddress  String?   @map("new_address")
   resolvedAt  DateTime? @map("resolved_at")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  shipment    Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+
   @@index([shipmentId])
   @@index([awb])
   @@index([action])
@@ -232,37 +243,38 @@ model NDREvent {
 }
 
 model PickupRequest {
-  id               Int      @id @default(autoincrement())
-  requestNo        String   @unique @db.VarChar(30) @map("request_no")
-  clientCode       String?  @map("client_code") @db.VarChar(20)
-  contactName      String   @map("contact_name")
-  contactPhone     String   @map("contact_phone")
-  contactEmail     String?  @map("contact_email")
-  pickupAddress    String   @map("pickup_address")
-  pickupCity       String   @map("pickup_city")
-  pickupPin        String   @map("pickup_pin")
-  deliveryAddress  String?  @map("delivery_address")
-  deliveryCity     String?  @map("delivery_city")
-  deliveryState    String?  @map("delivery_state")
-  deliveryCountry  String   @default("India") @map("delivery_country")
-  packageType      String   @default("Parcel") @map("package_type")
-  weightGrams      Float    @default(0) @map("weight_grams")
-  pieces           Int      @default(1)
-  service          String   @default("Standard")
-  declaredValue    Float?   @map("declared_value")
+  id               Int       @id @default(autoincrement())
+  requestNo        String    @unique @map("request_no") @db.VarChar(30)
+  clientCode       String?   @map("client_code") @db.VarChar(20)
+  contactName      String    @map("contact_name")
+  contactPhone     String    @map("contact_phone")
+  contactEmail     String?   @map("contact_email")
+  pickupAddress    String    @map("pickup_address")
+  pickupCity       String    @map("pickup_city")
+  pickupPin        String    @map("pickup_pin")
+  deliveryAddress  String?   @map("delivery_address")
+  deliveryCity     String?   @map("delivery_city")
+  deliveryState    String?   @map("delivery_state")
+  deliveryCountry  String    @default("India") @map("delivery_country")
+  packageType      String    @default("Parcel") @map("package_type")
+  weightGrams      Float     @default(0) @map("weight_grams")
+  pieces           Int       @default(1)
+  service          String    @default("Standard")
+  declaredValue    Float?    @map("declared_value")
   notes            String?
-  source           String   @default("PORTAL")
-  preferredCarrier String?  @map("preferred_carrier")
-  scheduledDate    String   @map("scheduled_date")
-  timeSlot         String   @map("time_slot")
-  assignedAgentId  Int?     @map("assigned_agent_id")
+  source           String    @default("PORTAL")
+  preferredCarrier String?   @map("preferred_carrier")
+  scheduledDate    String    @map("scheduled_date")
+  timeSlot         String    @map("time_slot")
+  assignedAgentId  Int?      @map("assigned_agent_id")
   assignedAt       DateTime? @map("assigned_at")
   completedAt      DateTime? @map("completed_at")
-  status           String   @default("PENDING")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
-  client        Client? @relation(fields: [clientCode], references: [code])
-  assignedAgent User?   @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+  status           String    @default("PENDING")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  client           Client?   @relation(fields: [clientCode], references: [code])
+  assignedAgent    User?     @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+
   @@index([status])
   @@index([scheduledDate])
   @@index([clientCode])
@@ -282,32 +294,34 @@ model WalletTransaction {
   paymentId   String?  @map("payment_id")
   status      String   @default("SUCCESS")
   createdAt   DateTime @default(now()) @map("created_at")
-  client Client @relation(fields: [clientCode], references: [code])
+  client      Client   @relation(fields: [clientCode], references: [code])
+
   @@index([clientCode])
   @@index([createdAt])
   @@map("wallet_transactions")
 }
 
 model Invoice {
-  id          Int      @id @default(autoincrement())
-  invoiceNo   String   @unique @map("invoice_no")
-  clientCode  String   @map("client_code") @db.VarChar(20)
-  fromDate    String   @map("from_date")
-  toDate      String   @map("to_date")
-  subtotal    Float    @default(0)
-  gstPercent  Float    @default(18) @map("gst_percent")
-  gstAmount   Float    @default(0) @map("gst_amount")
-  cgstAmount  Float    @default(0) @map("cgst_amount")
-  sgstAmount  Float    @default(0) @map("sgst_amount")
-  igstAmount  Float    @default(0) @map("igst_amount")
-  total       Float    @default(0)
-  status      String   @default("DRAFT")
-  notes       String?
-  pdfUrl      String?  @map("pdf_url")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-  client Client      @relation(fields: [clientCode], references: [code])
-  items  InvoiceItem[]
+  id         Int           @id @default(autoincrement())
+  invoiceNo  String        @unique @map("invoice_no")
+  clientCode String        @map("client_code") @db.VarChar(20)
+  fromDate   String        @map("from_date")
+  toDate     String        @map("to_date")
+  subtotal   Float         @default(0)
+  gstPercent Float         @default(18) @map("gst_percent")
+  gstAmount  Float         @default(0) @map("gst_amount")
+  cgstAmount Float         @default(0) @map("cgst_amount")
+  sgstAmount Float         @default(0) @map("sgst_amount")
+  igstAmount Float         @default(0) @map("igst_amount")
+  total      Float         @default(0)
+  status     String        @default("DRAFT")
+  notes      String?
+  pdfUrl     String?       @map("pdf_url")
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+  client     Client        @relation(fields: [clientCode], references: [code])
+  items      InvoiceItem[]
+
   @@index([clientCode])
   @@index([status])
   @@index([fromDate, toDate])
@@ -315,20 +329,21 @@ model Invoice {
 }
 
 model InvoiceItem {
-  id            Int     @id @default(autoincrement())
-  invoiceId     Int     @map("invoice_id")
-  shipmentId    Int     @map("shipment_id")
+  id            Int      @id @default(autoincrement())
+  invoiceId     Int      @map("invoice_id")
+  shipmentId    Int      @map("shipment_id")
   awb           String
   date          String
   consignee     String?
   destination   String?
   courier       String?
-  weight        Float   @default(0)
-  baseAmount    Float   @default(0) @map("base_amount")
-  fuelSurcharge Float   @default(0) @map("fuel_surcharge")
-  amount        Float   @default(0)
-  invoice  Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  shipment Shipment @relation(fields: [shipmentId], references: [id])
+  weight        Float    @default(0)
+  baseAmount    Float    @default(0) @map("base_amount")
+  fuelSurcharge Float    @default(0) @map("fuel_surcharge")
+  amount        Float    @default(0)
+  invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  shipment      Shipment @relation(fields: [shipmentId], references: [id])
+
   @@index([invoiceId])
   @@map("invoice_items")
 }
@@ -344,7 +359,8 @@ model AuditLog {
   newValue  Json?    @map("new_value")
   ip        String?
   createdAt DateTime @default(now()) @map("created_at")
-  user User? @relation(fields: [userId], references: [id])
+  user      User?    @relation(fields: [userId], references: [id])
+
   @@index([entity, entityId])
   @@index([userId])
   @@index([createdAt])
@@ -373,8 +389,9 @@ model Quote {
   createdById Int?     @map("created_by_id")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
-  client    Client? @relation(fields: [clientCode], references: [code])
-  createdBy User?   @relation("QuoteCreatedBy", fields: [createdById], references: [id])
+  client      Client?  @relation(fields: [clientCode], references: [code])
+  createdBy   User?    @relation("QuoteCreatedBy", fields: [createdById], references: [id])
+
   @@index([clientCode])
   @@index([status])
   @@index([createdAt])
@@ -382,38 +399,40 @@ model Quote {
 }
 
 model CourierInvoice {
-  id           Int      @id @default(autoincrement())
+  id           Int                  @id @default(autoincrement())
   courier      String
-  invoiceNo    String   @map("invoice_no")
-  invoiceDate  String   @map("invoice_date")
-  fromDate     String   @map("from_date")
-  toDate       String   @map("to_date")
-  totalAmount  Float    @default(0) @map("total_amount")
-  status       String   @default("PENDING")
+  invoiceNo    String               @map("invoice_no")
+  invoiceDate  String               @map("invoice_date")
+  fromDate     String               @map("from_date")
+  toDate       String               @map("to_date")
+  totalAmount  Float                @default(0) @map("total_amount")
+  status       String               @default("PENDING")
   notes        String?
-  uploadedById Int?     @map("uploaded_by_id")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-  uploadedBy User?               @relation("InvoiceUploadedBy", fields: [uploadedById], references: [id])
-  items      CourierInvoiceItem[]
+  uploadedById Int?                 @map("uploaded_by_id")
+  createdAt    DateTime             @default(now()) @map("created_at")
+  updatedAt    DateTime             @updatedAt @map("updated_at")
+  uploadedBy   User?                @relation("InvoiceUploadedBy", fields: [uploadedById], references: [id])
+  items        CourierInvoiceItem[]
+
   @@index([courier])
   @@index([status])
   @@map("courier_invoices")
 }
 
 model CourierInvoiceItem {
-  id               Int     @id @default(autoincrement())
-  courierInvoiceId Int     @map("courier_invoice_id")
+  id               Int            @id @default(autoincrement())
+  courierInvoiceId Int            @map("courier_invoice_id")
   awb              String
   date             String
   destination      String?
-  weight           Float   @default(0)
-  billedAmount     Float   @default(0) @map("billed_amount")
-  calculatedAmount Float?  @default(0) @map("calculated_amount")
-  discrepancy      Float?  @default(0)
-  status           String  @default("OK")
+  weight           Float          @default(0)
+  billedAmount     Float          @default(0) @map("billed_amount")
+  calculatedAmount Float?         @default(0) @map("calculated_amount")
+  discrepancy      Float?         @default(0)
+  status           String         @default("OK")
   notes            String?
-  courierInvoice CourierInvoice @relation(fields: [courierInvoiceId], references: [id], onDelete: Cascade)
+  courierInvoice   CourierInvoice @relation(fields: [courierInvoiceId], references: [id], onDelete: Cascade)
+
   @@index([courierInvoiceId])
   @@index([awb])
   @@map("courier_invoice_items")
@@ -429,6 +448,7 @@ model MarginRule {
   minProfitAbs Float?   @map("min_profit_abs")
   active       Boolean  @default(true)
   createdAt    DateTime @default(now()) @map("created_at")
+
   @@map("margin_rules")
 }
 
@@ -440,25 +460,27 @@ model RateVersion {
   notes         String?
   dataJson      Json     @map("data_json")
   createdAt     DateTime @default(now()) @map("created_at")
-  uploadedBy User? @relation("RateVersionUploadedBy", fields: [uploadedById], references: [id])
+  uploadedBy    User?    @relation("RateVersionUploadedBy", fields: [uploadedById], references: [id])
+
   @@index([courier])
   @@map("rate_versions")
 }
 
 model Notification {
-  id          Int      @id @default(autoincrement())
-  clientCode  String?  @map("client_code") @db.VarChar(20)
-  awb         String?  @db.VarChar(50)
+  id          Int       @id @default(autoincrement())
+  clientCode  String?   @map("client_code") @db.VarChar(20)
+  awb         String?   @db.VarChar(50)
   channel     String
   to          String
   template    String
-  message     String   @db.Text
-  status      String   @default("QUEUED")
+  message     String    @db.Text
+  status      String    @default("QUEUED")
   provider    String?
-  providerRef String?  @map("provider_ref")
+  providerRef String?   @map("provider_ref")
   error       String?
   sentAt      DateTime? @map("sent_at")
-  createdAt   DateTime @default(now()) @map("created_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
   @@index([awb])
   @@index([clientCode])
   @@index([status])
@@ -466,17 +488,18 @@ model Notification {
 }
 
 model JobQueue {
-  id          Int      @id @default(autoincrement())
+  id          Int       @id @default(autoincrement())
   type        String
   payload     Json
-  status      String   @default("PENDING")
-  attempts    Int      @default(0)
-  maxAttempts Int      @default(3) @map("max_attempts")
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3) @map("max_attempts")
   error       String?
-  runAfter    DateTime @default(now()) @map("run_after")
+  runAfter    DateTime  @default(now()) @map("run_after")
   startedAt   DateTime? @map("started_at")
   completedAt DateTime? @map("completed_at")
-  createdAt   DateTime @default(now()) @map("created_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
   @@index([status, runAfter])
   @@index([type])
   @@map("job_queue")
@@ -508,4 +531,26 @@ model ScanCorrection {
   @@index([field])
   @@index([count])
   @@map("scan_corrections")
+}
+
+model DraftOrder {
+  id          Int      @id @default(autoincrement())
+  clientCode  String   @map("client_code") @db.VarChar(20)
+  referenceId String?  @map("reference_id")
+  consignee   String
+  destination String
+  phone       String?
+  pincode     String?
+  weight      Float
+  status      String   @default("PENDING")
+  shipmentId  Int?     @unique @map("shipment_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  client   Client    @relation(fields: [clientCode], references: [code])
+  shipment Shipment? @relation(fields: [shipmentId], references: [id])
+
+  @@index([clientCode])
+  @@index([status])
+  @@map("draft_orders")
 }

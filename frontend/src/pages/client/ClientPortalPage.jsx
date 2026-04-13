@@ -637,9 +637,16 @@ export default function ClientPortalPage({ toast }) {
                     <Link
                       to="/portal/shipments"
                       className="portal-btn-secondary"
+                      style={{ textDecoration: 'none', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, padding: '11px 18px', background: 'rgba(255,255,255,0.08)', color: '#f8fafc', fontSize: 13, fontWeight: 700, transition: 'all 0.2s', marginRight: 12 }}
+                    >
+                      Shipments
+                    </Link>
+                    <Link
+                      to="/portal/drafts"
+                      className="portal-btn-secondary"
                       style={{ textDecoration: 'none', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, padding: '11px 18px', background: 'rgba(255,255,255,0.08)', color: '#f8fafc', fontSize: 13, fontWeight: 700, transition: 'all 0.2s' }}
                     >
-                      Create / Manage Shipments
+                      Order Queue
                     </Link>
                     <button
                       onClick={fetchPortalData}

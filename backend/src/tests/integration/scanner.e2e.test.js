@@ -123,6 +123,36 @@ describe('Scanner API Integration Tests', () => {
       expect(dbRecord.weight).toBe(3.5);
     });
 
+    it('keeps Trackon-format AWBs on the Trackon courier path', async () => {
+      vi.spyOn(ocrSvc, 'extractShipmentFromImage').mockResolvedValue({
+        success: true,
+        awb: '500602752638',
+        destination: 'Delhi',
+        weight: 2.1,
+      });
+
+      const payload = {
+        awb: '500602752638',
+        imageBase64: 'data:image/jpeg;base64,dummy',
+        imageUri: null,
+        ocrHints: {
+          rawText: 'Trackon label 500602752638',
+          destination: 'Delhi',
+          weight: 2.1,
+        }
+      };
+
+      const res = await request(app)
+        .post('/api/shipments/scan-mobile')
+        .set('Authorization', `Bearer ${jwtToken}`)
+        .send(payload);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.awb).toBe(payload.awb);
+      expect(res.body.data.courier).toBe('Trackon');
+    });
+
     it('handles an empty OCR payload elegantly', async () => {
       // Mock failure or unreadable image
       vi.spyOn(ocrSvc, 'extractShipmentFromImage').mockResolvedValue({

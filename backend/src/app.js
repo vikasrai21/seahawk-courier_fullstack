@@ -140,6 +140,7 @@ app.use('/api/auth',           require('./routes/auth.routes'));
 app.use('/api/portal',         require('./routes/client-portal.routes'));
 app.use('/api/shipments',      require('./routes/shipment.routes'));
 app.use('/api/clients',        require('./routes/client.routes'));
+app.use('/api/drafts',         require('./routes/draftOrder.routes'));
 app.use('/api/contracts',      require('./routes/contract.routes'));
 app.use('/api/invoices',       require('./routes/invoice.routes'));
 app.use('/api/audit',          require('./routes/audit.routes'));

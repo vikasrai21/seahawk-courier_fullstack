@@ -630,6 +630,10 @@ export default function MobileScannerPage() {
   // was memoized.
   const scannedAwbsRef = useRef(new Set());
 
+  const goStep = useCallback((next) => {
+    setStep(next);
+  }, []);
+
   const syncBarcodeFailCount = useCallback((nextCount) => {
     barcodeFailCountRef.current = nextCount;
     setBarcodeFailCount(nextCount);
@@ -723,10 +727,6 @@ export default function MobileScannerPage() {
   }, [socket, offlineQueue, saveOfflineQueue]);
 
   // â”€â”€ Step transition helper â”€â”€
-  const goStep = useCallback((next) => {
-    setStep(next);
-  }, []);
-
   const addToQueue = useCallback((item) => {
     setSessionCtx((prev) => {
       const next = {

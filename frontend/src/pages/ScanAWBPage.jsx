@@ -38,6 +38,7 @@ import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
+import { normalizeBarcodeCandidate } from '../utils/barcode.js';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { generateQRCodeDataURL } from '../utils/qrcode';
 
@@ -237,42 +238,6 @@ const createBarcodeHints = () => {
   hints.set(DecodeHintType.ASSUME_GS1, false); // false = don't mangle ITF/numeric barcodes (Trackon fix)
   hints.set(DecodeHintType.CHARACTER_SET, 'UTF-8');
   return hints;
-};
-
-const normalizeBarcodeCandidate = (rawValue = '') => {
-  const raw = String(rawValue || '').toUpperCase();
-  const compact = raw.replace(/\s+/g, '');
-  const candidates = [];
-
-  const push = (value) => {
-    const normalized = String(value || '').replace(/[^A-Z0-9]/g, '');
-    if (!normalized || candidates.includes(normalized)) return;
-    candidates.push(normalized);
-  };
-
-  push(compact);
-  (raw.match(/\b\d{12,14}\b/g) || []).forEach(push);
-  (raw.match(/\b[A-Z]{1,2}\d{8,11}\b/g) || []).forEach(push);
-
-  // ITF decoders sometimes prepend a leading 0 as a check digit artifact.
-  // e.g. "0500602752638" → strip to "500602752638" (valid Trackon AWB).
-  candidates.forEach((c) => {
-    if (/^0\d{12}$/.test(c)) push(c.slice(1));
-  });
-
-  const prioritized = [
-    // Trackon AWBs: 12 digits starting with 1, 2, or 5
-    ...candidates.filter((value) => /^[125]\d{11}$/.test(value)),
-    // Other known 12-digit numeric AWBs (e.g. Delhivery)
-    ...candidates.filter((value) => /^\d{12}$/.test(value)),
-    // 13–14 digit numeric (EAN/UPC fallthrough)
-    ...candidates.filter((value) => /^\d{13,14}$/.test(value)),
-    // Alpha-numeric (DTDC, Bluedart, etc.)
-    ...candidates.filter((value) => /^[A-Z]{1,2}\d{8,11}$/.test(value)),
-    ...candidates,
-  ];
-
-  return prioritized.find(Boolean) || '';
 };
 
 export default function ScanAWBPage({ toast }) {
