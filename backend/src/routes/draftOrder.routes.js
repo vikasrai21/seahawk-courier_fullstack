@@ -1,13 +1,13 @@
 // src/routes/draftOrder.routes.js
 const express = require('express');
 const router = express.Router();
-const { auth, requireClientCode } = require('../middleware/auth.middleware');
+const { authenticate, requireClientAccountAccess } = require('../middleware/auth.middleware');
 const svc = require('../services/draftOrder.service');
 const R = require('../utils/response');
 const { asyncHandler } = require('../middleware/errorHandler');
 
 // Apply auth to all routes
-router.use(auth);
+router.use(authenticate);
 
 /**
  * GET /api/drafts
@@ -22,7 +22,7 @@ router.get('/', asyncHandler(async (req, res) => {
   
   // If user is CLIENT, force their own client code
   if (req.user?.role === 'CLIENT') {
-    clientCode = req.user.clientProfile?.clientCode;
+    clientCode = req.user.clientCode;
     if (!clientCode) return res.status(403).json({ success: false, message: 'No client profile attached' });
   }
 
@@ -34,8 +34,9 @@ router.get('/', asyncHandler(async (req, res) => {
  * POST /api/drafts
  * Create a single draft order
  */
-router.post('/', requireClientCode, asyncHandler(async (req, res) => {
-  const draft = await svc.create({ ...req.body, clientCode: req.clientCode }, req.user?.id);
+router.post('/', requireClientAccountAccess({ body: 'clientCode' }), asyncHandler(async (req, res) => {
+  const clientCode = req.body?.clientCode || req.user?.clientCode;
+  const draft = await svc.create({ ...req.body, clientCode }, req.user?.id);
   R.created(res, draft, 'Draft order created');
 }));
 
@@ -43,8 +44,9 @@ router.post('/', requireClientCode, asyncHandler(async (req, res) => {
  * POST /api/drafts/bulk
  * Create multiple draft orders
  */
-router.post('/bulk', requireClientCode, asyncHandler(async (req, res) => {
-  const result = await svc.bulkCreate(req.body.drafts, req.clientCode);
+router.post('/bulk', requireClientAccountAccess({ body: 'clientCode' }), asyncHandler(async (req, res) => {
+  const clientCode = req.body?.clientCode || req.user?.clientCode;
+  const result = await svc.bulkCreate(req.body.drafts, clientCode);
   R.created(res, result, `Imported ${result.createdCount} draft orders`);
 }));
 
