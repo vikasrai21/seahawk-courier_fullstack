@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
+const REMEMBERED_LOGIN_EMAIL_KEY = 'shk_login_email';
+
 // ── Right panel space canvas (kept from original) ─────────────────────────
 function SpaceCanvas() {
   const canvasRef = useRef(null);
@@ -76,14 +78,23 @@ export default function LoginPage() {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => { const t = setTimeout(() => setMounted(true), 80); return () => clearTimeout(t); }, []);
+  useEffect(() => {
+    try {
+      const savedEmail = window.localStorage.getItem(REMEMBERED_LOGIN_EMAIL_KEY);
+      if (savedEmail) setEmail(savedEmail);
+    } catch {}
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(''); setLoading(true);
     try {
       const user = await login(email.trim(), password, rememberMe);
-      if (user?.mustChangePassword) navigate('/change-password?required=1', { replace: true });
-      else if (user?.role === 'CLIENT') navigate('/portal', { replace: true });
+      try {
+        if (rememberMe) window.localStorage.setItem(REMEMBERED_LOGIN_EMAIL_KEY, email.trim());
+        else window.localStorage.removeItem(REMEMBERED_LOGIN_EMAIL_KEY);
+      } catch {}
+      if (user?.role === 'CLIENT') navigate('/portal', { replace: true });
       else navigate('/app', { replace: true });
     } catch (err) {
       setError(err.message || 'Invalid email or password');
@@ -144,6 +155,7 @@ export default function LoginPage() {
             </label>
             <input
               type="email" id="email" name="email" autoComplete="username" autoFocus
+              autoCapitalize="none" spellCheck={false}
               placeholder="admin@seahawk.com"
               value={email} onChange={e => setEmail(e.target.value)} required
               style={{ width: '100%', padding: '11px 14px', borderRadius: 10, background: '#f7faff', border: '1.5px solid #e2eaf5', color: '#0b1f3a', fontSize: 14, outline: 'none', boxSizing: 'border-box', marginBottom: 16, fontFamily: 'inherit', transition: 'border-color 0.2s' }}
@@ -157,6 +169,7 @@ export default function LoginPage() {
             <div style={{ position: 'relative', marginBottom: 28 }}>
               <input
                 type={showPass ? 'text' : 'password'} id="password" name="password" autoComplete="current-password"
+                autoCapitalize="none" spellCheck={false}
                 placeholder="••••••••"
                 value={password} onChange={e => setPassword(e.target.value)} required
                 style={{ width: '100%', padding: '11px 44px 11px 14px', borderRadius: 10, background: '#f7faff', border: '1.5px solid #e2eaf5', color: '#0b1f3a', fontSize: 14, outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', transition: 'border-color 0.2s' }}

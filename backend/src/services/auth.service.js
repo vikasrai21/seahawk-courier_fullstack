@@ -200,7 +200,7 @@ async function createUser({ name, email, password, role, branch, clientCode }) {
       password: hashed,
       role: role || 'STAFF',
       branch: sanitise(branch),
-      mustChangePassword: true,
+      mustChangePassword: false,
     },
     select: { id: true, name: true, email: true, role: true, branch: true, active: true, mustChangePassword: true, createdAt: true },
   });
@@ -219,7 +219,10 @@ async function createUser({ name, email, password, role, branch, clientCode }) {
 
 async function updateUser(id, data) {
   const update = { ...data };
-  if (update.password) update.password = await bcrypt.hash(update.password, SALT_ROUNDS);
+  if (update.password) {
+    update.password = await bcrypt.hash(update.password, SALT_ROUNDS);
+    update.mustChangePassword = false;
+  }
   if (update.email) update.email = update.email.toLowerCase();
   if (update.name) update.name = sanitise(update.name);
   if (update.branch) update.branch = sanitise(update.branch);

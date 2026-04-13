@@ -243,8 +243,8 @@ async function sendWelcomeEmail(user, _tempPassword) {
   await sendEmail({
     to: user.email,
     subject: 'Welcome to Sea Hawk Client Portal',
-    html: `<p>Dear <strong>${user.name}</strong>,</p><p>Your client portal account has been created.</p><p>Login: <a href="${loginUrl}">${loginUrl}</a></p><p>Email: ${user.email}</p><p>Your temporary password has been shared by your account administrator via a secure channel.</p><p>Please change your password after first login.</p><p>— Sea Hawk Courier</p>`,
-    text: `Welcome ${user.name}! Your portal login is ${user.email}. Your temporary password has been shared separately via a secure channel. Please change your password after first login.`,
+    html: `<p>Dear <strong>${user.name}</strong>,</p><p>Your client portal account has been created.</p><p>Login: <a href="${loginUrl}">${loginUrl}</a></p><p>Email: ${user.email}</p><p>Your password has been shared by your account administrator via a secure channel.</p><p>— Sea Hawk Courier</p>`,
+    text: `Welcome ${user.name}! Your portal login is ${user.email}. Your password has been shared separately via a secure channel.`,
   });
 }
 

@@ -99,11 +99,7 @@ function RouteLoadingScreen() {
 
 function PrivateRoute({ children, adminOnly = false, ownerOnly = false, roles = null }) {
   const { user, isAdmin, isOwner, hasRole } = useAuth();
-  const location = useLocation();
   if (!user) return <Navigate to="/login" replace />;
-  if (user.mustChangePassword && location.pathname !== '/change-password' && location.pathname !== '/app/change-password') {
-    return <Navigate to="/change-password?required=1" replace />;
-  }
   if (ownerOnly && !isOwner) return <Navigate to="/app" replace />;
   if (adminOnly && !isAdmin) return <Navigate to="/app" replace />;
   if (roles && !hasRole(...roles)) return <Navigate to="/app" replace />;
@@ -112,22 +108,14 @@ function PrivateRoute({ children, adminOnly = false, ownerOnly = false, roles = 
 
 function StaffRoute({ children }) {
   const { user } = useAuth();
-  const location = useLocation();
   if (!user) return <Navigate to="/login" replace />;
-  if (user.mustChangePassword && location.pathname !== '/change-password' && location.pathname !== '/app/change-password') {
-    return <Navigate to="/change-password?required=1" replace />;
-  }
   if (user.role === 'CLIENT') return <Navigate to="/portal" replace />;
   return children;
 }
 
 function ClientRoute({ children }) {
   const { user } = useAuth();
-  const location = useLocation();
   if (!user) return <Navigate to="/login" replace />;
-  if (user.mustChangePassword && location.pathname !== '/change-password') {
-    return <Navigate to="/change-password?required=1" replace />;
-  }
   if (user.role !== 'CLIENT') return <Navigate to="/app" replace />;
   return children;
 }

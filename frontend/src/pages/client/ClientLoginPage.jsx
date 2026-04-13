@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from "../../context/AuthContext";
 
+const REMEMBERED_CLIENT_LOGIN_EMAIL_KEY = 'shk_client_login_email';
+
 export default function ClientLoginPage() {
   const { login, user } = useAuth();
   const navigate = useNavigate();
@@ -13,10 +15,16 @@ export default function ClientLoginPage() {
 
   // If already logged in as CLIENT, go to portal
   useEffect(() => {
-    if (user?.mustChangePassword) navigate('/change-password?required=1', { replace: true });
-    else if (user?.role === 'CLIENT') navigate('/portal', { replace: true });
+    if (user?.role === 'CLIENT') navigate('/portal', { replace: true });
     else if (user) navigate('/app', { replace: true });
-  }, [user]);
+  }, [user, navigate]);
+
+  useEffect(() => {
+    try {
+      const savedEmail = window.localStorage.getItem(REMEMBERED_CLIENT_LOGIN_EMAIL_KEY);
+      if (savedEmail) setForm((prev) => ({ ...prev, email: savedEmail }));
+    } catch {}
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -24,9 +32,11 @@ export default function ClientLoginPage() {
     setLoading(true);
     try {
       const loggedIn = await login(form.email, form.password, rememberMe);
-      if (loggedIn?.mustChangePassword) {
-        navigate('/change-password?required=1', { replace: true });
-      } else if (loggedIn.role === 'CLIENT') {
+      try {
+        if (rememberMe) window.localStorage.setItem(REMEMBERED_CLIENT_LOGIN_EMAIL_KEY, form.email.trim());
+        else window.localStorage.removeItem(REMEMBERED_CLIENT_LOGIN_EMAIL_KEY);
+      } catch {}
+      if (loggedIn.role === 'CLIENT') {
         navigate('/portal', { replace: true });
       } else {
         // Staff/Admin who accidentally hit this page
@@ -68,6 +78,8 @@ export default function ClientLoginPage() {
                 id="email"
                 name="email"
                 autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
                 value={form.email}
                 onChange={e => setForm(f => ({...f, email: e.target.value}))}
                 placeholder="your@email.com"
@@ -82,6 +94,8 @@ export default function ClientLoginPage() {
                 id="password"
                 name="password"
                 autoComplete="current-password"
+                autoCapitalize="none"
+                spellCheck={false}
                 value={form.password}
                 onChange={e => setForm(f => ({...f, password: e.target.value}))}
                 placeholder=""
