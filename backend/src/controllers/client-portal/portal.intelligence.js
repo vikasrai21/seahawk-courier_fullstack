@@ -41,6 +41,26 @@ function rtoRiskScore({ status, ageDays, idleHours, slaDays }) {
   return Math.min(100, score);
 }
 
+function deriveHealthScore(summary, total) {
+  if (!total) return 100;
+  const flaggedPct = (summary.flagged / total) * 100;
+  const seriousPct = (summary.highRtoRisk / total) * 100;
+  const breachPct = (summary.slaBreaches / total) * 100;
+
+  // Weighted penalty model tuned for client portal readability.
+  const penalty = (flaggedPct * 0.35) + (seriousPct * 0.45) + (breachPct * 0.2);
+  return Math.max(0, Math.min(100, Math.round(100 - penalty)));
+}
+
+function inferRiskReason(row) {
+  if (row.status === 'NDR') return 'Failed delivery attempt already recorded';
+  if (row.status === 'Delayed') return 'Carrier marked shipment as delayed';
+  if (row.flags.includes('STUCK_IN_SCAN')) return 'No fresh scan updates for a long duration';
+  if (row.flags.includes('SLA_BREACH')) return 'Transit age exceeds expected SLA for service type';
+  if (row.rtoRiskScore >= 75) return 'Multiple negative signals indicate possible return-to-origin';
+  return 'Normal flow';
+}
+
 async function intelligence(req, res) {
   const clientCode = await resolveClientCode(req);
   if (!clientCode) return R.notFound(res, 'Client profile not found.');
@@ -94,7 +114,32 @@ async function intelligence(req, res) {
     highRtoRisk: flagged.filter((r) => r.rtoRiskScore >= 75).length,
   };
 
-  R.ok(res, { summary, items: flagged, range: { from: startStr, to: endStr } });
+  const healthScore = deriveHealthScore(summary, summary.total);
+  const alerts = [];
+  if (summary.slaBreaches > 0) alerts.push(`${summary.slaBreaches} shipments are projected to miss SLA.`);
+  if (summary.stuckInScan > 0) alerts.push(`${summary.stuckInScan} shipments appear stuck with no recent scans.`);
+  if (summary.highRtoRisk > 0) alerts.push(`${summary.highRtoRisk} shipments carry high RTO probability.`);
+
+  const predictiveDelays = flagged
+    .filter((r) => !FINAL_STATUSES.has(r.status))
+    .slice(0, 8)
+    .map((r) => ({
+      awb: r.awb,
+      status: r.status,
+      destination: r.destination,
+      courier: r.courier,
+      expectedDelayDays: Math.max(0, r.ageDays - r.slaDays),
+      confidence: Math.min(95, Math.max(50, 55 + Math.round((r.rtoRiskScore / 100) * 35))),
+      reason: inferRiskReason(r),
+    }));
+
+  R.ok(res, {
+    summary: { ...summary, healthScore },
+    alerts,
+    predictiveDelays,
+    items: flagged,
+    range: { from: startStr, to: endStr },
+  });
 }
 
 module.exports = { intelligence };

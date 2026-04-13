@@ -31,8 +31,27 @@ const MOVEMENT_STATUS_PREF_KEYS = {
   Delivered: 'delivered',
 };
 
-function buildMovementWhatsAppMessage(status, awb) {
+function applySmsTemplate(template, params) {
+  const source = String(template || '').trim();
+  if (!source) return '';
+  return source
+    .replace(/\{\{awb\}\}/gi, String(params.awb || ''))
+    .replace(/\{\{status\}\}/gi, String(params.status || ''))
+    .replace(/\{\{trackUrl\}\}/gi, String(params.trackUrl || ''))
+    .replace(/\{\{consignee\}\}/gi, String(params.consignee || ''))
+    .replace(/\{\{brand\}\}/gi, String(params.brand || 'Sea Hawk Courier'));
+}
+
+function buildMovementWhatsAppMessage(status, awb, options = {}) {
   const trackUrl = `${appBaseUrl}/track/${encodeURIComponent(awb)}`;
+  const templated = applySmsTemplate(options.smsTemplate, {
+    awb,
+    status,
+    trackUrl,
+    consignee: options.consignee || '',
+    brand: options.brand || 'Sea Hawk Courier',
+  });
+  if (templated) return templated;
   if (status === 'Booked') {
     return `📦 Your shipment (AWB: ${awb}) has been booked successfully with Sea Hawk Courier.\n\nTrack: ${trackUrl}\n\nFor support: ${supportPhone}`;
   }
@@ -167,13 +186,21 @@ async function notifyStatusChange(shipment) {
     if (!clientCode) return null;
     client = await prisma.client.findUnique({
       where: { code: clientCode },
-      select: { email: true, company: true },
+      select: { email: true, company: true, brandSettings: true },
     });
     return client;
   };
 
   if (movementPrefKey && phone && prefs.whatsapp?.[movementPrefKey]) {
-    await sendWhatsApp(phone, buildMovementWhatsAppMessage(status, awb));
+    const c = await getClient();
+    const smsTemplate = c?.brandSettings && typeof c.brandSettings === 'object'
+      ? c.brandSettings.smsTemplate
+      : null;
+    await sendWhatsApp(phone, buildMovementWhatsAppMessage(status, awb, {
+      smsTemplate,
+      consignee,
+      brand: c?.company || 'Sea Hawk Courier',
+    }));
   }
 
   if (movementPrefKey && clientCode && prefs.email?.[movementPrefKey]) {

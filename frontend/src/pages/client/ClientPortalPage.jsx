@@ -1074,6 +1074,15 @@ export default function ClientPortalPage({ toast }) {
                 <span>{intel?.summary?.highRtoRisk || 0}</span>
               </div>
             </div>
+            {(intel?.predictiveDelays || []).length > 0 && (
+              <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                {(intel.predictiveDelays || []).slice(0, 3).map((p) => (
+                  <div key={`${p.awb}-${p.status}`} style={{ fontSize: 12, color: '#1e293b', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 8, padding: '7px 9px' }}>
+                    {p.awb} · {p.destination || 'Unknown lane'} · +{p.expectedDelayDays}d delay · {p.confidence}% confidence
+                  </div>
+                ))}
+              </div>
+            )}
             {(intel?.alerts || []).length > 0 && (
               <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
                 {(intel.alerts || []).map((a, idx) => (

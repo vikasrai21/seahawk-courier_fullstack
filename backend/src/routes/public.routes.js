@@ -11,6 +11,7 @@ const rateLimit = require('express-rate-limit');
 const { publicTrackingLimiter } = require('../middleware/rateLimiter');
 const config = require('../config');
 const shipmentSvc = require('../services/shipment.service');
+const draftOrderSvc = require('../services/draftOrder.service');
 const { importSchema } = require('../validators/shipment.validator');
 const { auditLog } = require('../utils/audit');
 const dtdcSvc = require('../services/dtdc.service');
@@ -180,6 +181,21 @@ async function trackWithCourier(courier, awb) {
   }
 }
 
+function getByPath(obj, path) {
+  return String(path || '')
+    .split('.')
+    .filter(Boolean)
+    .reduce((acc, part) => (acc && typeof acc === 'object' ? acc[part] : undefined), obj);
+}
+
+function pickFirst(...values) {
+  for (const v of values) {
+    const s = String(v ?? '').trim();
+    if (s) return s;
+  }
+  return '';
+}
+
 // ── GET /api/public/track/:awb ─────────────────────────────────────────────
 router.get('/track/:awb', publicTrackingLimiter, async (req, res) => {
   const awb = req.params.awb?.trim().toUpperCase();
@@ -284,6 +300,144 @@ router.post('/integrations/excel/import', integrationLimiter, importJsonParser, 
     logger.error('Integration import failed', { error: err.message, ip: req.ip });
     return res.status(500).json({ success: false, message: 'Integration import failed.' });
   }
+});
+
+// ── POST /api/public/integrations/ecommerce/:provider/:clientCode ──────────
+// Shopify / WooCommerce webhook ingestion to Draft Queue.
+router.post('/integrations/ecommerce/:provider/:clientCode', integrationLimiter, importJsonParser, async (req, res) => {
+  const provider = String(req.params.provider || '').trim().toLowerCase();
+  const clientCode = String(req.params.clientCode || '').trim().toUpperCase();
+  if (!['shopify', 'woocommerce'].includes(provider)) {
+    return res.status(400).json({ success: false, message: 'Unsupported provider.' });
+  }
+  if (!clientCode) return res.status(400).json({ success: false, message: 'clientCode is required in URL.' });
+
+  const providedKey = String(req.get('x-api-key') || req.query?.key || '').trim();
+  if (!providedKey) return res.status(401).json({ success: false, message: 'x-api-key required.' });
+  const providedHash = crypto.createHash('sha256').update(providedKey).digest('hex');
+
+  const [client, apiKey] = await Promise.all([
+    prisma.client.findUnique({
+      where: { code: clientCode },
+      select: { code: true, brandSettings: true },
+    }),
+    prisma.clientApiKey.findFirst({
+      where: { clientCode, tokenHash: providedHash, active: true },
+      select: { id: true, name: true },
+    }),
+  ]);
+  if (!client) return res.status(404).json({ success: false, message: 'Client not found.' });
+  if (!apiKey) return res.status(401).json({ success: false, message: 'Invalid API key.' });
+
+  const cfg = client?.brandSettings?.integrations?.[provider];
+  if (!cfg?.enabled) {
+    return res.status(403).json({ success: false, message: `${provider} integration is disabled for this client.` });
+  }
+
+  const body = req.body || {};
+  const orderId = pickFirst(
+    getByPath(body, cfg?.mappings?.referenceId),
+    body?.id,
+    body?.order_number,
+    body?.number,
+    body?.order_key
+  );
+  const consignee = pickFirst(
+    getByPath(body, cfg?.mappings?.consignee),
+    body?.shipping_address?.name,
+    [body?.shipping?.first_name, body?.shipping?.last_name].filter(Boolean).join(' '),
+    body?.customer?.name
+  );
+  const destination = pickFirst(
+    getByPath(body, cfg?.mappings?.destination),
+    body?.shipping_address?.city,
+    body?.shipping?.city,
+    cfg?.staticValues?.destination
+  );
+  const phone = pickFirst(
+    getByPath(body, cfg?.mappings?.phone),
+    body?.shipping_address?.phone,
+    body?.billing_address?.phone,
+    body?.billing?.phone
+  );
+  const pincode = pickFirst(
+    getByPath(body, cfg?.mappings?.pincode),
+    body?.shipping_address?.zip,
+    body?.shipping?.postcode,
+    cfg?.staticValues?.pincode
+  );
+  const weightRaw = pickFirst(
+    getByPath(body, cfg?.mappings?.weight),
+    body?.total_weight,
+    body?.weight
+  );
+  const weight = Number(weightRaw || cfg?.defaultWeightKg || 0.5);
+
+  if (!orderId || !consignee) {
+    await prisma.auditLog.create({
+      data: {
+        action: 'INTEGRATION_DRAFT_FAILED',
+        entity: 'INTEGRATION_WEBHOOK',
+        entityId: `${clientCode}:${provider}:${orderId || 'unknown'}`,
+        newValue: { reason: 'missing-order-or-consignee', payloadPreview: body },
+        ip: req.ip,
+      },
+    });
+    return res.status(400).json({ success: false, message: 'Order id/reference and consignee are required by mapping.' });
+  }
+
+  const dup = await prisma.draftOrder.findFirst({
+    where: { clientCode, referenceId: String(orderId), status: { in: ['PENDING', 'FULFILLED'] } },
+    select: { id: true, status: true },
+  });
+  if (dup) {
+    await prisma.auditLog.create({
+      data: {
+        action: 'INTEGRATION_DRAFT_DUPLICATE',
+        entity: 'INTEGRATION_WEBHOOK',
+        entityId: `${clientCode}:${provider}:${orderId}`,
+        newValue: { duplicateDraftId: dup.id, duplicateStatus: dup.status },
+        ip: req.ip,
+      },
+    });
+    return res.json({ success: true, message: 'Duplicate order ignored.', data: { duplicate: true, draftId: dup.id } });
+  }
+
+  const draft = await draftOrderSvc.create({
+    clientCode,
+    referenceId: String(orderId),
+    consignee: String(consignee),
+    destination: String(destination || ''),
+    phone: phone || null,
+    pincode: pincode || null,
+    weight: Number.isFinite(weight) && weight > 0 ? weight : Number(cfg?.defaultWeightKg || 0.5),
+  });
+
+  await prisma.clientApiKey.update({
+    where: { id: apiKey.id },
+    data: { lastUsedAt: new Date() },
+  }).catch(() => {});
+
+  await prisma.auditLog.create({
+    data: {
+      action: 'INTEGRATION_DRAFT_CREATED',
+      entity: 'INTEGRATION_WEBHOOK',
+      entityId: `${clientCode}:${provider}:${orderId}`,
+      newValue: {
+        provider,
+        apiKeyName: apiKey.name,
+        draftId: draft.id,
+        referenceId: draft.referenceId,
+      },
+      ip: req.ip,
+    },
+  });
+
+  return res.status(201).json({
+    success: true,
+    message: 'Draft order created from ecommerce webhook.',
+    data: { draftId: draft.id, referenceId: draft.referenceId, provider },
+  });
 });
 
 // ── POST /api/public/pickup-request ───────────────────────────────────────
