@@ -15,6 +15,7 @@ export default function ClientNDRPage({ toast }) {
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState({ action: 'REATTEMPT', newAddress: '', newPhone: '', rescheduleDate: '', notes: '' });
   const [saving, setSaving] = useState(false);
+  const [bridgeSending, setBridgeSending] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -49,6 +50,24 @@ export default function ClientNDRPage({ toast }) {
       toast?.(e.message || 'Failed to submit NDR request', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const sendWhatsAppBridge = async () => {
+    if (!selected) return;
+    setBridgeSending(true);
+    try {
+      const res = await api.post(`/portal/ndr/${selected.id}/whatsapp-bridge`, {
+        phone: form.newPhone || selected.shipment?.phone || '',
+        preferredDate: form.rescheduleDate || '',
+        mapHint: form.newAddress || '',
+        note: form.notes || '',
+      });
+      toast?.(res.message || 'WhatsApp bridge sent', 'success');
+    } catch (e) {
+      toast?.(e.message || 'Failed to send WhatsApp bridge', 'error');
+    } finally {
+      setBridgeSending(false);
     }
   };
 
@@ -127,6 +146,9 @@ export default function ClientNDRPage({ toast }) {
         footer={(
           <>
             <button className="btn-secondary" onClick={() => setSelected(null)}>Cancel</button>
+            <button className="btn-secondary" onClick={sendWhatsAppBridge} disabled={bridgeSending}>
+              {bridgeSending ? 'Sending…' : 'Send WhatsApp Link'}
+            </button>
             <button className="btn-primary" onClick={submit} disabled={saving}>{saving ? 'Submitting…' : 'Submit Request'}</button>
           </>
         )}

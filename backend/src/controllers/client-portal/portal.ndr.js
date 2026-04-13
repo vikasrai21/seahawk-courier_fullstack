@@ -3,6 +3,7 @@
 const prisma = require('../../config/prisma');
 const R = require('../../utils/response');
 const { resolveClientCode } = require('./shared');
+const notify = require('../../services/notification.service');
 
 async function list(req, res) {
   const clientCode = await resolveClientCode(req);
@@ -91,4 +92,52 @@ async function respond(req, res) {
   R.ok(res, updated, 'NDR request submitted successfully.');
 }
 
-module.exports = { list, respond };
+async function whatsappBridge(req, res) {
+  const clientCode = await resolveClientCode(req, req.body);
+  if (!clientCode) return R.notFound(res, 'Client profile not found.');
+
+  const ndr = await prisma.nDREvent.findUnique({
+    where: { id: parseInt(req.params.id, 10) },
+    include: {
+      shipment: { select: { id: true, awb: true, clientCode: true, consignee: true, destination: true, phone: true } },
+    },
+  });
+  if (!ndr || ndr.shipment?.clientCode !== clientCode) return R.notFound(res, 'NDR');
+
+  const rawPhone = String(req.body?.phone || ndr.shipment?.phone || '').trim();
+  const phone = rawPhone.replace(/\D/g, '');
+  if (!phone || phone.length < 10) return R.badRequest(res, 'Valid customer phone number is required.');
+
+  const preferredDate = String(req.body?.preferredDate || '').trim();
+  const mapHint = String(req.body?.mapHint || '').trim();
+  const note = String(req.body?.note || '').trim();
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const fallbackTrack = `${baseUrl}/track/${encodeURIComponent(ndr.awb)}`;
+  const message = [
+    `Sea Hawk Delivery Support`,
+    `AWB: ${ndr.awb}`,
+    `Hi ${ndr.shipment?.consignee || 'Customer'}, please share your live location and preferred delivery slot so we can reattempt your shipment.`,
+    `Tracking link: ${fallbackTrack}`,
+    preferredDate ? `Preferred date: ${preferredDate}` : '',
+    mapHint ? `Location note: ${mapHint}` : '',
+    note ? `Note: ${note}` : '',
+  ].filter(Boolean).join('\n');
+
+  await notify.sendWhatsApp(phone, message);
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      userEmail: req.user.email,
+      action: 'CLIENT_NDR_WHATSAPP_BRIDGE',
+      entity: 'NDR',
+      entityId: String(ndr.id),
+      newValue: { awb: ndr.awb, to: phone, preferredDate: preferredDate || null, mapHint: mapHint || null, note: note || null },
+      ip: req.ip,
+    },
+  });
+
+  R.ok(res, { sent: true, to: phone }, 'WhatsApp bridge message sent to customer.');
+}
+
+module.exports = { list, respond, whatsappBridge };

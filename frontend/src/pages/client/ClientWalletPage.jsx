@@ -27,6 +27,10 @@ export default function ClientWalletPage({ toast }) {
   const [loading, setLoading] = useState(true);
   const [amount, setAmount] = useState(2500);
   const [toppingUp, setToppingUp] = useState(false);
+  const [autoTopup, setAutoTopup] = useState({ enabled: false, threshold: 2000, amount: 5000, channel: 'WHATSAPP', whatsapp: '' });
+  const [savingAutoTopup, setSavingAutoTopup] = useState(false);
+  const [triggeringAutoTopup, setTriggeringAutoTopup] = useState(false);
+  const [ledgerMonth, setLedgerMonth] = useState(new Date().toISOString().slice(0, 7));
 
   const triggerBlobDownload = (blob, filename) => {
     const url = window.URL.createObjectURL(blob);
@@ -41,10 +45,14 @@ export default function ClientWalletPage({ toast }) {
 
   const load = useCallback(() => {
     setLoading(true);
-    api.get('/portal/wallet')
-      .then((r) => {
+    Promise.all([
+      api.get('/portal/wallet'),
+      api.get('/portal/wallet/auto-topup'),
+    ])
+      .then(([r, auto]) => {
         setWallet(r.data?.wallet);
         setTxns(r.data?.txns || []);
+        if (auto?.data?.rule) setAutoTopup((prev) => ({ ...prev, ...auto.data.rule }));
       })
       .catch((e) => toast?.(e.message, 'error'))
       .finally(() => setLoading(false));
@@ -125,6 +133,49 @@ export default function ClientWalletPage({ toast }) {
     }
   };
 
+  const saveAutoTopupRule = async () => {
+    if (autoTopup.enabled && (Number(autoTopup.threshold) < 100 || Number(autoTopup.amount) < 100)) {
+      toast?.('Threshold and top-up amount must be at least ₹100', 'error');
+      return;
+    }
+    setSavingAutoTopup(true);
+    try {
+      const res = await api.post('/portal/wallet/auto-topup', autoTopup);
+      setAutoTopup((prev) => ({ ...prev, ...(res.data?.rule || {}) }));
+      toast?.(res.message || 'Auto-topup rule saved', 'success');
+    } catch (e) {
+      toast?.(e.message || 'Failed to save auto-topup rule', 'error');
+    } finally {
+      setSavingAutoTopup(false);
+    }
+  };
+
+  const triggerAutoTopupAlert = async () => {
+    setTriggeringAutoTopup(true);
+    try {
+      const res = await api.post('/portal/wallet/auto-topup/trigger', {});
+      toast?.(res.message || 'Auto-topup alert sent', 'success');
+    } catch (e) {
+      toast?.(e.message || 'Failed to trigger auto-topup alert', 'error');
+    } finally {
+      setTriggeringAutoTopup(false);
+    }
+  };
+
+  const downloadMonthlyLedger = async () => {
+    if (!ledgerMonth) {
+      toast?.('Select a month first', 'error');
+      return;
+    }
+    try {
+      const blob = await api.get(`/portal/wallet/ledger-export?month=${encodeURIComponent(ledgerMonth)}`, { responseType: 'blob' });
+      triggerBlobDownload(blob, `wallet-ledger-${wallet?.code || 'client'}-${ledgerMonth}.csv`);
+      toast?.('Ledger export downloaded', 'success');
+    } catch (e) {
+      toast?.(e.message || 'Failed to export monthly ledger', 'error');
+    }
+  };
+
   if (loading) return <PageLoader />;
 
   return (
@@ -178,7 +229,7 @@ export default function ClientWalletPage({ toast }) {
               </div>
 
               {/* Quick Recharge Card */}
-              <div className="rounded-[32px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
+               <div className="rounded-[32px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
                  <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 mb-6">Neural Funding Bolt</h4>
                  <div className="space-y-4">
                     <div className="grid grid-cols-3 gap-2">
@@ -197,8 +248,62 @@ export default function ClientWalletPage({ toast }) {
                        {toppingUp ? 'Engaging Flow…' : 'Top Up Wallet'}
                     </button>
                     <p className="text-[9px] text-center font-bold text-slate-400 uppercase tracking-widest mt-2">🔐 Encrypted via Razorpay Secured Stack</p>
-                 </div>
-              </div>
+               </div>
+
+               <div className="rounded-[32px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-8 shadow-sm space-y-4">
+                  <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Auto Top-up Rule</h4>
+                  <label className="flex items-center justify-between rounded-2xl border border-slate-200 px-3 py-3 text-sm font-semibold text-slate-700">
+                    Enable auto-topup alerts
+                    <input
+                      type="checkbox"
+                      checked={!!autoTopup.enabled}
+                      onChange={(e) => setAutoTopup((prev) => ({ ...prev, enabled: e.target.checked }))}
+                    />
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <input
+                      type="number"
+                      min="100"
+                      className="input"
+                      value={autoTopup.threshold}
+                      onChange={(e) => setAutoTopup((prev) => ({ ...prev, threshold: Number(e.target.value || 0) }))}
+                      placeholder="Threshold ₹"
+                    />
+                    <input
+                      type="number"
+                      min="100"
+                      className="input"
+                      value={autoTopup.amount}
+                      onChange={(e) => setAutoTopup((prev) => ({ ...prev, amount: Number(e.target.value || 0) }))}
+                      placeholder="Top-up ₹"
+                    />
+                  </div>
+                  <select
+                    className="input"
+                    value={autoTopup.channel}
+                    onChange={(e) => setAutoTopup((prev) => ({ ...prev, channel: e.target.value }))}
+                  >
+                    <option value="WHATSAPP">WhatsApp Alert</option>
+                    <option value="EMAIL">Email Alert</option>
+                  </select>
+                  {autoTopup.channel === 'WHATSAPP' && (
+                    <input
+                      className="input"
+                      value={autoTopup.whatsapp || ''}
+                      onChange={(e) => setAutoTopup((prev) => ({ ...prev, whatsapp: e.target.value }))}
+                      placeholder="WhatsApp number"
+                    />
+                  )}
+                  <div className="flex gap-2">
+                    <button onClick={saveAutoTopupRule} disabled={savingAutoTopup} className="btn-primary">
+                      {savingAutoTopup ? 'Saving…' : 'Save Rule'}
+                    </button>
+                    <button onClick={triggerAutoTopupAlert} disabled={triggeringAutoTopup} className="btn-secondary">
+                      {triggeringAutoTopup ? 'Triggering…' : 'Send Alert'}
+                    </button>
+                  </div>
+               </div>
+            </div>
            </div>
 
            {/* RIGHT: Detailed Ledger & Visuals */}
@@ -235,9 +340,24 @@ export default function ClientWalletPage({ toast }) {
                     <div className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[9px] font-black text-slate-500 uppercase tracking-widest">
                        Audited Record
                     </div>
-                 </div>
-                 
-                 <div className="rounded-[40px] border border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 p-2 shadow-sm backdrop-blur-sm overflow-hidden min-h-[400px]">
+                  </div>
+
+                  <div className="rounded-3xl border border-slate-100 bg-white dark:bg-slate-900 p-4 shadow-sm flex flex-wrap items-center gap-3 justify-between">
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs font-black uppercase tracking-[0.15em] text-slate-400">Monthly Ledger</label>
+                      <input
+                        type="month"
+                        className="input"
+                        value={ledgerMonth}
+                        onChange={(e) => setLedgerMonth(e.target.value)}
+                      />
+                    </div>
+                    <button onClick={downloadMonthlyLedger} className="btn-secondary">
+                      Export CSV
+                    </button>
+                  </div>
+                  
+                  <div className="rounded-[40px] border border-slate-100 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 p-2 shadow-sm backdrop-blur-sm overflow-hidden min-h-[400px]">
                     <div className="p-4">
                        <TransactionList transactions={txns} loading={loading} />
                     </div>

@@ -5,12 +5,24 @@ import api from '../../services/api';
 export default function ClientBrandTrackingPage({ toast }) {
   const [brand, setBrand] = useState(null);
   const [copied, setCopied] = useState('');
+  const [form, setForm] = useState({ brandName: '', brandColor: '#e8580a', logoUrl: '', subdomain: '', smsTemplate: '' });
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     const load = async () => {
       try {
         const res = await api.get('/portal/branding');
-        setBrand(res.data?.brand || null);
+        const b = res.data?.brand || null;
+        setBrand(b);
+        if (b) {
+          setForm({
+            brandName: b.company || '',
+            brandColor: b.brandColor || '#e8580a',
+            logoUrl: b.logoUrl || '',
+            subdomain: b.subdomain || '',
+            smsTemplate: b.smsTemplate || '',
+          });
+        }
       } catch (err) {
         toast?.(err.message || 'Failed to load branding details', 'error');
       }
@@ -25,6 +37,21 @@ export default function ClientBrandTrackingPage({ toast }) {
       toast?.('Copied', 'success');
     } catch {
       toast?.('Copy failed', 'error');
+    }
+  };
+
+  const saveBrandSettings = async () => {
+    setSaving(true);
+    try {
+      const res = await api.post('/portal/branding', form);
+      toast?.(res.message || 'Brand settings updated', 'success');
+      const latest = await api.get('/portal/branding');
+      const b = latest.data?.brand || null;
+      setBrand(b);
+    } catch (err) {
+      toast?.(err.message || 'Failed to save brand settings', 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -59,6 +86,21 @@ export default function ClientBrandTrackingPage({ toast }) {
               <button className="btn-primary" onClick={() => copy(brand?.embedCode || '', 'embed')}>Copy Embed Code</button>
             </div>
             {copied === 'embed' && <div className="mt-2 text-xs text-green-600">Embed code copied.</div>}
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="font-bold text-gray-900">Brand Studio</div>
+          <p className="text-sm text-gray-500 mt-1">Customize logo, color, subdomain hint, and customer SMS template.</p>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <input className="input" value={form.brandName} onChange={(e) => setForm((p) => ({ ...p, brandName: e.target.value }))} placeholder="Brand name" />
+            <input className="input" value={form.logoUrl} onChange={(e) => setForm((p) => ({ ...p, logoUrl: e.target.value }))} placeholder="Logo URL" />
+            <input className="input" value={form.brandColor} onChange={(e) => setForm((p) => ({ ...p, brandColor: e.target.value }))} placeholder="#e8580a" />
+            <input className="input" value={form.subdomain} onChange={(e) => setForm((p) => ({ ...p, subdomain: e.target.value }))} placeholder="track.yourbrand.com (hint)" />
+            <textarea className="input md:col-span-2 min-h-[90px]" value={form.smsTemplate} onChange={(e) => setForm((p) => ({ ...p, smsTemplate: e.target.value }))} placeholder="SMS template for delivery updates" />
+          </div>
+          <div className="mt-4">
+            <button className="btn-primary" onClick={saveBrandSettings} disabled={saving}>{saving ? 'Saving…' : 'Save Brand Settings'}</button>
           </div>
         </div>
 

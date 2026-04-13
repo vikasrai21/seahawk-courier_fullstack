@@ -240,6 +240,8 @@ const ACTION_GROUPS = [
     title: 'System',
     subtitle: 'Configuration and communication',
     actions: [
+      { to: '/portal/wallet', icon: '💳', title: 'Wallet Center', description: 'Monitor balance, configure auto-topup, and download ledger exports.', tone: 'purple' },
+      { to: '/portal/invoices', icon: '🧾', title: 'Invoice Exports', description: 'Download GST-ready invoice documents and monthly export sheets.', tone: 'amber' },
       { to: '/portal/import', icon: '📤', title: 'Order Import', description: 'Upload bulk orders and get them into the shipment pipeline faster.', tone: 'amber' },
       { to: '/portal/notifications', icon: '🔔', title: 'Notification Preferences', description: 'Tune alerts so teams only get the updates that matter.', tone: 'slate' },
       { to: '/portal/support', icon: '🎫', title: 'Support Tickets', description: 'Check open issues, ticket history, and response status in one place.', tone: 'slate' },
@@ -525,6 +527,10 @@ export default function ClientPortalPage({ toast }) {
   }, [performance]);
 
   const intelItems = intel?.items || [];
+  const healthScore = Number(intel?.summary?.healthScore || 0);
+  const healthTone = healthScore >= 90 ? '#15803d' : healthScore >= 75 ? '#c2410c' : '#b91c1c';
+  const healthBg = healthScore >= 90 ? '#ecfdf5' : healthScore >= 75 ? '#fff7ed' : '#fef2f2';
+  const healthLabel = healthScore >= 90 ? 'Excellent' : healthScore >= 75 ? 'Watchlist' : 'Critical';
   const smartAlerts = useMemo(() => {
     const alerts = [];
     const inTransit = Number(stats?.totals?.inTransit || 0);
@@ -647,6 +653,13 @@ export default function ClientPortalPage({ toast }) {
                       style={{ textDecoration: 'none', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, padding: '11px 18px', background: 'rgba(255,255,255,0.08)', color: '#f8fafc', fontSize: 13, fontWeight: 700, transition: 'all 0.2s' }}
                     >
                       Order Queue
+                    </Link>
+                    <Link
+                      to="/portal/developer"
+                      className="portal-btn-secondary"
+                      style={{ textDecoration: 'none', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, padding: '11px 18px', background: 'rgba(255,255,255,0.08)', color: '#f8fafc', fontSize: 13, fontWeight: 700, transition: 'all 0.2s' }}
+                    >
+                      Developer Hub
                     </Link>
                     <button
                       onClick={fetchPortalData}
@@ -1026,6 +1039,23 @@ export default function ClientPortalPage({ toast }) {
             subtitle="Quick view of exceptions that need attention."
             tone="accent"
           >
+            <div
+              style={{
+                border: '1px solid #e5edf8',
+                borderRadius: 12,
+                background: healthBg,
+                padding: 10,
+                marginBottom: 10,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                color: healthTone,
+                fontWeight: 900,
+              }}
+            >
+              <span>Logistics Health Score</span>
+              <span>{healthScore}/100 · {healthLabel}</span>
+            </div>
             <div style={{ display: 'grid', gap: 10 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
                 <span>Flagged</span>
@@ -1044,6 +1074,15 @@ export default function ClientPortalPage({ toast }) {
                 <span>{intel?.summary?.highRtoRisk || 0}</span>
               </div>
             </div>
+            {(intel?.alerts || []).length > 0 && (
+              <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+                {(intel.alerts || []).map((a, idx) => (
+                  <div key={`${a}-${idx}`} style={{ fontSize: 12, color: '#7c2d12', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '7px 9px' }}>
+                    {a}
+                  </div>
+                ))}
+              </div>
+            )}
           </PortalPanel>
         </section>
 

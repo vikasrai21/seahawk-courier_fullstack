@@ -140,12 +140,17 @@ async function branding(req, res) {
 
   const client = await prisma.client.findUnique({
     where: { code: clientCode },
-    select: { code: true, company: true, email: true },
+    select: { code: true, company: true, email: true, brandSettings: true },
   });
   if (!client) return R.notFound(res, 'Client');
 
   const origin = `${req.protocol}://${req.get('host')}`;
-  const brandName = client.company || client.code;
+  const cfg = typeof client.brandSettings === 'object' && client.brandSettings ? client.brandSettings : {};
+  const brandName = String(cfg.brandName || client.company || client.code).trim();
+  const brandColor = String(cfg.brandColor || '#e8580a').trim();
+  const logoUrl = String(cfg.logoUrl || '').trim() || null;
+  const subdomain = String(cfg.subdomain || '').trim() || null;
+  const smsTemplate = String(cfg.smsTemplate || '').trim() || null;
   const trackingUrl = `${origin}/track?brand=${encodeURIComponent(brandName)}&client=${encodeURIComponent(client.code)}`;
   const widgetScriptUrl = `${origin}/embed/tracker.js`;
 
@@ -153,11 +158,56 @@ async function branding(req, res) {
     brand: {
       clientCode: client.code,
       company: brandName,
+      brandColor,
+      logoUrl,
+      subdomain,
+      smsTemplate,
       trackingUrl,
       widgetScriptUrl,
-      embedCode: `<div id="seahawk-tracker"></div>\n<script src="${widgetScriptUrl}" data-container="seahawk-tracker" data-brand-color="#e8580a"></script>`,
+      embedCode: `<div id="seahawk-tracker"></div>\n<script src="${widgetScriptUrl}" data-container="seahawk-tracker" data-brand-color="${brandColor}"></script>`,
     },
   });
 }
 
-module.exports = { mapShipments, rtoIntelligence, pods, branding };
+function sanitizeBrandPayload(body = {}) {
+  const brandName = String(body.brandName || '').trim();
+  const brandColor = String(body.brandColor || '#e8580a').trim();
+  const logoUrl = String(body.logoUrl || '').trim();
+  const subdomain = String(body.subdomain || '').trim().toLowerCase();
+  const smsTemplate = String(body.smsTemplate || '').trim();
+
+  return {
+    brandName: brandName || undefined,
+    brandColor: /^#[0-9a-fA-F]{6}$/.test(brandColor) ? brandColor : '#e8580a',
+    logoUrl: logoUrl || null,
+    subdomain: subdomain || null,
+    smsTemplate: smsTemplate || null,
+  };
+}
+
+async function updateBranding(req, res) {
+  const clientCode = await resolveClientCode(req, req.body);
+  if (!clientCode) return R.notFound(res, 'Client profile not found.');
+  const payload = sanitizeBrandPayload(req.body || {});
+
+  await prisma.client.update({
+    where: { code: clientCode },
+    data: { brandSettings: payload },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      userEmail: req.user.email,
+      action: 'CLIENT_BRAND_SETTINGS_UPDATED',
+      entity: 'CLIENT',
+      entityId: clientCode,
+      newValue: payload,
+      ip: req.ip,
+    },
+  });
+
+  R.ok(res, { brandSettings: payload }, 'Brand settings updated.');
+}
+
+module.exports = { mapShipments, rtoIntelligence, pods, branding, updateBranding };

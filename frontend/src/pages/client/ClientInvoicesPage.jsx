@@ -45,6 +45,8 @@ export default function ClientInvoicesPage({ toast }) {
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState(null);
   const [viewing, setViewing] = useState(null);
+  const [ledgerMonth, setLedgerMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [ledgerFormat, setLedgerFormat] = useState('csv');
 
   const triggerBlobDownload = (blob, filename) => {
     const url = window.URL.createObjectURL(blob);
@@ -88,6 +90,21 @@ export default function ClientInvoicesPage({ toast }) {
       toast?.(e.message || `Failed to export ${format.toUpperCase()}`, 'error');
     } finally {
       setDownloadingId(null);
+    }
+  };
+
+  const downloadMonthlyLedger = async () => {
+    if (!ledgerMonth) {
+      toast?.('Select a month first', 'error');
+      return;
+    }
+    try {
+      const endpoint = `/portal/invoices/monthly-export?month=${encodeURIComponent(ledgerMonth)}&format=${encodeURIComponent(ledgerFormat)}`;
+      const blob = await api.get(endpoint, { responseType: 'blob' });
+      triggerBlobDownload(blob, `invoice-ledger-${ledgerMonth}.${ledgerFormat === 'csv' ? 'csv' : 'xls'}`);
+      toast?.('Monthly ledger downloaded', 'success');
+    } catch (e) {
+      toast?.(e.message || 'Failed to export monthly ledger', 'error');
     }
   };
 
@@ -142,6 +159,23 @@ export default function ClientInvoicesPage({ toast }) {
                 <div className="text-xs font-bold uppercase tracking-[0.1em] text-slate-500">Recommended Flow</div>
                 <div className="mt-2 text-sm font-semibold text-slate-800">PDF for archive, Excel for team review, CSV for system ingestion.</div>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-emerald-600">GST Ledger Export Center</div>
+              <div className="mt-1 text-sm text-slate-600">Download a month-wise invoice ledger for your finance and CA workflows.</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="month" className="input" value={ledgerMonth} onChange={(e) => setLedgerMonth(e.target.value)} />
+              <select className="input" value={ledgerFormat} onChange={(e) => setLedgerFormat(e.target.value)}>
+                <option value="csv">CSV</option>
+                <option value="xls">Excel (XLS)</option>
+              </select>
+              <button className="btn-secondary" onClick={downloadMonthlyLedger}>Download</button>
             </div>
           </div>
         </section>
