@@ -51,16 +51,18 @@ async function backupDatabase() {
     logger.warn('Scheduler: DB backup skipped — BACKUP_S3_BUCKET not configured');
     return;
   }
-  const { exec } = require('child_process');
+  const { execFile } = require('child_process');
   const { promisify } = require('util');
-  const execAsync = promisify(exec);
+  const execFileAsync = promisify(execFile);
+  const os = require('os');
+  const path = require('path');
   const date  = new Date().toISOString().split('T')[0];
-  const file  = `/tmp/seahawk-backup-${date}.sql`;
+  const file  = path.join(os.tmpdir(), `seahawk-backup-${date}.sql`);
 
   try {
     logger.info('Scheduler: starting DB backup...');
     const dbUrl = config.db.url;
-    await execAsync(`pg_dump "${dbUrl}" -f "${file}" --no-password`);
+    await execFileAsync('pg_dump', [dbUrl, '-f', file, '--no-password']);
 
     // Upload to S3/R2
     const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');

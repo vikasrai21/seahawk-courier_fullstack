@@ -23,7 +23,7 @@ if (redisUrl) {
 
     // Auto-detect TLS for Secure Redis (rediss://)
     if (redisUrl.startsWith('rediss://')) {
-      options.tls = { rejectUnauthorized: false };
+      options.tls = { rejectUnauthorized: true };
     }
 
     redis = new Redis(redisUrl, options);

@@ -56,7 +56,7 @@ export const useDataStore = create<DataState>((set, get) => ({
     if (!force && !hasFilters && shipments.length && shipmentsLoadedAt && Date.now() - shipmentsLoadedAt < 30_000) {
       return { shipments, meta: shipmentMeta };
     }
-    const response = await api.get('/tracking', { params: buildQuery(params) });
+    const response = await api.get('/shipments', { params: buildQuery(params) });
     const payload = response.data || {};
     const rows = payload.shipments || payload.data || payload || [];
     const meta = {

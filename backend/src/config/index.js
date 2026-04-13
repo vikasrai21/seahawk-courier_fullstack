@@ -13,6 +13,10 @@ const optional = (key, fallback = undefined) => process.env[key] || fallback;
 
 const env = process.env.NODE_ENV || 'development';
 
+if (env === 'production' && !process.env.CORS_ORIGIN?.trim()) {
+  throw new Error('[CONFIG] CORS_ORIGIN must be configured in production');
+}
+
 module.exports = {
   env,
   isProd:  env === 'production',
@@ -100,7 +104,7 @@ module.exports = {
 
   openai: {
     apiKey: optional('OPENAI_API_KEY'),
-    model: optional('OPENAI_MODEL', 'gpt-5.2'),
+    model: optional('OPENAI_MODEL', 'gpt-4o'),
     baseUrl: optional('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
   },
 

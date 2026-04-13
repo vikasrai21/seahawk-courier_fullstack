@@ -323,6 +323,7 @@ export default function ScanAWBPage({ toast }) {
   const reviewScan = reviewQueue[0] || null;
   const pendingReviewCount = reviewQueue.length;
   const reviewComparison = reviewDiffFields(reviewScan, reviewForm);
+  const mobileSessionActive = mobileStatus === 'connected';
 
   const notifyMobileReadyForNext = useCallback(() => {
     if (!socket || mobileStatus !== 'connected' || !mobilePIN) return;
@@ -1346,11 +1347,27 @@ export default function ScanAWBPage({ toast }) {
                       <div className="rounded-[28px] border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-slate-50 to-white dark:from-slate-900 dark:to-slate-900 p-6">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
                           <div>
-                            <div className="text-[10px] font-black uppercase tracking-[0.3em] text-emerald-600">Scanner Ready</div>
-                            <div className="mt-2 text-2xl font-black text-slate-900 dark:text-white">Start scanning slips</div>
+                            <div className={`text-[10px] font-black uppercase tracking-[0.3em] ${mobileSessionActive ? 'text-blue-600' : 'text-emerald-600'}`}>
+                              {mobileSessionActive ? 'Mobile Scanner Live' : 'Scanner Ready'}
+                            </div>
+                            <div className="mt-2 text-2xl font-black text-slate-900 dark:text-white">
+                              {mobileSessionActive ? 'Phone connected and ready' : 'Start scanning slips'}
+                            </div>
                             <p className="mt-2 text-sm font-bold text-slate-500 max-w-[480px]">
-                              Keep the desktop screen simple for ops. Start the camera, lock the barcode, then capture the slip only after the AWB is confirmed.
+                              {mobileSessionActive
+                                ? 'Use the phone to scan and capture. The desktop will stay focused on queueing, review, and intake approval as each mobile scan arrives.'
+                                : 'Keep the desktop screen simple for ops. Start the camera, lock the barcode, then capture the slip only after the AWB is confirmed.'}
                             </p>
+                            {mobileSessionActive && (
+                              <div className="mt-4 flex flex-wrap items-center gap-3">
+                                <div className="inline-flex items-center gap-2 rounded-2xl bg-blue-500/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-blue-700">
+                                  <Smartphone size={14} /> PIN {mobilePIN || '—'}
+                                </div>
+                                <div className="inline-flex items-center gap-2 rounded-2xl bg-emerald-500/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-emerald-700">
+                                  <Wifi size={14} /> Remote capture active
+                                </div>
+                              </div>
+                            )}
                           </div>
                           <div className="grid grid-cols-2 gap-3 min-w-[220px]">
                             <div className="rounded-2xl bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 px-4 py-3">
@@ -1367,17 +1384,27 @@ export default function ScanAWBPage({ toast }) {
                           <button
                             type="button"
                             onClick={startCameraScan}
-                            className="inline-flex items-center gap-3 rounded-[20px] bg-slate-900 px-6 py-4 text-[11px] font-black uppercase tracking-[0.3em] text-white shadow-xl shadow-slate-900/10"
+                            className={`inline-flex items-center gap-3 rounded-[20px] px-6 py-4 text-[11px] font-black uppercase tracking-[0.3em] shadow-xl transition-all ${mobileSessionActive ? 'bg-slate-200 text-slate-500 shadow-none' : 'bg-slate-900 text-white shadow-slate-900/10'}`}
+                            disabled={mobileSessionActive}
                           >
                             <Play size={16} /> Start Scan
                           </button>
                           <button
                             type="button"
                             onClick={startMobileSession}
-                            className={`inline-flex items-center gap-2 rounded-2xl px-4 py-4 text-[10px] font-black uppercase tracking-widest transition-all ${mobileStatus === 'connected' ? 'bg-blue-500 text-white animate-pulse shadow-lg shadow-blue-500/30' : 'bg-blue-500/10 text-blue-600'}`}
+                            className={`inline-flex items-center gap-2 rounded-2xl px-4 py-4 text-[10px] font-black uppercase tracking-widest transition-all ${mobileStatus === 'connected' ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/30' : 'bg-blue-500/10 text-blue-600'}`}
                           >
-                            <Smartphone size={16} /> Mobile Link
+                            <Smartphone size={16} /> {mobileStatus === 'connected' ? 'Mobile Linked' : 'Mobile Link'}
                           </button>
+                          {mobileSessionActive && (
+                            <button
+                              type="button"
+                              onClick={endMobileSession}
+                              className="inline-flex items-center gap-2 rounded-2xl bg-rose-500/10 px-4 py-4 text-[10px] font-black uppercase tracking-widest text-rose-600 transition hover:bg-rose-500/15"
+                            >
+                              <X size={14} /> End Mobile
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => setShowManualEntry(true)}
@@ -1386,6 +1413,19 @@ export default function ScanAWBPage({ toast }) {
                             <Edit size={14} /> Manual Entry
                           </button>
                         </div>
+                        {mobileSessionActive && (
+                          <div className={`mt-4 rounded-2xl border px-4 py-3 ${reviewScan ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
+                            <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.28em]">
+                              <span className={`inline-block h-2.5 w-2.5 rounded-full ${reviewScan ? 'bg-amber-500' : 'bg-blue-500 animate-pulse'}`} />
+                              {reviewScan ? 'Review Ready On Desktop' : 'Waiting For Next Mobile Scan'}
+                            </div>
+                            <p className="mt-2 text-sm font-bold tracking-normal">
+                              {reviewScan
+                                ? `AWB ${reviewScan.awb || reviewScan.shipment?.awb || 'received'} is ready for review and approval below.`
+                                : 'The phone is connected. New scans will appear here and move into the desktop review queue automatically.'}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <>

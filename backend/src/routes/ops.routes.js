@@ -14,10 +14,22 @@ const logger = require('../utils/logger');
 const { bulkStatusSchema } = require('../validators/ops.validator');
 const adminAssistant = require('../services/adminAssistant.service');
 
-router.use(protect, staffOnly);
+router.use(protect);
+
+function allowOpsAssistant(req, res, next) {
+  if (!req.user) return R.unauthorized(res);
+  if (req.user.isOwner || ['ADMIN', 'OPS_MANAGER'].includes(req.user.role)) return next();
+  return R.forbidden(res, 'Access denied. Required: ADMIN, OPS_MANAGER, or owner access');
+}
+
+function staffOrOwner(req, res, next) {
+  if (!req.user) return R.unauthorized(res);
+  if (req.user.isOwner || ['ADMIN', 'OPS_MANAGER', 'STAFF'].includes(req.user.role)) return next();
+  return R.forbidden(res, 'Access denied.');
+}
 
 // ── POST /api/ops/assistant/chat — SkyAI internal ops assistant ───────────
-router.post('/assistant/chat', requireRole('ADMIN', 'OPS_MANAGER', 'OWNER'), async (req, res) => {
+router.post('/assistant/chat', allowOpsAssistant, async (req, res) => {
   try {
     const { message, history = [] } = req.body;
     if (!message?.trim()) return R.error(res, 'message is required', 400);
@@ -43,7 +55,7 @@ router.post('/assistant/chat', requireRole('ADMIN', 'OPS_MANAGER', 'OWNER'), asy
 });
 
 // ── POST /api/ops/assistant/execute — run a confirmed action ─────────────
-router.post('/assistant/execute', requireRole('ADMIN', 'OPS_MANAGER', 'OWNER'), async (req, res) => {
+router.post('/assistant/execute', allowOpsAssistant, async (req, res) => {
   try {
     const { action } = req.body;
     if (!action?.type) return R.error(res, 'action is required', 400);
@@ -54,6 +66,8 @@ router.post('/assistant/execute', requireRole('ADMIN', 'OPS_MANAGER', 'OWNER'), 
     R.error(res, 'Action execution error', 500);
   }
 });
+
+router.use(staffOrOwner);
 
 // ── POST /api/ops/bulk-status ─────────────────────────────────────────────
 router.post('/bulk-status', validate(bulkStatusSchema), async (req, res) => {

@@ -23,9 +23,10 @@ async function addEvent({ shipmentId, awb, status, location, description, courie
   // Update shipment status to latest
   const latestStatus = mapEventToShipmentStatus(status);
   if (latestStatus) {
+    const { normalizeStatus } = require('./stateMachine');
     await prisma.shipment.updateMany({
       where: { id: shipmentId },
-      data: { status: latestStatus, updatedAt: new Date() },
+      data: { status: normalizeStatus(latestStatus), updatedAt: new Date() },
     });
   }
   return event;
@@ -43,7 +44,7 @@ function mapEventToShipmentStatus(eventStatus) {
     'Reached Hub':       'InTransit',
     'Out for Delivery':  'OutForDelivery',
     'Delivered':         'Delivered',
-    'Failed Delivery':   'Delayed',
+    'Failed Delivery':   'Failed',
     'RTO Initiated':     'RTO',
     'RTO Delivered':     'RTO',
   };

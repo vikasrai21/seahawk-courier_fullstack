@@ -19,6 +19,10 @@ const AUTO_NEXT_DELAY = 3500;
 const OFFLINE_QUEUE_KEY_PREFIX = 'mobile_scanner_offline_queue';
 const LOCK_TO_CAPTURE_DELAY = 80; // fast transition after barcode lock
 
+// After this many consecutive frames with no barcode detected, auto-switch the
+// scan region to document mode and vibrate to alert the operator.
+const BARCODE_FAIL_THRESHOLD = 3;
+
 // Native BarcodeDetector formats (supported on Chrome Android + iOS 17+)
 const NATIVE_BARCODE_FORMATS = [
   'code_128', 'code_39', 'code_93', 'codabar',
@@ -570,6 +574,15 @@ export default function MobileScannerPage() {
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [scannerEngine, setScannerEngine] = useState('idle');
   const [lastDetectionMeta, setLastDetectionMeta] = useState(null);
+  const [barcodeFailCount, setBarcodeFailCount] = useState(0);
+
+  // 'barcode' = narrow landscape strip, 'document' = full AWB slip portrait frame.
+  // Auto-switches to 'document' after BARCODE_FAIL_THRESHOLD consecutive misses.
+  const [scanMode, setScanMode] = useState('barcode');
+  // Counts consecutive frames where no barcode was found. Reset to 0 on any
+  // successful detection. When it reaches BARCODE_FAIL_THRESHOLD the scanner
+  // auto-switches to document mode and vibrates.
+  const barcodeFailCountRef = useRef(0);
 
   // â”€â”€ Session context â”€â”€
   const [sessionCtx, setSessionCtx] = useState({
@@ -606,6 +619,17 @@ export default function MobileScannerPage() {
   // callback always sees the latest state, not the value at the time the callback
   // was memoized.
   const scannedAwbsRef = useRef(new Set());
+
+  const syncBarcodeFailCount = useCallback((nextCount) => {
+    barcodeFailCountRef.current = nextCount;
+    setBarcodeFailCount(nextCount);
+  }, []);
+
+  const switchToDocumentMode = useCallback(() => {
+    syncBarcodeFailCount(0);
+    setScanMode('document');
+    vibrate([80, 60, 80]);
+  }, [syncBarcodeFailCount]);
 
   const ensureVideoStreamPlaying = useCallback(async () => {
     if (!isProbablySecureContextForCamera()) {
@@ -961,7 +985,7 @@ export default function MobileScannerPage() {
           useNative = false;
         }
 
-        if (useNative) {
+      if (useNative) {
           setScannerEngine('native');
           const detector = new window.BarcodeDetector({ formats: supportedFormats });
           let timerId = null;
@@ -978,6 +1002,7 @@ export default function MobileScannerPage() {
             try {
               const barcodes = await detector.detect(video);
               if (barcodes.length > 0 && barcodes[0].rawValue) {
+                syncBarcodeFailCount(0); // reset on successful detection
                 setLastDetectionMeta({
                   value: barcodes[0].rawValue,
                   format: String(barcodes[0].format || 'unknown'),
@@ -986,6 +1011,13 @@ export default function MobileScannerPage() {
                   sinceStartMs: scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null,
                 });
                 handleBarcodeDetectedRef.current?.(barcodes[0].rawValue);
+              } else {
+                // No barcode in this frame — count consecutive misses
+                const nextFailCount = barcodeFailCountRef.current + 1;
+                syncBarcodeFailCount(nextFailCount);
+                if (nextFailCount >= BARCODE_FAIL_THRESHOLD) {
+                  switchToDocumentMode();
+                }
               }
             } catch { /* frame not ready */ }
             // ~50-70ms between frames keeps CPU reasonable while still fast enough.
@@ -1040,6 +1072,7 @@ export default function MobileScannerPage() {
       reader.decodeFromVideoElement(videoRef.current, (result) => {
         if (scanBusyRef.current) return;
         if (result) {
+          syncBarcodeFailCount(0); // reset on successful detection
           let format = 'unknown';
           try {
             format = String(result.getBarcodeFormat?.() || 'unknown');
@@ -1052,12 +1085,19 @@ export default function MobileScannerPage() {
             sinceStartMs: scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null,
           });
           handleBarcodeDetectedRef.current?.(result.getText());
+        } else {
+          // ZXing fires the callback with null on every failed frame
+          const nextFailCount = barcodeFailCountRef.current + 1;
+          syncBarcodeFailCount(nextFailCount);
+          if (nextFailCount >= BARCODE_FAIL_THRESHOLD) {
+            switchToDocumentMode();
+          }
         }
       });
     } catch (err) {
       setErrorMsg('Camera access failed: ' + err.message);
     }
-  }, [ensureVideoStreamPlaying, stopBarcodeScanner]);
+  }, [ensureVideoStreamPlaying, stopBarcodeScanner, switchToDocumentMode, syncBarcodeFailCount]);
   // Note: handleBarcodeDetected is intentionally NOT in the dep array here.
   // The scanner is set up once per SCANNING entry; the ref ensures it always
   // calls the latest callback without needing to restart the scanner.
@@ -1109,6 +1149,8 @@ export default function MobileScannerPage() {
   useEffect(() => {
     if (step === STEPS.SCANNING) {
       scanBusyRef.current = false;
+      syncBarcodeFailCount(0);
+      setScanMode('barcode'); // always start fresh in barcode mode
       startBarcodeScanner();
     }
     return () => {
@@ -1116,7 +1158,7 @@ export default function MobileScannerPage() {
       // alive so CAPTURING can reuse it instantly with no black-frame flicker.
       if (step === STEPS.SCANNING) stopBarcodeScanner();
     };
-  }, [step, startBarcodeScanner, stopBarcodeScanner]);
+  }, [step, startBarcodeScanner, stopBarcodeScanner, syncBarcodeFailCount]);
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // PHOTO CAPTURE (Document mode)
@@ -1464,6 +1506,8 @@ export default function MobileScannerPage() {
     ['Step', step],
     ['Connection', connStatus],
     ['Engine', scannerEngine],
+    ['Scan mode', scanMode],
+    ['Fail count', String(barcodeFailCount)],
     ['Camera', captureCameraReady ? 'ready' : 'waiting'],
     ['Doc detect', docDetected ? `yes (${docStableTicks})` : 'no'],
     ['Secure ctx', isProbablySecureContextForCamera() ? 'yes' : 'no'],
@@ -1739,44 +1783,67 @@ export default function MobileScannerPage() {
           </div>
         </div>
 
-        {/* â•â•â• SCANNING â•â•â• */}
+        {/* ═══ SCANNING ═══ */}
         <div className={stepClass(STEPS.SCANNING)}>
           <div className="cam-viewport" style={{ background: 'transparent' }}>
             <div id="scanbot-camera-container" style={{ position: 'absolute', inset: 0, display: scanbotRef.current ? 'block' : 'none' }} />
             <div className="cam-overlay">
-              {/* Wide landscape strip â€” matches how Trackon/DTDC barcodes are oriented */}
+              {/* Guide: narrow landscape strip in barcode mode, tall portrait in document mode */}
               <div
                 className="scan-guide"
-                style={{
-                  width: BARCODE_SCAN_REGION.w,
-                  height: BARCODE_SCAN_REGION.h,
-                  borderRadius: 10,
-                  maxHeight: '20vw',
-                }}
+                style={
+                  scanMode === 'barcode'
+                    ? { width: BARCODE_SCAN_REGION.w, height: BARCODE_SCAN_REGION.h, borderRadius: 10, maxHeight: '20vw', transition: 'all 0.4s ease' }
+                    : { width: DOC_CAPTURE_REGION.w, height: DOC_CAPTURE_REGION.h, borderRadius: 14, maxHeight: '75vh', transition: 'all 0.4s ease', borderColor: 'rgba(251,191,36,0.85)', boxShadow: '0 0 0 3px rgba(251,191,36,0.2)' }
+                }
               >
                 <div className="scan-guide-corner corner-tl" />
                 <div className="scan-guide-corner corner-tr" />
                 <div className="scan-guide-corner corner-bl" />
                 <div className="scan-guide-corner corner-br" />
-                <div className="scan-laser" />
+                {/* Laser only in barcode mode */}
+                {scanMode === 'barcode' && <div className="scan-laser" />}
               </div>
             </div>
             <div className="cam-hud">
               <div className="cam-hud-chip">
                 <Wifi size={12} /> {pin}
               </div>
-              <div className="cam-hud-chip" style={{ gap: 4 }}>
-                <Package size={12} /> {sessionCtx.scanNumber}
-                {typeof window !== 'undefined' && typeof window.BarcodeDetector !== 'undefined'
-                  ? <span style={{ color: '#34D399', fontSize: '0.6rem', fontWeight: 800 }}>âš¡ NATIVE</span>
-                  : <span style={{ color: '#F59E0B', fontSize: '0.6rem', fontWeight: 800 }}>ZXING</span>
-                }
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {/* Amber pill when auto-switched to document mode */}
+                {scanMode === 'document' && (
+                  <div className="cam-hud-chip" style={{ background: 'rgba(251,191,36,0.22)', color: '#FDE68A', fontWeight: 700, fontSize: '0.65rem', gap: 4 }}>
+                    <ScanLine size={11} /> LABEL MODE
+                  </div>
+                )}
+                <div className="cam-hud-chip" style={{ gap: 4 }}>
+                  <Package size={12} /> {sessionCtx.scanNumber}
+                  {scannerEngine === 'native'
+                    ? <span style={{ color: '#34D399', fontSize: '0.6rem', fontWeight: 800 }}>⚡ NATIVE</span>
+                    : <span style={{ color: '#F59E0B', fontSize: '0.6rem', fontWeight: 800 }}>ZXING</span>
+                  }
+                </div>
               </div>
             </div>
             <div className="cam-bottom">
-              <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.82rem', fontWeight: 600, textAlign: 'center' }}>
-                Align barcode inside the strip
-              </div>
+              {scanMode === 'barcode' ? (
+                <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.82rem', fontWeight: 600, textAlign: 'center' }}>
+                  Align barcode inside the strip
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                  <div style={{ color: 'rgba(251,191,36,0.95)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}>
+                    No barcode found — enter AWB manually
+                  </div>
+                  <button
+                    className="cam-hud-chip"
+                    style={{ border: 'none', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 700 }}
+                    onClick={() => { syncBarcodeFailCount(0); setScanMode('barcode'); }}
+                  >
+                    ↩ Back to barcode mode
+                  </button>
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 12 }}>
                 <button className="cam-hud-chip" onClick={() => setVoiceEnabled(!voiceEnabled)} style={{ border: 'none', cursor: 'pointer' }}>
                   {voiceEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}

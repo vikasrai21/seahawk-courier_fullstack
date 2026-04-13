@@ -10,6 +10,8 @@ const ALIASES = {
   'INTRANSIT': 'InTransit',
   'OUT FOR DELIVERY': 'OutForDelivery',
   'OUTFORDELIVERY': 'OutForDelivery',
+  FAILED: 'Delayed',
+  DELAYED: 'Delayed',
   'RTO DELIVERED': 'RTODelivered',
   'RTODELIVERED': 'RTODelivered',
 };
@@ -20,7 +22,7 @@ const LABELS = {
   InTransit: 'In Transit',
   OutForDelivery: 'Out for Delivery',
   Delivered: 'Delivered',
-  Failed: 'Failed',
+  Delayed: 'Delayed',
   RTO: 'RTO',
   RTODelivered: 'RTO Delivered',
   Cancelled: 'Cancelled',
@@ -29,10 +31,10 @@ const LABELS = {
 const TRANSITIONS = {
   Booked: ['PickedUp', 'Cancelled'],
   PickedUp: ['InTransit', 'RTO', 'Cancelled'],
-  InTransit: ['OutForDelivery', 'RTO', 'Failed'],
-  OutForDelivery: ['Delivered', 'Failed', 'RTO'],
+  InTransit: ['OutForDelivery', 'RTO', 'Delayed'],
+  OutForDelivery: ['Delivered', 'Delayed', 'RTO'],
   Delivered: [],
-  Failed: ['InTransit', 'RTO'],
+  Delayed: ['InTransit', 'RTO'],
   RTO: ['RTODelivered', 'InTransit'],
   RTODelivered: [],
   Cancelled: [],
@@ -42,7 +44,7 @@ const TRANSITIONS = {
 const REFUND_ON = new Set(['Cancelled', 'RTO', 'RTODelivered']);
 
 // Statuses that trigger customer notification
-const NOTIFY_ON = new Set(['PickedUp', 'InTransit', 'OutForDelivery', 'Delivered', 'Failed', 'RTO']);
+const NOTIFY_ON = new Set(['PickedUp', 'InTransit', 'OutForDelivery', 'Delivered', 'Delayed', 'RTO']);
 
 function normalizeStatus(status) {
   const raw = String(status || '').trim();

@@ -91,7 +91,7 @@ async function completeJson({ messages, schemaName = 'assistant_response', schem
   if (!hasLLM()) return null;
 
   const payload = {
-    model: config.openai.model || 'gpt-5.2',
+    model: config.openai.model || 'gpt-4o',
     messages,
     temperature,
     max_completion_tokens: maxTokens,
