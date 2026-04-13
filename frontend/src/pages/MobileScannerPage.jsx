@@ -641,6 +641,12 @@ export default function MobileScannerPage() {
     vibrate([80, 60, 80]);
   }, [syncBarcodeFailCount]);
 
+  const handleCaptureWithoutBarcode = useCallback(() => {
+    setLockedAwb('');
+    setErrorMsg('');
+    goStep(STEPS.CAPTURING);
+  }, [goStep]);
+
   const ensureVideoStreamPlaying = useCallback(async () => {
     if (!isProbablySecureContextForCamera()) {
       throw new Error('Camera requires HTTPS (or localhost). Open this page over https:// on your phone.');
@@ -1305,12 +1311,12 @@ export default function MobileScannerPage() {
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
   const submitForProcessing = useCallback(() => {
-    if (!lockedAwb || !capturedImage) return;
+    if (!capturedImage) return;
     goStep(STEPS.PROCESSING);
     if (isE2eMock) {
       setTimeout(() => {
         const item = {
-          awb: lockedAwb,
+          awb: lockedAwb || '100454974120',
           clientCode: 'MOCKCL',
           clientName: 'Mock Client',
           destination: 'Delhi',
@@ -1336,7 +1342,7 @@ export default function MobileScannerPage() {
     const imageBase64 = capturedImage.split(',')[1] || capturedImage;
 
     const payload = {
-      awb: lockedAwb,
+      awb: lockedAwb || '',
       imageBase64,
       focusImageBase64: imageBase64,
       sessionContext: ctxPayload,
@@ -1345,7 +1351,7 @@ export default function MobileScannerPage() {
     if (!socket || !socket.connected || connStatus !== 'paired') {
       enqueueOfflineScan(payload);
       playSuccessBeep();
-      const item = { awb: lockedAwb, clientCode: 'OFFLINE', clientName: 'Queued Offline', destination: '', weight: 0 };
+      const item = { awb: lockedAwb || 'PENDING_OCR', clientCode: 'OFFLINE', clientName: 'Queued Offline', destination: '', weight: 0 };
       setLastSuccess({ ...item, offlineQueued: true });
       addToQueue(item);
       goStep(STEPS.SUCCESS);
@@ -1851,15 +1857,24 @@ export default function MobileScannerPage() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
                   <div style={{ color: 'rgba(251,191,36,0.95)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}>
-                    No barcode found — enter AWB manually
+                    No barcode found - capture the label and we will read the printed AWB
                   </div>
-                  <button
-                    className="cam-hud-chip"
-                    style={{ border: 'none', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 700 }}
-                    onClick={() => { syncBarcodeFailCount(0); setScanMode('barcode'); }}
-                  >
-                    ↩ Back to barcode mode
-                  </button>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+                    <button
+                      className="cam-hud-chip"
+                      style={{ border: 'none', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 700 }}
+                      onClick={handleCaptureWithoutBarcode}
+                    >
+                      Capture label instead
+                    </button>
+                    <button
+                      className="cam-hud-chip"
+                      style={{ border: 'none', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 700 }}
+                      onClick={() => { syncBarcodeFailCount(0); setScanMode('barcode'); }}
+                    >
+                      Back to barcode mode
+                    </button>
+                  </div>
                 </div>
               )}
               <div style={{ display: 'flex', gap: 12 }}>
@@ -1877,8 +1892,8 @@ export default function MobileScannerPage() {
             {!captureCameraReady && (
               <div style={{ position: 'absolute', inset: 0, zIndex: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 16, background: 'rgba(15,23,42,0.82)', backdropFilter: 'blur(4px)', color: 'white' }}>
                 <CheckCircle2 size={44} color="#34D399" />
-                <div className="mono" style={{ fontSize: '1.4rem', fontWeight: 700, color: '#34D399' }}>{lockedAwb}</div>
-                <div style={{ color: 'rgba(255,255,255,0.72)', fontSize: '0.8rem' }}>Barcode locked Â· Preparing cameraâ€¦</div>
+                <div className="mono" style={{ fontSize: '1.4rem', fontWeight: 700, color: '#34D399' }}>{lockedAwb || 'OCR fallback'}</div>
+                <div style={{ color: 'rgba(255,255,255,0.72)', fontSize: '0.8rem' }}>{lockedAwb ? 'Barcode locked - Preparing camera...' : 'Preparing label capture for printed AWB OCR...'}</div>
               </div>
             )}
             <div className="cam-overlay">
@@ -1901,7 +1916,7 @@ export default function MobileScannerPage() {
             </div>
             <div className="cam-hud">
               <div className="cam-hud-chip mono" style={{ fontSize: '0.68rem' }}>
-                <ScanLine size={12} /> {lockedAwb}
+                <ScanLine size={12} /> {lockedAwb || 'OCR AWB capture'}
               </div>
               {offlineQueue.length > 0 && (
                 <div className="cam-hud-chip">
@@ -1911,7 +1926,7 @@ export default function MobileScannerPage() {
             </div>
             <div className="cam-bottom">
               <div style={{ color: docDetected ? 'rgba(16,185,129,0.95)' : 'rgba(255,255,255,0.85)', fontSize: '0.82rem', fontWeight: 600, textAlign: 'center', transition: 'color 0.3s' }}>
-                {docDetected ? 'âœ“ AWB in frame â€” press shutter' : 'Fit the AWB slip inside the frame'}
+                {docDetected ? 'AWB area in frame - press shutter' : 'Fit the AWB slip inside the frame so we can read the printed AWB'}
               </div>
               <button
                 className="capture-btn"
@@ -1948,7 +1963,7 @@ export default function MobileScannerPage() {
             <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${theme.border}` }}>
               <div>
                 <div style={{ fontSize: '0.72rem', color: theme.muted, fontWeight: 600 }}>CAPTURED</div>
-                <div className="mono" style={{ fontSize: '1rem', fontWeight: 700 }}>{lockedAwb}</div>
+                <div className="mono" style={{ fontSize: '1rem', fontWeight: 700 }}>{lockedAwb || 'Printed AWB OCR'}</div>
               </div>
             </div>
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>

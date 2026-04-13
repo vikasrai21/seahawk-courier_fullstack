@@ -338,9 +338,14 @@ const scanMobile = asyncHandler(async (req, res) => {
     ocrHints = await intelligenceEngine.resolveEntities(successful[0], { sessionContext: sessionContext || {} });
   }
 
+  const effectiveAwb = String(cleanAwb || ocrHints?.awb || successful[0]?.awb || '').trim();
+  if (!effectiveAwb) {
+    return res.status(400).json({ success: false, message: 'Could not read the AWB from the label image.' });
+  }
+
   let shipment = null;
   try {
-    const result = await shipmentSvc.scanAwbAndUpdate(cleanAwb, req.user?.id, null, {
+    const result = await shipmentSvc.scanAwbAndUpdate(effectiveAwb, req.user?.id, null, {
       captureOnly: true,
       source: 'mobile_scanner_direct',
       ocrHints,
@@ -355,9 +360,27 @@ const scanMobile = asyncHandler(async (req, res) => {
   const clientCode = ocrHints?.clientCode || shipment?.clientCode || '';
   const clientName = ocrHints?.clientName || shipment?.client?.company || clientCode;
 
+  // Autonomous Draft Order Binding
+  const draftSvc = require('../services/draftOrder.service');
+  let linkedDraftId = null;
+  if (shipment && ocrHints && clientCode) {
+    try {
+      const draft = await draftSvc.autoDiscoverDraft(clientCode, ocrHints);
+      if (draft) {
+        await draftSvc.linkToShipment(draft.id, shipment.id);
+        linkedDraftId = draft.id;
+        logger.info(`[Auto-Bind] Linked physical AWB ${effectiveAwb} to Draft Order #${draft.id}`);
+      }
+    } catch (e) {
+      logger.warn(`[Auto-Bind] Failed to evaluate draft linking: ${e.message}`);
+    }
+  }
+
   const resultPayload = {
     success: true,
-    awb: cleanAwb,
+    awb: effectiveAwb,
+    shipmentId: shipment?.id || null,
+    linkedDraftId,
     shipmentId: shipment?.id || null,
     status: 'pending_review',
     clientCode,

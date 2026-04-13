@@ -372,11 +372,21 @@ function handleMobileScannerConnection(socket) {
         ocrHints = await intelligenceEngine.resolveEntities(successful[0], { sessionContext: sessionContext || {} });
       }
 
+      const effectiveAwb = String(cleanAwb || ocrHints?.awb || successful[0]?.awb || '').trim();
+      if (!effectiveAwb) {
+        socket.emit('scanner:scan-processed', {
+          awb: '',
+          status: 'error',
+          error: 'Could not read the AWB from the label. Please retake the photo or enter it manually.',
+        });
+        return;
+      }
+
       // Create/update shipment record
       let shipment = null;
       let meta = {};
       try {
-        const result = await shipmentSvc.scanAwbAndUpdate(cleanAwb, currentSession.userId, null, {
+        const result = await shipmentSvc.scanAwbAndUpdate(effectiveAwb, currentSession.userId, null, {
           captureOnly: true,
           source: 'mobile_scanner',
           ocrHints,
@@ -393,7 +403,7 @@ function handleMobileScannerConnection(socket) {
       const clientName = ocrHints?.clientName || shipment?.client?.company || clientCode;
 
       socket.emit('scanner:scan-processed', {
-        awb: cleanAwb,
+        awb: effectiveAwb,
         shipmentId: shipment?.id || null,
         status: 'pending_review',
         clientCode,
@@ -409,7 +419,7 @@ function handleMobileScannerConnection(socket) {
         intelligence: intel,
       });
 
-      logger.info(`[Scanner OCR] AWB ${cleanAwb} → client=${clientCode} dest=${ocrHints?.destination || 'NA'}`);
+      logger.info(`[Scanner OCR] AWB ${effectiveAwb} → client=${clientCode} dest=${ocrHints?.destination || 'NA'}`);
     } catch (err) {
       logger.error(`[Scanner OCR] Failed for AWB ${cleanAwb}: ${err.message}`);
       socket.emit('scanner:scan-processed', {
