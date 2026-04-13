@@ -22,7 +22,8 @@ const LOCK_TO_CAPTURE_DELAY = 80; // fast transition after barcode lock
 
 // After this many consecutive frames with no barcode detected, auto-switch the
 // scan region to document mode and vibrate to alert the operator.
-const BARCODE_FAIL_THRESHOLD = 3;
+// Keep this high enough to avoid premature fallback on slightly blurred frames.
+const BARCODE_FAIL_THRESHOLD = 90;
 
 // Native BarcodeDetector formats (supported on Chrome Android + iOS 17+)
 const NATIVE_BARCODE_FORMATS = [
@@ -642,6 +643,7 @@ export default function MobileScannerPage() {
   const switchToDocumentMode = useCallback(() => {
     syncBarcodeFailCount(0);
     setScanMode('document');
+    setErrorMsg('No barcode lock yet. Capture label instead or tap "Back to barcode mode" and hold steady.');
     vibrate([80, 60, 80]);
   }, [syncBarcodeFailCount]);
 

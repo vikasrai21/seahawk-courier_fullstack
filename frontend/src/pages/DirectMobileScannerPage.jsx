@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { normalizeBarcodeCandidate } from '../utils/barcode.js';
 import {
   Camera, Check, AlertCircle, RotateCcw, Send, Volume2, VolumeX,
   Wifi, WifiOff, Package, ScanLine, RefreshCw, X, Brain,
@@ -14,6 +15,7 @@ const DOC_CAPTURE_REGION  = { w: '92vw', h: '130vw' };
 const AUTO_NEXT_DELAY = 1800;
 const OFFLINE_QUEUE_KEY_PREFIX = 'mobile_scanner_offline_queue';
 const LOCK_TO_CAPTURE_DELAY = 80;
+const BARCODE_FAIL_THRESHOLD = 90;
 
 const NATIVE_BARCODE_FORMATS = [
   'code_128', 'code_39', 'code_93', 'codabar',
@@ -402,6 +404,8 @@ export default function DirectMobileScannerPage() {
   const [docDetected, setDocDetected] = useState(false);
   const [captureCameraReady, setCaptureCameraReady] = useState(false);
   const [sessionDuration, setSessionDuration] = useState('0m');
+  const [barcodeFailCount, setBarcodeFailCount] = useState(0);
+  const [scanMode, setScanMode] = useState('barcode');
 
   const [sessionCtx, setSessionCtx] = useState({
     scannedAwbs: new Set(),
@@ -426,6 +430,19 @@ export default function DirectMobileScannerPage() {
   const lockToCaptureTimerRef = useRef(null);
   const handleBarcodeDetectedRef = useRef(null);
   const scannedAwbsRef = useRef(new Set());
+  const barcodeFailCountRef = useRef(0);
+
+  const syncBarcodeFailCount = useCallback((nextCount) => {
+    barcodeFailCountRef.current = nextCount;
+    setBarcodeFailCount(nextCount);
+  }, []);
+
+  const switchToDocumentMode = useCallback(() => {
+    syncBarcodeFailCount(0);
+    setScanMode('document');
+    setErrorMsg('No barcode lock yet. Capture label instead or tap "Back to barcode mode" and hold steady.');
+    vibrate([80, 60, 80]);
+  }, [syncBarcodeFailCount]);
 
   // Session duration ticker
   useEffect(() => {
@@ -545,7 +562,19 @@ export default function DirectMobileScannerPage() {
         ]);
         const reader = new BrowserMultiFormatReader(hints, 80);
         scannerRef.current = reader;
-        reader.decodeFromVideoElement(videoRef.current, (result) => { if (!scanBusyRef.current && result) handleBarcodeDetectedRef.current?.(result.getText()); });
+        reader.decodeFromVideoElement(videoRef.current, (result) => {
+          if (scanBusyRef.current) return;
+          if (result) {
+            syncBarcodeFailCount(0);
+            handleBarcodeDetectedRef.current?.(result.getText());
+            return;
+          }
+          const nextFailCount = barcodeFailCountRef.current + 1;
+          syncBarcodeFailCount(nextFailCount);
+          if (nextFailCount >= BARCODE_FAIL_THRESHOLD) {
+            switchToDocumentMode();
+          }
+        });
         return;
       }
 
@@ -558,7 +587,19 @@ export default function DirectMobileScannerPage() {
           if (scanBusyRef.current || currentStepRef.current !== STEPS.SCANNING) return;
           const video = videoRef.current;
           if (!video || video.readyState < 2) { rafId = requestAnimationFrame(tick); return; }
-          try { const bc = await det.detect(video); if (bc.length && bc[0].rawValue) handleBarcodeDetectedRef.current?.(bc[0].rawValue); } catch {}
+          try {
+            const bc = await det.detect(video);
+            if (bc.length && bc[0].rawValue) {
+              syncBarcodeFailCount(0);
+              handleBarcodeDetectedRef.current?.(bc[0].rawValue);
+            } else {
+              const nextFailCount = barcodeFailCountRef.current + 1;
+              syncBarcodeFailCount(nextFailCount);
+              if (nextFailCount >= BARCODE_FAIL_THRESHOLD) {
+                switchToDocumentMode();
+              }
+            }
+          } catch {}
           if (currentStepRef.current === STEPS.SCANNING) rafId = requestAnimationFrame(() => setTimeout(tick, 15));
         };
         scannerRef.current = { _type: 'native', reset: () => { if (rafId) cancelAnimationFrame(rafId); rafId = null; } };
@@ -568,10 +609,10 @@ export default function DirectMobileScannerPage() {
 
       throw new Error('Unable to initialize a barcode scanner on this device.');
     } catch (err) { setErrorMsg('Camera access failed: ' + err.message); }
-  }, [stopBarcodeScanner]);
+  }, [stopBarcodeScanner, switchToDocumentMode, syncBarcodeFailCount]);
 
   const handleBarcodeDetected = useCallback((rawText) => {
-    const awb = String(rawText || '').trim().replace(/\s+/g, '').toUpperCase();
+    const awb = normalizeBarcodeCandidate(rawText) || String(rawText || '').trim().replace(/\s+/g, '').toUpperCase();
     if (!awb || awb.length < 6 || scanBusyRef.current || currentStepRef.current !== STEPS.SCANNING) return;
     scanBusyRef.current = true;
 
@@ -599,9 +640,14 @@ export default function DirectMobileScannerPage() {
   useEffect(() => { handleBarcodeDetectedRef.current = handleBarcodeDetected; }, [handleBarcodeDetected]);
 
   useEffect(() => {
-    if (step === STEPS.SCANNING) { scanBusyRef.current = false; startBarcodeScanner(); }
+    if (step === STEPS.SCANNING) {
+      scanBusyRef.current = false;
+      syncBarcodeFailCount(0);
+      setScanMode('barcode');
+      startBarcodeScanner();
+    }
     return () => { if (step === STEPS.SCANNING) stopBarcodeScanner(); };
-  }, [step, startBarcodeScanner, stopBarcodeScanner]);
+  }, [step, startBarcodeScanner, stopBarcodeScanner, syncBarcodeFailCount]);
 
   // ── Triggered by home screen button ──
   const handleStartScanning = useCallback(() => { goStep(STEPS.SCANNING); }, [goStep]);
@@ -980,12 +1026,19 @@ export default function DirectMobileScannerPage() {
           <div className="cam-viewport" style={{ background: 'transparent' }}>
             <div id="scanbot-camera-container" style={{ position:'absolute', inset:0, display: scanbotRef.current ? 'block' : 'none' }} />
             <div className="cam-overlay">
-              <div className="scan-guide" style={{ width: BARCODE_SCAN_REGION.w, height: BARCODE_SCAN_REGION.h, borderRadius: 10, maxHeight: '20vw' }}>
+              <div
+                className="scan-guide"
+                style={
+                  scanMode === 'barcode'
+                    ? { width: BARCODE_SCAN_REGION.w, height: BARCODE_SCAN_REGION.h, borderRadius: 10, maxHeight: '20vw', transition: 'all 0.4s ease' }
+                    : { width: DOC_CAPTURE_REGION.w, height: DOC_CAPTURE_REGION.h, borderRadius: 14, maxHeight: '75vh', transition: 'all 0.4s ease', borderColor: 'rgba(251,191,36,0.85)', boxShadow: '0 0 0 3px rgba(251,191,36,0.2)' }
+                }
+              >
                 <div className="scan-guide-corner corner-tl" />
                 <div className="scan-guide-corner corner-tr" />
                 <div className="scan-guide-corner corner-bl" />
                 <div className="scan-guide-corner corner-br" />
-                <div className="scan-laser" />
+                {scanMode === 'barcode' && <div className="scan-laser" />}
               </div>
             </div>
             <div className="cam-hud">
@@ -998,9 +1051,33 @@ export default function DirectMobileScannerPage() {
               </div>
             </div>
             <div className="cam-bottom">
-              <div style={{ color:'rgba(255,255,255,0.85)', fontSize:'0.82rem', fontWeight:600, textAlign:'center' }}>
-                Align barcode inside the strip
-              </div>
+              {scanMode === 'barcode' ? (
+                <div style={{ color:'rgba(255,255,255,0.85)', fontSize:'0.82rem', fontWeight:600, textAlign:'center' }}>
+                  Align barcode inside the strip
+                </div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:6 }}>
+                  <div style={{ color:'rgba(251,191,36,0.95)', fontSize:'0.82rem', fontWeight:700, textAlign:'center' }}>
+                    No barcode lock after {BARCODE_FAIL_THRESHOLD} frames. Capture label instead.
+                  </div>
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap', justifyContent:'center' }}>
+                    <button
+                      className="cam-hud-chip"
+                      style={{ border:'none', cursor:'pointer', fontSize:'0.7rem', fontWeight:700 }}
+                      onClick={() => goStep(STEPS.CAPTURING)}
+                    >
+                      Capture label instead
+                    </button>
+                    <button
+                      className="cam-hud-chip"
+                      style={{ border:'none', cursor:'pointer', fontSize:'0.7rem', fontWeight:700 }}
+                      onClick={() => { syncBarcodeFailCount(0); setScanMode('barcode'); setErrorMsg(''); }}
+                    >
+                      Back to barcode mode
+                    </button>
+                  </div>
+                </div>
+              )}
               <div style={{ display:'flex', gap:12 }}>
                 <button className="cam-hud-chip" onClick={() => setVoiceEnabled(v => !v)} style={{ border:'none', cursor:'pointer' }}>
                   {voiceEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
