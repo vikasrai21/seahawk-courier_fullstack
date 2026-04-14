@@ -20,7 +20,7 @@ export default function ClientRTOIntelligencePage({ toast }) {
   }, [days]);
 
   const renderTable = (title, rows, keyLabel) => (
-    <div className="card p-0 overflow-hidden">
+    <div className="client-premium-card p-0 overflow-hidden">
       <div className="px-4 py-3 border-b bg-gray-50 font-bold text-gray-900">{title}</div>
       {(rows || []).length === 0 ? (
         <div className="p-4 text-sm text-gray-500">No RTO data found for this period.</div>
@@ -47,15 +47,15 @@ export default function ClientRTOIntelligencePage({ toast }) {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b px-6 py-4 flex items-center gap-3">
+    <div className="min-h-screen client-premium-shell">
+      <header className="client-premium-header px-6 py-4 flex items-center gap-3">
         <Link to="/portal" className="text-gray-400 hover:text-gray-600">← Portal</Link>
-        <span className="font-bold text-gray-900">RTO Intelligence</span>
+        <span className="client-premium-title text-lg">RTO Intelligence</span>
       </header>
 
-      <div className="max-w-6xl mx-auto p-6 space-y-5">
+      <div className="client-premium-main">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="card flex-1">
+          <div className="client-premium-card p-5 flex-1">
             <h1 className="font-bold text-gray-900">Return-to-Origin Insights</h1>
             <p className="text-sm text-gray-500 mt-1">Spot weak pin codes, destinations, and categories driving return behavior.</p>
           </div>
@@ -69,12 +69,12 @@ export default function ClientRTOIntelligencePage({ toast }) {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="card"><div className="text-xs text-gray-400 uppercase">Total Shipments</div><div className="mt-2 text-3xl font-bold text-gray-900">{data?.summary?.totalShipments || 0}</div></div>
-          <div className="card"><div className="text-xs text-gray-400 uppercase">RTO Shipments</div><div className="mt-2 text-3xl font-bold text-red-700">{data?.summary?.totalRto || 0}</div></div>
-          <div className="card"><div className="text-xs text-gray-400 uppercase">RTO Rate</div><div className="mt-2 text-3xl font-bold text-orange-600">{data?.summary?.rtoRate || 0}%</div></div>
+          <div className="client-premium-card p-5"><div className="text-xs text-gray-400 uppercase">Total Shipments</div><div className="mt-2 text-3xl font-bold text-gray-900">{data?.summary?.totalShipments || 0}</div></div>
+          <div className="client-premium-card p-5"><div className="text-xs text-gray-400 uppercase">RTO Shipments</div><div className="mt-2 text-3xl font-bold text-red-700">{data?.summary?.totalRto || 0}</div></div>
+          <div className="client-premium-card p-5"><div className="text-xs text-gray-400 uppercase">RTO Rate</div><div className="mt-2 text-3xl font-bold text-orange-600">{data?.summary?.rtoRate || 0}%</div></div>
         </div>
 
-        <div className="card">
+        <div className="client-premium-card p-5">
           <div className="font-bold text-gray-900 mb-3">Monthly RTO Trend</div>
           <div style={{ height: 280 }}>
             <ResponsiveContainer width="100%" height="100%">

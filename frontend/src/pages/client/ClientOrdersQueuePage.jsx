@@ -47,21 +47,21 @@ export default function ClientOrdersQueuePage({ toast }) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen client-premium-shell flex flex-col">
+      <header className="client-premium-header px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Link to="/portal" className="text-gray-400 hover:text-gray-600">← Portal</Link>
-          <span className="font-bold text-gray-900">Order Queue</span>
+          <span className="client-premium-title text-lg">Order Queue</span>
         </div>
         <button className="btn-primary" onClick={() => setShowForm(!showForm)}>
           + New Order
         </button>
       </header>
 
-      <div className="flex-1 max-w-6xl w-full mx-auto p-6 space-y-6">
+      <div className="client-premium-main flex-1">
         
         {showForm && (
-          <div className="card border-[#f97316] shadow-sm shadow-orange-100/50">
+          <div className="client-premium-card p-5 border-[#f97316] shadow-sm shadow-orange-100/50">
             <h2 className="font-bold text-gray-900 mb-4">Create Draft Order</h2>
             <form onSubmit={createDraft} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               <div>
@@ -97,7 +97,7 @@ export default function ClientOrdersQueuePage({ toast }) {
           </div>
         )}
 
-        <div className="card p-0">
+        <div className="client-premium-card p-0 overflow-hidden">
           <div className="border-b px-4 py-3 bg-gray-50 flex items-center justify-between">
              <h3 className="font-bold text-gray-900">Pending & Fulfilled Queue</h3>
              <span className="text-xs text-gray-400">Autonomous Binding Enabled</span>

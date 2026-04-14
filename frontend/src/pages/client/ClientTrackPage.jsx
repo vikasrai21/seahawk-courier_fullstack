@@ -24,12 +24,12 @@ export default function ClientTrackPage({ toast }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b px-6 py-4 flex items-center gap-3">
+    <div className="min-h-screen client-premium-shell">
+      <header className="client-premium-header px-6 py-4 flex items-center gap-3">
         <Link to="/portal" className="text-gray-400 hover:text-gray-600">← Portal</Link>
-        <span className="font-bold text-gray-900">Track Shipment</span>
+        <span className="client-premium-title text-lg">Track Shipment</span>
       </header>
-      <div className="max-w-xl mx-auto p-6 space-y-6">
+      <div className="client-premium-main max-w-3xl">
         <div className="flex gap-2">
           <input
             className="input flex-1"
@@ -44,7 +44,7 @@ export default function ClientTrackPage({ toast }) {
         </div>
 
         {result && (
-          <div className="card space-y-4">
+          <div className="client-premium-card p-5 space-y-4">
             <div className="flex items-start justify-between">
               <div>
                 <div className="text-xs text-gray-500 uppercase tracking-wide">AWB</div>

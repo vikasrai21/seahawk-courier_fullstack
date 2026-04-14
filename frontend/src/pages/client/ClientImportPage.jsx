@@ -80,14 +80,14 @@ export default function ClientImportPage({ toast }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b px-6 py-4 flex items-center gap-3">
+    <div className="min-h-screen client-premium-shell">
+      <header className="client-premium-header px-6 py-4 flex items-center gap-3">
         <Link to="/portal" className="text-gray-400 hover:text-gray-600">← Portal</Link>
-        <span className="font-bold text-gray-900">Order Import</span>
+        <span className="client-premium-title text-lg">Order Import</span>
       </header>
 
-      <div className="max-w-5xl mx-auto p-6 space-y-5">
-        <div className="card">
+      <div className="client-premium-main max-w-6xl">
+        <div className="client-premium-card p-5">
           <h1 className="font-bold text-gray-900">Upload Excel / CSV</h1>
           <p className="text-sm text-gray-500 mt-1">Shopify exports and basic order sheets work best. We’ll auto-map common columns and import them into your account only.</p>
           <input className="mt-4 block w-full text-sm" type="file" accept=".xlsx,.xls,.csv" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
@@ -99,7 +99,7 @@ export default function ClientImportPage({ toast }) {
         </div>
 
         {result && (
-          <div className="card bg-green-50 border-green-100">
+          <div className="client-premium-card p-5 bg-green-50 border-green-100">
             <div className="font-semibold text-green-800">Import Summary</div>
             <div className="text-sm text-green-700 mt-2">
               Rows saved: {result.imported || 0}
@@ -118,7 +118,7 @@ export default function ClientImportPage({ toast }) {
           </div>
         )}
 
-        <div className="card p-0 overflow-hidden">
+        <div className="client-premium-card p-0 overflow-hidden">
           <div className="px-4 py-3 border-b bg-gray-50 font-bold text-gray-900">Preview</div>
           {rows.length === 0 ? (
             <div className="p-5 text-sm text-gray-500">No rows loaded yet.</div>

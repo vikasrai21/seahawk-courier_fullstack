@@ -220,17 +220,17 @@ export default function ClientDeveloperHubPage({ toast }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+    <div className="min-h-screen client-premium-shell">
+      <header className="client-premium-header px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3 min-w-0">
           <Link to="/portal" className="text-gray-400 hover:text-gray-600">← Portal</Link>
-          <span className="font-bold text-gray-900">Developer Hub</span>
+          <span className="client-premium-title text-lg truncate">Developer Hub</span>
         </div>
         <span className="text-xs text-gray-500">API keys and integration bootstrap</span>
       </header>
 
-      <main className="max-w-5xl mx-auto p-6 space-y-6">
-        <section className="bg-white rounded-xl border border-gray-200 p-5">
+      <main className="client-premium-main max-w-6xl">
+        <section className="client-premium-card p-5">
           <h2 className="text-lg font-bold text-gray-900 mb-2">Create API Key</h2>
           <p className="text-sm text-gray-600 mb-4">
             Use these keys to push orders to Seahawk integration endpoints from your ERP or marketplace bridge.
@@ -284,7 +284,7 @@ export default function ClientDeveloperHubPage({ toast }) {
           )}
         </section>
 
-        <section className="bg-white rounded-xl border border-gray-200 p-5">
+        <section className="client-premium-card p-5">
           <h2 className="text-lg font-bold text-gray-900 mb-3">Active Keys</h2>
           {loading ? (
             <div className="text-sm text-gray-500">Loading keys...</div>
@@ -332,7 +332,7 @@ export default function ClientDeveloperHubPage({ toast }) {
           )}
         </section>
 
-        <section className="bg-white rounded-xl border border-gray-200 p-5">
+        <section className="client-premium-card p-5">
           <h2 className="text-lg font-bold text-gray-900 mb-2">Integration Quickstart</h2>
           <div className="text-sm text-gray-700 space-y-2">
             <div>1. Create API key above and store it in your server secrets manager.</div>
@@ -341,7 +341,7 @@ export default function ClientDeveloperHubPage({ toast }) {
           </div>
         </section>
 
-        <section className="bg-white rounded-xl border border-gray-200 p-5">
+        <section className="client-premium-card p-5">
           <h2 className="text-lg font-bold text-gray-900 mb-2">Marketplace / OMS Bridge</h2>
           <p className="text-sm text-gray-600 mb-4">Configure mapping once and send Amazon/Flipkart/Myntra/Ajio (or custom OMS) webhooks directly into Draft Queue.</p>
           <form onSubmit={saveIntegrationSettings} className="space-y-3">
@@ -426,7 +426,7 @@ export default function ClientDeveloperHubPage({ toast }) {
           </form>
         </section>
 
-        <section className="bg-white rounded-xl border border-gray-200 p-5">
+        <section className="client-premium-card p-5">
           <h2 className="text-lg font-bold text-gray-900 mb-2">Integration Diagnostics</h2>
           {!diagnostics ? (
             <div className="text-sm text-gray-500">Loading diagnostics...</div>
@@ -440,7 +440,7 @@ export default function ClientDeveloperHubPage({ toast }) {
           )}
         </section>
 
-        <section className="bg-white rounded-xl border border-gray-200 p-5">
+        <section className="client-premium-card p-5">
           <h2 className="text-lg font-bold text-gray-900 mb-3">Webhook Replay</h2>
           <div className="grid gap-2">
             <input
@@ -460,7 +460,7 @@ export default function ClientDeveloperHubPage({ toast }) {
           </div>
         </section>
 
-        <section className="bg-white rounded-xl border border-gray-200 p-5">
+        <section className="client-premium-card p-5">
           <h2 className="text-lg font-bold text-gray-900 mb-3">Webhook Logs ({provider})</h2>
           {logs.length === 0 ? (
             <div className="text-sm text-gray-500">No webhook logs yet.</div>
@@ -476,7 +476,7 @@ export default function ClientDeveloperHubPage({ toast }) {
           )}
         </section>
 
-        <section className="bg-white rounded-xl border border-gray-200 p-5">
+        <section className="client-premium-card p-5">
           <h2 className="text-lg font-bold text-gray-900 mb-3">Dead-letter Queue</h2>
           {deadLetters.length === 0 ? (
             <div className="text-sm text-gray-500">No dead-letter events.</div>
@@ -495,7 +495,7 @@ export default function ClientDeveloperHubPage({ toast }) {
           )}
         </section>
 
-        <section className="bg-white rounded-xl border border-gray-200 p-5">
+        <section className="client-premium-card p-5">
           <h2 className="text-lg font-bold text-gray-900 mb-3">Live Event Inspector</h2>
           {eventInspector.length === 0 ? (
             <div className="text-sm text-gray-500">No events found.</div>

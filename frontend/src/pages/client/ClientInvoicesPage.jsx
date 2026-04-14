@@ -116,7 +116,7 @@ export default function ClientInvoicesPage({ toast }) {
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7faff_0%,#eef4fd_100%)]">
-      <header className="border-b border-slate-200/70 bg-white/90 px-6 py-4 backdrop-blur">
+      <header className="client-premium-header px-6 py-4">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Link to="/portal" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-500 transition hover:text-slate-700">← Portal</Link>
@@ -362,3 +362,4 @@ export default function ClientInvoicesPage({ toast }) {
     </div>
   );
 }
+

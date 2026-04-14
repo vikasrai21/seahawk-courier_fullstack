@@ -90,7 +90,7 @@ export default function ClientShipmentsPage({ toast }) {
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl p-6 lg:p-8 space-y-8 animate-in fade-in duration-700">
+      <div className="mx-auto client-premium-main animate-in fade-in duration-700">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
            {/* Command Control: Search & Summary */}
            <div className="lg:col-span-8 space-y-4">
@@ -238,3 +238,4 @@ export default function ClientShipmentsPage({ toast }) {
     </div>
   );
 }
+

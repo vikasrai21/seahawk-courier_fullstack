@@ -56,20 +56,20 @@ export default function ClientBrandTrackingPage({ toast }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b px-6 py-4 flex items-center gap-3">
+    <div className="min-h-screen client-premium-shell">
+      <header className="client-premium-header px-6 py-4 flex items-center gap-3">
         <Link to="/portal" className="text-gray-400 hover:text-gray-600">← Portal</Link>
-        <span className="font-bold text-gray-900">Client-Branded Tracking</span>
+        <span className="client-premium-title text-lg">Client-Branded Tracking</span>
       </header>
 
-      <div className="max-w-4xl mx-auto p-6 space-y-5">
-        <div className="card">
+      <div className="client-premium-main max-w-5xl">
+        <div className="client-premium-card p-5">
           <h1 className="font-bold text-gray-900">White-Label Tracking Setup</h1>
           <p className="text-sm text-gray-500 mt-1">Share a hosted tracking link with your customers or embed the Sea Hawk tracker on your own website.</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <div className="card">
+          <div className="client-premium-card p-5">
             <div className="text-xs text-gray-400 uppercase">Hosted Link</div>
             <div className="mt-2 text-sm font-semibold text-gray-900 break-all">{brand?.trackingUrl || 'Loading…'}</div>
             <div className="mt-4 flex gap-2">
@@ -79,7 +79,7 @@ export default function ClientBrandTrackingPage({ toast }) {
             {copied === 'link' && <div className="mt-2 text-xs text-green-600">Hosted link copied.</div>}
           </div>
 
-          <div className="card">
+          <div className="client-premium-card p-5">
             <div className="text-xs text-gray-400 uppercase">Embed Script</div>
             <pre className="mt-2 rounded-xl bg-gray-950 text-gray-100 text-xs p-4 overflow-x-auto whitespace-pre-wrap">{brand?.embedCode || 'Loading…'}</pre>
             <div className="mt-4">
@@ -89,7 +89,7 @@ export default function ClientBrandTrackingPage({ toast }) {
           </div>
         </div>
 
-        <div className="card">
+        <div className="client-premium-card p-5">
           <div className="font-bold text-gray-900">Brand Studio</div>
           <p className="text-sm text-gray-500 mt-1">Customize logo, color, subdomain hint, and customer SMS template.</p>
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -104,7 +104,7 @@ export default function ClientBrandTrackingPage({ toast }) {
           </div>
         </div>
 
-        <div className="card">
+        <div className="client-premium-card p-5">
           <div className="font-bold text-gray-900">Quick Notes</div>
           <ul className="mt-3 text-sm text-gray-600 list-disc pl-5 space-y-1">
             <li>Your customers can use the hosted link immediately.</li>

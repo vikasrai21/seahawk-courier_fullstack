@@ -73,7 +73,7 @@ export default function ClientNDRPage({ toast }) {
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7faff_0%,#eef4fd_100%)]">
-      <header className="border-b border-slate-200/70 bg-white/90 px-6 py-4 backdrop-blur">
+      <header className="client-premium-header px-6 py-4">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <Link to="/portal" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-500 transition hover:text-slate-700">← Portal</Link>
@@ -85,7 +85,7 @@ export default function ClientNDRPage({ toast }) {
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl p-6 space-y-6">
+      <div className="mx-auto client-premium-main">
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_320px]">
           <div className="overflow-hidden rounded-[28px] border border-slate-200/60 bg-[linear-gradient(145deg,#fff7f5_0%,#ffffff_70%)] p-6 shadow-[0_22px_44px_-30px_rgba(220,38,38,0.25)]">
             <div className="inline-flex rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-600">
@@ -168,3 +168,4 @@ export default function ClientNDRPage({ toast }) {
     </div>
   );
 }
+

@@ -124,6 +124,34 @@
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.8; transform: scale(1.02); }
   }
+
+  /* ── Client portal visual system ─────────────────────────── */
+  .client-premium-shell {
+    @apply bg-slate-50/80;
+    background-image:
+      radial-gradient(circle at 95% 0%, rgba(59, 130, 246, 0.08), transparent 26rem),
+      radial-gradient(circle at 0% 0%, rgba(249, 115, 22, 0.07), transparent 24rem);
+  }
+
+  .client-premium-header {
+    @apply sticky top-0 z-30 border-b border-slate-200/80 bg-white/90 backdrop-blur;
+  }
+
+  .client-premium-main {
+    @apply mx-auto w-full max-w-7xl p-4 md:p-6 space-y-5;
+  }
+
+  .client-premium-card {
+    @apply rounded-2xl border border-slate-200/80 bg-white shadow-[0_18px_32px_-24px_rgba(15,23,42,0.42)];
+  }
+
+  .client-premium-title {
+    @apply text-slate-900 font-black tracking-tight;
+  }
+
+  .client-premium-subtitle {
+    @apply text-slate-500 text-sm;
+  }
 }
 
 /* Premium Scrollbar */

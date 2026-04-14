@@ -48,14 +48,14 @@ export default function ClientRateCalculatorPage({ toast }) {
   }, [loading]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b px-6 py-4 flex items-center gap-3">
+    <div className="min-h-screen client-premium-shell">
+      <header className="client-premium-header px-6 py-4 flex items-center gap-3">
         <Link to="/portal" className="text-gray-400 hover:text-gray-600">← Portal</Link>
-        <span className="font-bold text-gray-900">Rate Calculator</span>
+        <span className="client-premium-title text-lg">Rate Calculator</span>
       </header>
 
-      <div className="max-w-5xl mx-auto p-6 space-y-5">
-        <div className="card">
+      <div className="client-premium-main max-w-6xl">
+        <div className="client-premium-card p-5">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[180px]">
               <label className="label">Chargeable Weight (kg)</label>
@@ -69,7 +69,7 @@ export default function ClientRateCalculatorPage({ toast }) {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr,320px] gap-5">
-          <div className="card p-0 overflow-hidden">
+          <div className="client-premium-card p-0 overflow-hidden">
             <div className="px-4 py-3 border-b bg-gray-50 font-bold text-gray-900">Rate Options</div>
             {estimates.length === 0 ? (
               <div className="p-5 text-sm text-gray-500">No active contracted rates found for this account.</div>
@@ -103,7 +103,7 @@ export default function ClientRateCalculatorPage({ toast }) {
             )}
           </div>
 
-          <div className="card">
+          <div className="client-premium-card p-5">
             <h2 className="font-bold text-gray-900">Active Contracts</h2>
             <p className="text-xs text-gray-500 mt-1">Visible rates currently available to this client account.</p>
             <div className="mt-4 space-y-3">

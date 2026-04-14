@@ -63,21 +63,21 @@ export default function ClientGovernancePage({ toast }) {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+    <div className="min-h-screen client-premium-shell">
+      <header className="client-premium-header px-6 py-4 flex items-center justify-between">
+        <div className="flex items-center gap-3 min-w-0">
           <Link to="/portal" className="text-gray-400 hover:text-gray-600">← Portal</Link>
-          <span className="font-bold text-gray-900">Governance & Compliance</span>
+          <span className="client-premium-title text-lg truncate">Governance & Compliance</span>
         </div>
         <button className="btn-secondary btn-sm" onClick={load}>Refresh</button>
       </header>
 
-      <main className="max-w-6xl mx-auto p-6 space-y-6">
+      <main className="client-premium-main">
         {loading ? (
           <div className="text-sm text-gray-500">Loading governance dashboards...</div>
         ) : (
           <>
-            <section className="bg-white border rounded-xl p-5">
+            <section className="client-premium-card p-5">
               <h2 className="text-lg font-bold text-gray-900 mb-2">Account Governance</h2>
               <div className="grid md:grid-cols-3 gap-3 text-sm">
                 <div className="border rounded-lg p-3">
@@ -100,7 +100,7 @@ export default function ClientGovernancePage({ toast }) {
               </div>
             </section>
 
-            <section className="bg-white border rounded-xl p-5">
+            <section className="client-premium-card p-5">
               <h2 className="text-lg font-bold text-gray-900 mb-2">Compliance Evidence Pack</h2>
               {!evidence ? (
                 <div className="text-sm text-gray-500">No evidence data available.</div>
@@ -115,7 +115,7 @@ export default function ClientGovernancePage({ toast }) {
               )}
             </section>
 
-            <section className="bg-white border rounded-xl p-5">
+            <section className="client-premium-card p-5">
               <h2 className="text-lg font-bold text-gray-900 mb-2">Immutable Audit Trail</h2>
               {(diagnostics?.events || []).length === 0 ? (
                 <div className="text-sm text-gray-500">No audit events found.</div>
@@ -131,7 +131,7 @@ export default function ClientGovernancePage({ toast }) {
               )}
             </section>
 
-            <section className="bg-white border rounded-xl p-5">
+            <section className="client-premium-card p-5">
               <h2 className="text-lg font-bold text-gray-900 mb-2">Maker-Checker Approvals</h2>
               {approvals.length === 0 ? (
                 <div className="text-sm text-gray-500">No approval requests yet.</div>

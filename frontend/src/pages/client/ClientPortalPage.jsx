@@ -73,14 +73,15 @@ function RangeChip({ active, label, onClick }) {
     <button
       onClick={onClick}
       style={{
-        border: active ? '1px solid #f97316' : '1px solid #dbe6f4',
-        background: active ? '#fff4ec' : '#fff',
-        color: active ? '#e8580a' : '#334155',
+        border: active ? '1px solid #fb923c' : '1px solid #dbe6f4',
+        background: active ? 'linear-gradient(180deg,#fff7ed 0%,#fff1e6 100%)' : '#fff',
+        color: active ? '#c2410c' : '#334155',
         borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 700,
-        padding: '7px 12px',
+        fontSize: 11,
+        fontWeight: 800,
+        padding: '6px 11px',
         cursor: 'pointer',
+        boxShadow: active ? '0 6px 14px -10px rgba(194,65,12,0.75)' : 'none',
       }}
     >
       {label}
@@ -92,21 +93,24 @@ function MetricCard({ icon, label, value, hint, color }) {
   return (
     <div
       style={{
-        background: '#fff',
-        border: '1px solid #e5edf8',
-        borderRadius: 16,
-        padding: 18,
-        boxShadow: '0 8px 24px -12px rgba(11,31,58,0.2)',
+        background: 'linear-gradient(180deg,#ffffff 0%,#fbfdff 100%)',
+        border: '1px solid #dfeaf7',
+        borderRadius: 14,
+        padding: 14,
+        boxShadow: '0 16px 28px -24px rgba(11,31,58,0.45)',
+        position: 'relative',
+        overflow: 'hidden',
       }}
     >
+      <div style={{ position: 'absolute', inset: '0 0 auto 0', height: 3, background: `linear-gradient(90deg, ${color} 0%, #bfdbfe 100%)` }} />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <span style={{ fontSize: 18 }}>{icon}</span>
-        <span style={{ fontSize: 10, fontWeight: 800, color, background: `${color}1f`, borderRadius: 999, padding: '4px 10px' }}>
+        <span style={{ fontSize: 16 }}>{icon}</span>
+        <span style={{ fontSize: 9.5, fontWeight: 900, color, background: `${color}1f`, borderRadius: 999, padding: '3px 8px', border: `1px solid ${color}33` }}>
           {hint}
         </span>
       </div>
-      <div style={{ fontSize: 30, lineHeight: 1, fontWeight: 900, color: '#0b1f3a' }}>{value}</div>
-      <div style={{ marginTop: 8, color: '#5a6b80', fontSize: 13, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 24, lineHeight: 1, fontWeight: 900, color: '#0b1f3a' }}>{value}</div>
+      <div style={{ marginTop: 7, color: '#5a6b80', fontSize: 12, fontWeight: 700 }}>{label}</div>
     </div>
   );
 }
@@ -128,11 +132,11 @@ function PortalPanel({ title, eyebrow, subtitle, action, children, tone = 'light
       style={{
         background: backgrounds[tone] || backgrounds.light,
         border: borders[tone] || borders.light,
-        borderRadius: 22,
-        padding: 18,
+        borderRadius: 18,
+        padding: 15,
         boxShadow: tone === 'dark'
           ? '0 22px 42px -28px rgba(15,39,72,0.9)'
-          : '0 14px 34px -24px rgba(11,31,58,0.35)',
+          : '0 18px 30px -24px rgba(11,31,58,0.4)',
         ...style,
       }}
     >
@@ -144,11 +148,11 @@ function PortalPanel({ title, eyebrow, subtitle, action, children, tone = 'light
                 {eyebrow}
               </div>
             )}
-            {title && <h3 style={{ margin: 0, fontSize: 18, fontWeight: 900, color: tone === 'dark' ? '#f8fbff' : '#0f172a' }}>{title}</h3>}
-            {subtitle && <p style={{ margin: '6px 0 0', color: tone === 'dark' ? '#c9d9f2' : '#64748b', fontSize: 13, lineHeight: 1.55 }}>{subtitle}</p>}
+              {title && <h3 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: tone === 'dark' ? '#f8fbff' : '#0f172a' }}>{title}</h3>}
+              {subtitle && <p style={{ margin: '6px 0 0', color: tone === 'dark' ? '#c9d9f2' : '#64748b', fontSize: 12.5, lineHeight: 1.5 }}>{subtitle}</p>}
+            </div>
+            {action}
           </div>
-          {action}
-        </div>
       )}
       {children}
     </section>
@@ -170,14 +174,14 @@ function ActionTile({ to, icon, title, description, tone = 'blue', featured = fa
   const cardStyle = {
     textDecoration: 'none',
     display: 'block',
-    minHeight: featured ? 102 : 86,
+    minHeight: featured ? 94 : 80,
     background: colors.bg,
     border: `1px solid ${colors.border}`,
     borderRadius: 14,
-    padding: featured ? '10px 10px 9px' : '9px',
+    padding: featured ? '9px 10px 8px' : '8px',
     position: 'relative',
     overflow: 'hidden',
-    boxShadow: '0 18px 28px -24px rgba(15,23,42,0.45)',
+    boxShadow: '0 14px 24px -22px rgba(15,23,42,0.6)',
     transition: 'transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease',
   };
 
@@ -189,8 +193,8 @@ function ActionTile({ to, icon, title, description, tone = 'blue', featured = fa
         </div>
         <div style={{ fontSize: 13, color: colors.iconColor, fontWeight: 700, opacity: 0.7 }}>→</div>
       </div>
-      <div style={{ fontSize: featured ? 13 : 12, fontWeight: 900, color: colors.title, marginBottom: 3, lineHeight: 1.25 }}>{title}</div>
-      <div style={{ fontSize: 10.5, lineHeight: 1.3, color: '#58677b', maxWidth: '100%' }}>{description}</div>
+      <div style={{ fontSize: featured ? 12.5 : 11.5, fontWeight: 900, color: colors.title, marginBottom: 3, lineHeight: 1.25 }}>{title}</div>
+      <div style={{ fontSize: 10, lineHeight: 1.3, color: '#58677b', maxWidth: '100%' }}>{description}</div>
       {featured && (
         <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 999, padding: '3px 7px', background: 'rgba(255,255,255,0.75)', border: `1px solid ${colors.border}`, fontSize: 9.5, fontWeight: 800, color: colors.title }}>
           Open workspace
@@ -560,7 +564,7 @@ export default function ClientPortalPage({ toast }) {
   const opsAuto = intel?.opsAutomation || {};
 
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg,#f4f8ff 0%,#eef4fd 34%,#f8fbff 100%)', fontFamily: "'Sora','Manrope','Segoe UI',sans-serif", position: 'relative', overflowX: 'hidden' }}>
+    <div className="client-portal-shell" style={{ minHeight: '100vh', background: 'linear-gradient(180deg,#f3f7fe 0%,#edf3fb 38%,#f7fbff 100%)', fontFamily: "'Inter','Sora','Manrope','Segoe UI',sans-serif", position: 'relative', overflowX: 'hidden' }}>
       <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
         <div style={{ position: 'absolute', top: -120, right: -140, width: 420, height: 420, borderRadius: '50%', background: 'radial-gradient(circle,rgba(56,189,248,0.17) 0%,rgba(56,189,248,0) 70%)' }} />
         <div style={{ position: 'absolute', top: 240, left: -160, width: 380, height: 380, borderRadius: '50%', background: 'radial-gradient(circle,rgba(251,146,60,0.16) 0%,rgba(251,146,60,0) 72%)' }} />
@@ -621,8 +625,40 @@ export default function ClientPortalPage({ toast }) {
         </div>
       </header>
 
-      <main style={{ maxWidth: 1240, margin: '0 auto', padding: '28px 20px 40px', position: 'relative', zIndex: 1 }}>
+      <main style={{ maxWidth: 1320, margin: '0 auto', padding: '20px 16px 32px', position: 'relative', zIndex: 1 }}>
         <style>{`
+          .client-portal-shell {
+            --cp-border: #d9e6f5;
+            --cp-border-soft: #e9f0fa;
+            --cp-surface: #ffffff;
+            --cp-surface-soft: #f8fbff;
+            --cp-title: #0f172a;
+            --cp-text: #334155;
+            --cp-muted: #64748b;
+          }
+          .client-portal-shell section {
+            transition: box-shadow .2s ease, transform .2s ease, border-color .2s ease;
+          }
+          .client-portal-shell section:hover {
+            border-color: #cfe0f3 !important;
+          }
+          .client-portal-shell input,
+          .client-portal-shell select,
+          .client-portal-shell textarea {
+            font-size: 12px !important;
+          }
+          .client-portal-shell table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: #f8fbff;
+          }
+          .client-portal-shell table tbody tr:nth-child(even) {
+            background: #fbfdff;
+          }
+          .client-portal-shell table tbody tr:hover {
+            background: #f2f7ff !important;
+          }
           .portal-action-group-row { display: grid !important; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; overflow: visible !important; }
           .portal-action-group-row > div { min-width: 0 !important; width: auto !important; flex: 1 1 auto !important; }
           @media (max-width: 768px) {
@@ -631,6 +667,12 @@ export default function ClientPortalPage({ toast }) {
             .portal-top-grid { grid-template-columns: 1fr !important; }
             .portal-action-group-row { grid-template-columns: 1fr !important; }
             .portal-ticket-meta { grid-template-columns: 1fr !important; }
+            .client-portal-shell header {
+              padding: 0 12px !important;
+            }
+            .client-portal-shell main {
+              padding: 12px 10px 24px !important;
+            }
           }
           @media (min-width: 769px) and (max-width: 1180px) {
             .portal-top-grid { grid-template-columns: 1fr !important; }
@@ -1575,10 +1617,10 @@ export default function ClientPortalPage({ toast }) {
           70% { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
           100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
         }
-        .portal-action-tile:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 22px 36px -24px rgba(15,23,42,0.48);
-        }
+          .portal-action-tile:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 22px 36px -24px rgba(15,23,42,0.48);
+          }
         .wow-factor-card:hover {
           border-color: #c7dbf3 !important;
           box-shadow: 0 12px 22px -18px rgba(15,23,42,0.5);
