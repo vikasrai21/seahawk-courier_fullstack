@@ -27,6 +27,8 @@ const DEFAULT_PREFS = {
     inTransit: false,
     outForDelivery: true,
     delivered: true,
+    delay: true,
+    exceptionDigest: true,
   },
   email: {
     booked: false,
@@ -36,6 +38,36 @@ const DEFAULT_PREFS = {
     ndr: true,
     rto: true,
     pod: true,
+    dispute: true,
+    webhookFailure: true,
+  },
+  templates: {
+    sms: {
+      booked: '',
+      inTransit: '',
+      outForDelivery: '',
+      delivered: '',
+      ndr: '',
+      delay: '',
+    },
+    email: {
+      ndrSubject: '',
+      ndrBody: '',
+      deliveredSubject: '',
+      deliveredBody: '',
+      disputeSubject: '',
+      disputeBody: '',
+    },
+    journeys: {
+      postOrderEnabled: true,
+      ndrRecoveryEnabled: true,
+      postDeliveryEnabled: true,
+    },
+  },
+  retention: {
+    auditLogDays: 180,
+    webhookEventDays: 90,
+    notificationDays: 90,
   },
 };
 
@@ -49,6 +81,12 @@ export default function ClientNotificationsPage({ toast }) {
       setPrefs({
         whatsapp: { ...DEFAULT_PREFS.whatsapp, ...(res.data?.preferences?.whatsapp || {}) },
         email: { ...DEFAULT_PREFS.email, ...(res.data?.preferences?.email || {}) },
+        templates: {
+          sms: { ...DEFAULT_PREFS.templates.sms, ...(res.data?.preferences?.templates?.sms || {}) },
+          email: { ...DEFAULT_PREFS.templates.email, ...(res.data?.preferences?.templates?.email || {}) },
+          journeys: { ...DEFAULT_PREFS.templates.journeys, ...(res.data?.preferences?.templates?.journeys || {}) },
+        },
+        retention: { ...DEFAULT_PREFS.retention, ...(res.data?.preferences?.retention || {}) },
       });
     } catch (err) {
       toast?.(err.message || 'Failed to load notification preferences', 'error');
@@ -62,26 +100,62 @@ export default function ClientNotificationsPage({ toast }) {
   const setValue = (group, key, value) => {
     setPrefs((prev) => ({ ...prev, [group]: { ...prev[group], [key]: value } }));
   };
+  const setTemplateValue = (channel, key, value) => {
+    setPrefs((prev) => ({
+      ...prev,
+      templates: {
+        ...prev.templates,
+        [channel]: {
+          ...prev.templates[channel],
+          [key]: value,
+        },
+      },
+    }));
+  };
+  const setJourney = (key, value) => {
+    setPrefs((prev) => ({
+      ...prev,
+      templates: {
+        ...prev.templates,
+        journeys: {
+          ...prev.templates.journeys,
+          [key]: value,
+        },
+      },
+    }));
+  };
+  const setRetention = (key, value) => {
+    setPrefs((prev) => ({
+      ...prev,
+      retention: {
+        ...prev.retention,
+        [key]: value,
+      },
+    }));
+  };
 
   const setPreset = (preset) => {
     if (preset === 'recommended') {
       setPrefs({
-        whatsapp: { booked: false, inTransit: false, outForDelivery: true, delivered: true },
-        email: { booked: false, inTransit: false, outForDelivery: false, delivered: true, ndr: true, rto: true, pod: true },
+        ...DEFAULT_PREFS,
+        whatsapp: { booked: false, inTransit: false, outForDelivery: true, delivered: true, delay: true, exceptionDigest: true },
+        email: { booked: false, inTransit: false, outForDelivery: false, delivered: true, ndr: true, rto: true, pod: true, dispute: true, webhookFailure: true },
       });
       return;
     }
     if (preset === 'all_off') {
       setPrefs({
-        whatsapp: { booked: false, inTransit: false, outForDelivery: false, delivered: false },
-        email: { booked: false, inTransit: false, outForDelivery: false, delivered: false, ndr: false, rto: false, pod: false },
+        ...DEFAULT_PREFS,
+        whatsapp: { booked: false, inTransit: false, outForDelivery: false, delivered: false, delay: false, exceptionDigest: false },
+        email: { booked: false, inTransit: false, outForDelivery: false, delivered: false, ndr: false, rto: false, pod: false, dispute: false, webhookFailure: false },
       });
       return;
     }
     if (preset === 'movement_only') {
       setPrefs({
-        whatsapp: { booked: true, inTransit: true, outForDelivery: true, delivered: true },
-        email: { booked: true, inTransit: true, outForDelivery: true, delivered: true, ndr: false, rto: false, pod: false },
+        ...DEFAULT_PREFS,
+        whatsapp: { booked: true, inTransit: true, outForDelivery: true, delivered: true, delay: false, exceptionDigest: false },
+        email: { booked: true, inTransit: true, outForDelivery: true, delivered: true, ndr: false, rto: false, pod: false, dispute: false, webhookFailure: false },
       });
     }
   };
@@ -151,6 +225,8 @@ export default function ClientNotificationsPage({ toast }) {
             <Toggle checked={prefs.whatsapp.inTransit} onChange={(e) => setValue('whatsapp', 'inTransit', e.target.checked)} icon="🚛" label="In Transit" hint="Alert when shipment starts moving between hubs." sample="Sample: AWB SHK1234 is now in transit." />
             <Toggle checked={prefs.whatsapp.outForDelivery} onChange={(e) => setValue('whatsapp', 'outForDelivery', e.target.checked)} icon="🚚" label="Out for Delivery" hint="Alert for final-mile run." sample="Sample: AWB SHK1234 is out for delivery today." />
             <Toggle checked={prefs.whatsapp.delivered} onChange={(e) => setValue('whatsapp', 'delivered', e.target.checked)} icon="✅" label="Delivered" hint="Delivery confirmation alert." sample="Sample: AWB SHK1234 delivered successfully." />
+            <Toggle checked={prefs.whatsapp.delay} onChange={(e) => setValue('whatsapp', 'delay', e.target.checked)} icon="⏳" label="Delay Alerts" hint="Proactive delay prediction signals." sample="Sample: AWB SHK1234 may be delayed by 2 days." />
+            <Toggle checked={prefs.whatsapp.exceptionDigest} onChange={(e) => setValue('whatsapp', 'exceptionDigest', e.target.checked)} icon="🧾" label="Exception Digest" hint="Daily summary of risky shipments." sample="Sample: 14 shipments need exception action today." />
           </div>
 
           <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.38)] space-y-3">
@@ -163,8 +239,57 @@ export default function ClientNotificationsPage({ toast }) {
             <Toggle checked={prefs.email.ndr} onChange={(e) => setValue('email', 'ndr', e.target.checked)} icon="⚠️" label="NDR Alerts" hint="Delivery failure requiring action." sample="Subject: Delivery Attempt Failed — AWB SHK1234" />
             <Toggle checked={prefs.email.rto} onChange={(e) => setValue('email', 'rto', e.target.checked)} icon="↩️" label="RTO Alerts" hint="Return-to-origin updates." sample="Subject: RTO Alert — AWB SHK1234" />
             <Toggle checked={prefs.email.pod} onChange={(e) => setValue('email', 'pod', e.target.checked)} icon="📸" label="Delivery Proof / POD" hint="POD link after final delivery." sample="Subject: Delivery Confirmation — AWB SHK1234" />
+            <Toggle checked={prefs.email.dispute} onChange={(e) => setValue('email', 'dispute', e.target.checked)} icon="🧾" label="Dispute Workflow" hint="Updates on billing dispute lifecycle." sample="Subject: Dispute Opened — DSP-20260412-1101-421" />
+            <Toggle checked={prefs.email.webhookFailure} onChange={(e) => setValue('email', 'webhookFailure', e.target.checked)} icon="🔌" label="Webhook Failure" hint="Integration ingestion or retry failures." sample="Subject: Integration Event Failed — Flipkart" />
           </div>
         </div>
+
+        <section className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.38)] space-y-3">
+          <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-500">Branded CX Kit</div>
+          <div className="text-lg font-black text-slate-900">Template Manager + Journeys</div>
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div>
+              <label className="text-xs font-bold text-slate-600">SMS Delivered Template</label>
+              <textarea className="input min-h-[70px]" value={prefs.templates.sms.delivered} onChange={(e) => setTemplateValue('sms', 'delivered', e.target.value)} placeholder="Hi {{consignee}}, AWB {{awb}} delivered. Track: {{trackUrl}}" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-600">SMS NDR Template</label>
+              <textarea className="input min-h-[70px]" value={prefs.templates.sms.ndr} onChange={(e) => setTemplateValue('sms', 'ndr', e.target.value)} placeholder="Delivery attempt failed for {{awb}}. Please update instructions." />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-600">Email Delivered Subject</label>
+              <input className="input" value={prefs.templates.email.deliveredSubject} onChange={(e) => setTemplateValue('email', 'deliveredSubject', e.target.value)} placeholder="Delivered — AWB {{awb}}" />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-600">Email Dispute Subject</label>
+              <input className="input" value={prefs.templates.email.disputeSubject} onChange={(e) => setTemplateValue('email', 'disputeSubject', e.target.value)} placeholder="Dispute Opened — {{disputeNo}}" />
+            </div>
+          </div>
+          <div className="grid gap-2 lg:grid-cols-3">
+            <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={!!prefs.templates.journeys.postOrderEnabled} onChange={(e) => setJourney('postOrderEnabled', e.target.checked)} /> Post-order journey</label>
+            <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={!!prefs.templates.journeys.ndrRecoveryEnabled} onChange={(e) => setJourney('ndrRecoveryEnabled', e.target.checked)} /> NDR recovery journey</label>
+            <label className="inline-flex items-center gap-2 text-sm"><input type="checkbox" checked={!!prefs.templates.journeys.postDeliveryEnabled} onChange={(e) => setJourney('postDeliveryEnabled', e.target.checked)} /> Post-delivery journey</label>
+          </div>
+        </section>
+
+        <section className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.38)] space-y-3">
+          <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-500">Compliance</div>
+          <div className="text-lg font-black text-slate-900">Data Retention Controls (days)</div>
+          <div className="grid gap-3 lg:grid-cols-3">
+            <div>
+              <label className="text-xs font-bold text-slate-600">Audit logs</label>
+              <input type="number" className="input" value={prefs.retention.auditLogDays} onChange={(e) => setRetention('auditLogDays', Number(e.target.value || 180))} />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-600">Webhook events</label>
+              <input type="number" className="input" value={prefs.retention.webhookEventDays} onChange={(e) => setRetention('webhookEventDays', Number(e.target.value || 90))} />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-600">Notifications</label>
+              <input type="number" className="input" value={prefs.retention.notificationDays} onChange={(e) => setRetention('notificationDays', Number(e.target.value || 90))} />
+            </div>
+          </div>
+        </section>
 
         <div className="flex justify-end">
           <button className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-extrabold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70" onClick={save} disabled={saving}>

@@ -4,6 +4,19 @@ const { stateToZones, courierCost, COURIERS } = require('../utils/rateEngine');
 
 const rnd = n => Math.round(n * 100) / 100;
 
+function policySnapshotForItem(item) {
+  const courier = String(item?.courier || '');
+  const lane = String(item?.destination || '');
+  const weight = Number(item?.weight || 0);
+  return {
+    courier,
+    lane,
+    weight,
+    expectedBilledAmount: Number(item?.calculatedAmount || 0),
+    actualBilledAmount: Number(item?.billedAmount || 0),
+  };
+}
+
 /**
  * Upload and process a courier invoice.
  * items: Array of { awb, date, destination, weight, billedAmount }
@@ -132,10 +145,22 @@ async function getCourierInvoiceDetails(id) {
 }
 
 async function updateInvoiceStatus(id, status, notes) {
-  return prisma.courierInvoice.update({
+  const updated = await prisma.courierInvoice.update({
     where: { id: parseInt(id) },
     data: { status, notes: notes || undefined },
   });
+  await prisma.auditLog.create({
+    data: {
+      action: 'RECON_INVOICE_STATUS_UPDATED',
+      entity: 'COURIER_INVOICE',
+      entityId: String(updated.id),
+      newValue: {
+        status: updated.status,
+        notes: updated.notes || null,
+      },
+    },
+  }).catch(() => {});
+  return updated;
 }
 
 async function getReconciliationStats() {
@@ -162,7 +187,151 @@ async function getReconciliationStats() {
   };
 }
 
+async function getDisputes({ status = 'OPEN', page = 1, limit = 20 } = {}) {
+  const where = {
+    entity: 'RECON_DISPUTE',
+  };
+  if (status && status !== 'ALL') {
+    where.action = status === 'OPEN' ? 'RECON_DISPUTE_OPENED' : 'RECON_DISPUTE_RESOLVED';
+  }
+  const safePage = Math.max(1, parseInt(page, 10) || 1);
+  const safeLimit = Math.min(100, Math.max(10, parseInt(limit, 10) || 20));
+  const skip = (safePage - 1) * safeLimit;
+  const [total, rows] = await Promise.all([
+    prisma.auditLog.count({ where }),
+    prisma.auditLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip,
+      take: safeLimit,
+    }),
+  ]);
+  return {
+    total,
+    page: safePage,
+    limit: safeLimit,
+    data: rows.map((r) => ({
+      id: r.id,
+      disputeNo: r.entityId,
+      status: r.action === 'RECON_DISPUTE_RESOLVED' ? 'RESOLVED' : 'OPEN',
+      createdAt: r.createdAt,
+      details: r.newValue || {},
+    })),
+  };
+}
+
+async function openDispute({ invoiceId, awbs = [], reason = '', expectedRecovery = 0, requestedBy = null }) {
+  const inv = await prisma.courierInvoice.findUnique({
+    where: { id: parseInt(invoiceId, 10) },
+    include: { items: true },
+  });
+  if (!inv) throw new Error('Invoice not found');
+  const chosenAwbs = [...new Set((Array.isArray(awbs) ? awbs : []).map((a) => String(a || '').trim().toUpperCase()).filter(Boolean))];
+  const disputedItems = inv.items.filter((item) => chosenAwbs.length ? chosenAwbs.includes(String(item.awb || '').toUpperCase()) : item.status === 'OVER');
+  if (!disputedItems.length) throw new Error('No eligible overcharge rows selected for dispute');
+  const derivedRecovery = disputedItems.reduce((sum, item) => sum + Math.max(0, Number(item.discrepancy || 0)), 0);
+  const disputeNo = `DSP-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${inv.id}-${Math.floor(100 + Math.random() * 900)}`;
+
+  await prisma.auditLog.create({
+    data: {
+      userId: requestedBy?.id || null,
+      userEmail: requestedBy?.email || null,
+      action: 'RECON_DISPUTE_OPENED',
+      entity: 'RECON_DISPUTE',
+      entityId: disputeNo,
+      newValue: {
+        invoiceId: inv.id,
+        courier: inv.courier,
+        invoiceNo: inv.invoiceNo,
+        awbs: disputedItems.map((i) => i.awb),
+        reason: String(reason || '').trim() || 'Billing discrepancy',
+        expectedRecovery: Number(expectedRecovery || derivedRecovery),
+        snapshots: disputedItems.map(policySnapshotForItem),
+      },
+    },
+  });
+
+  await prisma.courierInvoice.update({
+    where: { id: inv.id },
+    data: { status: 'DISPUTED' },
+  });
+
+  return {
+    disputeNo,
+    invoiceId: inv.id,
+    invoiceNo: inv.invoiceNo,
+    courier: inv.courier,
+    awbCount: disputedItems.length,
+    expectedRecovery: Number((expectedRecovery || derivedRecovery).toFixed(2)),
+  };
+}
+
+async function resolveDispute({ disputeNo, resolutionNotes = '', requestedBy = null }) {
+  const latest = await prisma.auditLog.findFirst({
+    where: { entity: 'RECON_DISPUTE', entityId: String(disputeNo || '').trim(), action: 'RECON_DISPUTE_OPENED' },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (!latest) throw new Error('Dispute not found');
+  const invoiceId = Number(latest?.newValue?.invoiceId || 0);
+  if (invoiceId) {
+    await prisma.courierInvoice.update({
+      where: { id: invoiceId },
+      data: { status: 'SETTLED' },
+    });
+  }
+  await prisma.auditLog.create({
+    data: {
+      userId: requestedBy?.id || null,
+      userEmail: requestedBy?.email || null,
+      action: 'RECON_DISPUTE_RESOLVED',
+      entity: 'RECON_DISPUTE',
+      entityId: String(disputeNo || '').trim(),
+      newValue: {
+        invoiceId: invoiceId || null,
+        resolutionNotes: String(resolutionNotes || '').trim() || null,
+      },
+    },
+  });
+  return { disputeNo: String(disputeNo || '').trim(), invoiceId: invoiceId || null, status: 'RESOLVED' };
+}
+
+async function contractDrift({ fromDate, toDate }) {
+  const where = {};
+  if (fromDate || toDate) {
+    where.createdAt = {};
+    if (fromDate) where.createdAt.gte = new Date(fromDate);
+    if (toDate) where.createdAt.lte = new Date(toDate);
+  }
+  const invoices = await prisma.courierInvoice.findMany({
+    where,
+    include: { items: true },
+    orderBy: { createdAt: 'desc' },
+    take: 200,
+  });
+  const laneMap = {};
+  invoices.forEach((inv) => {
+    inv.items.forEach((item) => {
+      if (item.calculatedAmount == null) return;
+      const lane = `${inv.courier}|${String(item.destination || 'UNKNOWN')}`;
+      if (!laneMap[lane]) laneMap[lane] = { lane, courier: inv.courier, billed: 0, expected: 0, count: 0 };
+      laneMap[lane].billed += Number(item.billedAmount || 0);
+      laneMap[lane].expected += Number(item.calculatedAmount || 0);
+      laneMap[lane].count += 1;
+    });
+  });
+  return Object.values(laneMap)
+    .map((row) => {
+      const driftAmount = Number((row.billed - row.expected).toFixed(2));
+      const driftPct = row.expected > 0 ? Number((((row.billed - row.expected) / row.expected) * 100).toFixed(2)) : 0;
+      return { ...row, driftAmount, driftPct };
+    })
+    .filter((row) => Math.abs(row.driftPct) >= 5 || Math.abs(row.driftAmount) >= 500)
+    .sort((a, b) => Math.abs(b.driftAmount) - Math.abs(a.driftAmount))
+    .slice(0, 50);
+}
+
 module.exports = {
   uploadCourierInvoice, listCourierInvoices, getCourierInvoiceDetails,
   updateInvoiceStatus, getReconciliationStats,
+  getDisputes, openDispute, resolveDispute, contractDrift,
 };

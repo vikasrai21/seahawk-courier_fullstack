@@ -145,10 +145,12 @@ api.interceptors.response.use(
 );
 
 function normalizeError(err) {
+  const incidentId = err.response?.data?.incidentId || err.response?.headers?.['x-request-id'] || null;
   return {
     message: err.response?.data?.message || err.message || 'Network error',
     status:  err.response?.status,
     errors:  err.response?.data?.errors,
+    incidentId,
   };
 }
 

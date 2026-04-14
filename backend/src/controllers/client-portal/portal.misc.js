@@ -7,11 +7,75 @@ const shipmentSvc = require('../../services/shipment.service');
 const R = require('../../utils/response');
 const { resolveClientCode, getClientCode, fmtDate } = require('./shared');
 
+const DEFAULT_PREFS = {
+  whatsapp: {
+    booked: false,
+    inTransit: false,
+    outForDelivery: true,
+    delivered: true,
+    delay: true,
+    exceptionDigest: true,
+  },
+  email: {
+    booked: false,
+    inTransit: false,
+    outForDelivery: false,
+    delivered: true,
+    ndr: true,
+    rto: true,
+    pod: true,
+    dispute: true,
+    webhookFailure: true,
+  },
+  templates: {
+    sms: {
+      booked: '',
+      inTransit: '',
+      outForDelivery: '',
+      delivered: '',
+      ndr: '',
+      delay: '',
+    },
+    email: {
+      ndrSubject: '',
+      ndrBody: '',
+      deliveredSubject: '',
+      deliveredBody: '',
+      disputeSubject: '',
+      disputeBody: '',
+    },
+    journeys: {
+      postOrderEnabled: true,
+      ndrRecoveryEnabled: true,
+      postDeliveryEnabled: true,
+    },
+  },
+  retention: {
+    auditLogDays: 180,
+    webhookEventDays: 90,
+    notificationDays: 90,
+  },
+};
+
 async function notificationPreferences(req, res) {
   const clientCode = await resolveClientCode(req);
   if (!clientCode) return R.notFound(res, 'Client profile not found.');
   const preferences = await notify.getClientNotificationPreferences(clientCode);
-  R.ok(res, { clientCode, preferences });
+  const client = await prisma.client.findUnique({ where: { code: clientCode }, select: { brandSettings: true } });
+  const stored = (client?.brandSettings && typeof client.brandSettings === 'object')
+    ? (client.brandSettings.notificationCenter || {})
+    : {};
+  const merged = {
+    whatsapp: { ...DEFAULT_PREFS.whatsapp, ...(preferences?.whatsapp || {}), ...(stored?.whatsapp || {}) },
+    email: { ...DEFAULT_PREFS.email, ...(preferences?.email || {}), ...(stored?.email || {}) },
+    templates: {
+      sms: { ...DEFAULT_PREFS.templates.sms, ...(stored?.templates?.sms || {}) },
+      email: { ...DEFAULT_PREFS.templates.email, ...(stored?.templates?.email || {}) },
+      journeys: { ...DEFAULT_PREFS.templates.journeys, ...(stored?.templates?.journeys || {}) },
+    },
+    retention: { ...DEFAULT_PREFS.retention, ...(stored?.retention || {}) },
+  };
+  R.ok(res, { clientCode, preferences: merged });
 }
 
 async function updateNotificationPreferences(req, res) {
@@ -24,6 +88,8 @@ async function updateNotificationPreferences(req, res) {
       inTransit: Boolean(req.body?.whatsapp?.inTransit),
       outForDelivery: Boolean(req.body?.whatsapp?.outForDelivery),
       delivered: Boolean(req.body?.whatsapp?.delivered),
+      delay: Boolean(req.body?.whatsapp?.delay),
+      exceptionDigest: Boolean(req.body?.whatsapp?.exceptionDigest),
     },
     email: {
       booked: Boolean(req.body?.email?.booked),
@@ -33,8 +99,50 @@ async function updateNotificationPreferences(req, res) {
       ndr: Boolean(req.body?.email?.ndr),
       rto: Boolean(req.body?.email?.rto),
       pod: Boolean(req.body?.email?.pod),
+      dispute: Boolean(req.body?.email?.dispute),
+      webhookFailure: Boolean(req.body?.email?.webhookFailure),
+    },
+    templates: {
+      sms: {
+        booked: String(req.body?.templates?.sms?.booked || '').trim(),
+        inTransit: String(req.body?.templates?.sms?.inTransit || '').trim(),
+        outForDelivery: String(req.body?.templates?.sms?.outForDelivery || '').trim(),
+        delivered: String(req.body?.templates?.sms?.delivered || '').trim(),
+        ndr: String(req.body?.templates?.sms?.ndr || '').trim(),
+        delay: String(req.body?.templates?.sms?.delay || '').trim(),
+      },
+      email: {
+        ndrSubject: String(req.body?.templates?.email?.ndrSubject || '').trim(),
+        ndrBody: String(req.body?.templates?.email?.ndrBody || '').trim(),
+        deliveredSubject: String(req.body?.templates?.email?.deliveredSubject || '').trim(),
+        deliveredBody: String(req.body?.templates?.email?.deliveredBody || '').trim(),
+        disputeSubject: String(req.body?.templates?.email?.disputeSubject || '').trim(),
+        disputeBody: String(req.body?.templates?.email?.disputeBody || '').trim(),
+      },
+      journeys: {
+        postOrderEnabled: Boolean(req.body?.templates?.journeys?.postOrderEnabled),
+        ndrRecoveryEnabled: Boolean(req.body?.templates?.journeys?.ndrRecoveryEnabled),
+        postDeliveryEnabled: Boolean(req.body?.templates?.journeys?.postDeliveryEnabled),
+      },
+    },
+    retention: {
+      auditLogDays: Math.min(3650, Math.max(7, parseInt(req.body?.retention?.auditLogDays, 10) || DEFAULT_PREFS.retention.auditLogDays)),
+      webhookEventDays: Math.min(3650, Math.max(7, parseInt(req.body?.retention?.webhookEventDays, 10) || DEFAULT_PREFS.retention.webhookEventDays)),
+      notificationDays: Math.min(3650, Math.max(7, parseInt(req.body?.retention?.notificationDays, 10) || DEFAULT_PREFS.retention.notificationDays)),
     },
   };
+
+  const client = await prisma.client.findUnique({ where: { code: clientCode }, select: { brandSettings: true } });
+  const current = (client?.brandSettings && typeof client.brandSettings === 'object') ? client.brandSettings : {};
+  await prisma.client.update({
+    where: { code: clientCode },
+    data: {
+      brandSettings: {
+        ...current,
+        notificationCenter: prefs,
+      },
+    },
+  });
 
   await prisma.auditLog.create({
     data: {

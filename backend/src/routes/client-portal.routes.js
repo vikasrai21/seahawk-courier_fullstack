@@ -9,6 +9,7 @@ const portalMap = require('../controllers/client-portal/portal.map');
 const portalNdr = require('../controllers/client-portal/portal.ndr');
 const portalMisc = require('../controllers/client-portal/portal.misc');
 const portalIntel = require('../controllers/client-portal/portal.intelligence');
+const portalReliability = require('../controllers/client-portal/portal.reliability');
 const portalAssistant = require('../controllers/client-portal/portal.assistant');
 const portalWallet = require('../controllers/client-portal/portal.wallet');
 const portalInvoices = require('../controllers/client-portal/portal.invoices');
@@ -55,6 +56,7 @@ router.post('/pickups', protect, clientOnly, asyncHandler(portalMisc.createPicku
 // Rate Calculator routes removed as per requirement: "client should absolutely not have any kind of rates information"
 router.post('/import', protect, clientOnly, asyncHandler(portalMisc.importShipments));
 router.post('/support-ticket', protect, clientOnly, asyncHandler(portalMisc.supportTicket));
+router.get('/developer/diagnostics', protect, clientOnly, asyncHandler(portalReliability.developerDiagnostics));
 router.use('/developer', protect, clientOnly, developerRoutes);
 
 module.exports = router;

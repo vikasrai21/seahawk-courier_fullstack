@@ -8,8 +8,17 @@ export default function ClientDeveloperHubPage({ toast }) {
   const [keys, setKeys] = useState([]);
   const [newKeyName, setNewKeyName] = useState('');
   const [createdToken, setCreatedToken] = useState('');
-  const PROVIDERS = ['amazon', 'flipkart', 'myntra', 'ajio', 'custom'];
+  const PROVIDERS = ['amazon', 'flipkart', 'myntra', 'ajio', 'custom', 'tally', 'sap', 'netsuite'];
+  const SCOPE_OPTIONS = ['orders:create', 'webhooks:read', 'webhooks:replay', 'events:read', 'sandbox:write'];
   const [provider, setProvider] = useState('amazon');
+  const [mode, setMode] = useState('live');
+  const [scopes, setScopes] = useState(['orders:create']);
+  const [updatingPolicyId, setUpdatingPolicyId] = useState(null);
+  const [eventInspector, setEventInspector] = useState([]);
+  const [deadLetters, setDeadLetters] = useState([]);
+  const [replayPayload, setReplayPayload] = useState('{\n  "order_number": "AMZ-ORDER-1001",\n  "shipping_address": {\n    "name": "Test User",\n    "city": "Delhi",\n    "phone": "9999999999",\n    "zip": "110001"\n  },\n  "weight": 0.6\n}');
+  const [replayIdempotencyKey, setReplayIdempotencyKey] = useState('');
+  const [replaying, setReplaying] = useState(false);
   const [settings, setSettings] = useState({
     enabled: false,
     sourceLabel: 'amazon',
@@ -58,12 +67,16 @@ export default function ClientDeveloperHubPage({ toast }) {
 
   const loadLogsAndDiagnostics = async (nextProvider = provider) => {
     try {
-      const [l, d] = await Promise.all([
+      const [l, d, ev, dlq] = await Promise.all([
         api.get(`/portal/developer/integrations/logs?provider=${encodeURIComponent(nextProvider)}&limit=25`),
         api.get('/portal/developer/integrations/diagnostics'),
+        api.get('/portal/developer/integrations/events?limit=80'),
+        api.get('/portal/developer/integrations/dead-letters?limit=40'),
       ]);
       setLogs(l.data || []);
       setDiagnostics(d.data || null);
+      setEventInspector(ev.data || []);
+      setDeadLetters(dlq.data || []);
     } catch (err) {
       toast?.(err.message || 'Failed to load integration diagnostics', 'error');
     }
@@ -80,7 +93,11 @@ export default function ClientDeveloperHubPage({ toast }) {
     if (!newKeyName.trim()) return toast?.('Key name is required', 'error');
     setCreating(true);
     try {
-      const res = await api.post('/portal/developer/keys', { name: newKeyName.trim() });
+      const res = await api.post('/portal/developer/keys', {
+        name: newKeyName.trim(),
+        mode,
+        scopes,
+      });
       const token = res.data?.data?.token || '';
       if (token) {
         setCreatedToken(token);
@@ -95,6 +112,45 @@ export default function ClientDeveloperHubPage({ toast }) {
     } finally {
       setCreating(false);
     }
+  };
+
+  const updateKeyPolicy = async (keyId, next) => {
+    setUpdatingPolicyId(keyId);
+    try {
+      await api.patch(`/portal/developer/keys/${keyId}/policy`, next);
+      toast?.('Key policy updated', 'success');
+      await loadKeys();
+      await loadLogsAndDiagnostics(provider);
+    } catch (err) {
+      toast?.(err.message || 'Failed to update key policy', 'error');
+    } finally {
+      setUpdatingPolicyId(null);
+    }
+  };
+
+  const replayWebhook = async () => {
+    setReplaying(true);
+    try {
+      const parsed = JSON.parse(replayPayload);
+      const res = await api.post('/portal/developer/integrations/replay', {
+        provider,
+        payload: parsed,
+        idempotencyKey: replayIdempotencyKey || undefined,
+      });
+      toast?.(res.message || 'Replay submitted', 'success');
+      await loadLogsAndDiagnostics(provider);
+    } catch (err) {
+      toast?.(err.message || 'Replay failed', 'error');
+    } finally {
+      setReplaying(false);
+    }
+  };
+
+  const toggleScope = (scope) => {
+    setScopes((prev) => {
+      if (prev.includes(scope)) return prev.filter((s) => s !== scope);
+      return [...prev, scope];
+    });
   };
 
   const revokeKey = async (id) => {
@@ -159,6 +215,34 @@ export default function ClientDeveloperHubPage({ toast }) {
               {creating ? 'Creating...' : 'Create Key'}
             </button>
           </form>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="rounded-lg border border-gray-200 p-3">
+              <div className="text-xs font-bold text-gray-700 mb-2">Key Mode</div>
+              <div className="flex gap-2">
+                {['live', 'sandbox'].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold border ${mode === m ? 'border-orange-300 bg-orange-50 text-orange-700' : 'border-gray-200 bg-white text-gray-600'}`}
+                    onClick={() => setMode(m)}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-3">
+              <div className="text-xs font-bold text-gray-700 mb-2">Key Scopes</div>
+              <div className="flex flex-wrap gap-2">
+                {SCOPE_OPTIONS.map((scope) => (
+                  <label key={scope} className="inline-flex items-center gap-1 text-xs border rounded-full px-2 py-1">
+                    <input type="checkbox" checked={scopes.includes(scope)} onChange={() => toggleScope(scope)} />
+                    <span>{scope}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
 
           {createdToken && (
             <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
@@ -182,6 +266,27 @@ export default function ClientDeveloperHubPage({ toast }) {
                   <div>
                     <div className="font-semibold text-sm text-gray-900">{k.name}</div>
                     <div className="text-xs text-gray-500">Created {new Date(k.createdAt).toLocaleString()}</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      Mode: <strong>{k.mode || 'live'}</strong> · Scopes: <strong>{(k.scopes || []).join(', ') || 'orders:create'}</strong>
+                    </div>
+                    <div className="mt-2 flex gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        disabled={updatingPolicyId === k.id}
+                        onClick={() => updateKeyPolicy(k.id, { mode: 'live', scopes: k.scopes || ['orders:create'] })}
+                      >
+                        Set Live
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        disabled={updatingPolicyId === k.id}
+                        onClick={() => updateKeyPolicy(k.id, { mode: 'sandbox', scopes: k.scopes || ['orders:create'] })}
+                      >
+                        Set Sandbox
+                      </button>
+                    </div>
                   </div>
                   <button
                     type="button"
@@ -246,6 +351,9 @@ export default function ClientDeveloperHubPage({ toast }) {
             <div className="text-xs text-gray-600">
               Webhook URL: <code>/api/public/integrations/ecommerce/{provider}/YOUR_CLIENT_CODE</code> (use any active API key in <code>x-api-key</code> header).
             </div>
+            <div className="text-xs text-gray-600">
+              Recommended headers: <code>x-api-key</code> and <code>Idempotency-Key</code>.
+            </div>
             <button className="btn-primary" disabled={savingSettings}>{savingSettings ? 'Saving...' : 'Save Integration Settings'}</button>
           </form>
         </section>
@@ -258,9 +366,30 @@ export default function ClientDeveloperHubPage({ toast }) {
             <div className="text-sm text-gray-700 space-y-2">
               <div>Active API keys: <strong>{diagnostics.activeKeys}</strong></div>
               <div>Webhook totals: <strong>{diagnostics.webhookStats?.total || 0}</strong> · Created: <strong>{diagnostics.webhookStats?.created || 0}</strong> · Duplicate: <strong>{diagnostics.webhookStats?.duplicate || 0}</strong> · Failed: <strong>{diagnostics.webhookStats?.failed || 0}</strong></div>
+              <div>Dead-letter queue: <strong>{diagnostics.deadLetters || 0}</strong> · Sandbox accepted: <strong>{diagnostics.sandboxAccepted || 0}</strong></div>
               <div>Tips: {(diagnostics.tips || []).join(' | ')}</div>
             </div>
           )}
+        </section>
+
+        <section className="bg-white rounded-xl border border-gray-200 p-5">
+          <h2 className="text-lg font-bold text-gray-900 mb-3">Webhook Replay</h2>
+          <div className="grid gap-2">
+            <input
+              className="input"
+              value={replayIdempotencyKey}
+              onChange={(e) => setReplayIdempotencyKey(e.target.value)}
+              placeholder="Optional Idempotency-Key"
+            />
+            <textarea
+              className="input min-h-[140px] font-mono text-xs"
+              value={replayPayload}
+              onChange={(e) => setReplayPayload(e.target.value)}
+            />
+            <button className="btn-primary" type="button" onClick={replayWebhook} disabled={replaying}>
+              {replaying ? 'Replaying...' : 'Replay Event'}
+            </button>
+          </div>
         </section>
 
         <section className="bg-white rounded-xl border border-gray-200 p-5">
@@ -273,6 +402,39 @@ export default function ClientDeveloperHubPage({ toast }) {
                 <div key={row.id} className="border rounded-lg p-3 text-xs">
                   <div className="font-semibold text-gray-900">{row.action}</div>
                   <div className="text-gray-500">{row.entityId} · {new Date(row.createdAt).toLocaleString()}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="bg-white rounded-xl border border-gray-200 p-5">
+          <h2 className="text-lg font-bold text-gray-900 mb-3">Dead-letter Queue</h2>
+          {deadLetters.length === 0 ? (
+            <div className="text-sm text-gray-500">No dead-letter events.</div>
+          ) : (
+            <div className="space-y-2">
+              {deadLetters.map((row) => (
+                <div key={row.id} className="border rounded-lg p-3 text-xs">
+                  <div className="font-semibold text-gray-900">{row.payload?.provider || 'provider'} · {row.error || row.payload?.reason || 'unknown error'}</div>
+                  <div className="text-gray-500">{new Date(row.createdAt).toLocaleString()} · requestId: {row.payload?.requestId || 'n/a'}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="bg-white rounded-xl border border-gray-200 p-5">
+          <h2 className="text-lg font-bold text-gray-900 mb-3">Live Event Inspector</h2>
+          {eventInspector.length === 0 ? (
+            <div className="text-sm text-gray-500">No events found.</div>
+          ) : (
+            <div className="space-y-2">
+              {eventInspector.map((row) => (
+                <div key={row.id} className="border rounded-lg p-3 text-xs">
+                  <div className="font-semibold text-gray-900">{row.action}</div>
+                  <div className="text-gray-500">{row.entityId} · {new Date(row.createdAt).toLocaleString()}</div>
+                  {row.newValue?.requestId ? <div className="text-gray-500">requestId: {row.newValue.requestId}</div> : null}
                 </div>
               ))}
             </div>

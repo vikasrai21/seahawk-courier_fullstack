@@ -11,16 +11,16 @@ const rateLimit = require('express-rate-limit');
 const { publicTrackingLimiter } = require('../middleware/rateLimiter');
 const config = require('../config');
 const shipmentSvc = require('../services/shipment.service');
-const draftOrderSvc = require('../services/draftOrder.service');
 const { importSchema } = require('../validators/shipment.validator');
 const { auditLog } = require('../utils/audit');
 const dtdcSvc = require('../services/dtdc.service');
+const integrationIngestSvc = require('../services/integration-ingest.service');
 
 const publicLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 60, message: { success: false, message: 'Too many requests.' } });
 const bookingLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, message: { success: false, message: 'Too many booking requests. Try again later.' } });
 const integrationLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 120, message: { success: false, message: 'Too many integration requests.' } });
 const importJsonParser = express.json({ limit: config.bodyLimits.importJson });
-const SUPPORTED_ECOM_PROVIDERS = ['amazon', 'flipkart', 'myntra', 'ajio', 'custom'];
+const SUPPORTED_ECOM_PROVIDERS = integrationIngestSvc.SUPPORTED_ECOM_PROVIDERS;
 
 // ── GET /api/public/health ─────────────────────────────────────────────────
 router.get('/health', (_req, res) => {
@@ -182,21 +182,6 @@ async function trackWithCourier(courier, awb) {
   }
 }
 
-function getByPath(obj, path) {
-  return String(path || '')
-    .split('.')
-    .filter(Boolean)
-    .reduce((acc, part) => (acc && typeof acc === 'object' ? acc[part] : undefined), obj);
-}
-
-function pickFirst(...values) {
-  for (const v of values) {
-    const s = String(v ?? '').trim();
-    if (s) return s;
-  }
-  return '';
-}
-
 // ── GET /api/public/track/:awb ─────────────────────────────────────────────
 router.get('/track/:awb', publicTrackingLimiter, async (req, res) => {
   const awb = req.params.awb?.trim().toUpperCase();
@@ -330,115 +315,115 @@ router.post('/integrations/ecommerce/:provider/:clientCode', integrationLimiter,
   if (!client) return res.status(404).json({ success: false, message: 'Client not found.' });
   if (!apiKey) return res.status(401).json({ success: false, message: 'Invalid API key.' });
 
-  const cfg = client?.brandSettings?.integrations?.[provider];
-  if (!cfg?.enabled) {
-    return res.status(403).json({ success: false, message: `${provider} integration is disabled for this client.` });
+  const keyPolicy = integrationIngestSvc.getKeyPolicy(client?.brandSettings, apiKey.id);
+  if (!integrationIngestSvc.hasScope(keyPolicy, 'orders:create')) {
+    return res.status(403).json({ success: false, message: 'API key scope does not allow order creation.', code: 'MISSING_SCOPE' });
   }
 
+  const mode = String(keyPolicy?.mode || 'live').toLowerCase() === 'sandbox' ? 'sandbox' : 'live';
   const body = req.body || {};
-  const orderId = pickFirst(
-    getByPath(body, cfg?.mappings?.referenceId),
-    body?.id,
-    body?.order_number,
-    body?.number,
-    body?.order_key
-  );
-  const consignee = pickFirst(
-    getByPath(body, cfg?.mappings?.consignee),
-    body?.shipping_address?.name,
-    [body?.shipping?.first_name, body?.shipping?.last_name].filter(Boolean).join(' '),
-    body?.customer?.name
-  );
-  const destination = pickFirst(
-    getByPath(body, cfg?.mappings?.destination),
-    body?.shipping_address?.city,
-    body?.shipping?.city,
-    cfg?.staticValues?.destination
-  );
-  const phone = pickFirst(
-    getByPath(body, cfg?.mappings?.phone),
-    body?.shipping_address?.phone,
-    body?.billing_address?.phone,
-    body?.billing?.phone
-  );
-  const pincode = pickFirst(
-    getByPath(body, cfg?.mappings?.pincode),
-    body?.shipping_address?.zip,
-    body?.shipping?.postcode,
-    cfg?.staticValues?.pincode
-  );
-  const weightRaw = pickFirst(
-    getByPath(body, cfg?.mappings?.weight),
-    body?.total_weight,
-    body?.weight
-  );
-  const weight = Number(weightRaw || cfg?.defaultWeightKg || 0.5);
+  const requestId = req.id || null;
+  const explicitIdempotencyKey = String(req.get('idempotency-key') || req.get('x-idempotency-key') || '').trim() || null;
 
-  if (!orderId || !consignee) {
+  if (mode === 'sandbox') {
+    const previewRef = String(
+      body?.order_number || body?.id || body?.number || body?.order_key || `sandbox-${Date.now()}`
+    ).trim();
+    await prisma.auditLog.create({
+      data: {
+        action: 'INTEGRATION_SANDBOX_ACCEPTED',
+        entity: 'INTEGRATION_WEBHOOK',
+        entityId: `${clientCode}:${provider}:${previewRef}`,
+        newValue: {
+          provider,
+          mode: 'sandbox',
+          apiKeyName: apiKey.name,
+          requestId,
+        },
+        ip: req.ip,
+      },
+    });
+    return res.status(202).json({
+      success: true,
+      message: 'Sandbox event accepted (no draft created).',
+      data: {
+        provider,
+        mode: 'sandbox',
+        requestId,
+        accepted: true,
+        previewReferenceId: previewRef,
+      },
+    });
+  }
+
+  try {
+    const result = await integrationIngestSvc.ingestOrder({
+      provider,
+      clientCode,
+      body,
+      client,
+      apiKey,
+      explicitIdempotencyKey,
+      ip: req.ip,
+      requestId,
+    });
+
+    if (result.duplicate) {
+      return res.status(result.idempotencyReplay ? 200 : 200).json({
+        success: true,
+        message: result.idempotencyReplay ? 'Idempotent replay ignored.' : 'Duplicate order ignored.',
+        data: {
+          duplicate: true,
+          draftId: result.draftId,
+          provider,
+          requestId,
+        },
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'Draft order created from ecommerce webhook.',
+      data: {
+        draftId: result.draftId,
+        referenceId: result.referenceId,
+        provider,
+        mode: 'live',
+        requestId,
+      },
+    });
+  } catch (err) {
+    await integrationIngestSvc.queueDeadLetter({
+      provider,
+      clientCode,
+      body,
+      reason: err.message || 'integration-failure',
+      requestId,
+      ip: req.ip,
+    }).catch(() => {});
+
     await prisma.auditLog.create({
       data: {
         action: 'INTEGRATION_DRAFT_FAILED',
         entity: 'INTEGRATION_WEBHOOK',
-        entityId: `${clientCode}:${provider}:${orderId || 'unknown'}`,
-        newValue: { reason: 'missing-order-or-consignee', payloadPreview: body },
+        entityId: `${clientCode}:${provider}:unknown`,
+        newValue: {
+          provider,
+          requestId,
+          reason: err.code || 'INTEGRATION_FAILED',
+          message: err.message || 'Integration processing failed',
+        },
         ip: req.ip,
       },
+    }).catch(() => {});
+
+    return res.status(err.status || 500).json({
+      success: false,
+      message: err.message || 'Failed to process ecommerce webhook.',
+      code: err.code || 'INTEGRATION_FAILED',
+      incidentId: requestId,
     });
-    return res.status(400).json({ success: false, message: 'Order id/reference and consignee are required by mapping.' });
   }
-
-  const dup = await prisma.draftOrder.findFirst({
-    where: { clientCode, referenceId: String(orderId), status: { in: ['PENDING', 'FULFILLED'] } },
-    select: { id: true, status: true },
-  });
-  if (dup) {
-    await prisma.auditLog.create({
-      data: {
-        action: 'INTEGRATION_DRAFT_DUPLICATE',
-        entity: 'INTEGRATION_WEBHOOK',
-        entityId: `${clientCode}:${provider}:${orderId}`,
-        newValue: { duplicateDraftId: dup.id, duplicateStatus: dup.status },
-        ip: req.ip,
-      },
-    });
-    return res.json({ success: true, message: 'Duplicate order ignored.', data: { duplicate: true, draftId: dup.id } });
-  }
-
-  const draft = await draftOrderSvc.create({
-    clientCode,
-    referenceId: String(orderId),
-    consignee: String(consignee),
-    destination: String(destination || ''),
-    phone: phone || null,
-    pincode: pincode || null,
-    weight: Number.isFinite(weight) && weight > 0 ? weight : Number(cfg?.defaultWeightKg || 0.5),
-  });
-
-  await prisma.clientApiKey.update({
-    where: { id: apiKey.id },
-    data: { lastUsedAt: new Date() },
-  }).catch(() => {});
-
-  await prisma.auditLog.create({
-    data: {
-      action: 'INTEGRATION_DRAFT_CREATED',
-      entity: 'INTEGRATION_WEBHOOK',
-      entityId: `${clientCode}:${provider}:${orderId}`,
-      newValue: {
-        provider,
-        apiKeyName: apiKey.name,
-        draftId: draft.id,
-        referenceId: draft.referenceId,
-      },
-      ip: req.ip,
-    },
-  });
-
-  return res.status(201).json({
-    success: true,
-    message: 'Draft order created from ecommerce webhook.',
-    data: { draftId: draft.id, referenceId: draft.referenceId, provider },
-  });
 });
 
 // ── POST /api/public/pickup-request ───────────────────────────────────────

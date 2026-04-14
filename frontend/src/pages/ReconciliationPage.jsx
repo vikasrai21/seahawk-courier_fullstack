@@ -42,11 +42,15 @@ function parseRecoCsv(text) {
 export default function ReconciliationPage({ toast }) {
   const [invoices, setInvoices]   = useState([]);
   const [stats, setStats]         = useState(null);
+  const [drift, setDrift]         = useState([]);
+  const [disputes, setDisputes]   = useState([]);
   const [loading, setLoading]     = useState(true);
   const [uploading, setUploading] = useState(false);
   const [viewInv, setViewInv]     = useState(null);
   const [viewLoading, setViewLoading] = useState(false);
   const [showUpload, setShowUpload]   = useState(false);
+  const [openingDispute, setOpeningDispute] = useState(false);
+  const [resolvingDispute, setResolvingDispute] = useState(null);
   const fileRef = useRef();
 
   // Upload form state
@@ -56,12 +60,16 @@ export default function ReconciliationPage({ toast }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [iRes, sRes] = await Promise.all([
+      const [iRes, sRes, dRes, dspRes] = await Promise.all([
         api.get('/reconciliation'),
         api.get('/reconciliation/stats'),
+        api.get('/reconciliation/drift'),
+        api.get('/reconciliation/disputes?status=ALL&limit=50'),
       ]);
       setInvoices(iRes.data?.data || []);
       setStats(sRes.data?.data);
+      setDrift(dRes.data?.data || []);
+      setDisputes(dspRes.data?.data || []);
     } catch { toast?.('Failed to load reconciliation data', 'error'); }
     finally { setLoading(false); }
   }, []);
@@ -75,6 +83,42 @@ export default function ReconciliationPage({ toast }) {
       setViewInv(r.data?.data);
     } catch { toast?.('Failed to load invoice details', 'error'); }
     finally { setViewLoading(false); }
+  };
+
+  const openDispute = async (inv) => {
+    setOpeningDispute(true);
+    try {
+      const res = await api.post('/reconciliation/disputes', {
+        invoiceId: inv.id,
+        awbs: [],
+        reason: 'System-detected overcharge requiring recovery',
+      });
+      toast?.(`Dispute ${res.data?.disputeNo || ''} opened`, 'success');
+      if (viewInv?.id === inv.id) {
+        const detail = await api.get(`/reconciliation/${inv.id}`);
+        setViewInv(detail.data?.data || null);
+      }
+      await load();
+    } catch (err) {
+      toast?.(err.message || 'Failed to open dispute', 'error');
+    } finally {
+      setOpeningDispute(false);
+    }
+  };
+
+  const resolveDispute = async (disputeNo) => {
+    setResolvingDispute(disputeNo);
+    try {
+      await api.patch(`/reconciliation/disputes/${encodeURIComponent(disputeNo)}/resolve`, {
+        resolutionNotes: 'Settled with courier partner.',
+      });
+      toast?.(`Dispute ${disputeNo} marked resolved`, 'success');
+      await load();
+    } catch (err) {
+      toast?.(err.message || 'Failed to resolve dispute', 'error');
+    } finally {
+      setResolvingDispute(null);
+    }
   };
 
   const handleUpload = async () => {
@@ -158,6 +202,44 @@ export default function ReconciliationPage({ toast }) {
           </div>
         </div>
       )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <div className="table-shell">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <h2 className="font-bold text-sm text-gray-700">Contract Drift Alerts</h2>
+          </div>
+          <div className="p-3 space-y-2">
+            {drift.length === 0 ? (
+              <div className="text-xs text-gray-500">No billing drift alerts in selected period.</div>
+            ) : drift.slice(0, 6).map((row) => (
+              <div key={row.lane} className="border rounded-lg p-2 text-xs">
+                <div className="font-semibold text-slate-800">{row.courier} · {row.lane}</div>
+                <div className="text-slate-600">Drift: {fmt(row.driftAmount)} ({row.driftPct}%) · {row.count} records</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="table-shell">
+          <div className="px-4 py-3 border-b border-gray-100">
+            <h2 className="font-bold text-sm text-gray-700">Dispute Workflow</h2>
+          </div>
+          <div className="p-3 space-y-2">
+            {disputes.length === 0 ? (
+              <div className="text-xs text-gray-500">No disputes raised yet.</div>
+            ) : disputes.slice(0, 6).map((d) => (
+              <div key={d.id} className="border rounded-lg p-2 text-xs">
+                <div className="font-semibold text-slate-800">{d.disputeNo}</div>
+                <div className="text-slate-600">{new Date(d.createdAt).toLocaleString()} · {d.status}</div>
+                {d.status !== 'RESOLVED' && (
+                  <button className="btn-secondary btn-sm mt-2" onClick={() => resolveDispute(d.disputeNo)} disabled={resolvingDispute === d.disputeNo}>
+                    {resolvingDispute === d.disputeNo ? 'Resolving…' : 'Mark Resolved'}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {/* Upload panel */}
       {showUpload && (
@@ -252,7 +334,7 @@ export default function ReconciliationPage({ toast }) {
                     <>
                       <button onClick={() => updateStatus(inv.id, 'REVIEWED')}
                         className="text-[9px] bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded font-bold">Review</button>
-                      <button onClick={() => updateStatus(inv.id, 'DISPUTED')}
+                      <button onClick={() => openDispute(inv)} disabled={openingDispute}
                         className="text-[9px] bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1 rounded font-bold">Dispute</button>
                     </>
                   )}

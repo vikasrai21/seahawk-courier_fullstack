@@ -7,6 +7,7 @@ import { useSocket } from '../../context/SocketContext';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { Modal } from '../../components/ui/Modal';
 import { SkeletonTable } from '../../components/ui/Skeleton';
+import { FetchErrorState } from '../../components/ui/FetchErrorState';
 import { useDebounce } from '../../hooks/useDebounce';
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
@@ -169,11 +170,11 @@ function ActionTile({ to, icon, title, description, tone = 'blue', featured = fa
   const cardStyle = {
     textDecoration: 'none',
     display: 'block',
-    minHeight: featured ? 132 : 108,
+    minHeight: featured ? 102 : 86,
     background: colors.bg,
     border: `1px solid ${colors.border}`,
-    borderRadius: 18,
-    padding: featured ? '16px 16px 14px' : '14px',
+    borderRadius: 14,
+    padding: featured ? '10px 10px 9px' : '9px',
     position: 'relative',
     overflow: 'hidden',
     boxShadow: '0 18px 28px -24px rgba(15,23,42,0.45)',
@@ -182,16 +183,16 @@ function ActionTile({ to, icon, title, description, tone = 'blue', featured = fa
 
   const content = (
     <div style={cardStyle} className="portal-action-tile">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: featured ? 18 : 14 }}>
-        <div style={{ width: featured ? 44 : 38, height: featured ? 44 : 38, borderRadius: 13, display: 'grid', placeItems: 'center', background: colors.iconBg, color: colors.iconColor, fontSize: featured ? 20 : 17, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: featured ? 8 : 7 }}>
+        <div style={{ width: featured ? 34 : 28, height: featured ? 34 : 28, borderRadius: 10, display: 'grid', placeItems: 'center', background: colors.iconBg, color: colors.iconColor, fontSize: featured ? 15 : 13, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7)' }}>
           {icon}
         </div>
-        <div style={{ fontSize: 18, color: colors.iconColor, fontWeight: 700, opacity: 0.7 }}>→</div>
+        <div style={{ fontSize: 13, color: colors.iconColor, fontWeight: 700, opacity: 0.7 }}>→</div>
       </div>
-      <div style={{ fontSize: featured ? 16 : 14, fontWeight: 900, color: colors.title, marginBottom: 5 }}>{title}</div>
-      <div style={{ fontSize: 11.5, lineHeight: 1.45, color: '#58677b', maxWidth: featured ? '90%' : '100%' }}>{description}</div>
+      <div style={{ fontSize: featured ? 13 : 12, fontWeight: 900, color: colors.title, marginBottom: 3, lineHeight: 1.25 }}>{title}</div>
+      <div style={{ fontSize: 10.5, lineHeight: 1.3, color: '#58677b', maxWidth: '100%' }}>{description}</div>
       {featured && (
-        <div style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 999, padding: '5px 9px', background: 'rgba(255,255,255,0.75)', border: `1px solid ${colors.border}`, fontSize: 10.5, fontWeight: 800, color: colors.title }}>
+        <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 999, padding: '3px 7px', background: 'rgba(255,255,255,0.75)', border: `1px solid ${colors.border}`, fontSize: 9.5, fontWeight: 800, color: colors.title }}>
           Open workspace
         </div>
       )}
@@ -246,6 +247,7 @@ const ACTION_GROUPS = [
       { to: '/portal/notifications', icon: '🔔', title: 'Notification Preferences', description: 'Tune alerts so teams only get the updates that matter.', tone: 'slate' },
       { to: '/portal/support', icon: '🎫', title: 'Support Tickets', description: 'Check open issues, ticket history, and response status in one place.', tone: 'slate' },
       { to: '/portal/branding', icon: '🌐', title: 'Branded Tracking', description: 'Manage the customer-facing tracking experience under your own brand.', tone: 'teal' },
+      { to: '/portal/governance', icon: '🛡️', title: 'Governance Center', description: 'Compliance evidence, immutable audit trail, and reliability controls.', tone: 'purple' },
     ],
   },
 ];
@@ -282,6 +284,11 @@ export default function ClientPortalPage({ toast }) {
   const [performance, setPerformance] = useState(null);
   const [perfDays, setPerfDays] = useState(30);
   const [intel, setIntel] = useState(null);
+  const [fetchErrors, setFetchErrors] = useState({
+    portal: null,
+    performance: null,
+    intelligence: null,
+  });
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantInput, setAssistantInput] = useState('');
   const [assistantBusy, setAssistantBusy] = useState(false);
@@ -300,6 +307,7 @@ export default function ClientPortalPage({ toast }) {
 
   const fetchPortalData = async () => {
     setLoading(true);
+    setFetchErrors((prev) => ({ ...prev, portal: null }));
     try {
       const query = new URLSearchParams();
       query.set('range', range);
@@ -341,6 +349,7 @@ export default function ClientPortalPage({ toast }) {
         return prev;
       });
     } catch (e) {
+      setFetchErrors((prev) => ({ ...prev, portal: e }));
       toast?.(e.message || 'Failed to load portal data', 'error');
     } finally {
       setLoading(false);
@@ -348,15 +357,18 @@ export default function ClientPortalPage({ toast }) {
   };
 
   const fetchPerformance = async () => {
+    setFetchErrors((prev) => ({ ...prev, performance: null }));
     try {
       const res = await api.get(`/portal/performance?days=${perfDays}`);
       setPerformance(res.data || null);
     } catch (e) {
+      setFetchErrors((prev) => ({ ...prev, performance: e }));
       toast?.(e.message || 'Failed to load performance dashboard', 'error');
     }
   };
 
   const fetchIntelligence = async () => {
+    setFetchErrors((prev) => ({ ...prev, intelligence: null }));
     try {
       const query = new URLSearchParams();
       query.set('range', range);
@@ -368,6 +380,7 @@ export default function ClientPortalPage({ toast }) {
       const res = await api.get(`/portal/intelligence?${query.toString()}`);
       setIntel(res.data || null);
     } catch (e) {
+      setFetchErrors((prev) => ({ ...prev, intelligence: e }));
       toast?.(e.message || 'Failed to load shipment intelligence', 'error');
     }
   };
@@ -542,6 +555,9 @@ export default function ClientPortalPage({ toast }) {
     if (!alerts.length) alerts.push({ tone: 'green', text: 'No critical alerts right now. Operations look stable.' });
     return alerts.slice(0, 3);
   }, [stats]);
+  const obs = intel?.observability || {};
+  const slaCC = intel?.slaCommandCenter || {};
+  const opsAuto = intel?.opsAutomation || {};
 
   return (
     <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg,#f4f8ff 0%,#eef4fd 34%,#f8fbff 100%)', fontFamily: "'Sora','Manrope','Segoe UI',sans-serif", position: 'relative', overflowX: 'hidden' }}>
@@ -607,10 +623,18 @@ export default function ClientPortalPage({ toast }) {
 
       <main style={{ maxWidth: 1240, margin: '0 auto', padding: '28px 20px 40px', position: 'relative', zIndex: 1 }}>
         <style>{`
+          .portal-action-group-row { display: grid !important; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; overflow: visible !important; }
+          .portal-action-group-row > div { min-width: 0 !important; width: auto !important; flex: 1 1 auto !important; }
           @media (max-width: 768px) {
             .portal-hero-grid { grid-template-columns: 1fr !important; }
             .portal-hero-inner { grid-template-columns: 1fr !important; }
             .portal-top-grid { grid-template-columns: 1fr !important; }
+            .portal-action-group-row { grid-template-columns: 1fr !important; }
+            .portal-ticket-meta { grid-template-columns: 1fr !important; }
+          }
+          @media (min-width: 769px) and (max-width: 1180px) {
+            .portal-top-grid { grid-template-columns: 1fr !important; }
+            .portal-action-group-row { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
           }
         `}</style>
         <section className="portal-hero-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.35fr) minmax(280px,.75fr)', gap: 16, marginBottom: 18 }}>
@@ -752,6 +776,35 @@ export default function ClientPortalPage({ toast }) {
           </PortalPanel>
         </section>
 
+        {(fetchErrors.portal || fetchErrors.performance || fetchErrors.intelligence) && (
+          <section style={{ marginBottom: 14, display: 'grid', gap: 8 }}>
+            {fetchErrors.portal && (
+              <FetchErrorState
+                compact
+                title="Portal summary failed"
+                error={fetchErrors.portal}
+                onRetry={fetchPortalData}
+              />
+            )}
+            {fetchErrors.performance && (
+              <FetchErrorState
+                compact
+                title="Performance panel failed"
+                error={fetchErrors.performance}
+                onRetry={fetchPerformance}
+              />
+            )}
+            {fetchErrors.intelligence && (
+              <FetchErrorState
+                compact
+                title="Intelligence panel failed"
+                error={fetchErrors.intelligence}
+                onRetry={fetchIntelligence}
+              />
+            )}
+          </section>
+        )}
+
         <section style={{ marginBottom: 18 }}>
           <div style={{ borderRadius: 18, border: '1px solid #dbe6f4', background: 'linear-gradient(145deg,#ffffff 0%,#f9fbff 60%,#f7faff 100%)', boxShadow: '0 14px 34px -24px rgba(15,23,42,0.35)', padding: 14 }}>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -887,14 +940,14 @@ export default function ClientPortalPage({ toast }) {
                     <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.08em' }}>{group.title}</div>
                     <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>{group.subtitle}</div>
                   </div>
-                  <div className="portal-action-group-row" style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+                  <div className="portal-action-group-row" style={{ display: 'grid', gap: 10, paddingBottom: 2 }}>
                     {group.actions.map((action) => (
-                      <div key={action.title} style={{ flex: '0 0 240px' }}>
+                      <div key={action.title} style={{ minWidth: 0 }}>
                         <ActionTile {...action} />
                       </div>
                     ))}
                     {group.key === 'system' && (
-                      <div style={{ flex: '0 0 240px' }}>
+                      <div style={{ minWidth: 0 }}>
                         <ActionTile
                           icon="🎫"
                           title={ticketOpen ? 'Close Ticket Composer' : 'Raise Support Ticket'}
@@ -995,6 +1048,79 @@ export default function ClientPortalPage({ toast }) {
                 <Line type="monotone" dataKey="failed" stroke="#ea580c" strokeWidth={3} dot={false} activeDot={{ r: 6 }} name="Failed / NDR" animationDuration={1800} />
               </LineChart>
             </ResponsiveContainer>
+          </div>
+        </section>
+
+        <section style={{ background: '#fff', border: '1px solid #e5edf8', borderRadius: 18, padding: 14, boxShadow: '0 8px 24px -14px rgba(11,31,58,0.2)', marginBottom: 18 }}>
+          <div style={{ marginBottom: 10 }}>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: '#0f172a' }}>SLA Command Center</h3>
+            <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: 12 }}>OTIF, first-attempt delivery, RTO risk, aging buckets, and exception heatmap.</p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 10, marginBottom: 12 }}>
+            <MetricCard icon="🎯" label="OTIF" value={`${Number(slaCC?.otif || 0)}%`} hint="On-time in-full" color="#0f766e" />
+            <MetricCard icon="🚚" label="First Attempt Delivery" value={`${Number(slaCC?.firstAttemptDelivery || 0)}%`} hint="Efficiency" color="#2563eb" />
+            <MetricCard icon="↩️" label="RTO Risk Shipments" value={Number(slaCC?.rtoRiskShipments || 0)} hint="Priority watch" color="#b42318" />
+            <MetricCard icon="🔥" label="Exception Rate" value={`${Number(slaCC?.exceptionRate || 0)}%`} hint="Ops load" color="#c2410c" />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))', gap: 10 }}>
+            <div style={{ border: '1px solid #e5edf8', borderRadius: 12, padding: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', marginBottom: 6 }}>Aging Buckets</div>
+              {Object.entries(slaCC?.agingBuckets || {}).map(([bucket, value]) => (
+                <div key={bucket} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#334155', marginBottom: 4 }}>
+                  <span>{bucket}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+            </div>
+            <div style={{ border: '1px solid #e5edf8', borderRadius: 12, padding: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', marginBottom: 6 }}>Exception Heatmap (top lanes)</div>
+              {(slaCC?.exceptionHeatmap || []).slice(0, 4).map((lane) => (
+                <div key={lane.lane} style={{ fontSize: 12, color: '#334155', marginBottom: 6 }}>
+                  <strong>{lane.lane}</strong> · {lane.exceptionRate}% exception · {lane.highRtoRisk} high risk
+                </div>
+              ))}
+              {(!slaCC?.exceptionHeatmap || slaCC.exceptionHeatmap.length === 0) && <div style={{ fontSize: 12, color: '#64748b' }}>No lane exceptions right now.</div>}
+            </div>
+          </div>
+        </section>
+
+        <section style={{ background: '#fff', border: '1px solid #e5edf8', borderRadius: 18, padding: 14, boxShadow: '0 8px 24px -14px rgba(11,31,58,0.2)', marginBottom: 18 }}>
+          <div style={{ marginBottom: 10 }}>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: '#0f172a' }}>Client Health Observability</h3>
+            <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: 12 }}>Latency, webhook reliability, queue pressure, and sync lag in one view.</p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 10 }}>
+            <MetricCard icon="⏱️" label="API P95 (ms)" value={Number(obs?.apiLatencyMs?.p95 || 0)} hint="Responsiveness" color="#1d4ed8" />
+            <MetricCard icon="🛰️" label="Webhook Success" value={`${Number(obs?.integrationWebhooks?.successRate || 0)}%`} hint="Last 24h" color="#0c7a52" />
+            <MetricCard icon="🧱" label="Failed Jobs" value={Number(obs?.jobQueue?.failed || 0)} hint="Queue health" color="#b42318" />
+            <MetricCard icon="🔄" label="Sync Lag 24h+" value={Number(obs?.syncLag?.staleShipments24h || 0)} hint="Needs action" color="#c2410c" />
+          </div>
+        </section>
+
+        <section style={{ background: '#fff', border: '1px solid #e5edf8', borderRadius: 18, padding: 14, boxShadow: '0 8px 24px -14px rgba(11,31,58,0.2)', marginBottom: 18 }}>
+          <div style={{ marginBottom: 10 }}>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: '#0f172a' }}>Exception Autopilot</h3>
+            <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: 12 }}>Auto-actions on NDR reasons, delay prediction, and failed scans.</p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 10 }}>
+            <div style={{ border: '1px solid #e5edf8', borderRadius: 12, padding: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', marginBottom: 6 }}>NDR Rule Engine</div>
+              {(opsAuto?.ndrRules || []).slice(0, 5).map((r) => (
+                <div key={r.courier} style={{ fontSize: 12, color: '#334155', marginBottom: 6 }}>
+                  <strong>{r.courier}</strong> · {r.ndrCount} NDR · {r.action}
+                </div>
+              ))}
+              {(!opsAuto?.ndrRules || opsAuto.ndrRules.length === 0) && <div style={{ fontSize: 12, color: '#64748b' }}>No active NDR escalations.</div>}
+            </div>
+            <div style={{ border: '1px solid #e5edf8', borderRadius: 12, padding: 10 }}>
+              <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', marginBottom: 6 }}>Failed Scan Actions</div>
+              {(opsAuto?.autopilot?.failedScanActions || []).slice(0, 5).map((f) => (
+                <div key={`${f.awb}-${f.action}`} style={{ fontSize: 12, color: '#334155', marginBottom: 6 }}>
+                  <strong>{f.awb}</strong> · {f.status} · {f.action}
+                </div>
+              ))}
+              {(!opsAuto?.autopilot?.failedScanActions || opsAuto.autopilot.failedScanActions.length === 0) && <div style={{ fontSize: 12, color: '#64748b' }}>No failed scan interventions.</div>}
+            </div>
           </div>
         </section>
 

@@ -29,6 +29,7 @@ const MOVEMENT_STATUS_PREF_KEYS = {
   InTransit: 'inTransit',
   OutForDelivery: 'outForDelivery',
   Delivered: 'delivered',
+  Delayed: 'delay',
 };
 
 function applySmsTemplate(template, params) {
@@ -97,18 +98,32 @@ function buildMovementEmailPayload({ status, awb, consignee, company }) {
 async function getClientNotificationPreferences(clientCode) {
   if (!clientCode) return DEFAULT_PREFS;
   try {
-    const latest = await prisma.auditLog.findFirst({
-      where: {
-        entity: 'NOTIFICATION_PREFS',
-        entityId: String(clientCode).toUpperCase(),
-      },
-      orderBy: { createdAt: 'desc' },
-      select: { newValue: true },
-    });
+    const [latest, client] = await Promise.all([
+      prisma.auditLog.findFirst({
+        where: {
+          entity: 'NOTIFICATION_PREFS',
+          entityId: String(clientCode).toUpperCase(),
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { newValue: true },
+      }),
+      prisma.client.findUnique({
+        where: { code: String(clientCode).toUpperCase() },
+        select: { brandSettings: true },
+      }),
+    ]);
+    const center = client?.brandSettings?.notificationCenter && typeof client.brandSettings.notificationCenter === 'object'
+      ? client.brandSettings.notificationCenter
+      : {};
     const prefs = latest?.newValue && typeof latest.newValue === 'object' ? latest.newValue : null;
     return {
-      whatsapp: { ...DEFAULT_PREFS.whatsapp, ...(prefs?.whatsapp || {}) },
-      email: { ...DEFAULT_PREFS.email, ...(prefs?.email || {}) },
+      whatsapp: { ...DEFAULT_PREFS.whatsapp, ...(center?.whatsapp || {}), ...(prefs?.whatsapp || {}) },
+      email: { ...DEFAULT_PREFS.email, ...(center?.email || {}), ...(prefs?.email || {}) },
+      templates: {
+        sms: { ...(center?.templates?.sms || {}) },
+        email: { ...(center?.templates?.email || {}) },
+        journeys: { ...(center?.templates?.journeys || {}) },
+      },
     };
   } catch (err) {
     logger.warn(`Notification preferences fallback for ${clientCode}: ${err.message}`);
@@ -193,9 +208,8 @@ async function notifyStatusChange(shipment) {
 
   if (movementPrefKey && phone && prefs.whatsapp?.[movementPrefKey]) {
     const c = await getClient();
-    const smsTemplate = c?.brandSettings && typeof c.brandSettings === 'object'
-      ? c.brandSettings.smsTemplate
-      : null;
+    const smsTemplate = prefs?.templates?.sms?.[movementPrefKey]
+      || (c?.brandSettings && typeof c.brandSettings === 'object' ? c.brandSettings.smsTemplate : null);
     await sendWhatsApp(phone, buildMovementWhatsAppMessage(status, awb, {
       smsTemplate,
       consignee,

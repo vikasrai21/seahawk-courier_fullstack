@@ -1,15 +1,16 @@
 import { SkeletonTable } from '../components/ui/Skeleton';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDebounce } from '../hooks/useDebounce';
 import { Plus, Edit2, Trash2, MessageCircle, Phone, Mail, MapPin, Building2, Search } from 'lucide-react';
 import api from '../services/api';
 import { useFetch } from '../hooks/useFetch';
 import { EmptyState } from '../components/ui/Loading';
+import { FetchErrorState } from '../components/ui/FetchErrorState';
 import { Modal } from '../components/ui/Modal';
 import { useDataStore } from '../stores/dataStore';
 
 export default function ClientsPage({ toast }) {
-  const { data: rawClients, loading, refetch } = useFetch('/clients');
+  const { data: rawClients, loading, error, refetch } = useFetch('/clients');
   const invalidateClients = useDataStore((state) => state.invalidateClients);
   const [editClient, setEdit] = useState(null);
   const [saving, setSaving]   = useState(false);
@@ -17,8 +18,13 @@ export default function ClientsPage({ toast }) {
   const debouncedSearch = useDebounce(search, 300);
   const empty = { code:'', company:'', contact:'', phone:'', whatsapp:'', email:'', gst:'', address:'', notes:'' };
   const [form, setForm] = useState(empty);
+  const clientsSource = Array.isArray(rawClients) ? rawClients : [];
 
-  const clients = (rawClients || []).filter(c =>
+  useEffect(() => {
+    if (error) toast?.(error, 'error');
+  }, [error, toast]);
+
+  const clients = clientsSource.filter(c =>
     !debouncedSearch || c.company?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
     c.code?.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
     c.contact?.toLowerCase().includes(debouncedSearch.toLowerCase())
@@ -64,7 +70,7 @@ export default function ClientsPage({ toast }) {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
-          <p className="text-xs text-gray-500 mt-0.5">{(rawClients||[]).length} clients registered</p>
+          <p className="text-xs text-gray-500 mt-0.5">{clientsSource.length} clients registered</p>
         </div>
         <button onClick={() => open()} className="btn-primary gap-2">
           <Plus className="w-4 h-4" /> Add Client
@@ -78,7 +84,9 @@ export default function ClientsPage({ toast }) {
           value={search} onChange={e => setSearch(e.target.value)} />
       </div>
 
-      {loading ? <div className="p-6"><SkeletonTable rows={8} cols={6} /></div> : !clients?.length ? (
+      {loading ? <div className="p-6"><SkeletonTable rows={8} cols={6} /></div> : error ? (
+        <FetchErrorState title="Could not load clients" error={error} onRetry={refetch} />
+      ) : !clients?.length ? (
         <EmptyState icon="🏢" title={search ? 'No clients match your search' : 'No clients yet'}
           action={!search && <button onClick={() => open()} className="btn-primary btn-sm">Add first client</button>} />
       ) : (

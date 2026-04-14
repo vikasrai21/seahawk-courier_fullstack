@@ -25,6 +25,7 @@ const ClientBrandTrackingPage = lazy(() => import('./pages/client/ClientBrandTra
 const ClientDeveloperHubPage = lazy(() => import('./pages/client/ClientDeveloperHubPage'));
 const ClientWalletPage = lazy(() => import('./pages/client/ClientWalletPage'));
 const ClientInvoicesPage = lazy(() => import('./pages/client/ClientInvoicesPage'));
+const ClientGovernancePage = lazy(() => import('./pages/client/ClientGovernancePage'));
 const LandingPage = lazy(() => import('./pages/public/LandingPage'));
 const PublicTrackPage = lazy(() => import('./pages/public/PublicTrackPage'));
 const ServicesPage = lazy(() => import('./pages/public/ServicesPage'));
@@ -179,6 +180,7 @@ function AppRoutes() {
             <Route path="/portal/developer" element={<ClientRoute>{withToast(ClientDeveloperHubPage)}</ClientRoute>} />
             <Route path="/portal/wallet" element={<ClientRoute>{withToast(ClientWalletPage)}</ClientRoute>} />
             <Route path="/portal/invoices" element={<ClientRoute>{withToast(ClientInvoicesPage)}</ClientRoute>} />
+            <Route path="/portal/governance" element={<ClientRoute>{withToast(ClientGovernancePage)}</ClientRoute>} />
             <Route path="/portal/*" element={<ClientRoute>{withToast(ClientPortalPage)}</ClientRoute>} />
 
             <Route

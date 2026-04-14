@@ -37,6 +37,31 @@ async function stats(req, res) {
     }),
   ]);
 
+  const otifWindowRows = await prisma.shipment.findMany({
+    where: baseWhere,
+    select: { status: true, date: true, service: true },
+    take: 800,
+    orderBy: { date: 'desc' },
+  });
+
+  const slaDaysFor = (service) => {
+    const s = String(service || '').toLowerCase();
+    if (s.includes('express')) return 2;
+    if (s.includes('priority')) return 3;
+    if (s.includes('standard')) return 4;
+    return 5;
+  };
+  const nowEpoch = Date.now();
+  const deliveredRows = otifWindowRows.filter((r) => r.status === 'Delivered');
+  const deliveredOnTime = deliveredRows.filter((r) => {
+    const ageDays = Math.max(0, Math.round((nowEpoch - new Date(r.date).getTime()) / 86400000));
+    return ageDays <= slaDaysFor(r.service);
+  }).length;
+  const otif = deliveredRows.length ? Number(((deliveredOnTime / deliveredRows.length) * 100).toFixed(1)) : 100;
+  const firstAttempt = otifWindowRows.length
+    ? Number(((otifWindowRows.filter((r) => r.status === 'Delivered').length / otifWindowRows.length) * 100).toFixed(1))
+    : 100;
+
   // Convert recent shipments to activity feed events
   const statusMeta = {
     Delivered:      { icon: '✅', title: 'Shipment Delivered',   color: '#4ade80' },
@@ -47,10 +72,9 @@ async function stats(req, res) {
     Delayed:        { icon: '⏳', title: 'Shipment Delayed',      color: '#fbbf24' },
     Booked:         { icon: '📋', title: 'Shipment Booked',       color: '#a78bfa' },
   };
-  const now = Date.now();
   const recentActivity = recentShipments.map((s, i) => {
     const meta = statusMeta[s.status] || { icon: '📌', title: `Status: ${s.status}`, color: '#64748b' };
-    const diffMs = now - new Date(s.updatedAt).getTime();
+    const diffMs = nowEpoch - new Date(s.updatedAt).getTime();
     const diffMin = Math.floor(diffMs / 60000);
     const time = diffMin < 60
       ? `${diffMin}m ago`
@@ -80,6 +104,8 @@ async function stats(req, res) {
       ndr,
       exception,
       deliveredPct: total > 0 ? Number(((delivered / total) * 100).toFixed(1)) : 0,
+      otif,
+      firstAttemptDelivery: firstAttempt,
     },
     trend: trendRows.map((r) => ({ date: r.date, shipments: r._count.id })),
     recentActivity,

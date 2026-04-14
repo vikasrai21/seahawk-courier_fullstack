@@ -27,6 +27,7 @@ const prismaMap = {
 function globalErrorHandler(err, req, res, _next) {
   // Log everything — structured for searchability
   logger.error('Request error', {
+    requestId: req.requestId,
     method:  req.method,
     path:    req.path,
     status:  err.status || 500,
@@ -39,32 +40,34 @@ function globalErrorHandler(err, req, res, _next) {
   // ── Prisma known errors ──────────────────────────────────────────────
   if (err.code && prismaMap[err.code]) {
     const { status, message } = prismaMap[err.code](err);
-    return res.status(status).json({ success: false, message });
+    return res.status(status).json({ success: false, message, incidentId: req.requestId });
   }
 
   // ── JWT errors ───────────────────────────────────────────────────────
   if (err.name === 'JsonWebTokenError')
-    return res.status(401).json({ success: false, message: 'Invalid token. Please log in again.' });
+    return res.status(401).json({ success: false, message: 'Invalid token. Please log in again.', incidentId: req.requestId });
   if (err.name === 'TokenExpiredError')
-    return res.status(401).json({ success: false, message: 'Session expired. Please log in again.' });
+    return res.status(401).json({ success: false, message: 'Session expired. Please log in again.', incidentId: req.requestId });
 
   // ── Zod validation errors ─────────────────────────────────────────────
   if (err.name === 'ZodError')
     return res.status(400).json({
       success: false,
       message: 'Validation failed.',
+      incidentId: req.requestId,
       errors:  err.errors.map((e) => ({ field: e.path.join('.'), message: e.message })),
     });
 
   // ── Operational (intentional) errors ─────────────────────────────────
   if (err.isOperational)
-    return res.status(err.status).json({ success: false, message: err.message });
+    return res.status(err.status).json({ success: false, message: err.message, incidentId: req.requestId });
 
   // ── Unknown / programming errors — don't leak internals ───────────────
   const isProd = process.env.NODE_ENV === 'production';
   res.status(500).json({
     success: false,
     message: isProd ? 'Internal server error.' : err.message,
+    incidentId: req.requestId,
     ...(isProd ? {} : { stack: err.stack }),
   });
 }

@@ -14,6 +14,7 @@ const { initSentry, sentryErrorHandler } = require('./config/sentry');
 const { sanitiseBody } = require('./middleware/sanitise.middleware');
 const { issueCsrfCookie, validateCsrf } = require('./middleware/csrf.middleware');
 const { metricsMiddleware, getMetricsSnapshot } = require('./middleware/metrics.middleware');
+const { requestContext } = require('./middleware/request-context.middleware');
 const R = require('./utils/response');
 
 const app = express();
@@ -86,6 +87,7 @@ app.use((req, res, next) => {
 
 app.use(express.urlencoded({ extended: true, limit: config.bodyLimits.globalJson }));
 app.use(cookieParser());
+app.use(requestContext);
 app.use(metricsMiddleware);
 
 // ── Global XSS sanitisation ────────────────────────────────────────────────
