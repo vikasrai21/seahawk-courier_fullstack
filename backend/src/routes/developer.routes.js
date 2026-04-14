@@ -6,12 +6,14 @@ const crypto = require('crypto');
 const R = require('../utils/response');
 const { asyncHandler } = require('../middleware/errorHandler');
 const integrationIngestSvc = require('../services/integration-ingest.service');
+const { fetchWithRetry } = require('../utils/httpRetry');
 
 router.use(authenticate);
 
 const SUPPORTED_PROVIDERS = integrationIngestSvc.SUPPORTED_ECOM_PROVIDERS;
 const ALLOWED_KEY_SCOPES = ['orders:create', 'webhooks:read', 'webhooks:replay', 'events:read', 'sandbox:write'];
 const APPROVABLE_ACTIONS = ['INTEGRATION_SETTINGS_CHANGE', 'API_KEY_POLICY_CHANGE', 'DISPUTE_SETTLEMENT', 'RETENTION_POLICY_CHANGE'];
+const CONNECTOR_AUTH_TYPES = ['none', 'api_key', 'bearer', 'basic'];
 
 function resolveClientCode(req) {
   if (req.user?.role === 'CLIENT') return req.user.clientCode || null;
@@ -41,6 +43,71 @@ async function upsertKeyPolicy(clientCode, keyId, patch) {
 function normalizeApprovalAction(input) {
   const action = String(input || '').trim().toUpperCase();
   return APPROVABLE_ACTIONS.includes(action) ? action : null;
+}
+
+function maskSecret(value) {
+  const raw = String(value || '');
+  if (!raw) return '';
+  if (raw.length <= 8) return `${raw.slice(0, 2)}***${raw.slice(-1)}`;
+  return `${raw.slice(0, 3)}***${raw.slice(-3)}`;
+}
+
+function sanitizeConnector(connector, provider) {
+  const authType = String(connector?.authType || 'none').trim().toLowerCase();
+  const safeAuthType = CONNECTOR_AUTH_TYPES.includes(authType) ? authType : 'none';
+  const timeoutMs = Math.min(60000, Math.max(2000, parseInt(connector?.timeoutMs, 10) || 10000));
+  const retryAttempts = Math.min(6, Math.max(1, parseInt(connector?.retryAttempts, 10) || 3));
+  const retryBaseDelayMs = Math.min(10000, Math.max(200, parseInt(connector?.retryBaseDelayMs, 10) || 600));
+
+  return {
+    enabled: Boolean(connector?.enabled),
+    providerType: ['amazon', 'flipkart', 'myntra', 'ajio'].includes(provider) ? 'marketplace' : (provider === 'custom' ? 'custom' : 'erp'),
+    baseUrl: String(connector?.baseUrl || '').trim(),
+    orderPullPath: String(connector?.orderPullPath || '').trim(),
+    orderAckPath: String(connector?.orderAckPath || '').trim(),
+    webhookPath: String(connector?.webhookPath || '').trim(),
+    authType: safeAuthType,
+    credentials: {
+      headerName: String(connector?.credentials?.headerName || 'x-api-key').trim() || 'x-api-key',
+      apiKey: String(connector?.credentials?.apiKey || '').trim(),
+      token: String(connector?.credentials?.token || '').trim(),
+      username: String(connector?.credentials?.username || '').trim(),
+      password: String(connector?.credentials?.password || '').trim(),
+    },
+    timeoutMs,
+    retryAttempts,
+    retryBaseDelayMs,
+    verifySsl: connector?.verifySsl !== false,
+  };
+}
+
+function redactIntegrationConfig(config) {
+  if (!config || typeof config !== 'object') return config;
+  const clone = JSON.parse(JSON.stringify(config));
+  if (!clone.connector || typeof clone.connector !== 'object') return clone;
+  clone.connector.credentials = clone.connector.credentials || {};
+  if (clone.connector.credentials.apiKey) clone.connector.credentials.apiKey = maskSecret(clone.connector.credentials.apiKey);
+  if (clone.connector.credentials.token) clone.connector.credentials.token = maskSecret(clone.connector.credentials.token);
+  if (clone.connector.credentials.password) clone.connector.credentials.password = maskSecret(clone.connector.credentials.password);
+  return clone;
+}
+
+async function pickLiveIngestKey(clientCode, clientBrandSettings, preferredKeyId = null) {
+  const rows = await prisma.clientApiKey.findMany({
+    where: { clientCode, active: true },
+    select: { id: true, name: true, lastUsedAt: true, createdAt: true },
+    orderBy: [{ lastUsedAt: 'desc' }, { createdAt: 'desc' }],
+  });
+  if (!rows.length) return null;
+  const policies = clientBrandSettings?.integrationKeyPolicies || {};
+  const ordered = preferredKeyId
+    ? [...rows.filter((r) => r.id === preferredKeyId), ...rows.filter((r) => r.id !== preferredKeyId)]
+    : rows;
+  return ordered.find((row) => {
+    const policy = policies[String(row.id)] || {};
+    const mode = String(policy.mode || 'live').toLowerCase() === 'sandbox' ? 'sandbox' : 'live';
+    return mode === 'live' && integrationIngestSvc.hasScope(policy, 'orders:create');
+  }) || null;
 }
 
 // GET /api/portal/developer/keys
@@ -173,7 +240,9 @@ router.get('/integrations/settings', asyncHandler(async (req, res) => {
     select: { brandSettings: true },
   });
   const all = (client?.brandSettings && typeof client.brandSettings === 'object' ? client.brandSettings.integrations : {}) || {};
-  const data = provider ? (all[provider] || null) : all;
+  const data = provider ? redactIntegrationConfig(all[provider] || null) : Object.fromEntries(
+    Object.entries(all).map(([k, v]) => [k, redactIntegrationConfig(v)])
+  );
   R.ok(res, data);
 }));
 
@@ -203,6 +272,7 @@ router.post('/integrations/settings', asyncHandler(async (req, res) => {
       destination: String(req.body?.staticValues?.destination || '').trim(),
       pincode: String(req.body?.staticValues?.pincode || '').trim(),
     },
+    connector: sanitizeConnector(req.body?.connector || {}, provider),
   };
 
   const client = await prisma.client.findUnique({
@@ -230,7 +300,7 @@ router.post('/integrations/settings', asyncHandler(async (req, res) => {
     },
   });
 
-  R.ok(res, payload, 'Integration settings saved.');
+  R.ok(res, redactIntegrationConfig(payload), 'Integration settings saved.');
 }));
 
 // GET /api/portal/developer/integrations/logs
@@ -270,12 +340,11 @@ router.post('/integrations/replay', asyncHandler(async (req, res) => {
   const payload = req.body?.payload;
   if (!payload || typeof payload !== 'object') return R.badRequest(res, 'payload object is required');
 
-  const [client, apiKey] = await Promise.all([
-    prisma.client.findUnique({ where: { code: clientCode }, select: { code: true, brandSettings: true } }),
-    prisma.clientApiKey.findFirst({ where: { clientCode, active: true }, orderBy: { lastUsedAt: 'desc' }, select: { id: true, name: true } }),
-  ]);
+  const client = await prisma.client.findUnique({ where: { code: clientCode }, select: { code: true, brandSettings: true } });
   if (!client) return R.notFound(res, 'Client');
-  if (!apiKey) return R.badRequest(res, 'No active API key found to replay event');
+  const preferredKeyId = Number(req.body?.keyId);
+  const apiKey = await pickLiveIngestKey(clientCode, client.brandSettings, Number.isFinite(preferredKeyId) ? preferredKeyId : null);
+  if (!apiKey) return R.badRequest(res, 'No active live key with orders:create scope found for replay');
 
   try {
     const result = await integrationIngestSvc.ingestOrder({
@@ -306,6 +375,124 @@ router.post('/integrations/replay', asyncHandler(async (req, res) => {
     }).catch(() => {});
     throw err;
   }
+}));
+
+// POST /api/portal/developer/integrations/dead-letters/:id/retry
+router.post('/integrations/dead-letters/:id/retry', asyncHandler(async (req, res) => {
+  const clientCode = resolveClientCode(req);
+  if (!clientCode) return R.badRequest(res, 'clientCode is required');
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return R.badRequest(res, 'Invalid dead-letter id');
+
+  const row = await prisma.jobQueue.findFirst({
+    where: { id, type: 'INTEGRATION_DEAD_LETTER' },
+  });
+  if (!row) return R.notFound(res, 'Dead-letter event');
+  if (String(row?.payload?.clientCode || '').toUpperCase() !== clientCode) return R.forbidden(res, 'Dead-letter does not belong to this client');
+  if ((row.attempts || 0) >= (row.maxAttempts || 3)) return R.error(res, 'Dead-letter reached max retry attempts', 409);
+
+  const provider = String(row?.payload?.provider || '').trim().toLowerCase();
+  if (!SUPPORTED_PROVIDERS.includes(provider)) return R.badRequest(res, 'Dead-letter provider unsupported');
+  const body = row?.payload?.body;
+  if (!body || typeof body !== 'object') return R.badRequest(res, 'Dead-letter payload missing body');
+
+  const client = await prisma.client.findUnique({ where: { code: clientCode }, select: { code: true, brandSettings: true } });
+  if (!client) return R.notFound(res, 'Client');
+  const key = await pickLiveIngestKey(clientCode, client.brandSettings);
+  if (!key) return R.badRequest(res, 'No active live key with orders:create scope found for retry');
+
+  try {
+    const result = await integrationIngestSvc.ingestOrder({
+      provider,
+      clientCode,
+      body,
+      client,
+      apiKey: key,
+      explicitIdempotencyKey: String(req.body?.idempotencyKey || '').trim() || null,
+      ip: req.ip,
+      requestId: req.id,
+    });
+    await prisma.jobQueue.update({
+      where: { id: row.id },
+      data: {
+        status: 'DONE',
+        attempts: (row.attempts || 0) + 1,
+        error: null,
+        completedAt: new Date(),
+      },
+    });
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        userEmail: req.user.email,
+        action: 'INTEGRATION_DEAD_LETTER_REPLAYED',
+        entity: 'INTEGRATION_WEBHOOK',
+        entityId: `${clientCode}:${provider}:${row.id}`,
+        newValue: { deadLetterId: row.id, duplicate: Boolean(result.duplicate), draftId: result.draftId || null },
+        ip: req.ip,
+      },
+    });
+    R.ok(res, { retried: true, duplicate: Boolean(result.duplicate), draftId: result.draftId || null }, 'Dead-letter replayed successfully');
+  } catch (err) {
+    const nextAttempts = (row.attempts || 0) + 1;
+    const maxAttempts = row.maxAttempts || 3;
+    const delayMs = Math.min(600000, 30000 * (2 ** Math.max(0, nextAttempts - 1)));
+    await prisma.jobQueue.update({
+      where: { id: row.id },
+      data: {
+        status: nextAttempts >= maxAttempts ? 'FAILED' : 'PENDING',
+        attempts: nextAttempts,
+        error: String(err.message || 'retry-failed').slice(0, 500),
+        runAfter: nextAttempts >= maxAttempts ? row.runAfter : new Date(Date.now() + delayMs),
+      },
+    });
+    throw err;
+  }
+}));
+
+// POST /api/portal/developer/integrations/connectors/:provider/test
+router.post('/integrations/connectors/:provider/test', asyncHandler(async (req, res) => {
+  const clientCode = resolveClientCode(req);
+  if (!clientCode) return R.badRequest(res, 'clientCode is required');
+  const provider = String(req.params.provider || '').trim().toLowerCase();
+  if (!SUPPORTED_PROVIDERS.includes(provider)) return R.badRequest(res, 'Unsupported provider');
+
+  const client = await prisma.client.findUnique({
+    where: { code: clientCode },
+    select: { brandSettings: true },
+  });
+  const cfg = client?.brandSettings?.integrations?.[provider]?.connector;
+  if (!cfg || !cfg.enabled) return R.badRequest(res, 'Connector config is missing or disabled');
+  const baseUrl = String(cfg.baseUrl || '').trim();
+  if (!baseUrl) return R.badRequest(res, 'Connector baseUrl is required');
+
+  const probePath = String(req.body?.path || cfg.orderPullPath || '/').trim() || '/';
+  const target = `${baseUrl.replace(/\/+$/, '')}/${probePath.replace(/^\/+/, '')}`;
+  const headers = {};
+  const authType = String(cfg.authType || 'none').trim().toLowerCase();
+  if (authType === 'api_key' && cfg?.credentials?.apiKey) headers[String(cfg.credentials.headerName || 'x-api-key')] = String(cfg.credentials.apiKey);
+  if (authType === 'bearer' && cfg?.credentials?.token) headers.Authorization = `Bearer ${String(cfg.credentials.token)}`;
+  if (authType === 'basic' && cfg?.credentials?.username) {
+    const raw = `${String(cfg.credentials.username)}:${String(cfg.credentials.password || '')}`;
+    headers.Authorization = `Basic ${Buffer.from(raw).toString('base64')}`;
+  }
+
+  const timeoutMs = Math.min(60000, Math.max(2000, parseInt(cfg.timeoutMs, 10) || 10000));
+  const attempts = Math.min(6, Math.max(1, parseInt(cfg.retryAttempts, 10) || 3));
+  const baseDelayMs = Math.min(10000, Math.max(200, parseInt(cfg.retryBaseDelayMs, 10) || 600));
+
+  const response = await fetchWithRetry(target, {
+    method: 'GET',
+    headers,
+  }, { attempts, timeoutMs, baseDelayMs });
+  const bodyText = await response.text().catch(() => '');
+  R.ok(res, {
+    provider,
+    target,
+    status: response.status,
+    ok: response.ok,
+    preview: bodyText.slice(0, 300),
+  }, 'Connector probe succeeded');
 }));
 
 // GET /api/portal/developer/integrations/dead-letters

@@ -36,6 +36,9 @@ export default function ClientDeveloperHubPage({ toast }) {
   const [logs, setLogs] = useState([]);
   const [diagnostics, setDiagnostics] = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [connectorTestPath, setConnectorTestPath] = useState('/');
+  const [connectorTesting, setConnectorTesting] = useState(false);
+  const [connectorTestResult, setConnectorTestResult] = useState(null);
 
   const loadKeys = async () => {
     setLoading(true);
@@ -185,6 +188,34 @@ export default function ClientDeveloperHubPage({ toast }) {
       toast?.(err.message || 'Failed to save integration settings', 'error');
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  const retryDeadLetter = async (id) => {
+    try {
+      const res = await api.post(`/portal/developer/integrations/dead-letters/${id}/retry`, {
+        idempotencyKey: replayIdempotencyKey || undefined,
+      });
+      toast?.(res.message || 'Dead-letter retried', 'success');
+      await loadLogsAndDiagnostics(provider);
+    } catch (err) {
+      toast?.(err.message || 'Dead-letter retry failed', 'error');
+    }
+  };
+
+  const testConnector = async () => {
+    setConnectorTesting(true);
+    setConnectorTestResult(null);
+    try {
+      const res = await api.post(`/portal/developer/integrations/connectors/${provider}/test`, {
+        path: connectorTestPath || '/',
+      });
+      setConnectorTestResult(res.data || null);
+      toast?.(res.message || 'Connector probe succeeded', 'success');
+    } catch (err) {
+      toast?.(err.message || 'Connector probe failed', 'error');
+    } finally {
+      setConnectorTesting(false);
     }
   };
 
@@ -348,6 +379,43 @@ export default function ClientDeveloperHubPage({ toast }) {
               <input className="input" value={settings.staticValues?.destination || ''} onChange={(e) => setSettings((s) => ({ ...s, staticValues: { ...s.staticValues, destination: e.target.value } }))} placeholder="Fallback destination" />
               <input className="input" value={settings.staticValues?.pincode || ''} onChange={(e) => setSettings((s) => ({ ...s, staticValues: { ...s.staticValues, pincode: e.target.value } }))} placeholder="Fallback pincode" />
             </div>
+            <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+              <div className="text-xs font-bold text-gray-700">External Connector (Amazon/Flipkart/Myntra/Ajio/ERP pull+ack)</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                <input className="input" value={settings.connector?.baseUrl || ''} onChange={(e) => setSettings((s) => ({ ...s, connector: { ...(s.connector || {}), baseUrl: e.target.value } }))} placeholder="Connector base URL (e.g. https://partner.example.com)" />
+                <select className="input" value={settings.connector?.authType || 'none'} onChange={(e) => setSettings((s) => ({ ...s, connector: { ...(s.connector || {}), authType: e.target.value } }))}>
+                  <option value="none">No Auth</option>
+                  <option value="api_key">API Key Header</option>
+                  <option value="bearer">Bearer Token</option>
+                  <option value="basic">Basic Auth</option>
+                </select>
+                <input className="input" value={settings.connector?.orderPullPath || ''} onChange={(e) => setSettings((s) => ({ ...s, connector: { ...(s.connector || {}), orderPullPath: e.target.value } }))} placeholder="Order pull path (e.g. /api/orders/pending)" />
+                <input className="input" value={settings.connector?.orderAckPath || ''} onChange={(e) => setSettings((s) => ({ ...s, connector: { ...(s.connector || {}), orderAckPath: e.target.value } }))} placeholder="Order ACK path (e.g. /api/orders/ack)" />
+                <input className="input" value={settings.connector?.credentials?.headerName || ''} onChange={(e) => setSettings((s) => ({ ...s, connector: { ...(s.connector || {}), credentials: { ...(s.connector?.credentials || {}), headerName: e.target.value } } }))} placeholder="Auth header name (x-api-key)" />
+                <input className="input" value={settings.connector?.credentials?.apiKey || ''} onChange={(e) => setSettings((s) => ({ ...s, connector: { ...(s.connector || {}), credentials: { ...(s.connector?.credentials || {}), apiKey: e.target.value } } }))} placeholder="API key (will be masked on reload)" />
+                <input className="input" value={settings.connector?.credentials?.token || ''} onChange={(e) => setSettings((s) => ({ ...s, connector: { ...(s.connector || {}), credentials: { ...(s.connector?.credentials || {}), token: e.target.value } } }))} placeholder="Bearer token (will be masked on reload)" />
+                <input className="input" value={settings.connector?.credentials?.username || ''} onChange={(e) => setSettings((s) => ({ ...s, connector: { ...(s.connector || {}), credentials: { ...(s.connector?.credentials || {}), username: e.target.value } } }))} placeholder="Basic auth username" />
+                <input className="input" type="password" value={settings.connector?.credentials?.password || ''} onChange={(e) => setSettings((s) => ({ ...s, connector: { ...(s.connector || {}), credentials: { ...(s.connector?.credentials || {}), password: e.target.value } } }))} placeholder="Basic auth password (will be masked on reload)" />
+                <input className="input" type="number" value={settings.connector?.timeoutMs || 10000} onChange={(e) => setSettings((s) => ({ ...s, connector: { ...(s.connector || {}), timeoutMs: Number(e.target.value || 10000) } }))} placeholder="Timeout ms" />
+                <input className="input" type="number" value={settings.connector?.retryAttempts || 3} onChange={(e) => setSettings((s) => ({ ...s, connector: { ...(s.connector || {}), retryAttempts: Number(e.target.value || 3) } }))} placeholder="Retry attempts" />
+              </div>
+              <label className="inline-flex items-center gap-2 text-xs text-gray-700">
+                <input type="checkbox" checked={!!settings.connector?.enabled} onChange={(e) => setSettings((s) => ({ ...s, connector: { ...(s.connector || {}), enabled: e.target.checked } }))} />
+                Enable external connector
+              </label>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                <input className="input md:col-span-2" value={connectorTestPath} onChange={(e) => setConnectorTestPath(e.target.value)} placeholder="Probe path (default /)" />
+                <button type="button" className="btn-secondary" onClick={testConnector} disabled={connectorTesting}>
+                  {connectorTesting ? 'Testing...' : 'Test Connector'}
+                </button>
+              </div>
+              {connectorTestResult ? (
+                <div className="text-xs rounded border border-gray-200 bg-gray-50 p-2">
+                  Probe OK · status <strong>{connectorTestResult.status}</strong> · target <code>{connectorTestResult.target}</code>
+                  {connectorTestResult.preview ? <div className="mt-1 text-gray-600 break-all">{connectorTestResult.preview}</div> : null}
+                </div>
+              ) : null}
+            </div>
             <div className="text-xs text-gray-600">
               Webhook URL: <code>/api/public/integrations/ecommerce/{provider}/YOUR_CLIENT_CODE</code> (use any active API key in <code>x-api-key</code> header).
             </div>
@@ -418,6 +486,9 @@ export default function ClientDeveloperHubPage({ toast }) {
                 <div key={row.id} className="border rounded-lg p-3 text-xs">
                   <div className="font-semibold text-gray-900">{row.payload?.provider || 'provider'} · {row.error || row.payload?.reason || 'unknown error'}</div>
                   <div className="text-gray-500">{new Date(row.createdAt).toLocaleString()} · requestId: {row.payload?.requestId || 'n/a'}</div>
+                  <div className="mt-2">
+                    <button type="button" className="btn-secondary" onClick={() => retryDeadLetter(row.id)}>Retry Dead-letter</button>
+                  </div>
                 </div>
               ))}
             </div>
