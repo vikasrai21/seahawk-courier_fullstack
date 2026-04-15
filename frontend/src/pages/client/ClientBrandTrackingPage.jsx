@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import api from '../../services/api';
 
 export default function ClientBrandTrackingPage({ toast }) {
@@ -56,42 +55,37 @@ export default function ClientBrandTrackingPage({ toast }) {
   };
 
   return (
-    <div className="min-h-screen client-premium-shell">
-      <header className="client-premium-header px-6 py-4 flex items-center gap-3">
-        <Link to="/portal" className="text-gray-400 hover:text-gray-600">← Portal</Link>
-        <span className="client-premium-title text-lg">Client-Branded Tracking</span>
-      </header>
-
+    <div className="min-h-full">
       <div className="client-premium-main max-w-5xl">
         <div className="client-premium-card p-5">
-          <h1 className="font-bold text-gray-900">White-Label Tracking Setup</h1>
-          <p className="text-sm text-gray-500 mt-1">Share a hosted tracking link with your customers or embed the Sea Hawk tracker on your own website.</p>
+          <h1 className="font-bold text-slate-900 dark:text-white">White-Label Tracking Setup</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Share a hosted tracking link with your customers or embed the Sea Hawk tracker on your own website.</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div className="client-premium-card p-5">
-            <div className="text-xs text-gray-400 uppercase">Hosted Link</div>
-            <div className="mt-2 text-sm font-semibold text-gray-900 break-all">{brand?.trackingUrl || 'Loading…'}</div>
+            <div className="text-xs text-slate-400 dark:text-slate-500 uppercase">Hosted Link</div>
+            <div className="mt-2 text-sm font-semibold text-slate-900 dark:text-white break-all">{brand?.trackingUrl || 'Loading…'}</div>
             <div className="mt-4 flex gap-2">
               <button className="btn-primary" onClick={() => copy(brand?.trackingUrl || '', 'link')}>Copy Link</button>
               {brand?.trackingUrl && <a className="btn-secondary" href={brand.trackingUrl} target="_blank" rel="noreferrer">Open</a>}
             </div>
-            {copied === 'link' && <div className="mt-2 text-xs text-green-600">Hosted link copied.</div>}
+            {copied === 'link' && <div className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">Hosted link copied.</div>}
           </div>
 
           <div className="client-premium-card p-5">
-            <div className="text-xs text-gray-400 uppercase">Embed Script</div>
-            <pre className="mt-2 rounded-xl bg-gray-950 text-gray-100 text-xs p-4 overflow-x-auto whitespace-pre-wrap">{brand?.embedCode || 'Loading…'}</pre>
+            <div className="text-xs text-slate-400 dark:text-slate-500 uppercase">Embed Script</div>
+            <pre className="mt-2 rounded-xl bg-slate-950 text-slate-100 text-xs p-4 overflow-x-auto whitespace-pre-wrap">{brand?.embedCode || 'Loading…'}</pre>
             <div className="mt-4">
               <button className="btn-primary" onClick={() => copy(brand?.embedCode || '', 'embed')}>Copy Embed Code</button>
             </div>
-            {copied === 'embed' && <div className="mt-2 text-xs text-green-600">Embed code copied.</div>}
+            {copied === 'embed' && <div className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">Embed code copied.</div>}
           </div>
         </div>
 
         <div className="client-premium-card p-5">
-          <div className="font-bold text-gray-900">Brand Studio</div>
-          <p className="text-sm text-gray-500 mt-1">Customize logo, color, subdomain hint, and customer SMS template.</p>
+          <div className="font-bold text-slate-900 dark:text-white">Brand Studio</div>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Customize logo, color, subdomain hint, and customer SMS template.</p>
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
             <input className="input" value={form.brandName} onChange={(e) => setForm((p) => ({ ...p, brandName: e.target.value }))} placeholder="Brand name" />
             <input className="input" value={form.logoUrl} onChange={(e) => setForm((p) => ({ ...p, logoUrl: e.target.value }))} placeholder="Logo URL" />
@@ -105,8 +99,8 @@ export default function ClientBrandTrackingPage({ toast }) {
         </div>
 
         <div className="client-premium-card p-5">
-          <div className="font-bold text-gray-900">Quick Notes</div>
-          <ul className="mt-3 text-sm text-gray-600 list-disc pl-5 space-y-1">
+          <div className="font-bold text-slate-900 dark:text-white">Quick Notes</div>
+          <ul className="mt-3 text-sm text-slate-600 dark:text-slate-300 list-disc pl-5 space-y-1">
             <li>Your customers can use the hosted link immediately.</li>
             <li>The embed widget can be dropped into Shopify, WordPress, or any custom site.</li>
             <li>A true custom domain like `track.yourbrand.com` still needs DNS/domain setup outside the portal.</li>

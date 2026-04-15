@@ -351,7 +351,7 @@ export function AppLayout({ children }) {
       display: 'flex', height: '100vh',
       background: 'var(--shk-bg, #f8fafc)',
       overflow: 'hidden',
-      fontFamily: "'Inter', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+      fontFamily: "'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
     }}>
       <ShortcutsHelp />
 
@@ -410,12 +410,12 @@ export function AppLayout({ children }) {
         <header style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '10px 24px',
-          background: dark ? 'var(--shk-surface, #1e293b)' : '#ffffff',
+          background: dark ? 'rgba(15,23,42,0.88)' : 'rgba(255,255,255,0.88)',
           borderBottom: `1px solid ${C.border}`,
           flexShrink: 0,
           zIndex: 40,
           height: 64,
-          backdropFilter: 'blur(10px)',
+          backdropFilter: 'blur(14px)',
         }}>
           {/* Left: Mobile Menu / Brand Section */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -442,7 +442,8 @@ export function AppLayout({ children }) {
                     fontSize: 12,
                     width: 240,
                     color: C.text,
-                    outline: 'none'
+                    outline: 'none',
+                    letterSpacing: '0.01em',
                   }}
                   readOnly
                 />
@@ -565,7 +566,7 @@ export function AppLayout({ children }) {
           </div>
         </header>
 
-        <main style={{ flex: 1, overflowY: 'auto', background: 'var(--shk-bg, #f8fafc)', transition: 'background 0.3s' }}>
+        <main style={{ flex: 1, overflowY: 'auto', background: 'var(--shk-bg, #f8fafc)', transition: 'background 0.3s', paddingBottom: 12 }}>
           {children}
         </main>
       </div>

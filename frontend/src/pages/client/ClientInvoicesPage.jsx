@@ -6,7 +6,7 @@ import { PageLoader } from '../../components/ui/Loading';
 import { EmptyState } from '../../components/ui/EmptyState';
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
-const STATUS_COLORS = { DRAFT: 'bg-gray-100 text-gray-700', SENT: 'bg-blue-100 text-blue-700', PAID: 'bg-green-100 text-green-700', OVERDUE: 'bg-red-100 text-red-700' };
+const STATUS_COLORS = { DRAFT: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300', SENT: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', PAID: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400', OVERDUE: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400' };
 
 function InvoiceStat({ label, value, hint }) {
   return (

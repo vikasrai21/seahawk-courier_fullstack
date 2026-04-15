@@ -23,10 +23,13 @@ export function ThemeProvider({ children }) {
 
   useEffect(() => {
     const root = document.documentElement;
+    const body = document.body;
     const isThemedRoute = location.pathname.startsWith('/app') || location.pathname.startsWith('/portal');
 
     if (!isThemedRoute) {
       root.removeAttribute('data-theme');
+      root.classList.remove('dark');
+      body?.classList.remove('dark');
       root.style.removeProperty('background');
       root.style.removeProperty('color');
       return;
@@ -51,6 +54,8 @@ export function ThemeProvider({ children }) {
       root.style.setProperty('--shk-input-bg',   '#1a2236');
       root.style.setProperty('--shk-shadow',     '0 4px 20px rgba(0,0,0,0.5)');
       root.setAttribute('data-theme', 'dark');
+      root.classList.add('dark');
+      body?.classList.add('dark');
       // Override Tailwind light classes for dark mode
       root.style.background = '#0a0f1a';
       root.style.color = '#f1f5f9';
@@ -73,6 +78,8 @@ export function ThemeProvider({ children }) {
       root.style.setProperty('--shk-input-bg',   '#ffffff');
       root.style.setProperty('--shk-shadow',     '0 4px 20px rgba(15,23,42,0.08)');
       root.setAttribute('data-theme', 'light');
+      root.classList.remove('dark');
+      body?.classList.remove('dark');
       root.style.background = '#f0f4fb';
       root.style.color = '#0f172a';
     }

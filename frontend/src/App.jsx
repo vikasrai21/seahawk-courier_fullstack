@@ -6,13 +6,16 @@ import { ThemeProvider } from './context/ThemeContext';
 import { useToast } from './hooks/useToast';
 import { Toast } from './components/ui/Toast';
 import { AppLayout } from './components/layout/AppLayout';
+import { ClientPortalLayout } from './components/layout/ClientPortalLayout';
 import { Spinner } from './components/ui/Loading';
 import ErrorBoundary from './components/ErrorBoundary';
 
 const ClientPortalPage = lazy(() => import('./pages/client/ClientPortalPage'));
 const ClientShipmentsPage = lazy(() => import('./pages/client/ClientShipmentsPage'));
 const ClientOrdersQueuePage = lazy(() => import('./pages/client/ClientOrdersQueuePage'));
+const ClientBookShipmentPage = lazy(() => import('./pages/client/ClientBookShipmentPage'));
 const ClientBulkTrackPage = lazy(() => import('./pages/client/ClientBulkTrackPage'));
+const ClientTrackPage = lazy(() => import('./pages/client/ClientTrackPage'));
 const ClientNDRPage = lazy(() => import('./pages/client/ClientNDRPage'));
 const ClientPickupPage = lazy(() => import('./pages/client/ClientPickupPage'));
 const ClientImportPage = lazy(() => import('./pages/client/ClientImportPage'));
@@ -164,24 +167,28 @@ function AppRoutes() {
             <Route path="/scan-mobile" element={<StaffRoute><DirectMobileScannerPage /></StaffRoute>} />
             <Route path="/change-password" element={<PrivateRoute><ChangePasswordPage /></PrivateRoute>} />
 
-            <Route path="/portal" element={<ClientRoute>{withToast(ClientPortalPage)}</ClientRoute>} />
-            <Route path="/portal/shipments" element={<ClientRoute>{withToast(ClientShipmentsPage)}</ClientRoute>} />
-            <Route path="/portal/drafts" element={<ClientRoute>{withToast(ClientOrdersQueuePage)}</ClientRoute>} />
-            <Route path="/portal/bulk-track" element={<ClientRoute>{withToast(ClientBulkTrackPage)}</ClientRoute>} />
-            <Route path="/portal/ndr" element={<ClientRoute>{withToast(ClientNDRPage)}</ClientRoute>} />
-            <Route path="/portal/pickups" element={<ClientRoute>{withToast(ClientPickupPage)}</ClientRoute>} />
-            <Route path="/portal/import" element={<ClientRoute>{withToast(ClientImportPage)}</ClientRoute>} />
-            <Route path="/portal/support" element={<ClientRoute>{withToast(ClientSupportTicketsPage)}</ClientRoute>} />
-            <Route path="/portal/map" element={<ClientRoute>{withToast(ClientLiveMapPage)}</ClientRoute>} />
-            <Route path="/portal/notifications" element={<ClientRoute>{withToast(ClientNotificationsPage)}</ClientRoute>} />
-            <Route path="/portal/rto-intelligence" element={<ClientRoute>{withToast(ClientRTOIntelligencePage)}</ClientRoute>} />
-            <Route path="/portal/pod" element={<ClientRoute>{withToast(ClientPODPage)}</ClientRoute>} />
-            <Route path="/portal/branding" element={<ClientRoute>{withToast(ClientBrandTrackingPage)}</ClientRoute>} />
-            <Route path="/portal/developer" element={<ClientRoute>{withToast(ClientDeveloperHubPage)}</ClientRoute>} />
-            <Route path="/portal/wallet" element={<ClientRoute>{withToast(ClientWalletPage)}</ClientRoute>} />
-            <Route path="/portal/invoices" element={<ClientRoute>{withToast(ClientInvoicesPage)}</ClientRoute>} />
-            <Route path="/portal/governance" element={<ClientRoute>{withToast(ClientGovernancePage)}</ClientRoute>} />
-            <Route path="/portal/*" element={<ClientRoute>{withToast(ClientPortalPage)}</ClientRoute>} />
+            <Route path="/portal/*" element={<ClientRoute><ClientPortalLayout /></ClientRoute>}>
+              <Route index element={withToast(ClientPortalPage)} />
+              <Route path="shipments" element={withToast(ClientShipmentsPage)} />
+              <Route path="drafts" element={withToast(ClientOrdersQueuePage)} />
+              <Route path="book-shipment" element={withToast(ClientBookShipmentPage)} />
+              <Route path="bulk-track" element={withToast(ClientBulkTrackPage)} />
+              <Route path="track" element={withToast(ClientTrackPage)} />
+              <Route path="ndr" element={withToast(ClientNDRPage)} />
+              <Route path="pickups" element={withToast(ClientPickupPage)} />
+              <Route path="import" element={withToast(ClientImportPage)} />
+              <Route path="support" element={withToast(ClientSupportTicketsPage)} />
+              <Route path="map" element={withToast(ClientLiveMapPage)} />
+              <Route path="notifications" element={withToast(ClientNotificationsPage)} />
+              <Route path="rto-intelligence" element={withToast(ClientRTOIntelligencePage)} />
+              <Route path="pod" element={withToast(ClientPODPage)} />
+              <Route path="branding" element={withToast(ClientBrandTrackingPage)} />
+              <Route path="developer" element={withToast(ClientDeveloperHubPage)} />
+              <Route path="wallet" element={withToast(ClientWalletPage)} />
+              <Route path="invoices" element={withToast(ClientInvoicesPage)} />
+              <Route path="governance" element={withToast(ClientGovernancePage)} />
+              <Route path="*" element={<Navigate to="/portal" replace />} />
+            </Route>
 
             <Route
               path="/app/*"

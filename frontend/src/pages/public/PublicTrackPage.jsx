@@ -4,6 +4,13 @@ import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { formatStatusLabel, normalizeStatus } from '../../components/ui/StatusBadge';
 
 const STATUS_STEPS = ['Booked', 'PickedUp', 'InTransit', 'OutForDelivery', 'Delivered'];
+const pick = (obj, ...keys) => {
+  for (const key of keys) {
+    const value = obj?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  }
+  return null;
+};
 
 const COURIER_COLORS = {
   DTDC:       { bg: '#7c3aed', light: '#ede9fe', text: '#5b21b6' },
@@ -340,12 +347,39 @@ export default function PublicTrackPage() {
                           )}
                         </div>
                         <div style={{ paddingBottom: i < data.trackingEvents.length - 1 ? 16 : 0, paddingTop: 4 }}>
+                          {(() => {
+                            const raw = e.rawData || {};
+                            const eventCode = pick(raw, 'eventCode', 'TRACKING_CODE', 'strCode');
+                            const hub = pick(raw, 'hubOrBranch', 'CURRENT_CITY', 'strOrigin', 'strDestination');
+                            const attempt = pick(raw, 'attemptNo', 'ATTEMPT_NO', 'ATTEMPTNO');
+                            const exceptionReason = pick(raw, 'exceptionReason', 'sTrRemarks', 'strRemarks', 'reason');
+                            const recipient = pick(raw, 'recipientName', 'RECEIVER_NAME', 'receiverName');
+                            const pod = Boolean(raw?.proofOfDelivery || raw?.POD_URL || raw?.podImageUrl || raw?.POD_SIGNATURE || raw?.podSignature);
+                            return (
+                              <>
                           <div style={{ fontWeight: 800, fontSize: 15, color: isFirst ? '#0b1f3a' : '#475569' }}>{e.status}</div>
                           {e.location && <div style={{ fontSize: 13, color: '#64748b', marginTop: 3 }}>{e.location}</div>}
                           {e.description && <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>{e.description}</div>}
+                          {(eventCode || hub || attempt || recipient || pod) && (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                              {eventCode && <span style={{ fontSize: 10, fontWeight: 700, color: '#64748b', background: '#f1f5f9', borderRadius: 6, padding: '2px 6px' }}>Code {eventCode}</span>}
+                              {hub && <span style={{ fontSize: 10, fontWeight: 700, color: '#64748b', background: '#f1f5f9', borderRadius: 6, padding: '2px 6px' }}>{hub}</span>}
+                              {attempt && <span style={{ fontSize: 10, fontWeight: 700, color: '#b45309', background: '#fffbeb', borderRadius: 6, padding: '2px 6px' }}>Attempt {attempt}</span>}
+                              {recipient && <span style={{ fontSize: 10, fontWeight: 700, color: '#047857', background: '#ecfdf5', borderRadius: 6, padding: '2px 6px' }}>Recipient {recipient}</span>}
+                              {pod && <span style={{ fontSize: 10, fontWeight: 700, color: '#047857', background: '#ecfdf5', borderRadius: 6, padding: '2px 6px' }}>POD</span>}
+                            </div>
+                          )}
+                          {exceptionReason && (
+                            <div style={{ fontSize: 11, color: '#be123c', marginTop: 6, background: '#fff1f2', border: '1px solid #ffe4e6', borderRadius: 8, padding: '4px 8px' }}>
+                              Exception: {exceptionReason}
+                            </div>
+                          )}
                           <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6, fontFamily: 'monospace', fontWeight: 600, background: '#f1f5f9', padding: '2px 8px', borderRadius: 4, display: 'inline-block' }}>
                             {e.timestamp ? new Date(e.timestamp).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : ''}
                           </div>
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
                     );

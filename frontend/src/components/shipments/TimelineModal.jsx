@@ -7,6 +7,25 @@ import { useAuth } from '../../context/AuthContext';
 
 const STEPS = ['Booked', 'PickedUp', 'InTransit', 'OutForDelivery', 'Delivered'];
 const fmt = n => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+const pick = (obj, ...keys) => {
+  for (const key of keys) {
+    const value = obj?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  }
+  return null;
+};
+
+function getEventMeta(event = {}) {
+  const raw = event.rawData || {};
+  const eventCode = pick(raw, 'eventCode', 'TRACKING_CODE', 'strCode');
+  const hubOrBranch = pick(raw, 'hubOrBranch', 'CURRENT_CITY', 'strOrigin', 'strDestination');
+  const attemptNo = pick(raw, 'attemptNo', 'ATTEMPT_NO', 'ATTEMPTNO', 'attemptNo');
+  const exceptionReason = pick(raw, 'exceptionReason', 'sTrRemarks', 'strRemarks', 'reason');
+  const recipientName = pick(raw, 'recipientName', 'RECEIVER_NAME', 'receiverName');
+  const eventType = pick(raw, 'eventType');
+  const proofOfDelivery = Boolean(raw?.proofOfDelivery || raw?.POD_URL || raw?.podImageUrl || raw?.POD_SIGNATURE || raw?.podSignature);
+  return { eventCode, hubOrBranch, attemptNo, exceptionReason, recipientName, eventType, proofOfDelivery };
+}
 
 export default function TimelineModal({ shipment, shipmentId, onClose }) {
   const { user } = useAuth();
@@ -93,6 +112,10 @@ export default function TimelineModal({ shipment, shipmentId, onClose }) {
             <div className="relative pl-6 space-y-6 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-slate-100 dark:before:bg-slate-800">
               {events.map((e, idx) => (
                 <div key={e.id || idx} className="relative">
+                  {(() => {
+                    const meta = getEventMeta(e);
+                    return (
+                      <>
                   <div className={`absolute -left-[21px] top-1 w-3 h-3 rounded-full border-2 border-white dark:border-slate-900 transition-colors
                     ${idx === 0 ? 'bg-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.15)]' : 'bg-slate-300'}`} />
                   <div className="flex justify-between items-start">
@@ -106,11 +129,27 @@ export default function TimelineModal({ shipment, shipmentId, onClose }) {
                       {new Date(e.timestamp).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                     </div>
                   </div>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {meta.eventCode && <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-500">Code {meta.eventCode}</span>}
+                    {meta.eventType && <span className="rounded-md bg-blue-50 dark:bg-blue-950/30 px-2 py-0.5 text-[10px] font-semibold text-blue-600">{meta.eventType}</span>}
+                    {meta.hubOrBranch && <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-semibold text-slate-500">{meta.hubOrBranch}</span>}
+                    {meta.attemptNo && <span className="rounded-md bg-amber-50 dark:bg-amber-950/30 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Attempt {meta.attemptNo}</span>}
+                    {meta.recipientName && <span className="rounded-md bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Recipient {meta.recipientName}</span>}
+                    {meta.proofOfDelivery && <span className="rounded-md bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">POD</span>}
+                  </div>
                   {e.description && e.description !== `Status updated to ${e.status}` && (
                     <div className="mt-1.5 p-2 bg-slate-50 dark:bg-slate-800/50 rounded-xl text-[10px] text-slate-500 leading-relaxed border border-slate-100 dark:border-slate-800">
                       {e.description}
                     </div>
                   )}
+                  {meta.exceptionReason && (
+                    <div className="mt-1 p-2 bg-rose-50 dark:bg-rose-950/20 rounded-xl text-[10px] text-rose-700 border border-rose-100 dark:border-rose-900/30">
+                      Exception: {meta.exceptionReason}
+                    </div>
+                  )}
+                      </>
+                    );
+                  })()}
                 </div>
               ))}
             </div>

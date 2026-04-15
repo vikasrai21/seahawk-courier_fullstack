@@ -42,68 +42,255 @@ const STATUS_TRANSITIONS = {
   RTO: ['RTODelivered', 'InTransit'],
 };
 
-// ── Industrial Barcode Scanner ───────────────────────────────────────────
+// ── Industrial Barcode Scanner (Rebuilt for Trackon) ───────────────────────
 function BarcodeScanner({ onScan, scanning, lastScanned }) {
   const inputRef = useRef(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
   const [value, setValue] = useState('');
   const [pulse, setPulse] = useState(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [frameEdges, setFrameEdges] = useState(0);
+  const scannerRef = useRef(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
 
+  // Initialize ZXing for Trackon-optimized barcode detection
+  const initCamera = useCallback(async () => {
+    if (cameraActive) return;
+    try {
+      setShowCamera(true);
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          advanced: [
+            { focusMode: 'continuous' },
+            { exposureMode: 'continuous' },
+            { zoom: { ideal: 1 } },
+          ],
+        },
+      });
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        setCameraActive(true);
+
+        // Load ZXing for CODE_128 & ITF detection (Trackon formats)
+        const { BrowserMultiFormatReader } = await import('@zxing/browser');
+        const { DecodeHintType, BarcodeFormat } = await import('@zxing/library');
+
+        const hints = new Map([
+          [DecodeHintType.POSSIBLE_FORMATS, [
+            BarcodeFormat.CODE_128,
+            BarcodeFormat.ITF,
+            BarcodeFormat.CODE_39,
+            BarcodeFormat.EAN_13,
+          ]],
+          [DecodeHintType.TRY_HARDER, true],
+          [DecodeHintType.CHARACTER_SET, 'UTF-8'],
+        ]);
+
+        const reader = new BrowserMultiFormatReader(hints, 50);
+        scannerRef.current = reader;
+
+        let lastDetected = 0;
+        reader.decodeFromVideoElement(videoRef.current, (result) => {
+          if (result && Date.now() - lastDetected > 800) {
+            lastDetected = Date.now();
+            const text = result.getText();
+            const normalized = text.replace(/[^0-9]/g, '').slice(-12); // Get last 12 digits for Trackon
+
+            // Validate Trackon format: 12 digits starting with 100, 200, or 500
+            if (/^(100|200|500)\d{9}$/.test(normalized)) {
+              setValue(normalized);
+              handleScan(normalized);
+              setPulse(true);
+              setTimeout(() => setPulse(false), 600);
+            }
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Camera failed:', err);
+    }
+  }, [cameraActive]);
+
+  const stopCamera = useCallback(() => {
+    setCameraActive(false);
+    setShowCamera(false);
+    if (videoRef.current?.srcObject) {
+      videoRef.current.srcObject.getTracks().forEach((t) => t.stop());
+      videoRef.current.srcObject = null;
+    }
+    if (scannerRef.current) {
+      try {
+        scannerRef.current.reset?.();
+      } catch (err) {
+        // Ignore scanner reset errors
+        console.debug('Scanner reset error:', err);
+      }
+      scannerRef.current = null;
+    }
+  }, []);
+
+  // Frame quality detection for visual feedback
+  useEffect(() => {
+    if (!cameraActive || !videoRef.current || !canvasRef.current) return;
+
+    const detectFrameQuality = () => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+      if (!canvas || !video || video.readyState !== 2) return;
+
+      try {
+        const ctx = canvas.getContext('2d');
+        canvas.width = 160;
+        canvas.height = 90;
+        ctx.drawImage(video, 0, 0, 160, 90);
+
+        const imageData = ctx.getImageData(0, 0, 160, 90);
+        const data = imageData.data;
+        
+        // Count high-contrast edges (good for barcode detection)
+        let edges = 0;
+        let lastPixel = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          if (Math.abs(gray - lastPixel) > 50) edges++;
+          lastPixel = gray;
+        }
+        setFrameEdges(Math.min(100, (edges / (160 * 90)) * 1000));
+      } catch (err) {
+        console.debug('Frame quality detection error:', err);
+      }
+    };
+
+    const interval = setInterval(detectFrameQuality, 200);
+    return () => clearInterval(interval);
+  }, [cameraActive]);
+
+  const handleScan = (barcode) => {
+    onScan(barcode.trim());
+    setValue('');
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && value.trim()) {
-      onScan(value.trim());
-      setPulse(true);
-      setValue('');
-      setTimeout(() => setPulse(false), 600);
+      // Validate Trackon format before scanning
+      const normalized = value.replace(/[^0-9]/g, '').slice(-12);
+      if (/^(100|200|500)\d{9}$/.test(normalized)) {
+        handleScan(normalized);
+        setPulse(true);
+        setTimeout(() => setPulse(false), 600);
+      } else if (value.length >= 6) {
+        // Allow manual entry for other formats
+        handleScan(value);
+        setPulse(true);
+        setTimeout(() => setPulse(false), 600);
+      }
     }
   };
 
   return (
-    <div className={`mb-6 rounded-[28px] border-2 transition-all duration-500 overflow-hidden ${
-      pulse ? 'border-emerald-500 bg-emerald-50/10' : 'border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50'
-    } ${scanning ? 'ring-4 ring-blue-500/10' : ''}`}>
-      <div className="flex items-center gap-4 px-5 py-4">
-        <div className={`flex items-center justify-center w-12 h-12 rounded-2xl transition-all duration-300 ${
-          scanning ? 'bg-blue-600 text-white animate-pulse' : 
-          pulse ? 'bg-emerald-500 text-white translate-y-[-2px] shadow-lg shadow-emerald-500/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
-        }`}>
-          {scanning ? <RefreshCw size={24} className="animate-spin" /> : <Scan size={24} />}
-        </div>
-        
-        <div className="flex-1">
-          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-1 leading-none">
-            {scanning ? 'System Processing...' : 'Ready for Scanning'}
-          </label>
-          <input
-            ref={inputRef}
-            type="text"
-            value={value}
-            onChange={e => setValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Click here or scan barcode directly..."
-            className="w-full bg-transparent outline-none text-lg font-mono font-black text-slate-800 dark:text-white placeholder-slate-200 dark:placeholder-slate-800 h-7"
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </div>
+    <>
+      <div
+        className={`mb-6 rounded-[28px] border-2 transition-all duration-500 overflow-hidden ${
+          pulse
+            ? 'border-emerald-500 bg-emerald-50/10'
+            : 'border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900/50'
+        } ${scanning ? 'ring-4 ring-blue-500/10' : ''}`}
+      >
+        <div className="flex items-center gap-4 px-5 py-4">
+          <div
+            className={`flex items-center justify-center w-12 h-12 rounded-2xl transition-all duration-300 cursor-pointer ${
+              scanning
+                ? 'bg-blue-600 text-white animate-pulse'
+                : pulse
+                ? 'bg-emerald-500 text-white translate-y-[-2px] shadow-lg shadow-emerald-500/20'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+            onClick={() => (cameraActive ? stopCamera() : initCamera())}
+          >
+            {scanning ? <RefreshCw size={24} className="animate-spin" /> : <Scan size={24} />}
+          </div>
 
-        <div className="flex items-center gap-4">
+          <div className="flex-1">
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-1 leading-none">
+              {cameraActive ? '📹 Camera Active' : scanning ? 'Processing...' : 'Ready to Scan'}
+            </label>
+            <input
+              ref={inputRef}
+              type="text"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="12-digit Trackon AWB (100/200/500...)"
+              className="w-full bg-transparent outline-none text-lg font-mono font-black text-slate-800 dark:text-white placeholder-slate-300 dark:placeholder-slate-700 h-7"
+              autoComplete="off"
+              spellCheck={false}
+              disabled={scanning}
+            />
+          </div>
+
           {lastScanned && (
-            <div className={`flex items-center gap-2.5 px-4 py-2 rounded-2xl text-[11px] font-black uppercase tracking-wider animate-in slide-in-from-right-4 duration-300 ${
-              lastScanned.found ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-            }`}>
-              <div className={`w-2 h-2 rounded-full ${lastScanned.found ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-red-500'}`} />
+            <div
+              className={`flex items-center gap-2.5 px-4 py-2 rounded-2xl text-[11px] font-black uppercase tracking-wider animate-in slide-in-from-right-4 duration-300 ${
+                lastScanned.found ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+              }`}
+            >
+              <div
+                className={`w-2 h-2 rounded-full ${
+                  lastScanned.found
+                    ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+                    : 'bg-red-500'
+                }`}
+              />
               {lastScanned.awb}
             </div>
           )}
-          <div className="hidden lg:flex flex-col items-end border-l border-slate-100 dark:border-slate-800 pl-4 py-1">
-             <span className="text-[10px] font-black text-slate-300 dark:text-slate-600 uppercase tracking-widest">Active Link</span>
-             <span className="text-[10px] font-bold text-slate-400">Scanner Online</span>
-          </div>
         </div>
+
+        {cameraActive && (
+          <div className="relative bg-black/90 aspect-video overflow-hidden">
+            <video
+              ref={videoRef}
+              className="w-full h-full object-cover"
+              playsInline
+              muted
+            />
+            <canvas ref={canvasRef} style={{ display: 'none' }} />
+
+            {/* Scan guide overlay */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div
+                className={`border-2 transition-all ${
+                  frameEdges > 30 ? 'border-emerald-400' : 'border-orange-400'
+                }`}
+                style={{ width: '70%', aspectRatio: '16/9' }}
+              >
+                <div className="absolute top-2 left-2 right-2 h-1 bg-gradient-to-r from-transparent via-emerald-400 to-transparent opacity-60 animate-pulse" />
+              </div>
+            </div>
+
+            {/* Frame quality indicator */}
+            <div className="absolute top-4 right-4 bg-black/50 px-3 py-1 rounded text-white text-xs font-mono">
+              {frameEdges.toFixed(0)}%
+            </div>
+
+            {/* Close camera button */}
+            <button
+              onClick={stopCamera}
+              className="absolute top-4 left-4 bg-red-500/80 hover:bg-red-600 text-white p-2 rounded-lg"
+            >
+              <X size={20} />
+            </button>
+          </div>
+        )}
       </div>
-    </div>
+    </>
   );
 }
 

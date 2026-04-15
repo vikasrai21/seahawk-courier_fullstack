@@ -16,6 +16,7 @@ export default function ClientNDRPage({ toast }) {
   const [form, setForm] = useState({ action: 'REATTEMPT', newAddress: '', newPhone: '', rescheduleDate: '', notes: '' });
   const [saving, setSaving] = useState(false);
   const [bridgeSending, setBridgeSending] = useState(false);
+  const [escalating, setEscalating] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -68,6 +69,23 @@ export default function ClientNDRPage({ toast }) {
       toast?.(e.message || 'Failed to send WhatsApp bridge', 'error');
     } finally {
       setBridgeSending(false);
+    }
+  };
+
+  const escalateCase = async () => {
+    if (!selected) return;
+    setEscalating(true);
+    try {
+      const res = await api.post(`/portal/ndr/${selected.id}/escalate`, {
+        notes: form.notes || '',
+      });
+      toast?.(res.message || 'NDR escalated successfully', 'success');
+      setSelected(null);
+      await load();
+    } catch (e) {
+      toast?.(e.message || 'Failed to escalate NDR', 'error');
+    } finally {
+      setEscalating(false);
     }
   };
 
@@ -127,6 +145,22 @@ export default function ClientNDRPage({ toast }) {
                     <div className="mt-1 text-xs text-slate-500">
                       {item.shipment?.consignee || 'Consignee'} · {item.shipment?.destination || 'Destination'}
                     </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.08em]">
+                      <span className={`rounded-full px-2 py-1 ${
+                        item?.automation?.urgency?.severity === 'critical'
+                          ? 'bg-rose-100 text-rose-700'
+                          : item?.automation?.urgency?.severity === 'high'
+                            ? 'bg-amber-100 text-amber-700'
+                            : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {item?.automation?.urgency?.severity || 'normal'} urgency
+                      </span>
+                      {item?.automation?.sla?.breach && (
+                        <span className="rounded-full bg-red-100 px-2 py-1 text-red-700">
+                          SLA breach {item?.automation?.sla?.breachHours || 0}h
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="text-right">
                     <span className="badge badge-yellow">{item.action}</span>
@@ -146,6 +180,9 @@ export default function ClientNDRPage({ toast }) {
         footer={(
           <>
             <button className="btn-secondary" onClick={() => setSelected(null)}>Cancel</button>
+            <button className="btn-secondary" onClick={escalateCase} disabled={escalating}>
+              {escalating ? 'Escalating…' : 'Escalate to Ops'}
+            </button>
             <button className="btn-secondary" onClick={sendWhatsAppBridge} disabled={bridgeSending}>
               {bridgeSending ? 'Sending…' : 'Send WhatsApp Link'}
             </button>

@@ -43,6 +43,7 @@ export default defineConfig({
           'page-rate-calc':  ['./src/pages/RateCalculatorPage.jsx'],
           'page-bulk':       ['./src/pages/BulkComparePage.jsx'],
           'page-import':     ['./src/pages/ImportPage.jsx'],
+          'vendor-excel':    ['exceljs'],
           'page-whatsapp':   ['./src/pages/WhatsAppPage.jsx'],
           'page-reconcile':  ['./src/pages/ReconciliationPage.jsx'],
           'page-landing':    ['./src/pages/public/LandingPage.jsx'],

@@ -117,6 +117,7 @@
   padding: 18px 24px;
   background: transparent;
   margin-bottom: 16px;
+  max-width: 100%;
 }
 
 .shk-page-header__crumbs {
@@ -179,6 +180,7 @@
   font-weight: 500;
   letter-spacing: 0.01em;
   max-width: 46rem;
+  line-height: 1.5;
 }
 
 .shk-page-header__actions {
@@ -314,6 +316,51 @@
 /* Subtle hover lift — less aggressive */
 [data-theme] .card:hover {
   box-shadow: 0 18px 36px rgba(15, 23, 42, 0.08);
+}
+
+[data-theme="dark"] .card:hover {
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
+}
+
+[data-theme] .btn-primary,
+[data-theme] .btn-secondary,
+[data-theme] .btn-ghost {
+  transition: transform 0.16s ease, box-shadow 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+
+[data-theme] .btn-primary:hover,
+[data-theme] .btn-secondary:hover,
+[data-theme] .btn-ghost:hover {
+  transform: translateY(-1px);
+}
+
+[data-theme] .btn-primary:active,
+[data-theme] .btn-secondary:active,
+[data-theme] .btn-ghost:active {
+  transform: translateY(0);
+}
+
+[data-theme] .table-shell {
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+[data-theme] .table-shell thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+[data-theme] .badge {
+  letter-spacing: 0.08em;
+}
+
+[data-theme] .shk-page-header__actions > * {
+  min-height: 36px;
+}
+
+[data-theme] .shk-page-header__title-row h1 {
+  overflow-wrap: anywhere;
 }
 
 /* Scrollbar */

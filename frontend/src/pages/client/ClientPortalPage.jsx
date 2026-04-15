@@ -1,317 +1,48 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Area, AreaChart, ResponsiveContainer, CartesianGrid, Tooltip, XAxis, YAxis, LineChart, Line, Legend, ReferenceDot } from 'recharts';
 import api from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
-import { StatusBadge } from '../../components/ui/StatusBadge';
-import { Modal } from '../../components/ui/Modal';
-import { SkeletonTable } from '../../components/ui/Skeleton';
 import { FetchErrorState } from '../../components/ui/FetchErrorState';
-import { useDebounce } from '../../hooks/useDebounce';
+import TimelineModal from '../../components/shipments/TimelineModal';
+import PortalHeroSection from './components/PortalHeroSection';
+import PortalKPIGrid from './components/PortalKPIGrid';
+import PortalAttentionPanel from './components/PortalAttentionPanel';
+import PortalInsightsSection from './components/PortalInsightsSection';
+import PortalShipmentTable from './components/PortalShipmentTable';
 
-const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
-
-function getClientAssistantFollowups(message) {
-  const text = String(message?.text || '').toLowerCase();
-  const actionType = message?.action?.type || '';
-  if (actionType === 'TRACK_AWB' || text.includes('track')) return ['Show my shipments', 'Raise support ticket', 'Create pickup'];
-  if (actionType === 'PICKUP_CREATE' || text.includes('pickup')) return ['Show my pickups', 'Track AWB', 'Raise support ticket'];
-  if (actionType === 'NDR_RESPOND' || actionType === 'NDR_LIST' || text.includes('ndr')) return ['Show my NDRs', 'Track AWB', 'Raise support ticket'];
-  if (actionType === 'SUPPORT_TICKET' || actionType === 'SUPPORT_TICKET_LIST' || text.includes('ticket')) return ['Show my tickets', 'Track AWB', 'Show my shipments'];
-  return ['Track AWB', 'Show my shipments', 'Create pickup'];
-}
-
-function getClientChipIcon(label) {
-  const value = String(label || '').toLowerCase();
-  if (value.includes('track')) return '◎';
-  if (value.includes('shipment')) return '▣';
-  if (value.includes('pickup')) return '↥';
-  if (value.includes('ticket')) return '?';
-  if (value.includes('ndr')) return '!';
-  return '•';
-}
-
-function PortalAssistantAvatar({ size = 44 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="portalOrbBg" x1="10" y1="6" x2="54" y2="58" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#FDE68A" />
-          <stop offset="0.45" stopColor="#FB7185" />
-          <stop offset="1" stopColor="#A78BFA" />
-        </linearGradient>
-        <linearGradient id="portalFace" x1="19" y1="18" x2="45" y2="44" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#FFF9F4" />
-          <stop offset="1" stopColor="#FFE8F1" />
-        </linearGradient>
-        <linearGradient id="portalVisor" x1="22" y1="24" x2="43" y2="35" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#7C2D12" />
-          <stop offset="1" stopColor="#9D174D" />
-        </linearGradient>
-      </defs>
-      <circle cx="32" cy="32" r="32" fill="url(#portalOrbBg)" />
-      <circle cx="21" cy="16" r="10" fill="white" opacity="0.24" />
-      <circle cx="32" cy="31" r="18.5" fill="url(#portalFace)" />
-      <path d="M17 25C18.8 18.2 24.5 13 32 13C37.8 13 43.6 16.1 46.6 21.2C43.2 24.8 38.8 26.8 33 26.8C27.8 26.8 23 25.8 17 25Z" fill="#831843" />
-      <path d="M20.5 27C24.8 29 28.7 29.8 33.2 29.8C37.7 29.8 41.6 28.8 45.2 26.5V38.2C45.2 45 39.6 50.5 32.7 50.5H31.5C24.7 50.5 19.2 45 19.2 38.2V29.4C19.2 28.6 19.7 27.7 20.5 27Z" fill="url(#portalFace)" />
-      <rect x="23" y="27.4" width="18" height="8.8" rx="4.4" fill="url(#portalVisor)" />
-      <circle className="portal-avatar-eye" cx="28.8" cy="31.8" r="1.8" fill="#FFF7ED" />
-      <circle className="portal-avatar-eye" cx="35.2" cy="31.8" r="1.8" fill="#FFF7ED" />
-      <path d="M27.5 40C29.5 42 34.3 42 36.8 39.7" stroke="#F43F5E" strokeWidth="2.2" strokeLinecap="round" />
-      <circle cx="23.5" cy="36.3" r="2.4" fill="#FDA4AF" opacity="0.45" />
-      <circle cx="40.8" cy="36.3" r="2.4" fill="#FDA4AF" opacity="0.45" />
-      <circle cx="49.5" cy="18.5" r="5.2" fill="#34D399" />
-      <path d="M49.5 14.7V22.3" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M45.7 18.5H53.3" stroke="white" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function RangeChip({ active, label, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        border: active ? '1px solid #fb923c' : '1px solid #dbe6f4',
-        background: active ? 'linear-gradient(180deg,#fff7ed 0%,#fff1e6 100%)' : '#fff',
-        color: active ? '#c2410c' : '#334155',
-        borderRadius: 999,
-        fontSize: 11,
-        fontWeight: 800,
-        padding: '6px 11px',
-        cursor: 'pointer',
-        boxShadow: active ? '0 6px 14px -10px rgba(194,65,12,0.75)' : 'none',
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
-function MetricCard({ icon, label, value, hint, color }) {
-  return (
-    <div
-      style={{
-        background: 'linear-gradient(180deg,#ffffff 0%,#fbfdff 100%)',
-        border: '1px solid #dfeaf7',
-        borderRadius: 14,
-        padding: 14,
-        boxShadow: '0 16px 28px -24px rgba(11,31,58,0.45)',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      <div style={{ position: 'absolute', inset: '0 0 auto 0', height: 3, background: `linear-gradient(90deg, ${color} 0%, #bfdbfe 100%)` }} />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <span style={{ fontSize: 16 }}>{icon}</span>
-        <span style={{ fontSize: 9.5, fontWeight: 900, color, background: `${color}1f`, borderRadius: 999, padding: '3px 8px', border: `1px solid ${color}33` }}>
-          {hint}
-        </span>
-      </div>
-      <div style={{ fontSize: 24, lineHeight: 1, fontWeight: 900, color: '#0b1f3a' }}>{value}</div>
-      <div style={{ marginTop: 7, color: '#5a6b80', fontSize: 12, fontWeight: 700 }}>{label}</div>
-    </div>
-  );
-}
-
-function PortalPanel({ title, eyebrow, subtitle, action, children, tone = 'light', style = {} }) {
-  const backgrounds = {
-    light: '#fff',
-    dark: 'linear-gradient(145deg,#0f2748 0%,#102d57 60%,#173d70 100%)',
-    accent: 'linear-gradient(180deg,#fffaf5 0%,#ffffff 100%)',
-  };
-  const borders = {
-    light: '1px solid #e5edf8',
-    dark: '1px solid rgba(147,197,253,0.2)',
-    accent: '1px solid #fde2cc',
-  };
-
-  return (
-    <section
-      style={{
-        background: backgrounds[tone] || backgrounds.light,
-        border: borders[tone] || borders.light,
-        borderRadius: 18,
-        padding: 15,
-        boxShadow: tone === 'dark'
-          ? '0 22px 42px -28px rgba(15,39,72,0.9)'
-          : '0 18px 30px -24px rgba(11,31,58,0.4)',
-        ...style,
-      }}
-    >
-      {(title || subtitle || action || eyebrow) && (
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 14 }}>
-          <div>
-            {eyebrow && (
-              <div style={{ marginBottom: 6, fontSize: 11, fontWeight: 800, letterSpacing: '.12em', textTransform: 'uppercase', color: tone === 'dark' ? '#93c5fd' : '#f97316' }}>
-                {eyebrow}
-              </div>
-            )}
-              {title && <h3 style={{ margin: 0, fontSize: 17, fontWeight: 900, color: tone === 'dark' ? '#f8fbff' : '#0f172a' }}>{title}</h3>}
-              {subtitle && <p style={{ margin: '6px 0 0', color: tone === 'dark' ? '#c9d9f2' : '#64748b', fontSize: 12.5, lineHeight: 1.5 }}>{subtitle}</p>}
-            </div>
-            {action}
-          </div>
-      )}
-      {children}
-    </section>
-  );
-}
-
-function ActionTile({ to, icon, title, description, tone = 'blue', featured = false, onClick }) {
-  const palette = {
-    blue: { bg: 'linear-gradient(180deg,#f7fbff 0%,#eef5ff 100%)', border: '#d7e6ff', iconBg: '#dbeafe', iconColor: '#1d4ed8', title: '#173b72' },
-    orange: { bg: 'linear-gradient(180deg,#fff8f2 0%,#fff1e6 100%)', border: '#ffd8bd', iconBg: '#ffedd5', iconColor: '#c2410c', title: '#9a3412' },
-    purple: { bg: 'linear-gradient(180deg,#fbf8ff 0%,#f4efff 100%)', border: '#e8dbff', iconBg: '#ede9fe', iconColor: '#7c3aed', title: '#5b21b6' },
-    green: { bg: 'linear-gradient(180deg,#f4fdf7 0%,#ecfaf0 100%)', border: '#ccefd6', iconBg: '#dcfce7', iconColor: '#15803d', title: '#166534' },
-    rose: { bg: 'linear-gradient(180deg,#fff6f6 0%,#fff0f0 100%)', border: '#ffd7d7', iconBg: '#ffe4e6', iconColor: '#be123c', title: '#9f1239' },
-    slate: { bg: 'linear-gradient(180deg,#f8fafc 0%,#f1f5f9 100%)', border: '#dbe4ee', iconBg: '#e2e8f0', iconColor: '#475569', title: '#334155' },
-    teal: { bg: 'linear-gradient(180deg,#f0fdff 0%,#e6fafb 100%)', border: '#bfe9ef', iconBg: '#ccfbf1', iconColor: '#0f766e', title: '#115e59' },
-    amber: { bg: 'linear-gradient(180deg,#fffbea 0%,#fff5cf 100%)', border: '#ffe48c', iconBg: '#fef3c7', iconColor: '#b45309', title: '#92400e' },
-  };
-  const colors = palette[tone] || palette.blue;
-  const cardStyle = {
-    textDecoration: 'none',
-    display: 'block',
-    minHeight: featured ? 94 : 80,
-    background: colors.bg,
-    border: `1px solid ${colors.border}`,
-    borderRadius: 14,
-    padding: featured ? '9px 10px 8px' : '8px',
-    position: 'relative',
-    overflow: 'hidden',
-    boxShadow: '0 14px 24px -22px rgba(15,23,42,0.6)',
-    transition: 'transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease',
-  };
-
-  const content = (
-    <div style={cardStyle} className="portal-action-tile">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: featured ? 8 : 7 }}>
-        <div style={{ width: featured ? 34 : 28, height: featured ? 34 : 28, borderRadius: 10, display: 'grid', placeItems: 'center', background: colors.iconBg, color: colors.iconColor, fontSize: featured ? 15 : 13, boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7)' }}>
-          {icon}
-        </div>
-        <div style={{ fontSize: 13, color: colors.iconColor, fontWeight: 700, opacity: 0.7 }}>→</div>
-      </div>
-      <div style={{ fontSize: featured ? 12.5 : 11.5, fontWeight: 900, color: colors.title, marginBottom: 3, lineHeight: 1.25 }}>{title}</div>
-      <div style={{ fontSize: 10, lineHeight: 1.3, color: '#58677b', maxWidth: '100%' }}>{description}</div>
-      {featured && (
-        <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 999, padding: '3px 7px', background: 'rgba(255,255,255,0.75)', border: `1px solid ${colors.border}`, fontSize: 9.5, fontWeight: 800, color: colors.title }}>
-          Open workspace
-        </div>
-      )}
-    </div>
-  );
-
-  if (to) return <Link to={to} style={{ textDecoration: 'none' }}>{content}</Link>;
-  return (
-    <button type="button" onClick={onClick} style={{ border: 0, padding: 0, background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>
-      {content}
-    </button>
-  );
-}
-
-const RANGE_OPTIONS = [
-  { key: 'today', label: 'Today' },
-  { key: '7d', label: 'Last 7 days' },
-  { key: '30d', label: 'Last 30 days' },
-  { key: 'this_month', label: 'This month' },
-  { key: 'custom', label: 'Custom' },
-];
-
-const ACTION_GROUPS = [
-  {
-    key: 'operations',
-    title: 'Operations',
-    subtitle: 'Daily movement actions',
-    actions: [
-      { to: '/portal/bulk-track', icon: '🔍', title: 'Bulk AWB Tracking', description: 'Search many shipments together and spot stuck parcels in one pass.', tone: 'blue', featured: true },
-      { to: '/portal/map', icon: '🗺️', title: 'Live Shipment Map', description: 'Watch active shipments move in real time across your service lanes.', tone: 'teal', featured: true },
-      { to: '/portal/pickups', icon: '📦', title: 'Raise Pickup Request', description: 'Schedule a pickup quickly when your dispatch team needs same-day action.', tone: 'green' },
-    ],
-  },
-  {
-    key: 'issues',
-    title: 'Issues',
-    subtitle: 'Recovery and exception workflows',
-    actions: [
-      { to: '/portal/ndr', icon: '⚠️', title: 'NDR Self-Service', description: 'Resolve failed attempts, update remarks, and recover at-risk orders.', tone: 'rose' },
-      { to: '/portal/rto-intelligence', icon: '📊', title: 'RTO Intelligence', description: 'Understand return patterns and spot the lanes driving cost leakage.', tone: 'orange' },
-      { to: '/portal/pod', icon: '📸', title: 'Digital PODs', description: 'Access proof-of-delivery records without bouncing between screens.', tone: 'blue' },
-    ],
-  },
-  {
-    key: 'system',
-    title: 'System',
-    subtitle: 'Configuration and communication',
-    actions: [
-      { to: '/portal/wallet', icon: '💳', title: 'Wallet Center', description: 'Monitor balance, configure auto-topup, and download ledger exports.', tone: 'purple' },
-      { to: '/portal/invoices', icon: '🧾', title: 'Invoice Exports', description: 'Download GST-ready invoice documents and monthly export sheets.', tone: 'amber' },
-      { to: '/portal/import', icon: '📤', title: 'Order Import', description: 'Upload bulk orders and get them into the shipment pipeline faster.', tone: 'amber' },
-      { to: '/portal/notifications', icon: '🔔', title: 'Notification Preferences', description: 'Tune alerts so teams only get the updates that matter.', tone: 'slate' },
-      { to: '/portal/support', icon: '🎫', title: 'Support Tickets', description: 'Check open issues, ticket history, and response status in one place.', tone: 'slate' },
-      { to: '/portal/branding', icon: '🌐', title: 'Branded Tracking', description: 'Manage the customer-facing tracking experience under your own brand.', tone: 'teal' },
-      { to: '/portal/governance', icon: '🛡️', title: 'Governance Center', description: 'Compliance evidence, immutable audit trail, and reliability controls.', tone: 'purple' },
-    ],
-  },
-];
-
-const WOW_FACTORS = [
-  { label: 'Premium Tracking Experience', value: 'White-label + live events', accent: '#2563eb' },
-  { label: 'Operational Reliability', value: 'Carrier-linked status sync', accent: '#0f766e' },
-  { label: 'Client Confidence Layer', value: 'SLA, RTO and support visibility', accent: '#c2410c' },
-];
+const formatRelativeTime = (value) => {
+  if (!value) return 'just now';
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return 'just now';
+  const diffMs = Math.max(0, Date.now() - date.getTime());
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+};
 
 export default function ClientPortalPage({ toast }) {
-  const { user, logout } = useAuth();
   const { socket } = useSocket();
-  const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState(null);
   const [shipments, setShipments] = useState([]);
-  const [search, setSearch] = useState('');
-  const debouncedSearch = useDebounce(search, 300);
-  const [statusFilter, setStatusFilter] = useState('');
-  const [courierFilter, setCourierFilter] = useState('');
-  const [ticketOpen, setTicketOpen] = useState(false);
-  const [ticketSubject, setTicketSubject] = useState('');
-  const [ticketMessage, setTicketMessage] = useState('');
-  const [ticketAwb, setTicketAwb] = useState('');
-  const [ticketPriority, setTicketPriority] = useState('normal');
-  const [submittingTicket, setSubmittingTicket] = useState(false);
-  const [ticketSuccess, setTicketSuccess] = useState(null);
-  const [ticketCopied, setTicketCopied] = useState(false);
+  const [intel, setIntel] = useState(null);
   const [range, setRange] = useState('30d');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [performance, setPerformance] = useState(null);
-  const [perfDays, setPerfDays] = useState(30);
-  const [intel, setIntel] = useState(null);
+  const [lastSyncAt, setLastSyncAt] = useState(null);
+  const [selectedShipment, setSelectedShipment] = useState(null);
   const [fetchErrors, setFetchErrors] = useState({
     portal: null,
-    performance: null,
     intelligence: null,
   });
-  const [assistantOpen, setAssistantOpen] = useState(false);
-  const [assistantInput, setAssistantInput] = useState('');
-  const [assistantBusy, setAssistantBusy] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [assistantMessages, setAssistantMessages] = useState([
-    { role: 'assistant', text: 'Hi! I can help with shipments, AWB tracking, pickups, NDRs, and support tickets.' },
-  ]);
-
-  const assistantSuggestions = [
-    'Show my latest shipments',
-    'Track AWB 123456',
-    'List NDRs that need action',
-    'Create a pickup for tomorrow',
-    'Raise a support ticket for delayed delivery',
-  ];
 
   const fetchPortalData = async () => {
     setLoading(true);
     setFetchErrors((prev) => ({ ...prev, portal: null }));
+
     try {
       const query = new URLSearchParams();
       query.set('range', range);
@@ -320,59 +51,27 @@ export default function ClientPortalPage({ toast }) {
         query.set('date_to', dateTo);
       }
 
-      const statQ = query.toString();
-      const shipmentQ = new URLSearchParams(query);
-      shipmentQ.set('limit', '50');
-      if (debouncedSearch) shipmentQ.set('search', debouncedSearch);
-      if (statusFilter) shipmentQ.set('status', statusFilter);
-      if (courierFilter) shipmentQ.set('courier', courierFilter);
+      const statQuery = query.toString();
+      const shipmentQuery = new URLSearchParams(query);
+      shipmentQuery.set('limit', '8');
 
-      const [sRes, shRes] = await Promise.all([
-        api.get(`/portal/stats?${statQ}`),
-        api.get(`/portal/shipments?${shipmentQ.toString()}`),
+      const [statsResponse, shipmentsResponse] = await Promise.all([
+        api.get(`/portal/stats?${statQuery}`),
+        api.get(`/portal/shipments?${shipmentQuery.toString()}`),
       ]);
 
-      const statsData = sRes.data || {};
-      setStats(statsData);
-      setShipments(shRes.data?.shipments || []);
-      // Drive bell notification dot from real data
-      const urgentCount = (statsData.totals?.ndr || 0) + (statsData.totals?.rto || 0);
-      setUnreadCount(urgentCount);
-      // Personalize the assistant greeting once stats load, if still at default
-      setAssistantMessages(prev => {
-        if (prev.length === 1 && prev[0].role === 'assistant') {
-          const ndrCount = statsData.totals?.ndr || 0;
-          const inTransit = statsData.totals?.inTransit || 0;
-          const name = user?.name?.split(' ')[0] || 'there';
-          let greeting = `Hi ${name}! `;
-          if (ndrCount > 0) greeting += `You have ${ndrCount} NDR${ndrCount > 1 ? 's' : ''} needing action`;
-          if (inTransit > 0) greeting += `${ndrCount > 0 ? ' and ' : ''}${inTransit} shipment${inTransit > 1 ? 's' : ''} in transit`;
-          greeting += ndrCount > 0 || inTransit > 0 ? '. How can I help?' : 'Your operations look stable. How can I help?';
-          return [{ role: 'assistant', text: greeting }];
-        }
-        return prev;
-      });
-    } catch (e) {
-      setFetchErrors((prev) => ({ ...prev, portal: e }));
-      toast?.(e.message || 'Failed to load portal data', 'error');
+      setStats(statsResponse.data || {});
+      setShipments(shipmentsResponse.data?.shipments || []);
+    } catch (error) {
+      setFetchErrors((prev) => ({ ...prev, portal: error }));
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchPerformance = async () => {
-    setFetchErrors((prev) => ({ ...prev, performance: null }));
-    try {
-      const res = await api.get(`/portal/performance?days=${perfDays}`);
-      setPerformance(res.data || null);
-    } catch (e) {
-      setFetchErrors((prev) => ({ ...prev, performance: e }));
-      toast?.(e.message || 'Failed to load performance dashboard', 'error');
-    }
-  };
-
   const fetchIntelligence = async () => {
     setFetchErrors((prev) => ({ ...prev, intelligence: null }));
+
     try {
       const query = new URLSearchParams();
       query.set('range', range);
@@ -381,35 +80,10 @@ export default function ClientPortalPage({ toast }) {
         query.set('date_from', dateFrom);
         query.set('date_to', dateTo);
       }
-      const res = await api.get(`/portal/intelligence?${query.toString()}`);
-      setIntel(res.data || null);
-    } catch (e) {
-      setFetchErrors((prev) => ({ ...prev, intelligence: e }));
-      toast?.(e.message || 'Failed to load shipment intelligence', 'error');
-    }
-  };
-
-  const sendAssistant = async (payload = {}) => {
-    const messageText = payload.message || assistantInput.trim();
-    if (!messageText && !payload.action) return;
-
-    if (messageText) {
-      setAssistantMessages((prev) => [...prev, { role: 'user', text: messageText }]);
-    }
-    setAssistantInput('');
-    setAssistantBusy(true);
-    try {
-      const history = assistantMessages.slice(-6).map((m) => ({ role: m.role, text: m.text }));
-      const res = await api.post('/portal/assistant', payload.action
-        ? { ...payload, message: messageText, history }
-        : { message: messageText, history }
-      );
-      const reply = res.data?.reply || 'Done.';
-      setAssistantMessages((prev) => [...prev, { role: 'assistant', text: reply, action: res.data?.action }]);
-    } catch (e) {
-      toast?.(e.message || 'Assistant failed to respond', 'error');
-    } finally {
-      setAssistantBusy(false);
+      const response = await api.get(`/portal/intelligence?${query.toString()}`);
+      setIntel(response.data || null);
+    } catch (error) {
+      setFetchErrors((prev) => ({ ...prev, intelligence: error }));
     }
   };
 
@@ -420,61 +94,27 @@ export default function ClientPortalPage({ toast }) {
         payload.date_from = dateFrom;
         payload.date_to = dateTo;
       }
-      const res = await api.post('/portal/sync-tracking', payload);
-      toast?.(res.message || 'Live status sync complete', 'success');
+
+      const response = await api.post('/portal/sync-tracking', payload);
+      toast?.(response.message || 'Live status sync complete', 'success');
+      setLastSyncAt(new Date());
       await fetchPortalData();
-    } catch (e) {
-      toast?.(e.message || 'Live status sync failed', 'error');
-    }
-  };
-
-  const submitSupportTicket = async () => {
-    if (!ticketSubject.trim() || !ticketMessage.trim()) {
-      toast?.('Subject and message are required', 'error');
-      return;
-    }
-
-    setSubmittingTicket(true);
-    try {
-      const res = await api.post('/portal/support-ticket', {
-        subject: ticketSubject.trim(),
-        message: ticketMessage.trim(),
-        awb: ticketAwb.trim(),
-        priority: ticketPriority,
-      });
-      const ticketNo = res.data?.ticketNo || 'TICKET';
-      toast?.(res.message || `Ticket ${ticketNo} submitted`, 'success');
-      setTicketSuccess({
-        ticketNo,
-        message: res.message || 'Support ticket submitted successfully',
-      });
-      setTicketOpen(false);
-      setTicketSubject('');
-      setTicketMessage('');
-      setTicketAwb('');
-      setTicketPriority('normal');
-    } catch (e) {
-      toast?.(e.message || 'Failed to submit support ticket', 'error');
-    } finally {
-      setSubmittingTicket(false);
+      await fetchIntelligence();
+    } catch (error) {
+      toast?.(error.message || 'Live status sync failed', 'error');
     }
   };
 
   useEffect(() => {
     fetchPortalData();
     fetchIntelligence();
-  }, [range, dateFrom, dateTo, statusFilter, courierFilter, debouncedSearch]);
-
-  useEffect(() => {
-    fetchPerformance();
-  }, [perfDays]);
+  }, [range, dateFrom, dateTo]);
 
   useEffect(() => {
     if (!socket) return undefined;
 
     const refresh = () => {
       fetchPortalData();
-      fetchPerformance();
       fetchIntelligence();
     };
 
@@ -485,1180 +125,174 @@ export default function ClientPortalPage({ toast }) {
       socket.off('shipment:created', refresh);
       socket.off('shipment:status-updated', refresh);
     };
-  }, [socket, range, dateFrom, dateTo, statusFilter, courierFilter, perfDays, search]);
+  }, [socket, range, dateFrom, dateTo]);
 
-  useEffect(() => {
-    if (!ticketSuccess) return undefined;
-
-    setTicketCopied(false);
-    const closeTimer = setTimeout(() => setTicketSuccess(null), 5500);
-    return () => clearTimeout(closeTimer);
-  }, [ticketSuccess]);
-
-  const copyTicketNumber = async () => {
-    const no = ticketSuccess?.ticketNo;
-    if (!no) return;
-
-    try {
-      await navigator.clipboard.writeText(no);
-      setTicketCopied(true);
-      toast?.('Ticket number copied', 'success');
-    } catch {
-      toast?.('Unable to copy ticket number', 'error');
-    }
-  };
-
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login');
-  };
-
-  const courierOptions = useMemo(() => {
-    const set = new Set(shipments.map((s) => s.courier).filter(Boolean));
-    return Array.from(set).sort();
-  }, [shipments]);
-
-  const trendData = useMemo(() => {
-    return (stats?.trend || []).map((t) => ({
-      ...t,
-      day: String(t.date).slice(5),
-    }));
-  }, [stats]);
+  const trendData = useMemo(
+    () =>
+      (stats?.trend || []).map((row) => ({
+        ...row,
+        day: String(row.date).slice(5),
+      })),
+    [stats]
+  );
 
   const movementInsights = useMemo(() => {
-    if (!trendData.length) return { wowPct: 0, peak: null, thisWeek: 0, lastWeek: 0 };
-    const values = trendData.map((t) => Number(t.shipments || 0));
-    const peakVal = Math.max(...values);
-    const peak = trendData.find((t) => Number(t.shipments || 0) === peakVal) || null;
-    const thisWeek = values.slice(-7).reduce((a, b) => a + b, 0);
-    const lastWeek = values.slice(-14, -7).reduce((a, b) => a + b, 0);
+    if (!trendData.length) return { wowPct: 0 };
+    const values = trendData.map((row) => Number(row.shipments || 0));
+    const thisWeek = values.slice(-7).reduce((sum, value) => sum + value, 0);
+    const lastWeek = values.slice(-14, -7).reduce((sum, value) => sum + value, 0);
     const wowPct = lastWeek > 0 ? Math.round(((thisWeek - lastWeek) / lastWeek) * 100) : (thisWeek > 0 ? 100 : 0);
-    return { wowPct, peak, thisWeek, lastWeek };
+    return { wowPct };
   }, [trendData]);
 
-  const performanceData = useMemo(() => {
-    return (performance?.series || []).map((row) => ({
-      ...row,
-      day: String(row.date).slice(5),
-    }));
-  }, [performance]);
+  const totals = stats?.totals || {};
+  const attentionCount = Number(totals.ndr || 0) + Number(totals.rto || 0);
+  const sparklineValues = trendData.slice(-12).map((row) => Number(row.shipments || 0));
 
-  const intelItems = intel?.items || [];
-  const healthScore = Number(intel?.summary?.healthScore || 0);
-  const healthTone = healthScore >= 90 ? '#15803d' : healthScore >= 75 ? '#c2410c' : '#b91c1c';
-  const healthBg = healthScore >= 90 ? '#ecfdf5' : healthScore >= 75 ? '#fff7ed' : '#fef2f2';
-  const healthLabel = healthScore >= 90 ? 'Excellent' : healthScore >= 75 ? 'Watchlist' : 'Critical';
-  const smartAlerts = useMemo(() => {
-    const alerts = [];
-    const inTransit = Number(stats?.totals?.inTransit || 0);
-    const rto = Number(stats?.totals?.rto || 0);
-    const ndr = Number(stats?.totals?.ndr || 0);
-    if (inTransit >= 10) alerts.push({ tone: 'blue', text: `${inTransit} shipments are active in the network right now.` });
-    if (rto > 0) alerts.push({ tone: 'red', text: `${rto} shipments are in RTO flow and need recovery attention.` });
-    if (ndr > 0) alerts.push({ tone: 'orange', text: `${ndr} shipments need NDR action to prevent delivery failures.` });
-    if (!alerts.length) alerts.push({ tone: 'green', text: 'No critical alerts right now. Operations look stable.' });
-    return alerts.slice(0, 3);
-  }, [stats]);
-  const obs = intel?.observability || {};
-  const slaCC = intel?.slaCommandCenter || {};
-  const opsAuto = intel?.opsAutomation || {};
+  const trustSignals = [
+    '99.9% uptime',
+    `Last sync: ${formatRelativeTime(lastSyncAt)}`,
+    'All couriers operational',
+  ];
+
+  const courierCounts = useMemo(
+    () =>
+      shipments.reduce((acc, shipment) => {
+        const key = shipment?.courier || 'Unknown';
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {}),
+    [shipments]
+  );
+
+  const bestCourier = Object.entries(courierCounts).sort((left, right) => right[1] - left[1])[0]?.[0] || 'No courier data yet';
+  const peakTrend = trendData.reduce((peak, current) => {
+    if (!peak || Number(current.shipments || 0) > Number(peak.shipments || 0)) return current;
+    return peak;
+  }, null);
+
+  const kpiCards = [
+    {
+      title: 'Total Shipments',
+      value: Number(totals.total || 0),
+      sub: 'In selected date range',
+      tone: 'text-cyan-600 dark:text-cyan-300',
+      trend: movementInsights.wowPct,
+    },
+    {
+      title: 'In Transit',
+      value: Number(totals.inTransit || 0),
+      sub: 'Currently moving in network',
+      tone: 'text-blue-600 dark:text-blue-300',
+      trend: Math.round((Number(totals.inTransit || 0) / Math.max(1, Number(totals.total || 1))) * 100),
+    },
+    {
+      title: 'Delivery Success',
+      value: `${Number(totals.deliveredPct || 0)}%`,
+      sub: 'Delivered shipments ratio',
+      tone: 'text-emerald-600 dark:text-emerald-300',
+      trend: Number(totals.deliveredPct || 0) - 85,
+    },
+    {
+      title: 'Needs Attention',
+      value: attentionCount,
+      sub: 'NDR + RTO requiring action',
+      tone: 'text-rose-600 dark:text-rose-300',
+      trend: -attentionCount,
+    },
+  ];
+
+  const attentionItems = useMemo(() => {
+    if (attentionCount === 0 && Number(totals.inTransit || 0) === 0) {
+      return [
+        'All systems healthy. No action required right now.',
+        'Zero issue clusters detected across the current shipment window.',
+        'No live in-transit load yet. Import orders or raise pickups to begin movement.',
+      ];
+    }
+
+    return [
+      Number(totals.deliveredPct || 0) >= 85
+        ? `Delivery performance is stable at ${Number(totals.deliveredPct || 0)}%.`
+        : `Delivery performance is ${Number(totals.deliveredPct || 0)}% and needs monitoring.`,
+      attentionCount > 0
+        ? `${attentionCount} shipments need action now across NDR and RTO queues.`
+        : 'No critical issue cluster detected in the current queue.',
+      Number(totals.inTransit || 0) > 0
+        ? `${Number(totals.inTransit || 0)} shipments are active in the network right now.`
+        : 'No active in-transit movement detected yet.',
+    ];
+  }, [attentionCount, totals]);
+
+  const quickActions = [
+    { to: '/portal/shipments', label: 'Open Shipments', note: 'Full shipment workspace' },
+    { to: '/portal/bulk-track', label: 'Bulk Track', note: 'Track multiple AWBs together' },
+    { to: '/portal/map', label: 'Live Map', note: 'See active movement in real time' },
+    { to: '/portal/pickups', label: 'Raise Pickup', note: 'Create pickup requests fast' },
+    { to: '/portal/ndr', label: 'Resolve NDR', note: 'Handle failed delivery attempts' },
+    { to: '/portal/import', label: 'Import Orders', note: 'Upload orders in bulk' },
+    { to: '/portal/support', label: 'Support Tickets', note: 'Raise and track issues' },
+  ];
+
+  const insightItems = [
+    `Best performing courier in the current range: ${bestCourier}.`,
+    `Peak load observed on ${peakTrend?.day || '—'} with ${peakTrend?.shipments || 0} shipments.`,
+    Number(totals.inTransit || 0) > 0
+      ? 'Active movement detected. Watch in-transit exceptions closely.'
+      : 'Low activity detected. Consider importing new orders or raising pickups.',
+    ...(intel?.items?.slice(0, 2).map((item) => item.summary || item.title || item.text).filter(Boolean) || []),
+  ].slice(0, 5);
 
   return (
-    <div className="client-portal-shell" style={{ minHeight: '100vh', background: 'linear-gradient(180deg,#f3f7fe 0%,#edf3fb 38%,#f7fbff 100%)', fontFamily: "'Inter','Sora','Manrope','Segoe UI',sans-serif", position: 'relative', overflowX: 'hidden' }}>
-      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-        <div style={{ position: 'absolute', top: -120, right: -140, width: 420, height: 420, borderRadius: '50%', background: 'radial-gradient(circle,rgba(56,189,248,0.17) 0%,rgba(56,189,248,0) 70%)' }} />
-        <div style={{ position: 'absolute', top: 240, left: -160, width: 380, height: 380, borderRadius: '50%', background: 'radial-gradient(circle,rgba(251,146,60,0.16) 0%,rgba(251,146,60,0) 72%)' }} />
-      </div>
-      <header
-        style={{
-          position: 'sticky',
-          top: 0,
-          zIndex: 40,
-          height: 70,
-          background: 'rgba(255,255,255,0.8)',
-          backdropFilter: 'blur(16px)',
-          borderBottom: '1px solid rgba(219,230,244,0.7)',
-          boxShadow: '0 4px 24px -12px rgba(15,23,42,0.08)',
-          padding: '0 24px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <img src="/images/logo.png" alt="Sea Hawk" style={{ height: 38, borderRadius: 10, border: '1px solid rgba(219,230,244,0.8)', padding: 2, background: '#fff', boxShadow: '0 2px 10px rgba(0,0,0,0.03)' }} />
-          <div>
-            <div style={{ fontSize: 15, fontWeight: 900, color: '#0f172a', letterSpacing: '-0.3px' }}>Sea Hawk Courier</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 1 }}>
-              <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 0 2px rgba(34,197,94,0.2)', animation: 'pulseLive 2s infinite' }} />
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Live Sync</div>
-            </div>
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <Link
-            to="/portal/notifications"
-            style={{ position: 'relative', cursor: 'pointer', transition: 'transform 0.2s', textDecoration: 'none' }}
-            title={unreadCount > 0 ? `${unreadCount} shipments need attention` : 'Notification preferences'}
-          >
-            <span style={{ fontSize: 20 }}>🔔</span>
-            {unreadCount > 0 && (
-              <div style={{ position: 'absolute', top: -4, right: -4, minWidth: 16, height: 16, background: '#ef4444', borderRadius: 999, border: '2px solid #fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 800, color: '#fff', padding: '0 3px' }}>
-                {unreadCount > 9 ? '9+' : unreadCount}
-              </div>
-            )}
-          </Link>
-          <div style={{ width: 1, height: 24, background: '#e2e8f0' }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{user?.name}</div>
-              <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>Client Account</div>
-            </div>
-            <div 
-              style={{ width: 36, height: 36, borderRadius: 10, background: 'linear-gradient(135deg, #f97316, #fb923c)', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 14, boxShadow: '0 4px 12px rgba(249,115,22,0.2)', cursor: 'pointer', transition: 'transform 0.2s' }}
-              onClick={handleLogout}
-              title="Click to Sign Out"
-            >
-              {user?.name?.[0]?.toUpperCase() || 'C'}
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="client-premium-main space-y-5 portal-visual-upgrade">
+      <PortalHeroSection
+        lastSyncLabel={formatRelativeTime(lastSyncAt)}
+        trustSignals={trustSignals}
+        range={range}
+        setRange={setRange}
+        dateFrom={dateFrom}
+        setDateFrom={setDateFrom}
+        dateTo={dateTo}
+        setDateTo={setDateTo}
+        onSync={syncLiveStatuses}
+      />
 
-      <main style={{ maxWidth: 1320, margin: '0 auto', padding: '20px 16px 32px', position: 'relative', zIndex: 1 }}>
-        <style>{`
-          .client-portal-shell {
-            --cp-border: #d9e6f5;
-            --cp-border-soft: #e9f0fa;
-            --cp-surface: #ffffff;
-            --cp-surface-soft: #f8fbff;
-            --cp-title: #0f172a;
-            --cp-text: #334155;
-            --cp-muted: #64748b;
-          }
-          .client-portal-shell section {
-            transition: box-shadow .2s ease, transform .2s ease, border-color .2s ease;
-          }
-          .client-portal-shell section:hover {
-            border-color: #cfe0f3 !important;
-          }
-          .client-portal-shell input,
-          .client-portal-shell select,
-          .client-portal-shell textarea {
-            font-size: 12px !important;
-          }
-          .client-portal-shell table thead th {
-            position: sticky;
-            top: 0;
-            z-index: 2;
-            background: #f8fbff;
-          }
-          .client-portal-shell table tbody tr:nth-child(even) {
-            background: #fbfdff;
-          }
-          .client-portal-shell table tbody tr:hover {
-            background: #f2f7ff !important;
-          }
-          .portal-action-group-row { display: grid !important; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; overflow: visible !important; }
-          .portal-action-group-row > div { min-width: 0 !important; width: auto !important; flex: 1 1 auto !important; }
-          @media (max-width: 768px) {
-            .portal-hero-grid { grid-template-columns: 1fr !important; }
-            .portal-hero-inner { grid-template-columns: 1fr !important; }
-            .portal-top-grid { grid-template-columns: 1fr !important; }
-            .portal-action-group-row { grid-template-columns: 1fr !important; }
-            .portal-ticket-meta { grid-template-columns: 1fr !important; }
-            .client-portal-shell header {
-              padding: 0 12px !important;
-            }
-            .client-portal-shell main {
-              padding: 12px 10px 24px !important;
-            }
-          }
-          @media (min-width: 769px) and (max-width: 1180px) {
-            .portal-top-grid { grid-template-columns: 1fr !important; }
-            .portal-action-group-row { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
-          }
-        `}</style>
-        <section className="portal-hero-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.35fr) minmax(280px,.75fr)', gap: 16, marginBottom: 18 }}>
-          <PortalPanel
-            tone="dark"
-            style={{ position: 'relative', overflow: 'hidden' }}
-          >
-            <div style={{ position: 'absolute', inset: 'auto -60px -80px auto', width: 220, height: 220, borderRadius: '50%', background: 'radial-gradient(circle,rgba(56,189,248,0.22) 0%,rgba(56,189,248,0) 72%)' }} />
-            <div style={{ position: 'absolute', inset: '-60px auto auto -30px', width: 200, height: 200, borderRadius: '50%', background: 'radial-gradient(circle,rgba(251,146,60,0.16) 0%,rgba(251,146,60,0) 72%)' }} />
-            <div style={{ position: 'relative', zIndex: 1 }}>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 999, padding: '7px 12px', background: 'rgba(148,197,253,0.14)', border: '1px solid rgba(148,197,253,0.24)', color: '#dbeafe', fontSize: 11, fontWeight: 800, letterSpacing: '.08em', textTransform: 'uppercase', marginBottom: 16 }}>
-                Live Client Command Center
-              </div>
-              <div className="portal-hero-inner" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.15fr) minmax(240px,.95fr) 165px', gap: 20, alignItems: 'start' }}>
-                <div>
-                  <h1 style={{ margin: 0, color: '#f8fbff', fontSize: 32, lineHeight: 1.08, fontWeight: 900, letterSpacing: '-0.4px', maxWidth: 480 }}>
-                    Command Center
-                  </h1>
-                  <p style={{ margin: '14px 0 0', color: '#c9d9f2', fontSize: 14, lineHeight: 1.6, maxWidth: 460 }}>
-                    Your live dashboard for intelligent shipping. Spot delivery friction early, track real-time drops, and optimize cash flow in one unified workspace.
-                  </p>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 24 }}>
-                    <button
-                      onClick={syncLiveStatuses}
-                      className="portal-btn-primary"
-                      style={{ border: '1px solid rgba(255,255,255,0.2)', borderRadius: 12, padding: '11px 18px', background: 'linear-gradient(180deg,#fb923c 0%,#ea580c 100%)', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', boxShadow: '0 8px 20px -8px rgba(234,88,12,0.8)', transition: 'all 0.2s' }}
-                    >
-                      Sync with Couriers
-                    </button>
-                    <Link
-                      to="/portal/shipments"
-                      className="portal-btn-secondary"
-                      style={{ textDecoration: 'none', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, padding: '11px 18px', background: 'rgba(255,255,255,0.08)', color: '#f8fafc', fontSize: 13, fontWeight: 700, transition: 'all 0.2s', marginRight: 12 }}
-                    >
-                      Shipments
-                    </Link>
-                    <Link
-                      to="/portal/drafts"
-                      className="portal-btn-secondary"
-                      style={{ textDecoration: 'none', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, padding: '11px 18px', background: 'rgba(255,255,255,0.08)', color: '#f8fafc', fontSize: 13, fontWeight: 700, transition: 'all 0.2s' }}
-                    >
-                      Order Queue
-                    </Link>
-                    <Link
-                      to="/portal/developer"
-                      className="portal-btn-secondary"
-                      style={{ textDecoration: 'none', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 12, padding: '11px 18px', background: 'rgba(255,255,255,0.08)', color: '#f8fafc', fontSize: 13, fontWeight: 700, transition: 'all 0.2s' }}
-                    >
-                      Developer Hub
-                    </Link>
-                    <button
-                      onClick={fetchPortalData}
-                      className="portal-btn-ghost"
-                      style={{ border: 0, borderRadius: 12, padding: '11px 16px', background: 'transparent', color: '#94a3b8', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'color 0.2s' }}
-                    >
-                      Refresh
-                    </button>
-                  </div>
-                </div>
-
-                {/* Activity Feed in Middle! */}
-                <div style={{ background: 'rgba(15,23,42,0.4)', borderRadius: 18, border: '1px solid rgba(148,197,253,0.1)', padding: 14, height: '100%', minHeight: 156 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Recent Activity</div>
-                    <div style={{ fontSize: 10, color: '#475569', fontWeight: 600 }}>Last 24h</div>
-                  </div>
-                  <div style={{ display: 'grid', gap: 14 }}>
-                    {stats?.recentActivity?.length > 0
-                      ? stats.recentActivity.slice(0, 3).map((act, i) => (
-                        <div key={act.id || i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                          <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,0.05)', display: 'grid', placeItems: 'center', fontSize: 12, border: '1px solid rgba(255,255,255,0.05)' }}>
-                            {act.icon || '📌'}
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 700, color: '#f1f5f9' }}>{act.title}</div>
-                            <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{act.desc}</div>
-                          </div>
-                          <div style={{ marginLeft: 'auto', fontSize: 10, color: act.color || '#64748b', fontWeight: 600 }}>{act.time}</div>
-                        </div>
-                      ))
-                      : (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '18px 0' }}>
-                          <div style={{ fontSize: 22, opacity: 0.4 }}>📭</div>
-                          <div style={{ fontSize: 11, color: '#475569', textAlign: 'center', lineHeight: 1.5 }}>No recent activity.<br />Shipment updates will appear here.</div>
-                        </div>
-                      )
-                    }
-                  </div>
-                </div>
-
-                <div style={{ display: 'grid', gap: 10 }}>
-                  {[
-                    { label: 'Active Shipments', value: stats?.totals?.inTransit || 0, tone: '#38bdf8' },
-                    { label: 'Delivered Success', value: `${stats?.totals?.deliveredPct || 0}%`, tone: '#4ade80' },
-                    { label: 'RTO Risk', value: stats?.totals?.rto || 0, tone: '#f9a8d4' },
-                  ].map((item) => (
-                    <div key={item.label} style={{ borderRadius: 16, padding: '12px 14px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(201,217,242,0.14)' }}>
-                      <div style={{ fontSize: 10, color: '#a9bddc', fontWeight: 700, marginBottom: 4 }}>{item.label}</div>
-                      <div style={{ fontSize: 20, fontWeight: 900, color: '#f8fbff' }}>{item.value}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </PortalPanel>
-
-          <PortalPanel
-            eyebrow="Focus Window"
-            title="Date Context"
-            subtitle="Changes here instantly slice all charts and data below."
-            style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
-          >
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {RANGE_OPTIONS.map((r) => (
-                <RangeChip key={r.key} label={r.label} active={range === r.key} onClick={() => setRange(r.key)} />
-              ))}
-            </div>
-            {range === 'custom' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <input className="tw-input" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ border: '1px solid #dbe6f4', borderRadius: 10, padding: '9px 12px', fontSize: 12, background: '#f8fafc', fontWeight: 600 }} />
-                <input className="tw-input" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ border: '1px solid #dbe6f4', borderRadius: 10, padding: '9px 12px', fontSize: 12, background: '#f8fafc', fontWeight: 600 }} />
-              </div>
-            )}
-            <div style={{ borderRadius: 16, padding: 18, background: '#f8fafc', border: '1px solid #e2e8f0', flex: 1 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', color: '#64748b', marginBottom: 6 }}>Currently Viewing</div>
-              <div style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', letterSpacing: '-0.5px' }}>{stats?.range?.from || '—'} to {stats?.range?.to || '—'}</div>
-              
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 16, paddingTop: 16, borderTop: '1px solid #e2e8f0' }}>
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 800, color: '#f97316', textTransform: 'uppercase' }}>Insight</div>
-                  <div style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: '#0f172a' }}>Delivery stable</div>
-                </div>
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 800, color: '#3b82f6', textTransform: 'uppercase' }}>Coverage</div>
-                  <div style={{ marginTop: 4, fontSize: 12, fontWeight: 700, color: '#0f172a' }}>{courierOptions.length || 0} Network lanes</div>
-                </div>
-              </div>
-            </div>
-          </PortalPanel>
+      {(fetchErrors.portal || fetchErrors.intelligence) && (
+        <section className="grid gap-2">
+          {fetchErrors.portal && <FetchErrorState compact title="Portal summary failed" error={fetchErrors.portal} onRetry={fetchPortalData} />}
+          {fetchErrors.intelligence && <FetchErrorState compact title="Intelligence panel failed" error={fetchErrors.intelligence} onRetry={fetchIntelligence} />}
         </section>
+      )}
 
-        {(fetchErrors.portal || fetchErrors.performance || fetchErrors.intelligence) && (
-          <section style={{ marginBottom: 14, display: 'grid', gap: 8 }}>
-            {fetchErrors.portal && (
-              <FetchErrorState
-                compact
-                title="Portal summary failed"
-                error={fetchErrors.portal}
-                onRetry={fetchPortalData}
-              />
-            )}
-            {fetchErrors.performance && (
-              <FetchErrorState
-                compact
-                title="Performance panel failed"
-                error={fetchErrors.performance}
-                onRetry={fetchPerformance}
-              />
-            )}
-            {fetchErrors.intelligence && (
-              <FetchErrorState
-                compact
-                title="Intelligence panel failed"
-                error={fetchErrors.intelligence}
-                onRetry={fetchIntelligence}
-              />
-            )}
-          </section>
-        )}
+      <PortalKPIGrid cards={kpiCards} sparklineValues={sparklineValues} />
+      <PortalAttentionPanel items={attentionItems} />
+      <PortalShipmentTable loading={loading} shipments={shipments} onSelectShipment={setSelectedShipment} />
+      <PortalInsightsSection quickActions={quickActions} insightItems={insightItems} />
 
-        <section style={{ marginBottom: 18 }}>
-          <div style={{ borderRadius: 18, border: '1px solid #dbe6f4', background: 'linear-gradient(145deg,#ffffff 0%,#f9fbff 60%,#f7faff 100%)', boxShadow: '0 14px 34px -24px rgba(15,23,42,0.35)', padding: 14 }}>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              {WOW_FACTORS.map((item) => (
-                <div key={item.label} className="wow-factor-card" style={{ flex: '1 1 280px', minWidth: 220, border: '1px solid #e5edf8', borderRadius: 14, padding: '12px 14px', background: '#fff', position: 'relative', overflow: 'hidden' }}>
-                  <div style={{ fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '.11em', color: '#64748b' }}>{item.label}</div>
-                  <div style={{ marginTop: 6, fontSize: 14, fontWeight: 900, color: '#0f172a' }}>{item.value}</div>
-                  <div style={{ marginTop: 10, height: 4, borderRadius: 999, background: '#eef3fb' }}>
-                    <div style={{ width: '78%', height: '100%', borderRadius: 999, background: `linear-gradient(90deg,${item.accent},#93c5fd)` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section style={{ marginBottom: 18 }}>
-          <PortalPanel
-            eyebrow="Smart Alerts"
-            title="Actionable Signals"
-            subtitle="Real-time alerts from your shipment pipeline."
-          >
-            <div style={{ display: 'grid', gap: 8 }}>
-              {smartAlerts.map((alert, idx) => (
-                <div key={idx} style={{ border: '1px solid #e5edf8', borderRadius: 12, padding: '10px 12px', background: '#f8fbff', display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ width: 8, height: 8, borderRadius: 999, background: alert.tone === 'red' ? '#ef4444' : alert.tone === 'orange' ? '#f97316' : alert.tone === 'green' ? '#16a34a' : '#2563eb' }} />
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>{alert.text}</div>
-                </div>
-              ))}
-            </div>
-          </PortalPanel>
-        </section>
-
-        <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 12, marginBottom: 18 }}>
-          <MetricCard icon="📦" label="Total Shipments" value={stats?.totals?.total || 0} hint="Volume" color="#2563eb" />
-          <MetricCard icon="🧾" label="Booked" value={stats?.totals?.booked || 0} hint="Created" color="#475569" />
-          <MetricCard icon="🚚" label="In Transit" value={stats?.totals?.inTransit || 0} hint="Moving" color="#f97316" />
-          <MetricCard icon="🏁" label="Out For Delivery" value={stats?.totals?.outForDelivery || 0} hint="Near Delivery" color="#0ea5e9" />
-          <MetricCard icon="✅" label="Delivered" value={stats?.totals?.delivered || 0} hint={`${stats?.totals?.deliveredPct || 0}% Success`} color="#0c7a52" />
-          <MetricCard icon="⚠️" label="Returns/RTO" value={stats?.totals?.rto || 0} hint="At Risk" color="#ef4444" />
-        </section>
-
-        <section className="portal-top-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.08fr) minmax(0,.92fr)', gap: 16, marginBottom: 18 }}>
-          <PortalPanel
-            eyebrow="Shipment Pulse"
-            title="Movement Trend"
-            subtitle="See order volume over the selected period with highlights that explain performance shifts."
-            action={(
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>{stats?.range?.from} to {stats?.range?.to}</div>
-                <div style={{ marginTop: 4, fontSize: 10, fontWeight: 900, color: movementInsights.wowPct >= 0 ? '#0c7a52' : '#b42318' }}>
-                  {movementInsights.wowPct >= 0 ? '+' : ''}{movementInsights.wowPct}% vs last week
-                </div>
-              </div>
-            )}
-          >
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 10, marginBottom: 14 }}>
-              {[
-                { label: 'Total', value: stats?.totals?.total || 0, color: '#1d4ed8' },
-                { label: 'Delivered', value: stats?.totals?.delivered || 0, color: '#16a34a' },
-                { label: 'Attention Needed', value: (stats?.totals?.ndr || 0) + (stats?.totals?.rto || 0), color: '#ea580c' },
-              ].map((item) => (
-                <div key={item.label} style={{ borderRadius: 16, padding: 14, background: '#f8fbff', border: '1px solid #e5edf8' }}>
-                  <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>{item.label}</div>
-                  <div style={{ marginTop: 6, fontSize: 22, fontWeight: 900, color: '#0f172a' }}>{item.value}</div>
-                  <div style={{ marginTop: 10, height: 4, borderRadius: 999, background: '#e6eef8', overflow: 'hidden' }}>
-                    <div style={{ width: '72%', height: '100%', background: item.color, borderRadius: 999 }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div style={{ height: 280, position: 'relative' }}>
-              <ResponsiveContainer width="100%" height="100%" minWidth={250}>
-                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="portalTrendFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0} />
-                    </linearGradient>
-                    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
-                      <feDropShadow dx="0" dy="8" stdDeviation="8" floodColor="#3b82f6" floodOpacity="0.25"/>
-                    </filter>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }} dy={10} />
-                  <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }} dx={-10} />
-                  <Tooltip
-                    formatter={(value) => [`${value} Shipments`, 'Movement']}
-                    labelFormatter={(value) => `Date: ${value}`}
-                    contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 12px 28px rgba(15,23,42,0.15)', fontWeight: 700, padding: '12px 16px' }}
-                    itemStyle={{ color: '#0f172a', fontWeight: 900 }}
-                  />
-                  <Area type="monotone" dataKey="shipments" stroke="#2563eb" strokeWidth={4} fill="url(#portalTrendFill)" animationDuration={1800} filter="url(#shadow)" />
-                  {movementInsights.peak && (
-                    <ReferenceDot
-                      x={movementInsights.peak.day}
-                      y={movementInsights.peak.shipments}
-                      r={6}
-                      fill="#ea580c"
-                      stroke="#fff"
-                      strokeWidth={2}
-                    />
-                  )}
-                </AreaChart>
-              </ResponsiveContainer>
-              {movementInsights.peak && (
-                <div style={{ position: 'absolute', top: 8, right: 10, borderRadius: 999, border: '1px solid #ffd8bd', background: '#fff3ec', color: '#c2410c', fontSize: 10, fontWeight: 900, padding: '5px 10px' }}>
-                  Peak {movementInsights.peak.shipments} on {movementInsights.peak.day}
-                </div>
-              )}
-              {!trendData.length && (
-                <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center' }}>
-                  <div style={{ textAlign: 'center', maxWidth: 320 }}>
-                    <div style={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>No movement data yet</div>
-                    <Link to="/portal/import" style={{ display: 'inline-block', marginTop: 10, textDecoration: 'none', border: '1px solid #dbe6f4', borderRadius: 999, padding: '8px 12px', fontSize: 11, fontWeight: 800, color: '#0f172a', background: '#fff' }}>
-                      Import first shipments
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </div>
-          </PortalPanel>
-
-          <PortalPanel
-            eyebrow="Quick Actions"
-            title="Move Fast"
-            subtitle="Actions are grouped by intent so teams know exactly where to click first."
-          >
-            <div style={{ display: 'grid', gap: 12 }}>
-              {ACTION_GROUPS.map((group) => (
-                <div key={group.key} style={{ border: '1px solid #e8eef8', borderRadius: 14, padding: 10, background: '#fbfdff' }}>
-                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', textTransform: 'uppercase', letterSpacing: '.08em' }}>{group.title}</div>
-                    <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>{group.subtitle}</div>
-                  </div>
-                  <div className="portal-action-group-row" style={{ display: 'grid', gap: 10, paddingBottom: 2 }}>
-                    {group.actions.map((action) => (
-                      <div key={action.title} style={{ minWidth: 0 }}>
-                        <ActionTile {...action} />
-                      </div>
-                    ))}
-                    {group.key === 'system' && (
-                      <div style={{ minWidth: 0 }}>
-                        <ActionTile
-                          icon="🎫"
-                          title={ticketOpen ? 'Close Ticket Composer' : 'Raise Support Ticket'}
-                          description="Open a quick issue form right here when a shipment needs immediate help."
-                          tone="slate"
-                          onClick={() => setTicketOpen((v) => !v)}
-                        />
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-            {ticketOpen && (
-              <div style={{ marginTop: 14, border: '1px solid #e2eaf5', borderRadius: 18, padding: 14, background: 'linear-gradient(180deg,#fcfdff 0%,#f8fbff 100%)' }}>
-                <div style={{ display: 'grid', gap: 10 }}>
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.08em', color: '#f97316', marginBottom: 6 }}>Support Desk</div>
-                    <div style={{ fontSize: 17, fontWeight: 900, color: '#0f172a' }}>Create a ticket without leaving the dashboard</div>
-                  </div>
-                  <input className="tw-input" value={ticketSubject} onChange={(e) => setTicketSubject(e.target.value)} placeholder="Subject (e.g. Shipment delayed)" style={{ border: '1px solid #dbe6f4', borderRadius: 12, padding: '10px 12px', fontSize: 12, color: '#334155', background: '#fff' }} />
-                  <div className="portal-ticket-meta" style={{ display: 'grid', gridTemplateColumns: '1fr 150px', gap: 8 }}>
-                    <input className="tw-input" value={ticketAwb} onChange={(e) => setTicketAwb(e.target.value)} placeholder="AWB (optional)" style={{ border: '1px solid #dbe6f4', borderRadius: 12, padding: '10px 12px', fontSize: 12, color: '#334155', background: '#fff' }} />
-                    <select className="tw-select" value={ticketPriority} onChange={(e) => setTicketPriority(e.target.value)} style={{ border: '1px solid #dbe6f4', borderRadius: 12, padding: '10px 12px', fontSize: 12, color: '#334155', background: '#fff' }}>
-                      <option value="low">Low</option>
-                      <option value="normal">Normal</option>
-                      <option value="high">High</option>
-                      <option value="urgent">Urgent</option>
-                    </select>
-                  </div>
-                  <textarea className="tw-input" value={ticketMessage} onChange={(e) => setTicketMessage(e.target.value)} placeholder="Describe the issue..." rows={4} style={{ border: '1px solid #dbe6f4', borderRadius: 12, padding: '10px 12px', fontSize: 12, resize: 'vertical', color: '#334155', background: '#fff' }} />
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    <div style={{ fontSize: 12, color: '#64748b' }}>Use this for delays, delivery issues, POD mismatches, or account questions.</div>
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                      <button type="button" onClick={() => setTicketOpen(false)} style={{ border: '1px solid #dbe6f4', background: '#fff', borderRadius: 12, padding: '9px 12px', fontSize: 12, fontWeight: 700, color: '#475569', cursor: 'pointer' }}>Cancel</button>
-                      <button type="button" onClick={submitSupportTicket} disabled={submittingTicket} style={{ border: '1px solid #f7c9aa', background: submittingTicket ? '#fff7f2' : '#fff3ec', borderRadius: 12, padding: '9px 12px', fontSize: 12, fontWeight: 800, color: '#c2410c', cursor: submittingTicket ? 'not-allowed' : 'pointer', opacity: submittingTicket ? 0.75 : 1 }}>
-                        {submittingTicket ? 'Submitting...' : 'Submit Ticket'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </PortalPanel>
-        </section>
-
-        <section style={{ background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)', border: '1px solid #d9e8fb', borderRadius: 18, padding: 16, boxShadow: '0 14px 30px -18px rgba(37,99,235,0.3)', marginBottom: 18 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
-            <div>
-              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#0f172a' }}>Delivery Performance Dashboard</h3>
-              <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: 12 }}>Delivered vs RTO vs failed delivery behavior for your shipments.</p>
-              <div style={{ marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 8, borderRadius: 999, border: '1px solid #c7dbf3', background: '#eff6ff', color: '#1d4ed8', padding: '4px 10px', fontSize: 10.5, fontWeight: 900 }}>
-                Client Health Score: {performance?.summary?.successRate || 0}%
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {[30, 60, 90].map((d) => (
-                <button
-                  key={d}
-                  onClick={() => setPerfDays(d)}
-                  style={{
-                    border: perfDays === d ? '1px solid #f97316' : '1px solid #dbe6f4',
-                    background: perfDays === d ? '#fff4ec' : '#fff',
-                    color: perfDays === d ? '#c2410c' : '#334155',
-                    borderRadius: 999,
-                    padding: '7px 12px',
-                    fontSize: 12,
-                    fontWeight: 800,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {d} Days
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 12, marginBottom: 14 }}>
-            <MetricCard icon="✅" label="Delivered" value={performance?.summary?.delivered || 0} hint="Success" color="#0c7a52" />
-            <MetricCard icon="↩️" label="RTO" value={performance?.summary?.rto || 0} hint="Returns" color="#b42318" />
-            <MetricCard icon="⚠️" label="Failed / NDR" value={performance?.summary?.failed || 0} hint="Attention" color="#c2410c" />
-            <MetricCard icon="📈" label="Success Rate" value={`${performance?.summary?.successRate || 0}%`} hint={`${performance?.days || 30} Days`} color="#2563eb" />
-          </div>
-
-          <div style={{ height: 260, position: 'relative' }}>
-            <ResponsiveContainer width="100%" height="100%" minWidth={250}>
-              <LineChart data={performanceData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }} dy={10} />
-                <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }} dx={-10} />
-                <Tooltip 
-                  contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 12px 28px rgba(15,23,42,0.15)', fontWeight: 700, padding: '12px 16px' }} 
-                  itemStyle={{ color: '#0f172a', fontWeight: 900 }}
-                />
-                <Legend wrapperStyle={{ paddingTop: 20, fontSize: 12, fontWeight: 700 }} />
-                <Line type="monotone" dataKey="delivered" stroke="#16a34a" strokeWidth={3} dot={false} activeDot={{ r: 6 }} name="Delivered" animationDuration={1800} />
-                <Line type="monotone" dataKey="rto" stroke="#dc2626" strokeWidth={3} dot={false} activeDot={{ r: 6 }} name="RTO" animationDuration={1800} />
-                <Line type="monotone" dataKey="failed" stroke="#ea580c" strokeWidth={3} dot={false} activeDot={{ r: 6 }} name="Failed / NDR" animationDuration={1800} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
-
-        <section style={{ background: '#fff', border: '1px solid #e5edf8', borderRadius: 18, padding: 14, boxShadow: '0 8px 24px -14px rgba(11,31,58,0.2)', marginBottom: 18 }}>
-          <div style={{ marginBottom: 10 }}>
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: '#0f172a' }}>SLA Command Center</h3>
-            <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: 12 }}>OTIF, first-attempt delivery, RTO risk, aging buckets, and exception heatmap.</p>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 10, marginBottom: 12 }}>
-            <MetricCard icon="🎯" label="OTIF" value={`${Number(slaCC?.otif || 0)}%`} hint="On-time in-full" color="#0f766e" />
-            <MetricCard icon="🚚" label="First Attempt Delivery" value={`${Number(slaCC?.firstAttemptDelivery || 0)}%`} hint="Efficiency" color="#2563eb" />
-            <MetricCard icon="↩️" label="RTO Risk Shipments" value={Number(slaCC?.rtoRiskShipments || 0)} hint="Priority watch" color="#b42318" />
-            <MetricCard icon="🔥" label="Exception Rate" value={`${Number(slaCC?.exceptionRate || 0)}%`} hint="Ops load" color="#c2410c" />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(210px,1fr))', gap: 10 }}>
-            <div style={{ border: '1px solid #e5edf8', borderRadius: 12, padding: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', marginBottom: 6 }}>Aging Buckets</div>
-              {Object.entries(slaCC?.agingBuckets || {}).map(([bucket, value]) => (
-                <div key={bucket} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#334155', marginBottom: 4 }}>
-                  <span>{bucket}</span>
-                  <strong>{value}</strong>
-                </div>
-              ))}
-            </div>
-            <div style={{ border: '1px solid #e5edf8', borderRadius: 12, padding: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', marginBottom: 6 }}>Exception Heatmap (top lanes)</div>
-              {(slaCC?.exceptionHeatmap || []).slice(0, 4).map((lane) => (
-                <div key={lane.lane} style={{ fontSize: 12, color: '#334155', marginBottom: 6 }}>
-                  <strong>{lane.lane}</strong> · {lane.exceptionRate}% exception · {lane.highRtoRisk} high risk
-                </div>
-              ))}
-              {(!slaCC?.exceptionHeatmap || slaCC.exceptionHeatmap.length === 0) && <div style={{ fontSize: 12, color: '#64748b' }}>No lane exceptions right now.</div>}
-            </div>
-          </div>
-        </section>
-
-        <section style={{ background: '#fff', border: '1px solid #e5edf8', borderRadius: 18, padding: 14, boxShadow: '0 8px 24px -14px rgba(11,31,58,0.2)', marginBottom: 18 }}>
-          <div style={{ marginBottom: 10 }}>
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: '#0f172a' }}>Client Health Observability</h3>
-            <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: 12 }}>Latency, webhook reliability, queue pressure, and sync lag in one view.</p>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(170px,1fr))', gap: 10 }}>
-            <MetricCard icon="⏱️" label="API P95 (ms)" value={Number(obs?.apiLatencyMs?.p95 || 0)} hint="Responsiveness" color="#1d4ed8" />
-            <MetricCard icon="🛰️" label="Webhook Success" value={`${Number(obs?.integrationWebhooks?.successRate || 0)}%`} hint="Last 24h" color="#0c7a52" />
-            <MetricCard icon="🧱" label="Failed Jobs" value={Number(obs?.jobQueue?.failed || 0)} hint="Queue health" color="#b42318" />
-            <MetricCard icon="🔄" label="Sync Lag 24h+" value={Number(obs?.syncLag?.staleShipments24h || 0)} hint="Needs action" color="#c2410c" />
-          </div>
-        </section>
-
-        <section style={{ background: '#fff', border: '1px solid #e5edf8', borderRadius: 18, padding: 14, boxShadow: '0 8px 24px -14px rgba(11,31,58,0.2)', marginBottom: 18 }}>
-          <div style={{ marginBottom: 10 }}>
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: '#0f172a' }}>Exception Autopilot</h3>
-            <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: 12 }}>Auto-actions on NDR reasons, delay prediction, and failed scans.</p>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))', gap: 10 }}>
-            <div style={{ border: '1px solid #e5edf8', borderRadius: 12, padding: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', marginBottom: 6 }}>NDR Rule Engine</div>
-              {(opsAuto?.ndrRules || []).slice(0, 5).map((r) => (
-                <div key={r.courier} style={{ fontSize: 12, color: '#334155', marginBottom: 6 }}>
-                  <strong>{r.courier}</strong> · {r.ndrCount} NDR · {r.action}
-                </div>
-              ))}
-              {(!opsAuto?.ndrRules || opsAuto.ndrRules.length === 0) && <div style={{ fontSize: 12, color: '#64748b' }}>No active NDR escalations.</div>}
-            </div>
-            <div style={{ border: '1px solid #e5edf8', borderRadius: 12, padding: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', marginBottom: 6 }}>Failed Scan Actions</div>
-              {(opsAuto?.autopilot?.failedScanActions || []).slice(0, 5).map((f) => (
-                <div key={`${f.awb}-${f.action}`} style={{ fontSize: 12, color: '#334155', marginBottom: 6 }}>
-                  <strong>{f.awb}</strong> · {f.status} · {f.action}
-                </div>
-              ))}
-              {(!opsAuto?.autopilot?.failedScanActions || opsAuto.autopilot.failedScanActions.length === 0) && <div style={{ fontSize: 12, color: '#64748b' }}>No failed scan interventions.</div>}
-            </div>
-          </div>
-        </section>
-
-        <section style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.2fr) minmax(0,.8fr)', gap: 16, marginBottom: 18 }}>
-          <PortalPanel
-            eyebrow="Shipment Intelligence"
-            title="Risk Radar"
-            subtitle="Flags SLA breaches, stuck scans, and high RTO risk based on live tracking signals."
-          >
-            {intelItems.length === 0 ? (
-              <div style={{ padding: 14, color: '#64748b', fontSize: 13 }}>No critical risks detected in the selected range.</div>
-            ) : (
-              <div style={{ display: 'grid', gap: 10 }}>
-                {intelItems.map((item) => (
-                  <div key={item.id} style={{ border: '1px solid #e5edf8', borderRadius: 14, padding: 12, background: '#f8fbff' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
-                      <div style={{ fontFamily: 'monospace', fontWeight: 800, color: '#0f172a' }}>{item.awb}</div>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: '#c2410c' }}>{item.rtoRiskScore}% RTO risk</div>
-                    </div>
-                    <div style={{ marginTop: 6, fontSize: 12, color: '#475569' }}>
-                      {item.destination || 'Destination'} · {item.status} · {item.courier || 'Courier'}
-                    </div>
-                    <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {(item.flags || []).map((f) => (
-                        <span key={f} style={{ fontSize: 10, fontWeight: 800, padding: '4px 8px', borderRadius: 999, background: '#fff1e6', color: '#c2410c', border: '1px solid #ffd8bd' }}>
-                          {f.replace('_', ' ')}
-                        </span>
-                      ))}
-                      <span style={{ fontSize: 10, fontWeight: 800, padding: '4px 8px', borderRadius: 999, background: '#eef2ff', color: '#3730a3', border: '1px solid #c7d2fe' }}>
-                        {item.idleHours}h since scan
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </PortalPanel>
-
-          <PortalPanel
-            eyebrow="Summary"
-            title="Risk Breakdown"
-            subtitle="Quick view of exceptions that need attention."
-            tone="accent"
-          >
-            <div
-              style={{
-                border: '1px solid #e5edf8',
-                borderRadius: 12,
-                background: healthBg,
-                padding: 10,
-                marginBottom: 10,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                color: healthTone,
-                fontWeight: 900,
-              }}
-            >
-              <span>Logistics Health Score</span>
-              <span>{healthScore}/100 · {healthLabel}</span>
-            </div>
-            <div style={{ display: 'grid', gap: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-                <span>Flagged</span>
-                <span>{intel?.summary?.flagged || 0}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-                <span>SLA Breach</span>
-                <span>{intel?.summary?.slaBreaches || 0}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-                <span>Stuck in Scan</span>
-                <span>{intel?.summary?.stuckInScan || 0}</span>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-                <span>High RTO Risk</span>
-                <span>{intel?.summary?.highRtoRisk || 0}</span>
-              </div>
-            </div>
-            {(intel?.predictiveDelays || []).length > 0 && (
-              <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-                {(intel.predictiveDelays || []).slice(0, 3).map((p) => (
-                  <div key={`${p.awb}-${p.status}`} style={{ fontSize: 12, color: '#1e293b', background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: 8, padding: '7px 9px' }}>
-                    {p.awb} · {p.destination || 'Unknown lane'} · +{p.expectedDelayDays}d delay · {p.confidence}% confidence
-                  </div>
-                ))}
-              </div>
-            )}
-            {(intel?.alerts || []).length > 0 && (
-              <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-                {(intel.alerts || []).map((a, idx) => (
-                  <div key={`${a}-${idx}`} style={{ fontSize: 12, color: '#7c2d12', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '7px 9px' }}>
-                    {a}
-                  </div>
-                ))}
-              </div>
-            )}
-          </PortalPanel>
-        </section>
-
-        <section style={{ background: '#fff', border: '1px solid #e5edf8', borderRadius: 18, overflow: 'hidden', boxShadow: '0 8px 24px -14px rgba(11,31,58,0.2)' }}>
-          <div style={{ padding: 16, borderBottom: '1px solid #edf2fa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 900, color: '#0f172a' }}>Shipments</h3>
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <input
-                className="tw-input"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search AWB, consignee, destination..."
-                style={{ border: '1px solid #dbe6f4', borderRadius: 10, fontSize: 12, padding: '8px 10px', minWidth: 230, color: '#334155', background: '#fff' }}
-              />
-              <select className="tw-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={{ border: '1px solid #dbe6f4', borderRadius: 10, fontSize: 12, padding: '8px 10px', color: '#334155', background: '#fff' }}>
-                <option value="">All Status</option>
-                <option value="Booked">Booked</option>
-                <option value="InTransit">In Transit</option>
-                <option value="OutForDelivery">Out For Delivery</option>
-                <option value="Delivered">Delivered</option>
-                <option value="Delayed">Delayed</option>
-                <option value="NDR">NDR</option>
-                <option value="RTO">RTO</option>
-              </select>
-              <select className="tw-select" value={courierFilter} onChange={(e) => setCourierFilter(e.target.value)} style={{ border: '1px solid #dbe6f4', borderRadius: 10, fontSize: 12, padding: '8px 10px', color: '#334155', background: '#fff' }}>
-                <option value="">All Couriers</option>
-                {courierOptions.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {loading ? (
-            <div style={{ padding: 20 }}>
-              <SkeletonTable columns={8} rows={5} />
-            </div>
-          ) : shipments.length === 0 ? (
-            <div style={{ padding: 28, textAlign: 'center', color: '#64748b' }}>
-              <div style={{ fontSize: 36 }}>📭</div>
-              <div style={{ marginTop: 8, fontWeight: 800, color: '#334155' }}>No shipments yet in this view.</div>
-              <div style={{ marginTop: 6, fontSize: 13 }}>Create your first shipment flow to activate tracking and analytics.</div>
-              <div style={{ marginTop: 12, display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-                <Link to="/portal/import" style={{ textDecoration: 'none', border: '1px solid #dbe6f4', borderRadius: 999, padding: '8px 12px', fontSize: 11, fontWeight: 900, color: '#0f172a', background: '#fff' }}>
-                  Upload First Shipment Batch
-                </Link>
-                <Link to="/portal/pickups" style={{ textDecoration: 'none', border: '1px solid #f7c9aa', borderRadius: 999, padding: '8px 12px', fontSize: 11, fontWeight: 900, color: '#c2410c', background: '#fff3ec' }}>
-                  Raise Pickup Request
-                </Link>
-              </div>
-            </div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
-                <thead>
-                  <tr style={{ background: 'linear-gradient(180deg,#f8fbff 0%,#fdfefe 100%)' }}>
-                    {['AWB', 'Date', 'Consignee', 'Destination', 'Courier', 'Weight', 'Status'].map((h) => (
-                      <th key={h} style={{ textAlign: 'left', padding: '12px 14px', borderBottom: '1px solid #e5edf8', fontSize: 11, color: '#64748b', textTransform: 'uppercase', letterSpacing: '.12em', fontWeight: 800 }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {shipments.map((s, i) => (
-                    <tr key={s.id} className="portal-row" style={{ background: i % 2 ? '#fcfdff' : '#fff', borderBottom: '1px solid #eef3fb', transition: 'background 180ms ease, transform 180ms ease' }}>
-                      <td style={{ padding: '12px 14px', fontWeight: 800, color: '#0f172a', fontFamily: 'monospace' }}>{s.awb}</td>
-                      <td style={{ padding: '12px 14px', color: '#475569' }}>{s.date}</td>
-                      <td style={{ padding: '12px 14px', color: '#334155' }}>{s.consignee || '—'}</td>
-                      <td style={{ padding: '12px 14px', color: '#475569' }}>{s.destination || '—'}</td>
-                      <td style={{ padding: '12px 14px', color: '#475569' }}>{s.courier || '—'}</td>
-                      <td style={{ padding: '12px 14px', color: '#475569' }}>{s.weight ? `${s.weight} kg` : '—'}</td>
-                      <td style={{ padding: '12px 14px' }}><StatusBadge status={s.status} /></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <div style={{ padding: 14, borderTop: '1px solid #edf2fa', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ fontSize: 12, color: '#64748b' }}>
-              Showing <strong style={{ color: '#334155' }}>{shipments.length}</strong> shipments
-            </div>
-            <Link to="/portal/shipments" style={{ textDecoration: 'none', color: '#e8580a', fontSize: 13, fontWeight: 800 }}>
-              View all shipments →
-            </Link>
-          </div>
-        </section>
-      </main>
-
-      <div style={{ position: 'fixed', right: 24, bottom: 24, zIndex: 50 }}>
-        {!assistantOpen ? (
-          <button
-            type="button"
-            onClick={() => setAssistantOpen(true)}
-            className="portal-launcher"
-            style={{
-              borderRadius: 999,
-              background: 'linear-gradient(145deg,#fff8eb 0%,#fff1f7 52%,#f3f0ff 100%)',
-              color: '#0f172a',
-              border: '1px solid rgba(255,255,255,0.9)',
-              padding: '8px 12px 8px 8px',
-              fontSize: 12,
-              fontWeight: 800,
-              boxShadow: '0 22px 42px -24px rgba(251,113,133,0.34), 0 14px 24px -22px rgba(168,85,247,0.28), inset 0 1px 0 rgba(255,255,255,0.92)',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            <div className="portal-avatar-float" style={{ width: 38, height: 38, borderRadius: '50%', overflow: 'hidden', boxShadow: '0 6px 16px rgba(124,58,237,0.25)' }}>
-              <PortalAssistantAvatar size={38} />
-            </div>
-            <div style={{ textAlign: 'left', lineHeight: 1.1 }}>
-              <div style={{ fontSize: 12, fontWeight: 900 }}>Assistant</div>
-              <div style={{ fontSize: 10, color: '#e11d48', fontWeight: 800 }}>Client Care Copilot</div>
-            </div>
-          </button>
-        ) : (
-          <div style={{
-            width: 340,
-            maxHeight: 520,
-            background: 'linear-gradient(180deg, rgba(255,255,255,0.94) 0%, rgba(255,248,251,0.96) 100%)',
-            backdropFilter: 'blur(18px)',
-            border: '1px solid rgba(255,255,255,0.82)',
-            borderRadius: 18,
-            boxShadow: '0 24px 56px -34px rgba(190,24,93,0.35)',
-            display: 'grid',
-            gridTemplateRows: 'auto 1fr auto',
-            overflow: 'hidden',
-          }}>
-            <div style={{ padding: 12, borderBottom: '1px solid rgba(251,207,232,0.55)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg,#fff1f2 0%,#faf5ff 58%,#fff7ed 100%)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div className="portal-avatar-float" style={{ width: 34, height: 34, borderRadius: '50%', overflow: 'hidden', boxShadow: '0 6px 16px rgba(124,58,237,0.18)' }}>
-                  <PortalAssistantAvatar size={34} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a' }}>Client Assistant</div>
-                  <div style={{ fontSize: 10, color: '#e11d48', fontWeight: 800 }}>Portal Care Guide</div>
-                </div>
-              </div>
-              <button type="button" onClick={() => setAssistantOpen(false)} style={{ border: 0, background: 'transparent', color: '#64748b', cursor: 'pointer' }}>Close</button>
-            </div>
-            <div style={{ padding: 12, overflowY: 'auto', display: 'grid', gap: 8 }}>
-              {assistantMessages.map((m, idx) => (
-                <div key={idx} style={{ justifySelf: m.role === 'user' ? 'end' : 'start', maxWidth: '92%' }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                    {m.role === 'assistant' && (
-                      <div className="portal-avatar-float" style={{ width: 28, height: 28, borderRadius: '50%', overflow: 'hidden', flexShrink: 0 }}>
-                        <PortalAssistantAvatar size={28} />
-                      </div>
-                    )}
-                    <div style={{
-                      background: m.role === 'user' ? '#0f172a' : '#f8fbff',
-                      color: m.role === 'user' ? '#fff' : '#0f172a',
-                      border: m.role === 'user' ? '1px solid #0f172a' : '1px solid #e5edf8',
-                      borderRadius: 12,
-                      padding: '8px 10px',
-                      fontSize: 12,
-                      whiteSpace: 'pre-wrap',
-                    }}>
-                      {m.text}
-                      {m.action?.confirmRequired && (
-                        <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                          <button
-                            type="button"
-                            onClick={() => sendAssistant({ action: m.action, confirm: true })}
-                            style={{ border: '1px solid #f7c9aa', background: '#fff3ec', borderRadius: 10, padding: '6px 8px', fontSize: 11, fontWeight: 800, color: '#c2410c', cursor: 'pointer' }}
-                          >
-                            Run Action
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  {m.role === 'assistant' && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, marginLeft: 36 }}>
-                      {getClientAssistantFollowups(m).map((label) => (
-                        <button
-                          className="portal-follow-chip"
-                          key={`${idx}-${label}`}
-                          type="button"
-                          onClick={() => sendAssistant({ message: label })}
-                          style={{
-                            borderRadius: 999,
-                            border: '1px solid rgba(251,113,133,0.16)',
-                            background: 'linear-gradient(135deg,#fff8eb 0%, #fff1f2 48%, #faf5ff 100%)',
-                            color: '#9f1239',
-                            fontSize: 10.5,
-                            fontWeight: 900,
-                            padding: '6px 11px',
-                            cursor: 'pointer',
-                            boxShadow: '0 10px 20px -16px rgba(244,114,182,0.45), inset 0 1px 0 rgba(255,255,255,0.95)',
-                            letterSpacing: '0.01em',
-                          }}
-                        >
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{
-                              minWidth: 16,
-                              height: 16,
-                              borderRadius: 999,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              background: 'rgba(251,113,133,0.1)',
-                              color: '#e11d48',
-                              fontSize: 9,
-                              fontWeight: 900,
-                              lineHeight: 1,
-                            }}>{getClientChipIcon(label)}</span>
-                            {label}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
-                {assistantSuggestions.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => sendAssistant({ message: s })}
-                    style={{
-                      borderRadius: 999,
-                      border: '1px solid #dbe6f4',
-                      background: '#f8fbff',
-                      color: '#0f172a',
-                      fontSize: 11,
-                      fontWeight: 800,
-                      padding: '6px 10px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div style={{ padding: 10, borderTop: '1px solid #edf2fa', display: 'flex', gap: 8 }}>
-              <input
-                value={assistantInput}
-                onChange={(e) => setAssistantInput(e.target.value)}
-                placeholder="Ask about a shipment or request an action..."
-                style={{ flex: 1, borderRadius: 10, border: '1px solid #dbe6f4', padding: '8px 10px', fontSize: 12 }}
-                onKeyDown={(e) => { if (e.key === 'Enter') sendAssistant(); }}
-              />
-              <button
-                type="button"
-                onClick={() => sendAssistant()}
-                disabled={assistantBusy}
-                style={{ borderRadius: 10, border: '1px solid #0f172a', background: '#0f172a', color: '#fff', padding: '8px 10px', fontSize: 12, fontWeight: 800, cursor: assistantBusy ? 'not-allowed' : 'pointer' }}
-              >
-                Send
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <Modal
-        open={Boolean(ticketSuccess)}
-        onClose={() => setTicketSuccess(null)}
-        title="Ticket Submitted"
-        size="sm"
-        footer={(
-          <>
-            <button onClick={copyTicketNumber} className="btn-secondary">
-              {ticketCopied ? 'Copied' : 'Copy Ticket Number'}
-            </button>
-            <button onClick={() => setTicketSuccess(null)} className="btn-primary">Done</button>
-          </>
-        )}
-      >
-        <div style={{ display: 'grid', gap: 10, animation: 'ticketPopupIn 220ms ease-out' }}>
-          <div style={{ width: 42, height: 42, borderRadius: 999, display: 'grid', placeItems: 'center', background: '#ecfdf3', border: '1px solid #b8efd0', color: '#0c7a52', fontSize: 20, animation: 'ticketPulse 900ms ease-out' }}>
-            ✓
-          </div>
-          <p style={{ margin: 0, color: '#334155', fontSize: 14 }}>{ticketSuccess?.message}</p>
-          <div style={{ background: '#f8fbff', border: '1px solid #dbe6f4', borderRadius: 10, padding: '8px 10px' }}>
-            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 3 }}>Ticket Number</div>
-            <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>{ticketSuccess?.ticketNo}</div>
-          </div>
-          <p style={{ margin: 0, color: '#64748b', fontSize: 12 }}>
-            Our team has received your request and will reach out shortly.
-          </p>
-          <p style={{ margin: 0, color: '#94a3b8', fontSize: 11 }}>
-            This popup closes automatically in a few seconds.
-          </p>
-        </div>
-      </Modal>
+      {selectedShipment && <TimelineModal shipment={selectedShipment} onClose={() => setSelectedShipment(null)} />}
 
       <style>{`
-        .portal-launcher::before {
-          content: '';
+        .portal-hero-glow {
           position: absolute;
-          inset: -8px;
+          right: -80px;
+          top: -90px;
+          width: 260px;
+          height: 260px;
           border-radius: 999px;
-          background: radial-gradient(circle, rgba(251,113,133,0.18) 0%, rgba(251,113,133,0) 66%);
-          animation: portalLauncherPulse 3.8s ease-out infinite;
-        }
-        .portal-launcher::after {
-          content: '';
-          position: absolute;
-          inset: 10px;
-          border-radius: 999px;
-          background: radial-gradient(circle at 50% 0%, rgba(255,255,255,0.7) 0%, rgba(255,255,255,0) 58%);
+          background: radial-gradient(circle, rgba(34,211,238,0.24), rgba(34,211,238,0));
           pointer-events: none;
         }
-        .portal-follow-chip {
-          transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease, filter 160ms ease;
+        .portal-visual-upgrade .client-premium-card {
+          box-shadow: 0 20px 36px -26px rgba(2, 6, 23, 0.75);
         }
-        .portal-follow-chip:hover {
+        .shipment-row {
+          transition: background-color 0.18s ease, transform 0.16s ease;
+        }
+        .shipment-row:hover {
           transform: translateY(-1px);
-          filter: saturate(1.05);
-          box-shadow: 0 12px 22px -16px rgba(244,114,182,0.32), inset 0 1px 0 rgba(255,255,255,0.98);
-          border-color: rgba(251,113,133,0.28);
         }
-        .portal-follow-chip:active {
-          transform: translateY(0px) scale(0.98);
-        }
-        .portal-avatar-float { animation: portalAvatarFloat 4.2s ease-in-out infinite; transform-origin: center; }
-        .portal-avatar-eye { animation: portalAvatarBlink 5.4s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
-        @keyframes portalAvatarFloat {
-          0%, 100% { transform: translateY(0px) rotate(0deg); }
-          50% { transform: translateY(-2px) rotate(1deg); }
-        }
-        @keyframes portalAvatarBlink {
-          0%, 43%, 45%, 100% { transform: scaleY(1); }
-          44% { transform: scaleY(0.12); }
-        }
-        @keyframes portalLauncherPulse {
-          0% { transform: scale(0.92); opacity: 0.26; }
-          72% { transform: scale(1.1); opacity: 0; }
-          100% { transform: scale(1.1); opacity: 0; }
-        }
-        @keyframes panelFloat {
-          0%,100% { transform: translateY(0px); }
-          50% { transform: translateY(-3px); }
-        }
-        @keyframes ticketPopupIn {
-          from { opacity: 0; transform: translateY(8px) scale(0.98); }
-          to { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes ticketPulse {
-          0% { transform: scale(0.9); }
-          65% { transform: scale(1.08); }
-          100% { transform: scale(1); }
-        }
-        @keyframes pulseLive {
-          0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.4); }
-          70% { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
-          100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
-        }
-          .portal-action-tile:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 22px 36px -24px rgba(15,23,42,0.48);
-          }
-        .wow-factor-card:hover {
-          border-color: #c7dbf3 !important;
-          box-shadow: 0 12px 22px -18px rgba(15,23,42,0.5);
-          animation: panelFloat 1.8s ease-in-out infinite;
-        }
-        .portal-row:hover {
-          background: #f5f9ff !important;
-          transform: scale(1.001);
-        }
-        .portal-action-group-row::-webkit-scrollbar {
-          height: 8px;
-        }
-        .portal-action-group-row::-webkit-scrollbar-thumb {
-          background: #dbe6f4;
-          border-radius: 999px;
-        }
-        .portal-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 24px -10px rgba(234,88,12,0.95) !important; filter: brightness(1.05); }
-        .portal-btn-secondary:hover { background: rgba(255,255,255,0.15) !important; }
-        .portal-btn-ghost:hover { color: #f8fafc !important; background: rgba(255,255,255,0.06) !important; }
-        @media (max-width: 1080px) {
-          .portal-hero-grid,
-          .portal-top-grid,
-          .portal-hero-inner {
-            grid-template-columns: 1fr !important;
-          }
-        }
-        @media (max-width: 1024px) {
-          .portal-action-group-row > div {
-            flex-basis: 210px !important;
-          }
-        }
-        @media (max-width: 820px) {
-          .portal-ticket-meta {
-            grid-template-columns: 1fr !important;
-          }
-          .portal-action-group-row > div {
-            flex-basis: 82vw !important;
-          }
+        .status-glow-wrap span {
+          box-shadow: 0 0 12px rgba(56,189,248,0.28);
         }
       `}</style>
     </div>

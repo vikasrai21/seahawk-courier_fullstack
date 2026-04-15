@@ -184,6 +184,8 @@ export default function ReconciliationPage({ toast }) {
             ['Total Partner Billed', fmtI(stats.totalBilled), 'text-gray-800', IndianRupee],
             ['Overcharges Found', fmtI(stats.totalOvercharges), stats.totalOvercharges > 0 ? 'text-red-600 font-extrabold' : 'text-green-700', TrendingDown],
             ['Disputed Items', stats.overchargeCount, stats.overchargeCount > 0 ? 'text-red-600' : 'text-green-700', AlertTriangle],
+            ['Leakage Alerts', stats.leakageAlerts || 0, (stats.leakageAlerts || 0) > 0 ? 'text-amber-700 font-extrabold' : 'text-green-700', AlertTriangle],
+            ['Weight Disputes', stats.weightDisputeAlerts || 0, (stats.weightDisputeAlerts || 0) > 0 ? 'text-amber-700 font-extrabold' : 'text-green-700', AlertTriangle],
           ].map(([label, val, cls, Icon]) => (
             <div key={label} className="card-compact">
               <Icon className="w-5 h-5 text-gray-400 mb-2" />
@@ -199,6 +201,17 @@ export default function ReconciliationPage({ toast }) {
           <div>
             <p className="font-bold text-red-800">You have been overcharged {fmtI(stats.totalOvercharges)} across {stats.overchargeCount} AWBs</p>
             <p className="text-sm text-red-600 mt-0.5">Raise disputes with courier partners using the itemized breakdown below.</p>
+          </div>
+        </div>
+      )}
+      {(stats?.leakageAlerts > 0 || stats?.weightDisputeAlerts > 0) && (
+        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-4 flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
+          <div>
+            <p className="font-bold text-amber-800">
+              {stats?.leakageAlerts || 0} margin leakage alerts and {stats?.weightDisputeAlerts || 0} weight disputes detected
+            </p>
+            <p className="text-sm text-amber-700 mt-0.5">Review intelligence flags in invoice details and initiate partner dispute where needed.</p>
           </div>
         </div>
       )}
@@ -391,6 +404,29 @@ export default function ReconciliationPage({ toast }) {
                     ⚠️ Overcharged on {viewInv.summary.over} AWBs · Total excess: {fmt(viewInv.summary.totalOver)} — Dispute with {viewInv.courier}
                   </p>
                 </div>
+              )}
+            </div>
+          )}
+          {viewInv.intelligence && (
+            <div className="px-4 py-3 border-b border-gray-100 bg-amber-50/40">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
+                {[
+                  ['Overcharge Alerts', viewInv.intelligence.overchargeAlertCount, (viewInv.intelligence.overchargeAlertCount || 0) > 0 ? 'text-red-700' : 'text-gray-500'],
+                  ['Leakage Alerts', viewInv.intelligence.leakageAlertCount, (viewInv.intelligence.leakageAlertCount || 0) > 0 ? 'text-amber-700' : 'text-gray-500'],
+                  ['Weight Disputes', viewInv.intelligence.weightDisputeCount, (viewInv.intelligence.weightDisputeCount || 0) > 0 ? 'text-amber-700' : 'text-gray-500'],
+                  ['Total Leakage', fmt(viewInv.intelligence.totalLeakage), (viewInv.intelligence.totalLeakage || 0) > 0 ? 'text-amber-700 font-extrabold' : 'text-gray-500'],
+                  ['Total Overcharge', fmt(viewInv.intelligence.totalOvercharge), (viewInv.intelligence.totalOvercharge || 0) > 0 ? 'text-red-700 font-extrabold' : 'text-gray-500'],
+                ].map(([label, val, cls]) => (
+                  <div key={label} className="text-center">
+                    <p className={`text-base font-bold ${cls}`}>{val}</p>
+                    <p className="text-[9px] text-gray-400">{label}</p>
+                  </div>
+                ))}
+              </div>
+              {!!viewInv.intelligence.clientMarginRisk?.length && (
+                <p className="text-[11px] text-amber-700 mt-2">
+                  Top margin risk: {viewInv.intelligence.clientMarginRisk[0].clientCode} ({fmt(viewInv.intelligence.clientMarginRisk[0].totalLeakage)} leakage)
+                </p>
               )}
             </div>
           )}
