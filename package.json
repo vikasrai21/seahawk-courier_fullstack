@@ -11,6 +11,7 @@
     "verify:full": "npm run verify && npm run build:ci --prefix frontend",
     "build": "npm ci --prefix frontend && npm run build --prefix frontend && node -e \"const fs=require('fs');fs.rmSync('backend/public',{recursive:true,force:true});fs.cpSync('frontend/dist','backend/public',{recursive:true});\" && npm ci --prefix backend && cd backend && npx prisma generate",
     "smoke:api": "node -e \"const base=process.env.SEAHAWK_BASE_URL||'http://localhost:3001';const req=(p)=>fetch(base+p).then(r=>r.ok?0:1).catch(()=>1);Promise.all([req('/api/health'),req('/api/docs/openapi.json')]).then(a=>{const rc=a.reduce((x,y)=>x+y,0);if(rc){console.error('Smoke failed against',base);process.exit(1);}console.log('Smoke passed against',base);});\"",
+    "db:sync:local-to-railway": "powershell -ExecutionPolicy Bypass -File .\\scripts\\sync-db-local-to-railway.ps1",
     "start": "cd backend && npx prisma migrate deploy && node server.js"
   },
   "dependencies": {

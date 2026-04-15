@@ -221,6 +221,19 @@ Access at `http://localhost:3001`.
 
 Health check endpoint: `GET /api/health` — returns `database: connected` when PostgreSQL is reachable; `redis` is `connected`, `not_configured`, `unavailable`, or `error` depending on `REDIS_URL` and the Redis client state.
 
+### Sync local DB to Railway DB (make dashboard data match)
+
+When local and Railway show different numbers, they are usually connected to different databases.
+
+1. Install PostgreSQL CLI tools so `pg_dump`, `psql`, and `pg_restore` are available in PATH.
+2. Set environment variables in your terminal:
+   - `LOCAL_DATABASE_URL` = your local Postgres URL
+   - `RAILWAY_DATABASE_URL` = your Railway Postgres URL
+3. Run:
+   - `npm run db:sync:local-to-railway`
+
+This replaces the Railway `public` schema with your local data (source of truth = local).
+
 ---
 
 ## CI/CD pipeline
