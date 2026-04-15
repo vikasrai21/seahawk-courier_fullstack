@@ -545,10 +545,14 @@ async function getSummary(dateFrom, dateTo) {
     if (dateTo) where.date.lte = dateTo;
   }
 
-  // Fetch ALL shipments for the range (from import-ledger for completeness)
+  // Fast check if import rows exist for this period
+  const importCount = await prisma.shipmentImportRow.count({ where: dateFrom || dateTo ? { date: { gte: dateFrom, lte: dateTo } } : undefined });
+  const tableName = importCount > 0 ? 'shipment_import_rows' : 'shipments';
+
+  // Fetch ALL shipments for the range
   const rows = await prisma.$queryRawUnsafe(
     `SELECT date, destination, pincode, weight, courier, service, amount
-     FROM shipment_import_rows
+     FROM ${tableName}
      ${dateFrom || dateTo ? `WHERE ${dateFrom ? `date >= '${dateFrom}'` : '1=1'} ${dateTo ? `AND date <= '${dateTo}'` : ''}` : ''}
      ORDER BY date ASC, id ASC`
   );
@@ -643,9 +647,15 @@ async function getDetails(dateFrom, dateTo, page = 1, limit = 10, search = '') {
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
+  // Fast check if import rows exist for this period
+  const importCount = await prisma.shipmentImportRow.count({
+    where: dateFrom || dateTo ? { date: { gte: dateFrom, lte: dateTo } } : undefined
+  });
+  const tableName = importCount > 0 ? 'shipment_import_rows' : 'shipments';
+
   // Total count
   const totalResult = await prisma.$queryRawUnsafe(
-    `SELECT COUNT(*)::int AS count FROM shipment_import_rows ${whereClause}`,
+    `SELECT COUNT(*)::int AS count FROM ${tableName} ${whereClause}`,
     ...params
   );
   const total = Number(totalResult[0]?.count || 0);
@@ -654,7 +664,7 @@ async function getDetails(dateFrom, dateTo, page = 1, limit = 10, search = '') {
   const rows = await prisma.$queryRawUnsafe(
     `SELECT id, date, client_code AS "clientCode", awb, consignee, destination, pincode,
             weight, amount, courier, service, status
-     FROM shipment_import_rows
+     FROM ${tableName}
      ${whereClause}
      ORDER BY date DESC, id DESC
      LIMIT ${safeLimit} OFFSET ${offset}`,
