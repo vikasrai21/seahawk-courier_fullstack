@@ -10,7 +10,10 @@ async function mapShipments(req, res) {
   if (!clientCode) return R.notFound(res, 'Client profile not found.');
 
   const { startStr, endStr } = parseRange({ ...req.query, range: req.query.range || '30d' });
-  const activeStatuses = ['Booked', 'InTransit', 'OutForDelivery', 'Delayed', 'NDR', 'RTO'];
+  const includeDelivered = String(req.query?.includeDelivered || '') === '1';
+  const activeStatuses = includeDelivered
+    ? ['Booked', 'InTransit', 'OutForDelivery', 'Delayed', 'NDR', 'RTO', 'Delivered']
+    : ['Booked', 'InTransit', 'OutForDelivery', 'Delayed', 'NDR', 'RTO'];
   const shipments = await prisma.shipment.findMany({
     where: { clientCode, date: { gte: startStr, lte: endStr }, status: { in: activeStatuses } },
     orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
@@ -62,7 +65,40 @@ async function rtoIntelligence(req, res) {
 
   const shipments = await prisma.shipment.findMany({
     where: { clientCode, date: { gte: startStr, lte: endStr } },
-    select: { awb: true, date: true, status: true, pincode: true, destination: true, department: true, service: true },
+    select: {
+      awb: true,
+      date: true,
+      status: true,
+      pincode: true,
+      destination: true,
+      department: true,
+      service: true,
+      amount: true,
+      phone: true,
+      consignee: true,
+      courier: true,
+      remarks: true,
+      updatedAt: true,
+    },
+  });
+
+  const historyStart = new Date();
+  historyStart.setDate(historyStart.getDate() - 365);
+  const historyStartStr = historyStart.toISOString().slice(0, 10);
+  const historyRows = await prisma.shipment.findMany({
+    where: { clientCode, date: { gte: historyStartStr, lte: endStr } },
+    select: {
+      awb: true,
+      status: true,
+      amount: true,
+      phone: true,
+      consignee: true,
+      pincode: true,
+      destination: true,
+      service: true,
+      department: true,
+      remarks: true,
+    },
   });
 
   const total = shipments.length;
@@ -91,12 +127,177 @@ async function rtoIntelligence(req, res) {
     if (row.status === 'RTO') monthlyMap.get(key).rto += 1;
   }
 
+  const normalizeName = (value) => String(value || '').trim().toLowerCase();
+  const customerKey = (row) => {
+    const phone = String(row.phone || '').replace(/\D+/g, '');
+    if (phone) return `phone:${phone}`;
+    const consignee = normalizeName(row.consignee);
+    if (consignee) return `consignee:${consignee}`;
+    return `awb:${String(row.awb || '').toLowerCase()}`;
+  };
+  const inferCod = (row) => {
+    const tags = `${row.service || ''} ${row.department || ''} ${row.remarks || ''}`.toLowerCase();
+    return /cod|cash/.test(tags) || Number(row.amount || 0) > 0;
+  };
+  const isRemotePincode = (pincode) => {
+    const pin = String(pincode || '').trim();
+    if (!/^\d{6}$/.test(pin)) return false;
+    const tier1Prefixes = new Set(['11', '12', '22', '33', '40', '41', '50', '56', '60', '70']);
+    return !tier1Prefixes.has(pin.slice(0, 2));
+  };
+
+  const customerStats = new Map();
+  for (const row of historyRows) {
+    const key = customerKey(row);
+    if (!customerStats.has(key)) {
+      customerStats.set(key, {
+        total: 0,
+        failed: 0,
+        cod: 0,
+        consignee: row.consignee || null,
+        phone: row.phone || null,
+      });
+    }
+    const current = customerStats.get(key);
+    current.total += 1;
+    if (['RTO', 'NDR', 'Delayed', 'Undelivered'].includes(String(row.status || ''))) current.failed += 1;
+    if (inferCod(row)) current.cod += 1;
+  }
+
+  const scored = shipments.map((row) => {
+    const reasons = [];
+    let score = 0;
+    const key = customerKey(row);
+    const cStats = customerStats.get(key) || { total: 0, failed: 0, cod: 0 };
+
+    const cod = inferCod(row);
+    const highValue = Number(row.amount || 0) > 2000;
+    const remote = isRemotePincode(row.pincode);
+    const pastFailed = Math.max(0, Number(cStats.failed || 0) - (['RTO', 'NDR', 'Delayed', 'Undelivered'].includes(row.status) ? 1 : 0));
+    const newCustomer = Number(cStats.total || 0) <= 1;
+
+    if (cod) {
+      score += 30;
+      reasons.push('COD order');
+    }
+    if (highValue) {
+      score += 20;
+      reasons.push('High order value');
+    }
+    if (remote) {
+      score += 25;
+      reasons.push('Remote pincode');
+    }
+    if (pastFailed > 0) {
+      score += 40;
+      reasons.push(`Past failed deliveries (${pastFailed})`);
+    }
+    if (newCustomer) {
+      score += 15;
+      reasons.push('New customer profile');
+    }
+
+    score = Math.max(0, Math.min(100, score));
+    const riskLevel = score >= 70 ? 'HIGH' : score >= 40 ? 'MEDIUM' : 'LOW';
+    const recommendedActions = [];
+    if (score >= 70) recommendedActions.push('Call customer', 'Verify address', 'Confirm availability');
+    if (remote) recommendedActions.push('Switch courier');
+    if (score >= 60) recommendedActions.push('Delay shipment');
+    if (pastFailed >= 2) recommendedActions.push('Prepaid-only recommendation');
+    if (score >= 85) recommendedActions.push('Cancel order if fraud suspected');
+
+    return {
+      awb: row.awb,
+      status: row.status,
+      destination: row.destination,
+      pincode: row.pincode,
+      consignee: row.consignee,
+      phone: row.phone,
+      courier: row.courier,
+      amount: row.amount,
+      updatedAt: row.updatedAt,
+      riskScore: score,
+      riskLevel,
+      reasons,
+      recommendedActions: [...new Set(recommendedActions)].slice(0, 5),
+      markers: { cod, highValue, remote, pastFailed, newCustomer },
+    };
+  });
+
+  const atRiskShipments = scored
+    .filter((row) => row.riskScore >= 40 && row.status !== 'Delivered')
+    .sort((a, b) => b.riskScore - a.riskScore)
+    .slice(0, 25);
+
+  const riskDistribution = {
+    high: scored.filter((row) => row.riskLevel === 'HIGH').length,
+    medium: scored.filter((row) => row.riskLevel === 'MEDIUM').length,
+    low: scored.filter((row) => row.riskLevel === 'LOW').length,
+  };
+
+  const locationMap = new Map();
+  for (const row of scored) {
+    const key = String(row.pincode || row.destination || '').trim();
+    if (!key) continue;
+    if (!locationMap.has(key)) locationMap.set(key, { key, total: 0, rto: 0, avgRisk: 0 });
+    const current = locationMap.get(key);
+    current.total += 1;
+    if (row.status === 'RTO') current.rto += 1;
+    current.avgRisk += row.riskScore;
+  }
+  const heatmap = [...locationMap.values()]
+    .map((row) => ({
+      ...row,
+      avgRisk: row.total ? Number((row.avgRisk / row.total).toFixed(1)) : 0,
+      rate: row.total ? Number(((row.rto / row.total) * 100).toFixed(1)) : 0,
+    }))
+    .sort((a, b) => b.avgRisk - a.avgRisk || b.rate - a.rate)
+    .slice(0, 12);
+
+  const customerRiskProfiles = [...customerStats.values()]
+    .map((row) => {
+      const codShare = row.total ? row.cod / row.total : 0;
+      let score = row.failed * 25 + Math.round(codShare * 30);
+      if (row.total <= 1) score += 15;
+      score = Math.max(0, Math.min(100, score));
+      const riskTag = score >= 70 ? 'HIGH' : score >= 40 ? 'MEDIUM' : 'LOW';
+      return {
+        customer: row.consignee || 'Unknown',
+        phone: row.phone || null,
+        totalShipments: row.total,
+        failedDeliveries: row.failed,
+        codShare: Number((codShare * 100).toFixed(0)),
+        riskScore: score,
+        riskTag,
+      };
+    })
+    .filter((row) => row.failedDeliveries > 0 || row.riskScore >= 40)
+    .sort((a, b) => b.riskScore - a.riskScore || b.failedDeliveries - a.failedDeliveries)
+    .slice(0, 8);
+
+  const avgOrderValue = (() => {
+    const amounts = shipments.map((row) => Number(row.amount || 0)).filter((value) => value > 0);
+    if (!amounts.length) return 900;
+    return Number((amounts.reduce((sum, value) => sum + value, 0) / amounts.length).toFixed(0));
+  })();
+  const estimatedLoss = Number((rtoRows.length * avgOrderValue).toFixed(0));
+  const potentialSaved = Number((atRiskShipments.filter((row) => row.riskScore >= 70).length * avgOrderValue * 0.35).toFixed(0));
+  const topRisk = atRiskShipments[0] || null;
+  const insights = [
+    topRisk ? `${topRisk.awb} has the highest predicted return risk (${topRisk.riskScore}%).` : 'No high-risk shipments right now.',
+    `${riskDistribution.high} high-risk and ${riskDistribution.medium} medium-risk shipments detected in this window.`,
+    heatmap[0] ? `${heatmap[0].key} is currently the hottest risk zone.` : 'No heatmap zone risk concentration detected.',
+  ];
+
   R.ok(res, {
     summary: {
       days,
       totalShipments: total,
       totalRto: rtoRows.length,
       rtoRate: total ? Number(((rtoRows.length / total) * 100).toFixed(1)) : 0,
+      estimatedLoss,
+      potentialSaved,
+      atRiskCount: atRiskShipments.length,
     },
     topPincodes: countBy((row) => row.pincode || ''),
     topDestinations: countBy((row) => row.destination || ''),
@@ -105,6 +306,11 @@ async function rtoIntelligence(req, res) {
       ...item,
       rate: item.total ? Number(((item.rto / item.total) * 100).toFixed(1)) : 0,
     })),
+    atRiskShipments,
+    riskDistribution,
+    heatmap,
+    customerRiskProfiles,
+    insights,
   });
 }
 

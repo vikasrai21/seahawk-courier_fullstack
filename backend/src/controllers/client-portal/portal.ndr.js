@@ -4,6 +4,7 @@ const prisma = require('../../config/prisma');
 const R = require('../../utils/response');
 const { resolveClientCode } = require('./shared');
 const notify = require('../../services/notification.service');
+const exceptionAutomation = require('../../services/exceptionAutomation.service');
 
 async function list(req, res) {
   const clientCode = await resolveClientCode(req);
@@ -28,7 +29,8 @@ async function list(req, res) {
     }),
   ]);
 
-  R.ok(res, { ndrs: items, pagination: { total, page: safePage, limit: safeLimit } });
+  const enriched = await exceptionAutomation.buildNdrAutomationView(clientCode, items);
+  R.ok(res, { ndrs: enriched, pagination: { total, page: safePage, limit: safeLimit } });
 }
 
 async function respond(req, res) {
@@ -140,4 +142,35 @@ async function whatsappBridge(req, res) {
   R.ok(res, { sent: true, to: phone }, 'WhatsApp bridge message sent to customer.');
 }
 
-module.exports = { list, respond, whatsappBridge };
+async function escalate(req, res) {
+  const clientCode = await resolveClientCode(req, req.body);
+  if (!clientCode) return R.notFound(res, 'Client profile not found.');
+
+  const notes = String(req.body?.notes || '').trim();
+  try {
+    const result = await exceptionAutomation.escalateNdrForOps({
+      ndrId: req.params.id,
+      user: req.user,
+      clientCode,
+      notes,
+    });
+    await notify.sendOpsEscalationAlert({
+      clientCode,
+      awb: result?.ndr?.awb,
+      ndrId: result?.ndr?.id,
+      urgency: result?.automation?.urgency?.severity || 'high',
+      note: notes || null,
+    });
+    R.ok(res, result, 'NDR escalated to operations successfully.');
+  } catch (err) {
+    if (String(err.message || '').toLowerCase().includes('not found')) {
+      return R.notFound(res, 'NDR');
+    }
+    if (String(err.message || '').toLowerCase().includes('does not belong')) {
+      return R.error(res, err.message, 403);
+    }
+    return R.error(res, err.message || 'Unable to escalate NDR', 400);
+  }
+}
+
+module.exports = { list, respond, whatsappBridge, escalate };

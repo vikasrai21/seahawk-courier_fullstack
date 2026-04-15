@@ -1,9 +1,13 @@
 'use strict';
 
+const crypto = require('crypto');
 const prisma = require('../../config/prisma');
+const cache = require('../../utils/cache');
 const notify = require('../../services/notification.service');
 const contractSvc = require('../../services/contract.service');
 const shipmentSvc = require('../../services/shipment.service');
+const carrierSvc = require('../../services/carrier.service');
+const courierDecisionSvc = require('../../services/courierDecision.service');
 const R = require('../../utils/response');
 const { resolveClientCode, getClientCode, fmtDate } = require('./shared');
 
@@ -56,6 +60,28 @@ const DEFAULT_PREFS = {
     notificationDays: 90,
   },
 };
+
+function normalizeIdempotencyKey(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return null;
+  return value.slice(0, 128);
+}
+
+function buildBookingFingerprint(payload) {
+  const normalized = {
+    courier: String(payload?.courier || '').trim(),
+    consignee: String(payload?.consignee || '').trim().toUpperCase(),
+    deliveryAddress: String(payload?.deliveryAddress || '').trim().toUpperCase(),
+    deliveryCity: String(payload?.deliveryCity || '').trim().toUpperCase(),
+    deliveryState: String(payload?.deliveryState || '').trim().toUpperCase(),
+    pin: String(payload?.pin || '').trim(),
+    service: String(payload?.service || '').trim().toUpperCase(),
+    declaredValue: Number(payload?.declaredValue || 0),
+    weightGrams: Number(payload?.weightGrams || 0),
+    orderRef: String(payload?.orderRef || '').trim(),
+  };
+  return crypto.createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+}
 
 async function notificationPreferences(req, res) {
   const clientCode = await resolveClientCode(req);
@@ -385,6 +411,189 @@ async function supportTicket(req, res) {
   R.ok(res, { ticketNo }, 'Support ticket submitted successfully.');
 }
 
+async function createAndBookShipment(req, res) {
+  const clientCode = await resolveClientCode(req, req.body);
+  if (!clientCode) return R.notFound(res, 'Client profile not found.');
+
+  const consignee = String(req.body?.consignee || '').trim();
+  const destination = String(req.body?.destination || req.body?.deliveryCity || '').trim();
+  const deliveryAddress = String(req.body?.deliveryAddress || '').trim();
+  const deliveryCity = String(req.body?.deliveryCity || destination).trim();
+  const deliveryState = String(req.body?.deliveryState || '').trim();
+  const phone = String(req.body?.phone || '').trim();
+  const pincode = String(req.body?.pincode || req.body?.pin || '').trim();
+  const service = String(req.body?.service || 'Standard').trim();
+  const declaredValue = Number(req.body?.declaredValue || 0);
+  const cod = req.body?.cod === true || String(req.body?.paymentMode || '').toLowerCase() === 'cod';
+  const dryRun = req.body?.dryRun === true || String(req.body?.dryRun || '').toLowerCase() === 'true';
+  const idempotencyKey = normalizeIdempotencyKey(
+    req.headers['x-idempotency-key'] || req.body?.idempotencyKey || req.body?.requestId
+  );
+
+  const weightKg = Number(req.body?.weight || 0);
+  const weightGramsInput = Number(req.body?.weightGrams || 0);
+  const weightGrams = weightGramsInput > 0 ? weightGramsInput : Math.round(weightKg * 1000);
+
+  if (!consignee || !deliveryAddress || !deliveryCity || !pincode || !weightGrams) {
+    return R.badRequest(res, 'consignee, deliveryAddress, deliveryCity, pincode and weight/weightGrams are required.');
+  }
+
+  const client = await prisma.client.findUnique({
+    where: { code: clientCode },
+    select: { brandSettings: true },
+  });
+
+  const decision = courierDecisionSvc.recommendCourierForBooking({
+    pincode,
+    service,
+    weightGrams,
+    cod,
+    preferredCourier: req.body?.courier || req.body?.preferredCourier,
+    deliveryState,
+    clientSettings: client?.brandSettings && typeof client.brandSettings === 'object'
+      ? client.brandSettings
+      : {},
+  });
+  const selectedCourier = decision.recommendedCourier;
+
+  const bookingPayload = {
+    consignee,
+    destination: deliveryCity,
+    deliveryAddress,
+    deliveryCity,
+    deliveryState,
+    pin: pincode,
+    phone: phone || '9999999999',
+    service,
+    declaredValue,
+    weightGrams,
+    orderRef: String(req.body?.orderRef || `CL-${clientCode}-${Date.now()}`).trim(),
+    contents: String(req.body?.contents || req.body?.productDesc || 'Shipment').trim(),
+  };
+  const bookingFingerprint = buildBookingFingerprint({ ...bookingPayload, courier: selectedCourier });
+
+  let idempotencyCacheKey = null;
+  let idempotencyLocked = false;
+  if (!dryRun && idempotencyKey) {
+    idempotencyCacheKey = `portal:booking:idempotency:${clientCode}:${idempotencyKey}`;
+    const cached = await cache.get(idempotencyCacheKey);
+    if (cached?.status === 'completed') {
+      if (cached?.fingerprint && cached.fingerprint !== bookingFingerprint) {
+        return R.error(res, 'Idempotency key conflict: payload mismatch for this key.', 409);
+      }
+      return R.ok(res, cached.response, 'Idempotent replay: returning existing booking result.');
+    }
+    if (cached?.status === 'processing') {
+      return R.error(res, 'Booking is already in progress for this idempotency key.', 409);
+    }
+
+    await cache.set(idempotencyCacheKey, {
+      status: 'processing',
+      fingerprint: bookingFingerprint,
+      startedAt: new Date().toISOString(),
+    }, 900);
+    idempotencyLocked = true;
+  }
+
+  const persistBookedShipment = async (resolvedCourier, resolvedBooking) => shipmentSvc.create({
+    date: fmtDate(new Date()),
+    clientCode,
+    awb: String(resolvedBooking.awb).trim().toUpperCase(),
+    consignee,
+    destination: deliveryCity,
+    phone: phone || null,
+    pincode,
+    weight: Number((weightGrams / 1000).toFixed(3)),
+    amount: Number(req.body?.amount || 0),
+    courier: resolvedCourier,
+    department: String(req.body?.department || 'Operations').trim(),
+    service,
+    status: String(req.body?.status || 'Booked').trim(),
+    remarks: String(req.body?.remarks || '').trim(),
+    labelUrl: resolvedBooking.labelUrl || null,
+  }, req.user?.id);
+
+  try {
+    if (dryRun) {
+      const dryRunResult = await carrierSvc.createShipment(selectedCourier, bookingPayload, { dryRun: true });
+      return R.ok(res, {
+        clientCode,
+        decision,
+        orchestration: {
+          idempotencyKey: idempotencyKey || null,
+          fingerprint: bookingFingerprint,
+        },
+        booking: dryRunResult,
+      }, 'Dry run completed. No live shipment created.');
+    }
+
+    let bookingResult = null;
+    let selectedCarrierUsed = selectedCourier;
+    let usedFallback = false;
+    const fallbackCarrier = decision.fallbackCourier && decision.fallbackCourier !== selectedCourier
+      ? decision.fallbackCourier
+      : null;
+
+    try {
+      bookingResult = await carrierSvc.createShipment(selectedCourier, bookingPayload, { dryRun: false });
+      if (!bookingResult?.awb) throw new Error(`${selectedCourier} booking did not return AWB.`);
+    } catch (primaryErr) {
+      if (!fallbackCarrier) throw primaryErr;
+      bookingResult = await carrierSvc.createShipment(fallbackCarrier, bookingPayload, { dryRun: false });
+      if (!bookingResult?.awb) throw new Error(`${fallbackCarrier} booking did not return AWB.`);
+      selectedCarrierUsed = fallbackCarrier;
+      usedFallback = true;
+    }
+
+    const shipment = await persistBookedShipment(selectedCarrierUsed, bookingResult);
+
+    const responsePayload = {
+      shipment,
+      decision,
+      orchestration: {
+        idempotencyKey: idempotencyKey || null,
+        fingerprint: bookingFingerprint,
+      },
+      booking: {
+        awb: bookingResult.awb,
+        carrier: bookingResult.carrier || selectedCarrierUsed,
+        trackUrl: bookingResult.trackUrl || null,
+        labelUrl: bookingResult.labelUrl || null,
+        usedFallback,
+      },
+    };
+
+    if (idempotencyCacheKey && idempotencyLocked) {
+      await cache.set(idempotencyCacheKey, {
+        status: 'completed',
+        fingerprint: bookingFingerprint,
+        response: responsePayload,
+        completedAt: new Date().toISOString(),
+      }, 60 * 60 * 24);
+      idempotencyLocked = false;
+    }
+
+    return R.created(res, responsePayload, usedFallback
+      ? 'Shipment booked successfully using fallback courier.'
+      : 'Shipment booked successfully.');
+  } catch (err) {
+    if (idempotencyCacheKey && idempotencyLocked) {
+      await cache.set(idempotencyCacheKey, {
+        status: 'failed',
+        fingerprint: bookingFingerprint,
+        error: String(err?.message || 'Booking failed'),
+        failedAt: new Date().toISOString(),
+      }, 60);
+      idempotencyLocked = false;
+    }
+    throw err;
+  } finally {
+    if (idempotencyCacheKey && idempotencyLocked) {
+      await cache.del(idempotencyCacheKey);
+    }
+  }
+}
+
 module.exports = {
   notificationPreferences,
   updateNotificationPreferences,
@@ -394,4 +603,5 @@ module.exports = {
   estimate,
   importShipments,
   supportTicket,
+  createAndBookShipment,
 };

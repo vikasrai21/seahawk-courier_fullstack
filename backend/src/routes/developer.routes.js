@@ -7,6 +7,7 @@ const R = require('../utils/response');
 const { asyncHandler } = require('../middleware/errorHandler');
 const integrationIngestSvc = require('../services/integration-ingest.service');
 const { fetchWithRetry } = require('../utils/httpRetry');
+const integrationIngestService = require('../services/integration-ingest.service');
 
 router.use(authenticate);
 
@@ -14,6 +15,7 @@ const SUPPORTED_PROVIDERS = integrationIngestSvc.SUPPORTED_ECOM_PROVIDERS;
 const ALLOWED_KEY_SCOPES = ['orders:create', 'webhooks:read', 'webhooks:replay', 'events:read', 'sandbox:write'];
 const APPROVABLE_ACTIONS = ['INTEGRATION_SETTINGS_CHANGE', 'API_KEY_POLICY_CHANGE', 'DISPUTE_SETTLEMENT', 'RETENTION_POLICY_CHANGE'];
 const CONNECTOR_AUTH_TYPES = ['none', 'api_key', 'bearer', 'basic'];
+const SENSITIVE_FIELD_RE = /(token|secret|password|authorization|api[-_]?key|phone|email)/i;
 
 function resolveClientCode(req) {
   if (req.user?.role === 'CLIENT') return req.user.clientCode || null;
@@ -23,6 +25,31 @@ function resolveClientCode(req) {
 function parseScopes(inputScopes) {
   const scopes = integrationIngestSvc.normalizeScopes(inputScopes);
   return scopes.filter((scope) => ALLOWED_KEY_SCOPES.includes(scope) || scope === '*');
+}
+
+async function requireIntegrationScope({ clientCode, requiredScope, preferredKeyId = null }) {
+  const client = await prisma.client.findUnique({
+    where: { code: clientCode },
+    select: { brandSettings: true },
+  });
+  const policies = client?.brandSettings?.integrationKeyPolicies || {};
+  const activeKeys = await prisma.clientApiKey.findMany({
+    where: {
+      clientCode,
+      active: true,
+      OR: [
+        { expiresAt: null },
+        { expiresAt: { gt: new Date() } },
+      ],
+    },
+    select: { id: true },
+    orderBy: [{ lastUsedAt: 'desc' }, { createdAt: 'desc' }],
+  });
+  const ordered = Number.isFinite(preferredKeyId)
+    ? [...activeKeys.filter((k) => k.id === preferredKeyId), ...activeKeys.filter((k) => k.id !== preferredKeyId)]
+    : activeKeys;
+  const matchedKey = ordered.find((k) => integrationIngestSvc.hasScope(policies[String(k.id)] || {}, requiredScope));
+  return { matchedKey };
 }
 
 async function upsertKeyPolicy(clientCode, keyId, patch) {
@@ -50,6 +77,20 @@ function maskSecret(value) {
   if (!raw) return '';
   if (raw.length <= 8) return `${raw.slice(0, 2)}***${raw.slice(-1)}`;
   return `${raw.slice(0, 3)}***${raw.slice(-3)}`;
+}
+
+function redactSensitive(value) {
+  if (Array.isArray(value)) return value.map(redactSensitive);
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (SENSITIVE_FIELD_RE.test(String(k))) {
+      out[k] = typeof v === 'string' ? maskSecret(v) : '***';
+      continue;
+    }
+    out[k] = redactSensitive(v);
+  }
+  return out;
 }
 
 function sanitizeConnector(connector, provider) {
@@ -81,6 +122,15 @@ function sanitizeConnector(connector, provider) {
   };
 }
 
+function isValidHttpUrl(value) {
+  try {
+    const u = new URL(String(value || '').trim());
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function redactIntegrationConfig(config) {
   if (!config || typeof config !== 'object') return config;
   const clone = JSON.parse(JSON.stringify(config));
@@ -94,7 +144,11 @@ function redactIntegrationConfig(config) {
 
 async function pickLiveIngestKey(clientCode, clientBrandSettings, preferredKeyId = null) {
   const rows = await prisma.clientApiKey.findMany({
-    where: { clientCode, active: true },
+    where: {
+      clientCode,
+      active: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    },
     select: { id: true, name: true, lastUsedAt: true, createdAt: true },
     orderBy: [{ lastUsedAt: 'desc' }, { createdAt: 'desc' }],
   });
@@ -168,6 +222,17 @@ router.post('/keys', asyncHandler(async (req, res) => {
   const requestedScopes = parseScopes(req.body?.scopes);
   const scopes = requestedScopes.length ? requestedScopes : ['orders:create'];
   await upsertKeyPolicy(clientCode, key.id, { scopes, mode });
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      userEmail: req.user.email,
+      action: 'INTEGRATION_KEY_CREATED',
+      entity: 'INTEGRATION_KEY',
+      entityId: `${clientCode}:${key.id}`,
+      newValue: { name: key.name, scopes, mode },
+      ip: req.ip,
+    },
+  });
 
   // Notice we return the rawToken ONLY ONCE during creation!
   res.json({
@@ -182,6 +247,49 @@ router.post('/keys', asyncHandler(async (req, res) => {
       token: rawToken // THE ONLY TIME THEY SEE THIS
     }
   });
+}));
+
+// POST /api/portal/developer/keys/:id/rotate
+router.post('/keys/:id/rotate', asyncHandler(async (req, res) => {
+  const clientCode = resolveClientCode(req);
+  if (!clientCode) return R.badRequest(res, 'clientCode is required');
+
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return R.badRequest(res, 'Invalid key id');
+
+  const key = await prisma.clientApiKey.findFirst({
+    where: { id, clientCode, active: true },
+    select: { id: true, name: true },
+  });
+  if (!key) return R.notFound(res, 'API key');
+
+  const rawToken = 'shk_live_' + crypto.randomBytes(24).toString('base64url');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+
+  await prisma.clientApiKey.update({
+    where: { id: key.id },
+    data: {
+      tokenHash,
+      lastUsedAt: null,
+    },
+  });
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      userEmail: req.user.email,
+      action: 'INTEGRATION_KEY_ROTATED',
+      entity: 'INTEGRATION_KEY',
+      entityId: `${clientCode}:${key.id}`,
+      newValue: { name: key.name },
+      ip: req.ip,
+    },
+  });
+
+  R.ok(res, {
+    id: key.id,
+    name: key.name,
+    token: rawToken,
+  }, 'API key rotated. Copy the new token now.');
 }));
 
 // PATCH /api/portal/developer/keys/:id/policy
@@ -220,11 +328,31 @@ router.delete('/keys/:id', asyncHandler(async (req, res) => {
   const clientCode = resolveClientCode(req);
   if (!clientCode) return R.badRequest(res, 'clientCode is required');
 
-  await prisma.clientApiKey.deleteMany({
-    where: { 
-      id: parseInt(req.params.id),
-      clientCode
-    }
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return R.badRequest(res, 'Invalid key id');
+
+  const result = await prisma.clientApiKey.updateMany({
+    where: {
+      id,
+      clientCode,
+      active: true,
+    },
+    data: {
+      active: false,
+      expiresAt: new Date(),
+    },
+  });
+  if (!result.count) return R.notFound(res, 'API key');
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      userEmail: req.user.email,
+      action: 'INTEGRATION_KEY_REVOKED',
+      entity: 'INTEGRATION_KEY',
+      entityId: `${clientCode}:${id}`,
+      newValue: { revoked: true },
+      ip: req.ip,
+    },
   });
   R.ok(res, null, 'API key revoked');
 }));
@@ -274,6 +402,14 @@ router.post('/integrations/settings', asyncHandler(async (req, res) => {
     },
     connector: sanitizeConnector(req.body?.connector || {}, provider),
   };
+  if (payload.connector?.enabled) {
+    if (!isValidHttpUrl(payload.connector.baseUrl)) {
+      return R.badRequest(res, 'connector.baseUrl must be a valid http/https URL when connector is enabled');
+    }
+    if (!String(payload.connector.orderPullPath || '').trim()) {
+      return R.badRequest(res, 'connector.orderPullPath is required when connector is enabled');
+    }
+  }
 
   const client = await prisma.client.findUnique({
     where: { code: clientCode },
@@ -307,6 +443,13 @@ router.post('/integrations/settings', asyncHandler(async (req, res) => {
 router.get('/integrations/logs', asyncHandler(async (req, res) => {
   const clientCode = resolveClientCode(req);
   if (!clientCode) return R.badRequest(res, 'clientCode is required');
+  const preferredKeyId = parseInt(req.query?.keyId, 10);
+  const { matchedKey } = await requireIntegrationScope({
+    clientCode,
+    requiredScope: 'webhooks:read',
+    preferredKeyId: Number.isFinite(preferredKeyId) ? preferredKeyId : null,
+  });
+  if (!matchedKey) return R.forbidden(res, 'No active API key with webhooks:read scope.');
 
   const provider = String(req.query?.provider || '').trim().toLowerCase();
   const limit = Math.min(100, Math.max(10, parseInt(req.query?.limit, 10) || 30));
@@ -328,13 +471,20 @@ router.get('/integrations/logs', asyncHandler(async (req, res) => {
     },
   });
 
-  R.ok(res, logs);
+  R.ok(res, logs.map((row) => ({ ...row, newValue: redactSensitive(row.newValue || {}) })));
 }));
 
 // POST /api/portal/developer/integrations/replay
 router.post('/integrations/replay', asyncHandler(async (req, res) => {
   const clientCode = resolveClientCode(req);
   if (!clientCode) return R.badRequest(res, 'clientCode is required');
+  const operationKeyId = parseInt(req.body?.keyId, 10);
+  const { matchedKey } = await requireIntegrationScope({
+    clientCode,
+    requiredScope: 'webhooks:replay',
+    preferredKeyId: Number.isFinite(operationKeyId) ? operationKeyId : null,
+  });
+  if (!matchedKey) return R.forbidden(res, 'No active API key with webhooks:replay scope.');
   const provider = String(req.body?.provider || '').trim().toLowerCase();
   if (!SUPPORTED_PROVIDERS.includes(provider)) return R.badRequest(res, 'Unsupported provider');
   const payload = req.body?.payload;
@@ -355,7 +505,7 @@ router.post('/integrations/replay', asyncHandler(async (req, res) => {
       apiKey,
       explicitIdempotencyKey: String(req.body?.idempotencyKey || '').trim() || null,
       ip: req.ip,
-      requestId: req.id,
+      requestId: req.requestId,
     });
     R.ok(res, {
       provider,
@@ -370,7 +520,7 @@ router.post('/integrations/replay', asyncHandler(async (req, res) => {
       clientCode,
       body: payload,
       reason: err.message,
-      requestId: req.id,
+      requestId: req.requestId,
       ip: req.ip,
     }).catch(() => {});
     throw err;
@@ -381,6 +531,13 @@ router.post('/integrations/replay', asyncHandler(async (req, res) => {
 router.post('/integrations/dead-letters/:id/retry', asyncHandler(async (req, res) => {
   const clientCode = resolveClientCode(req);
   if (!clientCode) return R.badRequest(res, 'clientCode is required');
+  const operationKeyId = parseInt(req.body?.keyId, 10);
+  const { matchedKey } = await requireIntegrationScope({
+    clientCode,
+    requiredScope: 'webhooks:replay',
+    preferredKeyId: Number.isFinite(operationKeyId) ? operationKeyId : null,
+  });
+  if (!matchedKey) return R.forbidden(res, 'No active API key with webhooks:replay scope.');
   const id = parseInt(req.params.id, 10);
   if (!Number.isFinite(id)) return R.badRequest(res, 'Invalid dead-letter id');
 
@@ -398,7 +555,7 @@ router.post('/integrations/dead-letters/:id/retry', asyncHandler(async (req, res
 
   const client = await prisma.client.findUnique({ where: { code: clientCode }, select: { code: true, brandSettings: true } });
   if (!client) return R.notFound(res, 'Client');
-  const key = await pickLiveIngestKey(clientCode, client.brandSettings);
+  const key = await pickLiveIngestKey(clientCode, client.brandSettings, Number.isFinite(operationKeyId) ? operationKeyId : null);
   if (!key) return R.badRequest(res, 'No active live key with orders:create scope found for retry');
 
   try {
@@ -410,7 +567,7 @@ router.post('/integrations/dead-letters/:id/retry', asyncHandler(async (req, res
       apiKey: key,
       explicitIdempotencyKey: String(req.body?.idempotencyKey || '').trim() || null,
       ip: req.ip,
-      requestId: req.id,
+      requestId: req.requestId,
     });
     await prisma.jobQueue.update({
       where: { id: row.id },
@@ -495,10 +652,52 @@ router.post('/integrations/connectors/:provider/test', asyncHandler(async (req, 
   }, 'Connector probe succeeded');
 }));
 
+// POST /api/portal/developer/integrations/connectors/:provider/pull
+router.post('/integrations/connectors/:provider/pull', asyncHandler(async (req, res) => {
+  const clientCode = resolveClientCode(req);
+  if (!clientCode) return R.badRequest(res, 'clientCode is required');
+  const provider = String(req.params.provider || '').trim().toLowerCase();
+  if (!SUPPORTED_PROVIDERS.includes(provider)) return R.badRequest(res, 'Unsupported provider');
+
+  const operationKeyId = parseInt(req.body?.keyId, 10);
+  const { matchedKey } = await requireIntegrationScope({
+    clientCode,
+    requiredScope: 'webhooks:replay',
+    preferredKeyId: Number.isFinite(operationKeyId) ? operationKeyId : null,
+  });
+  if (!matchedKey) return R.forbidden(res, 'No active API key with webhooks:replay scope.');
+
+  const client = await prisma.client.findUnique({
+    where: { code: clientCode },
+    select: { code: true, brandSettings: true },
+  });
+  if (!client) return R.notFound(res, 'Client');
+
+  const ingestKey = await pickLiveIngestKey(clientCode, client.brandSettings, Number.isFinite(operationKeyId) ? operationKeyId : null);
+  if (!ingestKey) return R.badRequest(res, 'No active live key with orders:create scope found for connector pull');
+
+  const result = await integrationIngestService.pullOrdersFromConnector({
+    client,
+    provider,
+    apiKey: ingestKey,
+    requestId: req.requestId,
+    ip: req.ip,
+  });
+
+  R.ok(res, result, 'Connector pull executed');
+}));
+
 // GET /api/portal/developer/integrations/dead-letters
 router.get('/integrations/dead-letters', asyncHandler(async (req, res) => {
   const clientCode = resolveClientCode(req);
   if (!clientCode) return R.badRequest(res, 'clientCode is required');
+  const preferredKeyId = parseInt(req.query?.keyId, 10);
+  const { matchedKey } = await requireIntegrationScope({
+    clientCode,
+    requiredScope: 'webhooks:read',
+    preferredKeyId: Number.isFinite(preferredKeyId) ? preferredKeyId : null,
+  });
+  if (!matchedKey) return R.forbidden(res, 'No active API key with webhooks:read scope.');
   const limit = Math.min(100, Math.max(10, parseInt(req.query?.limit, 10) || 50));
   const rows = await prisma.jobQueue.findMany({
     where: {
@@ -508,13 +707,20 @@ router.get('/integrations/dead-letters', asyncHandler(async (req, res) => {
     take: Math.max(200, limit),
   });
   const filtered = rows.filter((row) => String(row?.payload?.clientCode || '').toUpperCase() === clientCode).slice(0, limit);
-  R.ok(res, filtered);
+  R.ok(res, filtered.map((row) => ({ ...row, payload: redactSensitive(row.payload || {}) })));
 }));
 
 // GET /api/portal/developer/integrations/events
 router.get('/integrations/events', asyncHandler(async (req, res) => {
   const clientCode = resolveClientCode(req);
   if (!clientCode) return R.badRequest(res, 'clientCode is required');
+  const preferredKeyId = parseInt(req.query?.keyId, 10);
+  const { matchedKey } = await requireIntegrationScope({
+    clientCode,
+    requiredScope: 'events:read',
+    preferredKeyId: Number.isFinite(preferredKeyId) ? preferredKeyId : null,
+  });
+  if (!matchedKey) return R.forbidden(res, 'No active API key with events:read scope.');
   const limit = Math.min(200, Math.max(20, parseInt(req.query?.limit, 10) || 100));
   const action = String(req.query?.action || '').trim();
 
@@ -538,7 +744,60 @@ router.get('/integrations/events', asyncHandler(async (req, res) => {
     },
   });
 
-  R.ok(res, rows);
+  R.ok(res, rows.map((row) => ({ ...row, newValue: redactSensitive(row.newValue || {}) })));
+}));
+
+// GET /api/portal/developer/integrations/pull-runs
+router.get('/integrations/pull-runs', asyncHandler(async (req, res) => {
+  const clientCode = resolveClientCode(req);
+  if (!clientCode) return R.badRequest(res, 'clientCode is required');
+  const preferredKeyId = parseInt(req.query?.keyId, 10);
+  const { matchedKey } = await requireIntegrationScope({
+    clientCode,
+    requiredScope: 'events:read',
+    preferredKeyId: Number.isFinite(preferredKeyId) ? preferredKeyId : null,
+  });
+  if (!matchedKey) return R.forbidden(res, 'No active API key with events:read scope.');
+
+  const provider = String(req.query?.provider || '').trim().toLowerCase();
+  const limit = Math.min(100, Math.max(10, parseInt(req.query?.limit, 10) || 40));
+
+  const where = {
+    entity: 'INTEGRATION_WEBHOOK',
+    action: 'INTEGRATION_CONNECTOR_PULL_RUN',
+    entityId: { startsWith: `${clientCode}:` },
+  };
+  if (provider) {
+    where.entityId = { startsWith: `${clientCode}:${provider}:` };
+  }
+
+  const rows = await prisma.auditLog.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+    select: {
+      id: true,
+      entityId: true,
+      newValue: true,
+      createdAt: true,
+      ip: true,
+    },
+  });
+
+  const summary = rows.reduce((acc, row) => {
+    const payload = row.newValue || {};
+    acc.runs += 1;
+    acc.pulled += Number(payload.pulled || 0);
+    acc.created += Number(payload.created || 0);
+    acc.duplicate += Number(payload.duplicate || 0);
+    acc.failed += Number(payload.failed || 0);
+    return acc;
+  }, { runs: 0, pulled: 0, created: 0, duplicate: 0, failed: 0 });
+
+  R.ok(res, {
+    summary,
+    rows: rows.map((row) => ({ ...row, newValue: redactSensitive(row.newValue || {}) })),
+  });
 }));
 
 // POST /api/portal/developer/approvals
@@ -644,7 +903,13 @@ router.get('/integrations/diagnostics', asyncHandler(async (req, res) => {
   if (!clientCode) return R.badRequest(res, 'clientCode is required');
 
   const [activeKeys, recentLogs, client, dlqRows, sandboxAccepted] = await Promise.all([
-    prisma.clientApiKey.count({ where: { clientCode, active: true } }),
+    prisma.clientApiKey.count({
+      where: {
+        clientCode,
+        active: true,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+    }),
     prisma.auditLog.findMany({
       where: { entity: 'INTEGRATION_WEBHOOK', entityId: { startsWith: `${clientCode}:` } },
       orderBy: { createdAt: 'desc' },
@@ -684,7 +949,11 @@ router.get('/integrations/diagnostics', asyncHandler(async (req, res) => {
 
   const policies = client?.brandSettings?.integrationKeyPolicies || {};
   const keys = await prisma.clientApiKey.findMany({
-    where: { clientCode, active: true },
+    where: {
+      clientCode,
+      active: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    },
     select: { id: true, name: true, createdAt: true, lastUsedAt: true },
     orderBy: { createdAt: 'desc' },
   });
@@ -715,6 +984,21 @@ router.get('/integrations/diagnostics', asyncHandler(async (req, res) => {
     sampleMapping[provider] = sample;
   });
 
+  const pullRuns = await prisma.auditLog.findMany({
+    where: {
+      entity: 'INTEGRATION_WEBHOOK',
+      action: 'INTEGRATION_CONNECTOR_PULL_RUN',
+      entityId: { startsWith: `${clientCode}:` },
+      createdAt: { gte: new Date(Date.now() - 24 * 3600000) },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 200,
+    select: { newValue: true },
+  });
+  const pullRunCount = pullRuns.length;
+  const pullRunsWithFailures = pullRuns.filter((row) => Number(row?.newValue?.failed || 0) > 0).length;
+  const connectorPullFailureRate = pullRunCount ? Number((pullRunsWithFailures / pullRunCount).toFixed(3)) : 0;
+
   R.ok(res, {
     activeKeys,
     keyPolicies,
@@ -722,6 +1006,11 @@ router.get('/integrations/diagnostics', asyncHandler(async (req, res) => {
     byProvider,
     deadLetters: dlqCount,
     sandboxAccepted,
+    connectorPullSlo: {
+      runCount24h: pullRunCount,
+      failureRuns24h: pullRunsWithFailures,
+      failureRate24h: connectorPullFailureRate,
+    },
     mappingPaths: sampleMapping,
     tips: [
       'Use Idempotency-Key header to guarantee exactly-once order draft creation.',

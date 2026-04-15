@@ -141,4 +141,17 @@ module.exports = {
   integrations: {
     syncApiKey: optional('INTEGRATION_SYNC_API_KEY'),
   },
+
+  operations: {
+    retention: {
+      auditDays: parseInt(optional('RETENTION_AUDIT_DAYS', '180'), 10),
+      jobQueueDays: parseInt(optional('RETENTION_JOBQUEUE_DAYS', '60'), 10),
+      notificationDays: parseInt(optional('RETENTION_NOTIFICATION_DAYS', '90'), 10),
+    },
+    slo: {
+      connectorPullFailureThreshold: parseFloat(optional('SLO_CONNECTOR_PULL_FAILURE_THRESHOLD', '0.25')),
+      connectorPullMinimumRuns: parseInt(optional('SLO_CONNECTOR_PULL_MIN_RUNS', '4'), 10),
+    },
+    auditEvidenceSigningSecret: optional('AUDIT_EVIDENCE_SIGNING_SECRET'),
+  },
 };

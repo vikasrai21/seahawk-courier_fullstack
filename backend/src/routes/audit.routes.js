@@ -3,6 +3,7 @@ const router = require('express').Router();
 const crypto = require('crypto');
 const ctrl   = require('../controllers/audit.controller');
 const prisma = require('../config/prisma');
+const config = require('../config');
 const { protect, adminOnly } = require('../middleware/auth.middleware');
 const R = require('../utils/response');
 
@@ -46,7 +47,11 @@ router.get('/evidence-pack', async (req, res, next) => {
       },
     };
     const checksum = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
-    R.ok(res, { ...payload, checksum });
+    const signingSecret = String(config.operations.auditEvidenceSigningSecret || '').trim();
+    const signature = signingSecret
+      ? crypto.createHmac('sha256', signingSecret).update(`${generatedAt}.${checksum}`).digest('hex')
+      : null;
+    R.ok(res, { ...payload, checksum, signature });
   } catch (err) {
     next(err);
   }

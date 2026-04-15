@@ -5,6 +5,7 @@ const prisma = require('../config/prisma');
 const cache = require('../utils/cache');
 const config = require('../config');
 const draftOrderSvc = require('./draftOrder.service');
+const { fetchWithRetry } = require('../utils/httpRetry');
 
 const SUPPORTED_ECOM_PROVIDERS = ['amazon', 'flipkart', 'myntra', 'ajio', 'custom', 'tally', 'sap', 'netsuite'];
 
@@ -203,6 +204,211 @@ function queueDeadLetter({ provider, clientCode, body, reason, requestId, ip }) 
   });
 }
 
+function connectorHeaders(connector = {}) {
+  const headers = { Accept: 'application/json' };
+  const authType = String(connector?.authType || 'none').trim().toLowerCase();
+  const credentials = connector?.credentials || {};
+
+  if (authType === 'api_key' && credentials.apiKey) {
+    headers[String(credentials.headerName || 'x-api-key').trim() || 'x-api-key'] = String(credentials.apiKey);
+  } else if (authType === 'bearer' && credentials.token) {
+    headers.Authorization = `Bearer ${String(credentials.token)}`;
+  } else if (authType === 'basic' && credentials.username) {
+    const raw = `${String(credentials.username)}:${String(credentials.password || '')}`;
+    headers.Authorization = `Basic ${Buffer.from(raw).toString('base64')}`;
+  }
+
+  return headers;
+}
+
+function extractOrderList(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return [];
+  const candidates = [payload.orders, payload.data, payload.items, payload.results];
+  for (const list of candidates) {
+    if (Array.isArray(list)) return list;
+  }
+  if (payload.order_number || payload.id || payload.number || payload.order_key) return [payload];
+  return [];
+}
+
+function normalizeProvider(provider) {
+  return String(provider || '').trim().toLowerCase();
+}
+
+function resolveOrderReference(order = {}) {
+  return pickFirst(order.order_number, order.id, order.number, order.order_key, order.referenceId);
+}
+
+async function pickActiveLiveOrderKey(clientCode, brandSettings) {
+  const rows = await prisma.clientApiKey.findMany({
+    where: {
+      clientCode,
+      active: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    },
+    select: { id: true, name: true, lastUsedAt: true, createdAt: true },
+    orderBy: [{ lastUsedAt: 'desc' }, { createdAt: 'desc' }],
+  });
+  const policies = brandSettings?.integrationKeyPolicies || {};
+  return rows.find((row) => {
+    const policy = policies[String(row.id)] || {};
+    const mode = String(policy.mode || 'live').toLowerCase() === 'sandbox' ? 'sandbox' : 'live';
+    return mode === 'live' && hasScope(policy, 'orders:create');
+  }) || null;
+}
+
+async function pullOrdersFromConnector({ client, provider, apiKey, requestId, ip }) {
+  const normalizedProvider = normalizeProvider(provider);
+  if (!SUPPORTED_ECOM_PROVIDERS.includes(normalizedProvider)) {
+    throw makeError(400, 'Unsupported provider.', 'UNSUPPORTED_PROVIDER');
+  }
+
+  const cfg = client?.brandSettings?.integrations?.[normalizedProvider];
+  const connector = cfg?.connector;
+  if (!cfg?.enabled || !connector?.enabled) {
+    return { pulled: 0, created: 0, duplicate: 0, failed: 0, provider: normalizedProvider };
+  }
+
+  const baseUrl = String(connector.baseUrl || '').trim().replace(/\/+$/, '');
+  const pullPath = String(connector.orderPullPath || '').trim();
+  if (!baseUrl || !pullPath) {
+    return { pulled: 0, created: 0, duplicate: 0, failed: 0, provider: normalizedProvider };
+  }
+
+  const url = `${baseUrl}/${pullPath.replace(/^\/+/, '')}`;
+  const timeoutMs = Math.min(60000, Math.max(2000, parseInt(connector.timeoutMs, 10) || 10000));
+  const attempts = Math.min(6, Math.max(1, parseInt(connector.retryAttempts, 10) || 3));
+  const baseDelayMs = Math.min(10000, Math.max(200, parseInt(connector.retryBaseDelayMs, 10) || 600));
+  const headers = connectorHeaders(connector);
+
+  const response = await fetchWithRetry(url, {
+    method: 'GET',
+    headers,
+  }, { attempts, timeoutMs, baseDelayMs });
+  const payload = await response.json().catch(() => null);
+  const orders = extractOrderList(payload);
+
+  let created = 0;
+  let duplicate = 0;
+  let failed = 0;
+  const acks = [];
+  for (const order of orders) {
+    try {
+      const result = await ingestOrder({
+        provider: normalizedProvider,
+        clientCode: client.code,
+        body: order,
+        client,
+        apiKey,
+        explicitIdempotencyKey: null,
+        ip,
+        requestId,
+      });
+      if (result.duplicate) duplicate += 1;
+      else created += 1;
+      acks.push({
+        referenceId: result.referenceId || result.orderId || resolveOrderReference(order) || null,
+        status: result.duplicate ? 'DUPLICATE' : 'INGESTED',
+        draftId: result.draftId || null,
+      });
+    } catch (err) {
+      failed += 1;
+      await queueDeadLetter({
+        provider: normalizedProvider,
+        clientCode: client.code,
+        body: order,
+        reason: err.message,
+        requestId,
+        ip,
+      }).catch(() => {});
+      acks.push({
+        referenceId: resolveOrderReference(order) || null,
+        status: 'FAILED',
+        reason: err.message,
+      });
+    }
+  }
+
+  const ackPath = String(connector.orderAckPath || '').trim();
+  if (ackPath && acks.length) {
+    const ackUrl = `${baseUrl}/${ackPath.replace(/^\/+/, '')}`;
+    await fetchWithRetry(ackUrl, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        provider: normalizedProvider,
+        clientCode: client.code,
+        requestId: requestId || null,
+        acknowledgements: acks,
+      }),
+    }, { attempts, timeoutMs, baseDelayMs }).catch(() => {});
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      action: 'INTEGRATION_CONNECTOR_PULL_RUN',
+      entity: 'INTEGRATION_WEBHOOK',
+      entityId: `${client.code}:${normalizedProvider}:connector`,
+      newValue: {
+        pulled: orders.length,
+        created,
+        duplicate,
+        failed,
+        requestId: requestId || null,
+      },
+      ip,
+    },
+  }).catch(() => {});
+
+  return { pulled: orders.length, created, duplicate, failed, provider: normalizedProvider };
+}
+
+async function runAutomatedConnectorPulls({ requestId = null, ip = 'scheduler' } = {}) {
+  const clients = await prisma.client.findMany({
+    where: { active: true },
+    select: { code: true, brandSettings: true },
+  });
+
+  const runs = [];
+  for (const client of clients) {
+    const integrations = client?.brandSettings?.integrations || {};
+    const providers = Object.keys(integrations).filter((provider) => {
+      const cfg = integrations[provider];
+      return cfg?.enabled && cfg?.connector?.enabled && cfg?.connector?.baseUrl && cfg?.connector?.orderPullPath;
+    });
+    if (!providers.length) continue;
+
+    const apiKey = await pickActiveLiveOrderKey(client.code, client.brandSettings);
+    if (!apiKey) continue;
+
+    for (const provider of providers) {
+      try {
+        const stats = await pullOrdersFromConnector({
+          client,
+          provider,
+          apiKey,
+          requestId,
+          ip,
+        });
+        runs.push({ clientCode: client.code, ...stats });
+      } catch (err) {
+        runs.push({
+          clientCode: client.code,
+          provider: normalizeProvider(provider),
+          pulled: 0,
+          created: 0,
+          duplicate: 0,
+          failed: 1,
+          error: err.message,
+        });
+      }
+    }
+  }
+
+  return runs;
+}
+
 module.exports = {
   SUPPORTED_ECOM_PROVIDERS,
   normalizeScopes,
@@ -210,6 +416,8 @@ module.exports = {
   hasScope,
   ingestOrder,
   queueDeadLetter,
+  pullOrdersFromConnector,
+  runAutomatedConnectorPulls,
   makeError,
 };
 

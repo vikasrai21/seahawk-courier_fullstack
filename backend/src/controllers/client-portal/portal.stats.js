@@ -3,6 +3,7 @@
 const prisma = require('../../config/prisma');
 const carrier = require('../../services/carrier.service');
 const R = require('../../utils/response');
+const cache = require('../../utils/cache');
 const { resolveClientCode, parseRange, normaliseAwbs, fmtDate } = require('./shared');
 
 async function stats(req, res) {
@@ -12,6 +13,10 @@ async function stats(req, res) {
   const { startStr, endStr, range } = parseRange(req.query);
   const baseWhere = { clientCode, date: { gte: startStr, lte: endStr } };
   const statusWhere = (statuses) => ({ ...baseWhere, status: { in: statuses } });
+
+  const cacheKey = `portal:stats:${clientCode}:${startStr}:${endStr}`;
+  const cached = await cache.get(cacheKey);
+  if (cached) return R.ok(res, cached);
 
   const [total, booked, inTransit, outForDelivery, delivered, rto, ndr, exception, trendRows, recentShipments] = await Promise.all([
     prisma.shipment.count({ where: baseWhere }),
@@ -92,7 +97,31 @@ async function stats(req, res) {
     };
   });
 
-  R.ok(res, {
+  const staleThresholdDate = new Date();
+  staleThresholdDate.setDate(staleThresholdDate.getDate() - 3);
+  const [pendingNdrCount, staleNdrCount, escalatedNdrCount] = await Promise.all([
+    prisma.nDREvent.count({
+      where: {
+        action: 'PENDING',
+        shipment: { clientCode },
+      },
+    }),
+    prisma.nDREvent.count({
+      where: {
+        action: 'PENDING',
+        createdAt: { lt: staleThresholdDate },
+        shipment: { clientCode },
+      },
+    }),
+    prisma.nDREvent.count({
+      where: {
+        action: 'ESCALATED',
+        shipment: { clientCode },
+      },
+    }),
+  ]);
+
+  const responsePayload = {
     range: { key: range, from: startStr, to: endStr },
     totals: {
       total,
@@ -106,10 +135,17 @@ async function stats(req, res) {
       deliveredPct: total > 0 ? Number(((delivered / total) * 100).toFixed(1)) : 0,
       otif,
       firstAttemptDelivery: firstAttempt,
+      exceptionSignals: {
+        pendingNdr: pendingNdrCount,
+        staleNdr: staleNdrCount,
+        escalatedNdr: escalatedNdrCount,
+      },
     },
     trend: trendRows.map((r) => ({ date: r.date, shipments: r._count.id })),
     recentActivity,
-  });
+  };
+  await cache.set(cacheKey, responsePayload, 120);
+  R.ok(res, responsePayload);
 }
 
 async function shipments(req, res) {
@@ -265,7 +301,7 @@ async function syncTracking(req, res) {
       status: { in: activeStatuses },
       courier: { not: null },
     },
-    select: { awb: true, courier: true },
+    select: { id: true, awb: true, courier: true },
     orderBy: [{ date: 'desc' }, { id: 'desc' }],
     take: maxAwbs,
   });
@@ -274,7 +310,7 @@ async function syncTracking(req, res) {
   let failed = 0;
   for (const s of candidates) {
     try {
-      await carrier.syncTrackingEvents(s.courier, s.awb);
+      await carrier.syncTrackingEvents(s.id, s.awb, s.courier);
       refreshed += 1;
     } catch {
       failed += 1;

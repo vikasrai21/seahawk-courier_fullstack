@@ -47,11 +47,13 @@ router.post('/branding', protect, clientOnly, asyncHandler(portalMap.updateBrand
 router.get('/ndr', protect, clientOnly, asyncHandler(portalNdr.list));
 router.post('/ndr/:id/respond', protect, clientOnly, asyncHandler(portalNdr.respond));
 router.post('/ndr/:id/whatsapp-bridge', protect, clientOnly, asyncHandler(portalNdr.whatsappBridge));
+router.post('/ndr/:id/escalate', protect, clientOnly, asyncHandler(portalNdr.escalate));
 
 router.get('/notification-preferences', protect, clientOnly, asyncHandler(portalMisc.notificationPreferences));
 router.post('/notification-preferences', protect, clientOnly, asyncHandler(portalMisc.updateNotificationPreferences));
 router.get('/pickups', protect, clientOnly, asyncHandler(portalMisc.pickups));
 router.post('/pickups', protect, clientOnly, asyncHandler(portalMisc.createPickup));
+router.post('/shipments/create-and-book', protect, clientOnly, asyncHandler(portalMisc.createAndBookShipment));
 
 // Rate Calculator routes removed as per requirement: "client should absolutely not have any kind of rates information"
 router.post('/import', protect, clientOnly, asyncHandler(portalMisc.importShipments));

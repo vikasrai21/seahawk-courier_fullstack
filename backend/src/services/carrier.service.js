@@ -241,9 +241,15 @@ const dtdc = {
         status: event.status || 'InTransit',
         location: event.location || '',
         description: event.description || '',
-        timestamp: event.timestamp || new Date(),
+        timestamp: toEventDate(event.timestamp),
         source: 'CARRIER_API',
-        rawData: event.rawData || {},
+        rawData: normalizeCarrierEvent(
+          event.rawData || event || {},
+          'DTDC',
+          event.status || 'InTransit',
+          event.description || '',
+          event.location || ''
+        ),
       })),
     };
   },
@@ -340,9 +346,15 @@ const trackon = {
       status: mapTrackonStatus(`${e.TRACKING_CODE || ''} ${e.CURRENT_STATUS || ''}`),
       location: e.CURRENT_CITY || '',
       description: e.CURRENT_STATUS || '',
-      timestamp: parseTrackonTimestamp(e.EVENTDATE, e.EVENTTIME),
+      timestamp: toEventDate(parseTrackonTimestamp(e.EVENTDATE, e.EVENTTIME)),
       source: 'CARRIER_API',
-      rawData: e,
+      rawData: normalizeCarrierEvent(
+        e,
+        'Trackon',
+        mapTrackonStatus(`${e.TRACKING_CODE || ''} ${e.CURRENT_STATUS || ''}`),
+        e.CURRENT_STATUS || '',
+        e.CURRENT_CITY || ''
+      ),
     }));
 
     if (events.length === 0 && (summary.CURRENT_STATUS || summary.TRACKING_CODE)) {
@@ -350,9 +362,15 @@ const trackon = {
         status: mapTrackonStatus(`${summary.TRACKING_CODE || ''} ${summary.CURRENT_STATUS || ''}`),
         location: summary.CURRENT_CITY || '',
         description: summary.CURRENT_STATUS || '',
-        timestamp: parseTrackonTimestamp(summary.EVENTDATE, summary.EVENTTIME),
+        timestamp: toEventDate(parseTrackonTimestamp(summary.EVENTDATE, summary.EVENTTIME)),
         source: 'CARRIER_API',
-        rawData: summary,
+        rawData: normalizeCarrierEvent(
+          summary,
+          'Trackon',
+          mapTrackonStatus(`${summary.TRACKING_CODE || ''} ${summary.CURRENT_STATUS || ''}`),
+          summary.CURRENT_STATUS || '',
+          summary.CURRENT_CITY || ''
+        ),
       });
     }
 
@@ -533,10 +551,51 @@ const dhl = {
    ════════════════════════════════════════════════════════════ */
 const CARRIERS = { Delhivery: delhivery, DTDC: dtdc, Trackon: trackon, BlueDart: bluedart, FedEx: fedex, DHL: dhl };
 
-async function createShipment(carrier, data) {
+function getBookingEndpoint(carrier, cfg) {
+  if (carrier === 'Delhivery') return `${cfg.apiUrl}/api/cmu/create.json`;
+  if (carrier === 'DTDC') return `${cfg.apiUrl}/secure/shiprequest`;
+  if (carrier === 'Trackon') return `${cfg.config?.bookingUrl}/CrmApi/Crm/UploadPickupRequestWithoutDockNo`;
+  if (carrier === 'BlueDart') return `${cfg.apiUrl}/ShipmentAPI/ShipmentCreation`;
+  return 'N/A';
+}
+
+function getMissingBookingFields(data = {}) {
+  const required = ['consignee', 'deliveryAddress', 'deliveryCity', 'pin', 'weightGrams'];
+  return required.filter((field) => {
+    const value = data[field];
+    if (value === undefined || value === null) return true;
+    if (typeof value === 'string' && !value.trim()) return true;
+    if (field === 'weightGrams' && Number(value) <= 0) return true;
+    return false;
+  });
+}
+
+async function createShipment(carrier, data, options = {}) {
   const impl = CARRIERS[carrier];
   if (!impl) throw new Error(`Unknown carrier: ${carrier}`);
   const cfg = await getCarrierConfig(carrier);
+  const dryRun = Boolean(options?.dryRun);
+
+  if (dryRun) {
+    const missingFields = getMissingBookingFields(data);
+    return {
+      dryRun: true,
+      carrier,
+      ready: missingFields.length === 0,
+      message: missingFields.length
+        ? 'Dry run failed validation. Fix required fields before live booking.'
+        : 'Dry run passed. Booking credentials and payload shape look valid. No shipment was created.',
+      checks: {
+        configured: true,
+        requiredFields: {
+          missing: missingFields,
+          checked: ['consignee', 'deliveryAddress', 'deliveryCity', 'pin', 'weightGrams'],
+        },
+      },
+      bookingEndpoint: getBookingEndpoint(carrier, cfg),
+    };
+  }
+
   logger.info(`Creating shipment via ${carrier} API`, { consignee: data.consignee, pin: data.pin });
   return impl.createShipment(data, cfg);
 }
@@ -586,12 +645,12 @@ async function syncTrackingEvents(shipmentId, awb, carrier) {
   // Get existing events to avoid duplicates
   const existing = await prisma.trackingEvent.findMany({
     where: { shipmentId },
-    select: { status: true, timestamp: true },
+    select: { status: true, timestamp: true, location: true },
   });
-  const existingSet = new Set(existing.map(e => `${e.status}_${e.timestamp.toISOString()}`));
+  const existingSet = new Set(existing.map(e => `${e.status}_${toEventDate(e.timestamp).toISOString()}_${String(e.location || '').toUpperCase()}`));
 
   const toInsert = tracking.events.filter(e => {
-    const key = `${e.status}_${e.timestamp.toISOString()}`;
+    const key = `${e.status}_${toEventDate(e.timestamp).toISOString()}_${String(e.location || '').toUpperCase()}`;
     return !existingSet.has(key);
   });
 
@@ -604,7 +663,7 @@ async function syncTrackingEvents(shipmentId, awb, carrier) {
       status:      e.status,
       location:    e.location,
       description: e.description,
-      timestamp:   e.timestamp,
+      timestamp:   toEventDate(e.timestamp),
       source:      'CARRIER_API',
       rawData:     e.rawData,
     })),
@@ -753,6 +812,35 @@ function parseTrackonTimestamp(eventDate, eventTime) {
   const iso = `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T${timeText.length === 5 ? `${timeText}:00` : timeText}`;
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? new Date() : d;
+}
+
+function toEventDate(value) {
+  const d = value instanceof Date ? value : new Date(value || Date.now());
+  return Number.isNaN(d.getTime()) ? new Date() : d;
+}
+
+function normalizeCarrierEvent(rawEvent, carrier, status, fallbackDescription = '', fallbackLocation = '') {
+  const raw = rawEvent && typeof rawEvent === 'object' ? rawEvent : {};
+  const mergedText = `${raw.TRACKING_CODE || raw.strCode || ''} ${raw.CURRENT_STATUS || raw.strAction || fallbackDescription || ''} ${raw.sTrRemarks || raw.strRemarks || raw.reason || ''}`.toUpperCase();
+  const attemptNoValue = Number(raw.ATTEMPT_NO || raw.ATTEMPTNO || raw.AttemptNo || raw.attemptNo || raw.ATTEMPT || 0);
+  const isException = status === 'Failed' || /\bNDR\b|UNDELIVER|ATTEMPT|HELDUP|NOT\s+DELIVERED/.test(mergedText);
+  const isDelivery = status === 'Delivered';
+
+  return {
+    ...raw,
+    carrier,
+    eventCode: raw.TRACKING_CODE || raw.strCode || raw.code || null,
+    eventType: isException ? 'EXCEPTION' : (isDelivery ? 'DELIVERY' : (status === 'OutForDelivery' ? 'OFD' : 'MOVEMENT')),
+    hubOrBranch: raw.CURRENT_CITY || raw.strOrigin || raw.strDestination || fallbackLocation || null,
+    attemptNo: Number.isFinite(attemptNoValue) && attemptNoValue > 0 ? attemptNoValue : null,
+    exceptionReason: isException
+      ? (raw.reason || raw.sTrRemarks || raw.strRemarks || raw.CURRENT_STATUS || raw.strAction || fallbackDescription || null)
+      : null,
+    recipientName: raw.RECEIVER_NAME || raw.receiverName || raw.strReceiverName || null,
+    podSignature: raw.POD_SIGNATURE || raw.podSignature || null,
+    podImageUrl: raw.POD_URL || raw.podImageUrl || null,
+    proofOfDelivery: isDelivery || Boolean(raw.POD_URL || raw.podImageUrl || raw.POD_SIGNATURE || raw.podSignature),
+  };
 }
 
 function getTrackonServiceType(data = {}) {

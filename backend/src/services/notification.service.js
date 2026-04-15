@@ -289,6 +289,39 @@ async function sendWelcomeEmail(user, _tempPassword) {
   });
 }
 
+async function sendOpsEscalationAlert({ clientCode, awb, ndrId, urgency, note }) {
+  const recipients = await prisma.user.findMany({
+    where: {
+      active: true,
+      role: { in: ['ADMIN', 'OPS_MANAGER'] },
+    },
+    select: { email: true },
+  });
+
+  const subject = `[NDR Escalation] ${clientCode} · ${awb}`;
+  const text = [
+    `Client: ${clientCode}`,
+    `AWB: ${awb}`,
+    `NDR ID: ${ndrId}`,
+    `Urgency: ${urgency || 'HIGH'}`,
+    note ? `Note: ${note}` : '',
+  ].filter(Boolean).join('\n');
+
+  await Promise.all(recipients
+    .filter((r) => !!r.email)
+    .map((r) => sendEmail({
+      to: r.email,
+      subject,
+      text,
+      html: `<p><strong>NDR Escalation Alert</strong></p>
+             <p><strong>Client:</strong> ${clientCode}</p>
+             <p><strong>AWB:</strong> ${awb}</p>
+             <p><strong>NDR ID:</strong> ${ndrId}</p>
+             <p><strong>Urgency:</strong> ${urgency || 'HIGH'}</p>
+             ${note ? `<p><strong>Note:</strong> ${note}</p>` : ''}`,
+    })));
+}
+
 module.exports = {
   sendEmail,
   sendWhatsApp,
@@ -296,4 +329,5 @@ module.exports = {
   sendPODEmail,
   sendWelcomeEmail,
   getClientNotificationPreferences,
+  sendOpsEscalationAlert,
 };

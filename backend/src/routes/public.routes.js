@@ -21,6 +21,33 @@ const bookingLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 10, message: {
 const integrationLimiter = rateLimit({ windowMs: 60 * 60 * 1000, max: 120, message: { success: false, message: 'Too many integration requests.' } });
 const importJsonParser = express.json({ limit: config.bodyLimits.importJson });
 const SUPPORTED_ECOM_PROVIDERS = integrationIngestSvc.SUPPORTED_ECOM_PROVIDERS;
+const pick = (obj, ...keys) => {
+  for (const key of keys) {
+    const value = obj?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  }
+  return null;
+};
+
+function enrichPublicEvent(rawEvent = {}, carrier, fallbackStatus = '') {
+  const raw = rawEvent && typeof rawEvent === 'object' ? rawEvent : {};
+  const statusText = String(raw.status || raw.description || fallbackStatus || '');
+  const mergedText = `${raw.TRACKING_CODE || raw.strCode || ''} ${statusText} ${raw.sTrRemarks || raw.strRemarks || ''}`.toUpperCase();
+  const attemptNoValue = Number(raw.ATTEMPT_NO || raw.ATTEMPTNO || raw.AttemptNo || raw.attemptNo || 0);
+  const isException = /\bNDR\b|UNDELIVER|ATTEMPT|HELDUP|NOT\s+DELIVERED/.test(mergedText);
+  const isDelivery = /\bDELIVER/.test(mergedText);
+  return {
+    ...raw,
+    carrier,
+    eventCode: pick(raw, 'eventCode', 'TRACKING_CODE', 'strCode'),
+    eventType: isException ? 'EXCEPTION' : (isDelivery ? 'DELIVERY' : (/OUT\s+FOR|OFD/.test(mergedText) ? 'OFD' : 'MOVEMENT')),
+    hubOrBranch: pick(raw, 'hubOrBranch', 'CURRENT_CITY', 'strOrigin', 'strDestination', 'location'),
+    attemptNo: Number.isFinite(attemptNoValue) && attemptNoValue > 0 ? attemptNoValue : null,
+    exceptionReason: isException ? pick(raw, 'exceptionReason', 'sTrRemarks', 'strRemarks', 'reason', 'description', 'CURRENT_STATUS') : null,
+    recipientName: pick(raw, 'recipientName', 'RECEIVER_NAME', 'receiverName'),
+    proofOfDelivery: Boolean(raw?.proofOfDelivery || raw?.POD_URL || raw?.podImageUrl || raw?.POD_SIGNATURE || raw?.podSignature),
+  };
+}
 
 // ── GET /api/public/health ─────────────────────────────────────────────────
 router.get('/health', (_req, res) => {
@@ -76,6 +103,7 @@ async function trackDTDC(awb) {
         location: event.location,
         timestamp: event.timestamp,
         description: event.description || '',
+        rawData: enrichPublicEvent(event.rawData || event, 'DTDC', event.status),
       })),
     };
   } catch (e) { logger.warn('DTDC tracking failed', { awb, error: e.message }); return null; }
@@ -134,6 +162,7 @@ async function trackTrackon(awb) {
           location: s.CURRENT_CITY || '',
           timestamp: `${s.EVENTDATE || ''} ${s.EVENTTIME || ''}`.trim(),
           description: s.TRACKING_CODE || '',
+          rawData: enrichPublicEvent(s, 'Trackon', s.CURRENT_STATUS || ''),
         }))
       : [];
 
@@ -308,7 +337,15 @@ router.post('/integrations/ecommerce/:provider/:clientCode', integrationLimiter,
       select: { code: true, brandSettings: true },
     }),
     prisma.clientApiKey.findFirst({
-      where: { clientCode, tokenHash: providedHash, active: true },
+      where: {
+        clientCode,
+        tokenHash: providedHash,
+        active: true,
+        OR: [
+          { expiresAt: null },
+          { expiresAt: { gt: new Date() } },
+        ],
+      },
       select: { id: true, name: true },
     }),
   ]);
@@ -322,7 +359,7 @@ router.post('/integrations/ecommerce/:provider/:clientCode', integrationLimiter,
 
   const mode = String(keyPolicy?.mode || 'live').toLowerCase() === 'sandbox' ? 'sandbox' : 'live';
   const body = req.body || {};
-  const requestId = req.id || null;
+  const requestId = req.requestId || null;
   const explicitIdempotencyKey = String(req.get('idempotency-key') || req.get('x-idempotency-key') || '').trim() || null;
 
   if (mode === 'sandbox') {

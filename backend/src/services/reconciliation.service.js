@@ -3,6 +3,9 @@ const prisma = require('../config/prisma');
 const { stateToZones, courierCost, COURIERS } = require('../utils/rateEngine');
 
 const rnd = n => Math.round(n * 100) / 100;
+const INTEL_TOLERANCE = 2;
+const WEIGHT_GAP_PCT_THRESHOLD = 0.15;
+const WEIGHT_GAP_ABS_THRESHOLD = 0.2;
 
 function policySnapshotForItem(item) {
   const courier = String(item?.courier || '');
@@ -17,11 +20,78 @@ function policySnapshotForItem(item) {
   };
 }
 
+function buildItemIntelligence({ item, shipment }) {
+  const billedAmount = Number(item?.billedAmount || 0);
+  const expectedAmount = Number(item?.calculatedAmount || 0);
+  const clientCharged = Number(shipment?.amount || 0);
+  const invoicedWeight = Number(item?.weight || 0);
+  const bookedWeight = Number(shipment?.weight || 0);
+
+  const overcharge = expectedAmount > 0 ? billedAmount - expectedAmount : 0;
+  const leakage = clientCharged > 0 ? billedAmount - clientCharged : 0;
+  const weightGap = bookedWeight > 0 ? invoicedWeight - bookedWeight : 0;
+  const weightGapPct = bookedWeight > 0 ? weightGap / bookedWeight : 0;
+  const weightDispute = bookedWeight > 0
+    && Math.abs(weightGap) >= WEIGHT_GAP_ABS_THRESHOLD
+    && Math.abs(weightGapPct) >= WEIGHT_GAP_PCT_THRESHOLD;
+
+  const flags = [];
+  if (overcharge > INTEL_TOLERANCE) flags.push('OVERCHARGE_ALERT');
+  if (leakage > INTEL_TOLERANCE) flags.push('MARGIN_LEAKAGE_ALERT');
+  if (weightDispute) flags.push('WEIGHT_DISPUTE_ALERT');
+
+  return {
+    overcharge: rnd(overcharge),
+    leakage: rnd(leakage),
+    weightGap: rnd(weightGap),
+    weightGapPct: Number((weightGapPct * 100).toFixed(2)),
+    weightDispute,
+    flags,
+  };
+}
+
+function summarizeClientMarginRisk(rows = []) {
+  const map = new Map();
+  for (const row of rows) {
+    const code = String(row?.clientCode || 'UNKNOWN');
+    if (!map.has(code)) {
+      map.set(code, {
+        clientCode: code,
+        shipmentCount: 0,
+        totalClientCharged: 0,
+        totalCourierBilled: 0,
+        totalLeakage: 0,
+      });
+    }
+    const target = map.get(code);
+    target.shipmentCount += 1;
+    target.totalClientCharged += Number(row.clientCharged || 0);
+    target.totalCourierBilled += Number(row.courierBilled || 0);
+    target.totalLeakage += Number(row.leakage || 0);
+  }
+
+  return Array.from(map.values())
+    .map((row) => ({
+      ...row,
+      totalClientCharged: rnd(row.totalClientCharged),
+      totalCourierBilled: rnd(row.totalCourierBilled),
+      totalLeakage: rnd(row.totalLeakage),
+      leakagePct: row.totalClientCharged > 0
+        ? Number(((row.totalLeakage / row.totalClientCharged) * 100).toFixed(2))
+        : 0,
+    }))
+    .filter((row) => row.totalLeakage > INTEL_TOLERANCE)
+    .sort((a, b) => b.totalLeakage - a.totalLeakage);
+}
+
 /**
  * Upload and process a courier invoice.
  * items: Array of { awb, date, destination, weight, billedAmount }
  */
 async function uploadCourierInvoice({ courier, invoiceNo, invoiceDate, fromDate, toDate, notes, items }, userId) {
+  const safeInvoiceDate = String(invoiceDate || new Date().toISOString().slice(0, 10));
+  const safeFromDate = String(fromDate || safeInvoiceDate);
+  const safeToDate = String(toDate || safeInvoiceDate);
   // Find AWBs in shipment DB to get zone info
   const awbs = items.map(i => i.awb);
   const shipments = await prisma.shipment.findMany({
@@ -64,16 +134,26 @@ async function uploadCourierInvoice({ courier, invoiceNo, invoiceDate, fromDate,
       else if (discrepancy < -2)     status = 'UNDER';       // courier undercharged
     }
 
+    const intel = buildItemIntelligence({
+      item: {
+        billedAmount: billed,
+        calculatedAmount: calculated || 0,
+        weight: parseFloat(item.weight) || shipment?.weight || 0,
+      },
+      shipment,
+    });
+    const intelNote = intel.flags.length ? `INTEL:${intel.flags.join('|')}` : null;
+
     return {
       awb:              item.awb,
-      date:             item.date || invoiceDate,
+      date:             item.date || safeInvoiceDate,
       destination:      item.destination || shipment?.destination || '',
       weight:           parseFloat(item.weight) || shipment?.weight || 0,
       billedAmount:     billed,
       calculatedAmount: calculated,
       discrepancy,
       status,
-      notes:            item.notes || null,
+      notes:            [item.notes, intelNote].filter(Boolean).join(' | ') || null,
     };
   });
 
@@ -81,7 +161,11 @@ async function uploadCourierInvoice({ courier, invoiceNo, invoiceDate, fromDate,
 
   return prisma.courierInvoice.create({
     data: {
-      courier, invoiceNo, invoiceDate, fromDate, toDate,
+      courier,
+      invoiceNo,
+      invoiceDate: safeInvoiceDate,
+      fromDate: safeFromDate,
+      toDate: safeToDate,
       totalAmount: rnd(totalAmount),
       notes,
       uploadedById: userId || null,
@@ -122,10 +206,33 @@ async function getCourierInvoiceDetails(id) {
 
   // Summary stats
   const items = inv.items;
+  const awbs = [...new Set(items.map((i) => String(i.awb || '').trim().toUpperCase()).filter(Boolean))];
+  const linkedShipments = awbs.length
+    ? await prisma.shipment.findMany({
+        where: { awb: { in: awbs } },
+        select: { awb: true, clientCode: true, amount: true, weight: true, courier: true },
+      })
+    : [];
+  const shipMap = Object.fromEntries(linkedShipments.map((s) => [String(s.awb || '').toUpperCase(), s]));
   const totalBilled = items.reduce((s, i) => s + i.billedAmount, 0);
   const totalCalc   = items.filter(i => i.calculatedAmount != null).reduce((s, i) => s + (i.calculatedAmount || 0), 0);
   const totalOver   = items.filter(i => i.status === 'OVER').reduce((s, i) => s + (i.discrepancy || 0), 0);
   const totalUnder  = items.filter(i => i.status === 'UNDER').reduce((s, i) => s + Math.abs(i.discrepancy || 0), 0);
+  const intelligenceRows = items.map((item) => {
+    const shipment = shipMap[String(item.awb || '').toUpperCase()] || null;
+    const intel = buildItemIntelligence({ item, shipment });
+    return {
+      awb: item.awb,
+      clientCode: shipment?.clientCode || null,
+      clientCharged: Number(shipment?.amount || 0),
+      courierBilled: Number(item?.billedAmount || 0),
+      ...intel,
+    };
+  });
+  const weightDisputes = intelligenceRows.filter((r) => r.weightDispute);
+  const leakageAlerts = intelligenceRows.filter((r) => r.leakage > INTEL_TOLERANCE);
+  const overchargeAlerts = intelligenceRows.filter((r) => r.overcharge > INTEL_TOLERANCE);
+  const clientMarginRisk = summarizeClientMarginRisk(intelligenceRows);
 
   return {
     ...inv,
@@ -140,6 +247,16 @@ async function getCourierInvoiceDetails(id) {
       totalOver:    rnd(totalOver),
       totalUnder:   rnd(totalUnder),
       netDiscrepancy: rnd(totalBilled - totalCalc),
+    },
+    intelligence: {
+      weightDisputeCount: weightDisputes.length,
+      leakageAlertCount: leakageAlerts.length,
+      overchargeAlertCount: overchargeAlerts.length,
+      totalLeakage: rnd(leakageAlerts.reduce((sum, row) => sum + row.leakage, 0)),
+      totalOvercharge: rnd(overchargeAlerts.reduce((sum, row) => sum + row.overcharge, 0)),
+      weightDisputes,
+      leakageAlerts,
+      clientMarginRisk: clientMarginRisk.slice(0, 20),
     },
   };
 }
@@ -165,15 +282,19 @@ async function updateInvoiceStatus(id, status, notes) {
 
 async function getReconciliationStats() {
   const invoices = await prisma.courierInvoice.findMany({
-    include: { items: { select: { status: true, billedAmount: true, calculatedAmount: true, discrepancy: true } } },
+    include: { items: { select: { status: true, billedAmount: true, calculatedAmount: true, discrepancy: true, awb: true, weight: true, notes: true } } },
   });
 
   let totalBilled = 0, totalCalc = 0, totalOver = 0, totalOverCount = 0;
+  let leakageAlerts = 0;
+  let weightDisputeAlerts = 0;
   invoices.forEach(inv => {
     inv.items.forEach(item => {
       totalBilled += item.billedAmount;
       if (item.calculatedAmount) totalCalc += item.calculatedAmount;
       if (item.status === 'OVER') { totalOver += item.discrepancy || 0; totalOverCount++; }
+      if (String(item.notes || '').includes('MARGIN_LEAKAGE_ALERT')) leakageAlerts++;
+      if (String(item.notes || '').includes('WEIGHT_DISPUTE_ALERT')) weightDisputeAlerts++;
     });
   });
 
@@ -184,6 +305,8 @@ async function getReconciliationStats() {
     totalOvercharges: rnd(totalOver),
     overchargeCount:  totalOverCount,
     potentialSaving:  rnd(totalOver),
+    leakageAlerts,
+    weightDisputeAlerts,
   };
 }
 

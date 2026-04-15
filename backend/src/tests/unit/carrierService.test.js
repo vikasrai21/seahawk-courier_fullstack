@@ -123,6 +123,8 @@ describe('carrier.service', () => {
       const result = await carrierService.fetchTracking('Trackon', 'TRK111', { bypassCache: true });
       expect(result.status).toBe('OutForDelivery');
       expect(result.events.length).toBe(1);
+      expect(result.events[0].rawData?.eventCode).toBe('DRSG');
+      expect(result.events[0].rawData?.hubOrBranch).toBe('Gurugram');
     });
 
     it('fetches tracking info for DTDC and maps status from the v4 API shape', async () => {
@@ -150,6 +152,8 @@ describe('carrier.service', () => {
       expect(result.status).toBe('Delivered');
       expect(result.destination).toBe('Noida');
       expect(result.events.length).toBe(1);
+      expect(result.events[0].rawData?.proofOfDelivery).toBe(true);
+      expect(result.events[0].rawData?.eventType).toBe('DELIVERY');
     });
   });
 

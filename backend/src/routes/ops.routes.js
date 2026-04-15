@@ -9,6 +9,7 @@ const { protect, requireRole, staffOnly } = require('../middleware/auth.middlewa
 const { validate } = require('../middleware/validate.middleware');
 const stateMachine = require('../services/stateMachine');
 const walletSvc = require('../services/wallet.service');
+const reconciliationSvc = require('../services/reconciliation.service');
 const { auditLog } = require('../utils/audit');
 const logger = require('../utils/logger');
 const { bulkStatusSchema } = require('../validators/ops.validator');
@@ -325,7 +326,7 @@ router.get('/dashboard', async (req, res) => {
       prisma.shipment.groupBy({ by: ['date'], where: { date: { gte: thirtyDaysAgo } }, _count: { id: true }, _sum: { amount: true }, orderBy: { date: 'asc' } }),
       prisma.shipment.findMany({ where: { date: { gte: sevenDaysAgo } }, take: 15, orderBy: { createdAt: 'desc' }, include: { client: { select: { company: true } } } }),
       prisma.quote.aggregate({ _count: { id: true }, _avg: { profit: true, margin: true }, _sum: { profit: true } }),
-      prisma.courierInvoice.count({ where: { status: 'SUCCESS' } }),
+      reconciliationSvc.getReconciliationStats(),
       // Delayed shipments by courier (in transit > 7 days)
       prisma.shipment.groupBy({ by: ['courier'], where: { status: 'InTransit', date: { lte: sevenDaysAgo }, courier: { not: null } }, _count: { id: true }, orderBy: { _count: { id: 'desc' } } }),
       // Cost estimate from courier invoices this month
@@ -384,7 +385,11 @@ router.get('/dashboard', async (req, res) => {
         totalProfit: quoteStats._sum.profit || 0,
       },
       reconciliation: {
-        totalInvoices: reconStats,
+        totalInvoices: reconStats?.totalInvoices || 0,
+        overchargeCount: reconStats?.overchargeCount || 0,
+        leakageAlerts: reconStats?.leakageAlerts || 0,
+        weightDisputeAlerts: reconStats?.weightDisputeAlerts || 0,
+        potentialSaving: reconStats?.potentialSaving || 0,
       }
     };
 

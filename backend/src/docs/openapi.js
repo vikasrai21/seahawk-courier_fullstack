@@ -149,6 +149,33 @@ function baseSpec(serverUrl) {
           responses: { 200: { description: 'Tracking result' }, 404: { description: 'Not found' } },
         },
       },
+      '/api/public/integrations/ecommerce/{provider}/{clientCode}': {
+        post: {
+          tags: ['Webhooks'],
+          summary: 'Marketplace/OMS ingestion endpoint',
+          description: 'Create draft orders from external systems using x-api-key and optional Idempotency-Key.',
+          parameters: [
+            { name: 'provider', in: 'path', required: true, schema: { type: 'string', example: 'amazon' } },
+            { name: 'clientCode', in: 'path', required: true, schema: { type: 'string', example: 'CLIENT001' } },
+            { name: 'x-api-key', in: 'header', required: true, schema: { type: 'string' } },
+            { name: 'Idempotency-Key', in: 'header', required: false, schema: { type: 'string' } },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { type: 'object', additionalProperties: true },
+              },
+            },
+          },
+          responses: {
+            201: { description: 'Draft created from payload' },
+            200: { description: 'Duplicate/idempotent replay ignored' },
+            401: { description: 'Invalid API key' },
+            403: { description: 'Scope or provider disabled' },
+          },
+        },
+      },
       '/api/public/rum': {
         post: {
           tags: ['Public Tracking'],

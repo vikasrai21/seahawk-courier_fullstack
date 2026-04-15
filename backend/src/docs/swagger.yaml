@@ -7,6 +7,7 @@ servers:
   - url: http://localhost:3001
     description: Local
 tags:
+  - name: Health
   - name: Auth
   - name: Shipments
   - name: Tracking
@@ -139,6 +140,15 @@ paths:
           description: Token refreshed
         '401':
           description: Invalid refresh token
+  /api/health:
+    get:
+      tags: [Health]
+      summary: Service health check
+      responses:
+        '200':
+          description: Healthy
+        '503':
+          description: Unhealthy
   /api/shipments:
     get:
       tags: [Shipments]

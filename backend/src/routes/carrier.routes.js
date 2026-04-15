@@ -32,7 +32,8 @@ router.get('/configs', authenticate, requireRole(['ADMIN']), (req, res) => {
 // ── Book shipment via carrier API ─────────────────────────────────────────
 router.post('/book', authenticate, requireRole(STAFF), async (req, res) => {
   try {
-    const result = await carrier.createShipment(req.body.carrier, req.body);
+    const dryRun = req.body?.dryRun === true || String(req.body?.dryRun || '').toLowerCase() === 'true';
+    const result = await carrier.createShipment(req.body.carrier, req.body, { dryRun });
     return R.ok(res, result, 201);
   } catch (err) { return R.error(res, err.message); }
 });
