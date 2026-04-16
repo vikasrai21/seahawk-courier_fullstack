@@ -116,16 +116,20 @@ export default function DashboardStats({ overview, previousOverview, dateLabel, 
   const totalShipments = kpis.totalShipments || ops.totalShipments || 0;
   const transitOut = (overview?.byStatus?.OutForDelivery || 0) + (overview?.byStatus?.InTransit || 0);
 
-  // Smart revenue calculation — use calculated revenue as main figure when available
-  const hasSmartRev = smartRevenue?.calculatedRevenue > 0;
-  const mainRevenue = hasSmartRev ? smartRevenue.calculatedRevenue : (kpis.totalRevenue || ops.monthRevenue || 0);
+  // Smart revenue calculation
+  const aiRevenue = smartRevenue?.calculatedRevenue || 0;
+  const hasSmartRev = aiRevenue > 0;
+  const recordedRevenue = kpis.totalRevenue || ops.monthRevenue || 0;
+
+  // We prioritize the actual Recorded Revenue so the Gross Profit calculation remains factual
+  const mainRevenue = recordedRevenue;
   const revenueSubtitle = hasSmartRev
-    ? `⚡ AI-Calculated • Recorded: ₹${Number(smartRevenue.recordedRevenue || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+    ? `⚡ AI Estimated Value: ₹${Number(aiRevenue).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
     : `₹${fmtNumber(ops.todayRevenue || 0)} today`;
 
-  // Dynamically calculate profit if we're using AI revenue, else fall back to backend op bounds
-  const grossProfit = hasSmartRev ? Math.round(mainRevenue * 0.28) : (ops.grossProfit || 0);
-  const avgMargin = hasSmartRev ? 28 : (ops.avgMargin || 0);
+  // Dynamically calculate profit using actual billed revenue
+  const grossProfit = ops.grossProfit || Math.round(recordedRevenue * 0.28);
+  const avgMargin = ops.avgMargin || 28;
 
   return (
     <div className="space-y-6 relative">
@@ -133,7 +137,7 @@ export default function DashboardStats({ overview, previousOverview, dateLabel, 
       <div className={`grid gap-5 md:grid-cols-2 xl:grid-cols-3 ${isOwner ? '2xl:grid-cols-6' : '2xl:grid-cols-4'}`}>
         <StatCard title="Total Shipments" value={totalShipments || kpis.totalShipments || 0} previous={prev.totalShipments || 0} icon={Package} tone="orange" subtitle={`${fmtNumber(ops.weekShipments || 0)} this week`} />
         
-        {isOwner && <StatCard title={hasSmartRev ? "Revenue (AI)" : "Revenue"} value={mainRevenue} previous={prev.totalRevenue || 0} format="currency" icon={IndianRupee} tone="blue" subtitle={revenueSubtitle} />}
+        {isOwner && <StatCard title="Revenue" value={mainRevenue} previous={prev.totalRevenue || 0} format="currency" icon={IndianRupee} tone="blue" subtitle={revenueSubtitle} />}
         {isOwner && <StatCard title="Gross Profit" value={grossProfit} previous={0} format="currency" icon={TrendingUp} tone="green" subtitle={`Estimated from invoices`} />}
         {isOwner && <StatCard title="Avg Margin" value={avgMargin} previous={0} format="percent" icon={Percent} tone="purple" subtitle={`On ${fmtNumber(totalShipments)} shipments`} />}
         
