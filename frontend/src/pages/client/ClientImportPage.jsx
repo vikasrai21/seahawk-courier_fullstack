@@ -68,7 +68,7 @@ export default function ClientImportPage({ toast }) {
     }
     setLoading(true);
     try {
-      const res = await api.post('/portal/import', { shipments: rows });
+      const res = await api.post('/portal/import', { shipments: rows }, { timeout: 600_000 });
       setResult(res.data || {});
       toast?.(`Import completed. Tracking sync started for ${res.data?.trackingQueued || 0} shipments.`, 'success');
     } catch (err) {

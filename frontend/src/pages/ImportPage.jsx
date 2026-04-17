@@ -261,7 +261,7 @@ export default function ImportPage({ toast }) {
     setLoading(true);
     try {
       const shipments = mappedRows.map(({ _dateCorrected, ...row }) => row);
-      const res = await api.post('/shipments/import', { shipments });
+      const res = await api.post('/shipments/import', { shipments }, { timeout: 600_000 });
       setResult(res.data);
       toast?.(`Imported ${res.data.imported} rows. Tracking sync started for ${res.data.trackingQueued || 0} shipments.`, 'success');
     } catch (err) {
