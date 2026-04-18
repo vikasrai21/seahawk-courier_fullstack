@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { normalizeBarcodeCandidate } from '../utils/barcode.js';
+import { analyzeCaptureQuality, describeCaptureIssues } from '../utils/scannerQuality.js';
 import {
   Camera, Check, AlertCircle, RotateCcw, Send, Volume2, VolumeX,
   Wifi, WifiOff, Package, ScanLine, RefreshCw, X, Brain,
@@ -402,6 +403,7 @@ export default function DirectMobileScannerPage() {
   const [duplicateWarning, setDuplicateWarning] = useState('');
   const [offlineQueue, setOfflineQueue] = useState([]);
   const [docDetected, setDocDetected] = useState(false);
+  const [captureQuality, setCaptureQuality] = useState({ ok: false, issues: [], metrics: null });
   const [captureCameraReady, setCaptureCameraReady] = useState(false);
   const [sessionDuration, setSessionDuration] = useState('0m');
   const [barcodeFailCount, setBarcodeFailCount] = useState(0);
@@ -667,26 +669,17 @@ export default function DirectMobileScannerPage() {
   useEffect(() => { if (step === STEPS.CAPTURING) startDocumentCamera(); }, [step, startDocumentCamera]);
 
   useEffect(() => {
-    if (step !== STEPS.CAPTURING) { setDocDetected(false); autoCaptureTriggeredRef.current = false; return; }
+    if (step !== STEPS.CAPTURING) {
+      setDocDetected(false);
+      setCaptureQuality({ ok: false, issues: [], metrics: null });
+      autoCaptureTriggeredRef.current = false;
+      return;
+    }
     const tick = setInterval(() => {
-      const video = videoRef.current, guide = guideRef.current;
-      if (!video || !guide || !video.videoWidth) return;
-      const vr = video.getBoundingClientRect(), gr = guide.getBoundingClientRect();
-      const sx = video.videoWidth / Math.max(vr.width,1), sy = video.videoHeight / Math.max(vr.height,1);
-      const cx = Math.max(0, Math.floor((gr.left - vr.left)*sx)), cy = Math.max(0, Math.floor((gr.top - vr.top)*sy));
-      const cw = Math.max(24, Math.floor(gr.width*sx)), ch = Math.max(24, Math.floor(gr.height*sy));
-      const sc = document.createElement('canvas'); sc.width = 96; sc.height = 72;
-      const ctx = sc.getContext('2d', { willReadFrequently: true });
-      if (!ctx) return;
-      ctx.drawImage(video, cx, cy, Math.min(cw, video.videoWidth-cx), Math.min(ch, video.videoHeight-cy), 0, 0, 96, 72);
-      const d = ctx.getImageData(0, 0, 96, 72).data;
-      let sum = 0, sumSq = 0, edges = 0, px = 0;
-      for (let i = 0; i < d.length; i += 4) {
-        const l = 0.2126*d[i] + 0.7152*d[i+1] + 0.0722*d[i+2];
-        sum += l; sumSq += l*l; if (i > 0 && Math.abs(l - px) > 26) edges++; px = l;
-      }
-      const tot = 96*72, mean = sum/tot, contrast = Math.sqrt(Math.max(0, sumSq/tot - mean*mean));
-      setDocDetected(mean > 35 && mean < 225 && contrast > 24 && edges/tot > 0.12);
+      const quality = analyzeCaptureQuality(videoRef.current, guideRef.current);
+      if (!quality) return;
+      setCaptureQuality(quality);
+      setDocDetected(quality.ok);
     }, 320);
     return () => clearInterval(tick);
   }, [step]);
@@ -723,13 +716,28 @@ export default function DirectMobileScannerPage() {
   }, [preprocessCanvas]);
 
   const handleCapturePhoto = useCallback(() => {
+    const quality = captureQuality?.metrics
+      ? captureQuality
+      : analyzeCaptureQuality(videoRef.current, guideRef.current);
+    if (!quality?.ok) {
+      setCaptureQuality(quality || { ok: false, issues: [], metrics: null });
+      setDocDetected(false);
+      setErrorMsg(
+        describeCaptureIssues(quality?.issues)
+        || 'Capture quality is low. Hold steady and align the AWB in the frame.'
+      );
+      vibrate([70, 40, 70]);
+      playErrorBeep();
+      return;
+    }
+
     setFlash('white'); playCaptureBeep(); vibrate([30]);
     const image = captureDocumentRegion();
     if (!image) { setErrorMsg('Could not capture image. Try again.'); scanBusyRef.current = false; return; }
     setCapturedImage(`data:image/jpeg;base64,${image}`);
     stopCamera();
     goStep(STEPS.PREVIEW);
-  }, [captureDocumentRegion, stopCamera, goStep]);
+  }, [captureDocumentRegion, stopCamera, goStep, captureQuality]);
 
   // ── Helper: add item to session queue ──
   const addToQueue = useCallback((item) => {
@@ -852,6 +860,9 @@ export default function DirectMobileScannerPage() {
   // RENDER
   // ════════════════════════════════════════════════════════════════════════
   const stepClass = (s) => `msp-step ${step === s ? 'active' : ''}`;
+  const captureGuidance = docDetected
+    ? '✓ AWB in frame — press shutter'
+    : (describeCaptureIssues(captureQuality.issues) || 'Fit the AWB slip inside the frame');
 
   const fieldConf = useMemo(() => {
     if (!reviewData) return {};
@@ -1116,9 +1127,9 @@ export default function DirectMobileScannerPage() {
             </div>
             <div className="cam-bottom">
               <div style={{ color: docDetected ? 'rgba(16,185,129,0.95)' : 'rgba(255,255,255,0.85)', fontSize:'0.82rem', fontWeight:600, textAlign:'center', transition:'color 0.3s' }}>
-                {docDetected ? '✓ AWB in frame — press shutter' : 'Fit the AWB slip inside the frame'}
+                {captureGuidance}
               </div>
-              <button className="capture-btn" onClick={handleCapturePhoto} disabled={!captureCameraReady} style={{ opacity: captureCameraReady ? 1 : 0.4 }}>
+              <button className="capture-btn" onClick={handleCapturePhoto} disabled={!captureCameraReady || !docDetected} style={{ opacity: captureCameraReady && docDetected ? 1 : 0.4 }}>
                 <div className="capture-btn-inner" />
               </button>
               <button style={{ background:'rgba(255,255,255,0.15)', border:'none', color:'white', fontSize:'0.72rem', padding:'6px 16px', borderRadius:20, cursor:'pointer', fontFamily:'inherit', fontWeight:600 }} onClick={() => { setLockedAwb(''); scanBusyRef.current = false; goStep(STEPS.SCANNING); }}>
