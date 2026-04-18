@@ -15,6 +15,7 @@ function baseSpec(serverUrl) {
       { name: 'Health' },
       { name: 'Auth' },
       { name: 'Shipments' },
+      { name: 'Returns' },
       { name: 'Public Tracking' },
       { name: 'Webhooks' },
     ],
@@ -196,6 +197,108 @@ function baseSpec(serverUrl) {
             },
           },
           responses: { 202: { description: 'Accepted' } },
+        },
+      },
+      '/api/returns': {
+        get: {
+          tags: ['Returns'],
+          summary: 'List return requests',
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+            { name: 'limit', in: 'query', schema: { type: 'integer', default: 20 } },
+            { name: 'status', in: 'query', schema: { type: 'string' } },
+            { name: 'returnMethod', in: 'query', schema: { type: 'string', enum: ['PICKUP', 'SELF_SHIP'] } },
+            { name: 'reason', in: 'query', schema: { type: 'string' } },
+            { name: 'clientCode', in: 'query', schema: { type: 'string' } },
+            { name: 'dateFrom', in: 'query', schema: { type: 'string', format: 'date' } },
+            { name: 'dateTo', in: 'query', schema: { type: 'string', format: 'date' } },
+            { name: 'search', in: 'query', schema: { type: 'string' } },
+          ],
+          responses: { 200: { description: 'Return list' }, 401: { description: 'Unauthorized' } },
+        },
+      },
+      '/api/returns/{id}/book-pickup': {
+        post: {
+          tags: ['Returns'],
+          summary: 'Book reverse return shipment for a return request',
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+          responses: { 200: { description: 'Reverse pickup booked' }, 400: { description: 'Booking failed' } },
+        },
+      },
+      '/api/returns/{id}/generate-label': {
+        post: {
+          tags: ['Returns'],
+          summary: 'Generate prepaid self-ship return label',
+          description: 'Works only for return requests with returnMethod = SELF_SHIP.',
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+          responses: { 200: { description: 'Prepaid return label generated' }, 400: { description: 'Label generation failed' } },
+        },
+      },
+      '/api/returns/{id}/sync-tracking': {
+        post: {
+          tags: ['Returns'],
+          summary: 'Sync reverse-tracking status for one return request',
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+          responses: { 200: { description: 'Reverse tracking synced' }, 400: { description: 'Sync failed' } },
+        },
+      },
+      '/api/returns/{id}/timeline': {
+        get: {
+          tags: ['Returns'],
+          summary: 'Get return audit timeline',
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+            { name: 'limit', in: 'query', schema: { type: 'integer', default: 50, minimum: 5, maximum: 200 } },
+          ],
+          responses: { 200: { description: 'Timeline entries' }, 404: { description: 'Return not found' } },
+        },
+      },
+      '/api/returns/{id}/status': {
+        patch: {
+          tags: ['Returns'],
+          summary: 'Manually update return status',
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['status'],
+                  properties: {
+                    status: { type: 'string', enum: ['PENDING', 'APPROVED', 'LABEL_READY', 'PICKUP_BOOKED', 'IN_TRANSIT', 'RECEIVED', 'RETURNED_TO_CLIENT', 'REJECTED'] },
+                    force: { type: 'boolean', default: false },
+                  },
+                },
+              },
+            },
+          },
+          responses: { 200: { description: 'Status updated' }, 409: { description: 'Invalid status transition' } },
+        },
+      },
+      '/api/returns/sync-tracking': {
+        post: {
+          tags: ['Returns'],
+          summary: 'Sync reverse-tracking status for active return requests',
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: false,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: { limit: { type: 'integer', example: 100 } },
+                },
+              },
+            },
+          },
+          responses: { 200: { description: 'Bulk sync completed' }, 400: { description: 'Sync failed' } },
         },
       },
       '/api/webhooks/delhivery': {

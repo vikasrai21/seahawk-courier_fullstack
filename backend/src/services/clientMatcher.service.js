@@ -254,11 +254,11 @@ async function getHistoryBoost({ consignee, destination }) {
 async function suggestClientForShipment(shipment, ocrHints = null) {
   await refreshDynamicAliases();
 
-  const clients = await prisma.client.findMany({
+  const clients = (await prisma.client.findMany({
     where: { active: true },
     select: { code: true, company: true, address: true, notes: true },
     orderBy: { code: 'asc' },
-  });
+  })) || [];
 
   if (!clients.length) {
     return {

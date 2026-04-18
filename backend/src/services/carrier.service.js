@@ -37,8 +37,8 @@ function getCarrierConfig(carrier) {
     },
     DTDC: {
       carrier:   'DTDC',
-      enabled:   !!process.env.DTDC_CUSTOMER_CODE,
-      apiKey:    process.env.DTDC_API_KEY,
+      enabled:   !!process.env.DTDC_CUSTOMER_CODE && !!(process.env.DTDC_API_KEY || process.env.DTDC_ACCESS_TOKEN),
+      apiKey:    process.env.DTDC_API_KEY || process.env.DTDC_ACCESS_TOKEN,
       apiUrl:    process.env.DTDC_API_URL || 'http://blktapi.dtdc.com',
       config:    { customerCode: process.env.DTDC_CUSTOMER_CODE },
     },
@@ -139,6 +139,7 @@ const delhivery = {
       awb:      res.packages[0].waybill,
       carrier:  'Delhivery',
       trackUrl: `https://www.delhivery.com/track/package/${res.packages[0].waybill}`,
+      labelUrl: `${cfg.apiUrl}/api/p/packing_slip?wbns=${res.packages[0].waybill}&pdf=true`,
       raw:      res,
     };
   },
@@ -196,7 +197,7 @@ const dtdc = {
       request_id:  Date.now().toString(),
       access_token: cfg.apiKey,
       json_input: JSON.stringify([{
-        CUST_CODE:     cfg.accountNo,
+        CUST_CODE:     cfg.config?.customerCode || '',
         ORIGIN_AREA:   'DL',
         CONSIGNEE:     data.consignee,
         DEST_CITY:     data.deliveryCity,
@@ -227,7 +228,7 @@ const dtdc = {
     };
   },
 
-  async fetchTracking(awb, cfg) {
+  async fetchTracking(awb, _cfg) {
     const tracking = await dtdcTrackingSvc.getTracking(awb);
     if (!tracking) return null;
 
@@ -385,7 +386,7 @@ const trackon = {
     };
   },
 
-  async cancelShipment(awb, cfg) {
+  async cancelShipment(awb, _cfg) {
     // Trackon booking API v2.02 docs shared for this project do not define cancellation API.
     throw new Error(`Trackon cancellation API is not available in current credentials/doc set for AWB ${awb}`);
   },
@@ -637,6 +638,21 @@ async function cancelShipment(carrier, awb) {
   return impl.cancelShipment(awb, cfg);
 }
 
+function isCarrierConfigured(carrier) {
+  try {
+    const cfg = getCarrierConfig(carrier);
+    return Boolean(cfg?.enabled);
+  } catch {
+    return false;
+  }
+}
+
+function getConfiguredCarriers(preferred = Object.keys(CARRIERS)) {
+  const requested = Array.isArray(preferred) ? preferred : Object.keys(CARRIERS);
+  const unique = [...new Set(requested)];
+  return unique.filter((carrier) => CARRIERS[carrier] && isCarrierConfigured(carrier));
+}
+
 /* ── Persist tracking events to DB ── */
 async function syncTrackingEvents(shipmentId, awb, carrier) {
   const tracking = await fetchTracking(carrier, awb, { bypassCache: true });
@@ -694,15 +710,6 @@ function mapDelhiveryStatus(raw) {
   if (s.includes('RTO') || s.includes('RETURN')) return 'RTO';
   if (s.includes('FAIL') || s.includes('UNDELIVER')) return 'Failed';
   return 'Booked';
-}
-function mapDTDCStatus(raw) {
-  const s = raw.toUpperCase();
-  if (s.includes('DELIVER')) return 'Delivered';
-  if (s.includes('OUT FOR')) return 'OutForDelivery';
-  if (s.includes('TRANSIT') || s.includes('DISPATCH')) return 'InTransit';
-  if (s.includes('PICK') || s.includes('COLLECT')) return 'PickedUp';
-  if (s.includes('RTO')) return 'RTO';
-  return 'InTransit';
 }
 function mapTrackonStatus(raw) {
   const s = String(raw || '').toUpperCase().trim();
@@ -863,5 +870,7 @@ module.exports = {
   fetchTracking,
   cancelShipment,
   syncTrackingEvents,
+  isCarrierConfigured,
+  getConfiguredCarriers,
   CARRIERS: Object.keys(CARRIERS),
 };

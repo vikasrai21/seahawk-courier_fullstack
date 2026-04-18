@@ -203,9 +203,11 @@ const scanImage = asyncHandler(async (req, res) => {
   const { imageBase64 } = req.body;
   if (!imageBase64) return res.status(400).json({ success: false, message: 'Image base64 string is required' });
 
-  // 1. Process image using Gemini Vision OCR
+  // 1. Process image using configured OCR engine (local by default)
   const { extractShipmentFromImage } = require('../services/ocr.service');
-  const details = await extractShipmentFromImage(imageBase64, 'image/jpeg');
+  let details = await extractShipmentFromImage(imageBase64, 'image/jpeg');
+  const intelligenceEngine = require('../services/intelligenceEngine.service');
+  details = await intelligenceEngine.resolveEntities(details, { sessionContext: req.body.sessionContext || {} });
 
   if (!details.success || !details.awb) {
     return res.status(400).json({ success: false, message: 'Could not extract a valid AWB from the image.' });
@@ -213,15 +215,13 @@ const scanImage = asyncHandler(async (req, res) => {
 
   // 2. We now have the AWB and optionally consignee, weight, destination
   // We feed this into the existing scanAwbAndUpdate logic, but we augment the DB if needed
-  const svc = require('../services/shipment.service');
   const prisma = require('../config/prisma');
-  const { normalizeStatus } = require('../services/stateMachine');
 
   const awb = details.awb.trim();
   let courier = details.courier || 'AUTO';
 
   if (!courier || courier === 'AUTO') {
-    // If Gemini didn't find the courier, use regex
+    // If OCR did not resolve courier, use AWB heuristics
     const autoDetectCourier = (awbStr) => {
       const a = String(awbStr || '').toUpperCase().trim();
       if (/^\d{12}$/.test(a)) return 'Trackon';
@@ -381,7 +381,7 @@ const scanMobile = asyncHandler(async (req, res) => {
     awb: effectiveAwb,
     shipmentId: shipment?.id || null,
     linkedDraftId,
-    shipmentId: shipment?.id || null,
+    courier: shipment?.courier || ocrHints?.courier || '',
     status: 'pending_review',
     clientCode,
     clientName,

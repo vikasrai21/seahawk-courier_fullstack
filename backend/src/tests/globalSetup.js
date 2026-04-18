@@ -35,9 +35,10 @@ module.exports = async function setup() {
   process.env.INTEGRATION_TEST = 'true';
 
   try {
-    // Push the schema directly without migrations history (perfect for tests)
+    // Push the schema directly without migrations history (perfect for tests).
+    // Do not skip generation so Prisma client always matches the latest schema.
     console.log('📦 Pushing Prisma schema to test database...');
-    execSync('npx prisma db push --accept-data-loss --skip-generate', {
+    execSync('npx prisma db push --accept-data-loss', {
       stdio: 'inherit',
       env: { ...process.env, DATABASE_URL: testDbUrl },
     });

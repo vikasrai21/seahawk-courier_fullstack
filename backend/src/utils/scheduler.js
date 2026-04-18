@@ -6,6 +6,7 @@ const logger = require('./logger');
 const config = require('../config');
 const { cleanupExpiredTokens } = require('../services/auth.service');
 const { syncTrackingEvents } = require('../services/carrier.service');
+const returnService = require('../services/return.service');
 const geocode = require('../services/geocode.service');
 const integrationIngestSvc = require('../services/integration-ingest.service');
 
@@ -43,6 +44,16 @@ async function syncTracking() {
     logger.info(`Scheduler: tracking sync finished (${synced} synced, ${failed} failed)`);
   } catch (err) {
     logger.error('Scheduler: tracking sync failed', { error: err.message });
+  }
+}
+
+// ── Reverse return tracking sync ─────────────────────────────────────────────
+async function syncReverseReturnTracking() {
+  try {
+    const result = await returnService.syncActiveReverseReturns(120);
+    logger.info('Scheduler: reverse return tracking sync finished', result);
+  } catch (err) {
+    logger.error('Scheduler: reverse return tracking sync failed', { error: err.message });
   }
 }
 
@@ -243,6 +254,9 @@ function startScheduler() {
   // Tracking sync every 30 minutes
   cron.schedule('*/30 * * * *', syncTracking);
 
+  // Reverse return tracking sync every 30 minutes
+  cron.schedule('*/30 * * * *', syncReverseReturnTracking);
+
   // Cleanup expired/revoked refresh tokens — daily at 3am
   cron.schedule('0 3 * * *', () => {
     cleanupExpiredTokens().catch(err => logger.error('Token cleanup failed', { error: err.message }));
@@ -266,7 +280,7 @@ function startScheduler() {
   // SLO checks — every 30 minutes
   cron.schedule('*/30 * * * *', runSloChecks);
 
-  logger.info('Scheduler started: tracking sync (30m), token cleanup (3am), DB backup (2am), NDR check (9am), geo cache (hourly), connector pulls (10m), retention (1am), SLO checks (30m)');
+  logger.info('Scheduler started: tracking sync (30m), reverse return sync (30m), token cleanup (3am), DB backup (2am), NDR check (9am), geo cache (hourly), connector pulls (10m), retention (1am), SLO checks (30m)');
 }
 
 module.exports = { startScheduler };

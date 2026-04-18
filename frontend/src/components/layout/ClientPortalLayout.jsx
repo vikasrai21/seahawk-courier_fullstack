@@ -21,6 +21,7 @@ import {
   FileText,
   ShieldCheck,
   Calculator,
+  RotateCcw,
   LogOut,
   Sun,
   Moon,
@@ -51,6 +52,7 @@ const navGroups = [
       { to: '/portal/import', label: 'Order Import', icon: Upload },
       { to: '/portal/pod', label: 'POD Vault', icon: FileText },
       { to: '/portal/rto-intelligence', label: 'Delivery Risk Engine', icon: Calculator },
+      { to: '/portal/returns', label: 'Returns', icon: RotateCcw },
     ],
   },
   {
@@ -87,6 +89,7 @@ const pageMeta = {
   '/portal/branding': { title: 'Branding', subtitle: 'White-label settings for client-facing tracking.' },
   '/portal/developer': { title: 'Developer Hub', subtitle: 'API and integration tools for engineering teams.' },
   '/portal/governance': { title: 'Governance', subtitle: 'Security, audit, and compliance workspace.' },
+  '/portal/returns': { title: 'Returns', subtitle: 'Request and track product returns and reverse pickups.' },
 };
 
 function SidebarNav({ onNavigate }) {

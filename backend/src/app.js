@@ -16,6 +16,7 @@ const { issueCsrfCookie, validateCsrf } = require('./middleware/csrf.middleware'
 const { metricsMiddleware, getMetricsSnapshot } = require('./middleware/metrics.middleware');
 const { requestContext } = require('./middleware/request-context.middleware');
 const R = require('./utils/response');
+const scannerQuality = require('./services/scannerQuality.service');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -136,6 +137,10 @@ app.get('/api/health/metrics', (_req, res) => {
   R.ok(res, getMetricsSnapshot());
 });
 
+app.get('/api/health/scanner-quality', (_req, res) => {
+  R.ok(res, scannerQuality.getScannerQualitySnapshot({ windowMinutes: 240 }));
+});
+
 // ── Routes ─────────────────────────────────────────────────────────────────
 app.use('/api/public',         require('./routes/public.routes'));
 app.use('/api/auth',           require('./routes/auth.routes'));
@@ -163,6 +168,7 @@ app.use('/api/support',        require('./routes/support.routes'));
 app.use('/api/courier-invoices', require('./routes/courier-invoice.routes'));
 app.use('/api/docs',           require('./routes/docs.routes'));
 app.use('/api/pincodes',      require('./routes/pincode.routes'));
+app.use('/api/returns',        require('./routes/return.routes'));
 
 // ── Catch-all for API Routes ─────────────────────────────────────────────
 app.all('/api/*', (req, res) => {

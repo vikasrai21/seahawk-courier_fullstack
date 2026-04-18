@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { cropRectForCoverVideo } from '../utils/videoCoverCrop.js';
-import { normalizeBarcodeCandidate } from '../utils/barcode.js';
+import { normalizeBarcodeCandidate, rankBarcodeCandidates } from '../utils/barcode.js';
 import {
   Camera, Check, AlertCircle, RotateCcw, Send, ChevronRight, Volume2, VolumeX,
   Wifi, WifiOff, Zap, Package, ScanLine, Shield, RefreshCw, X, Brain,
@@ -17,20 +17,37 @@ const BARCODE_SCAN_REGION = { w: '90vw', h: '18vw' };  // aspect ~5:1, always la
 // Document capture: tall portrait rectangle matching a real AWB slip shape
 const DOC_CAPTURE_REGION  = { w: '92vw', h: '130vw' }; // ~A4 portrait proportion
 const AUTO_NEXT_DELAY = 3500;
+const FAST_AUTO_NEXT_DELAY = 900;
+const FAST_SCAN_TIMEOUT_MS = 10000;
 const OFFLINE_QUEUE_KEY_PREFIX = 'mobile_scanner_offline_queue';
+const WORKFLOW_MODE_KEY = 'mobile_scanner_workflow_mode';
+const DEVICE_PROFILE_KEY = 'mobile_scanner_device_profile';
 const LOCK_TO_CAPTURE_DELAY = 80; // fast transition after barcode lock
+const BARCODE_STABILITY_WINDOW_MS = 1100;
+const BARCODE_STABILITY_HITS = 3;
+const BARCODE_FAIL_THRESHOLD = 160;
+const BARCODE_REFRAME_ATTEMPTS = 2;
+const BARCODE_POLL_INTERVAL_MS = 45;
+const DOC_STABLE_MIN_TICKS = 2;
+const DOC_CAPTURE_MIN_INTERVAL_MS = 500;
+const CAPTURE_MAX_WIDTH = 960;
+const CAPTURE_JPEG_QUALITY = 0.68;
+const PREFER_ZXING_FOR_TRACKON = String(import.meta.env.VITE_PREFER_ZXING_FOR_TRACKON || '1') !== '0';
+const SCAN_HINT_COOLDOWN_MS = 900;
+const DEVICE_PROFILES = {
+  phone: 'phone-camera',
+  rugged: 'rugged-scanner',
+};
 
 // After this many consecutive frames with no barcode detected, auto-switch the
 // scan region to document mode and vibrate to alert the operator.
-// Increased from 90 to 300 so the user has 10-15 seconds for autofocus to kick in.
-const BARCODE_FAIL_THRESHOLD = 300;
+// Smart fallback now performs quick reframe retries before OCR mode.
 
 // Native BarcodeDetector formats (supported on Chrome Android + iOS 17+)
 const NATIVE_BARCODE_FORMATS = [
   'code_128', 'code_39', 'code_93', 'codabar',
   'ean_13', 'ean_8', 'itf', 'qr_code',
 ];
-// Removed PREFER_ZXING_FOR_TRACKON constant which was bypassing native entirely.
 
 const STEPS = {
   IDLE: 'IDLE',
@@ -50,6 +67,20 @@ const STEPS = {
 // â”€â”€â”€ Audio/Haptics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const vibrate = (pattern) => {
   try { navigator?.vibrate?.(pattern); } catch {}
+};
+
+const HAPTIC_PATTERN = {
+  tap: [20],
+  lock: [24, 24, 24],
+  success: [18, 28, 72],
+  warning: [70, 50, 70],
+  retry: [28, 40, 28],
+  error: [110, 55, 110],
+  duplicate: [90, 50, 90, 50, 90],
+};
+
+const pulseHaptic = (kind = 'tap') => {
+  vibrate(HAPTIC_PATTERN[kind] || HAPTIC_PATTERN.tap);
 };
 
 const playTone = (freq, duration, type = 'sine') => {
@@ -91,6 +122,124 @@ const isProbablySecureContextForCamera = () => {
   } catch {
     return false;
   }
+};
+
+const describeCaptureIssues = (issues = []) => {
+  if (!issues.length) return '';
+  const labels = [];
+  if (issues.includes('blur')) labels.push('hold steady');
+  if (issues.includes('glare')) labels.push('reduce glare');
+  if (issues.includes('angle')) labels.push('straighten angle');
+  if (issues.includes('dark')) labels.push('add light');
+  if (issues.includes('low_edge')) labels.push('fill frame');
+  if (!labels.length) return '';
+  return `Improve capture: ${labels.join(', ')}.`;
+};
+
+const analyzeCaptureQuality = (video, guide) => {
+  if (!video || !guide || !video.videoWidth || !video.videoHeight) return null;
+  const crop = cropRectForCoverVideo(video, guide);
+  if (!crop) return null;
+
+  const sx = Math.max(0, Math.floor(crop.x));
+  const sy = Math.max(0, Math.floor(crop.y));
+  const sw = Math.max(24, Math.floor(crop.w));
+  const sh = Math.max(24, Math.floor(crop.h));
+
+  const sampleW = 128;
+  const sampleH = 96;
+  const sampleCanvas = document.createElement('canvas');
+  sampleCanvas.width = sampleW;
+  sampleCanvas.height = sampleH;
+  const ctx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return null;
+
+  ctx.drawImage(
+    video,
+    sx,
+    sy,
+    Math.min(sw, video.videoWidth - sx),
+    Math.min(sh, video.videoHeight - sy),
+    0,
+    0,
+    sampleW,
+    sampleH
+  );
+  const pixels = ctx.getImageData(0, 0, sampleW, sampleH).data;
+
+  const total = sampleW * sampleH;
+  const lum = new Float32Array(total);
+  let sumLum = 0;
+  let brightPixels = 0;
+  let darkPixels = 0;
+  for (let i = 0, p = 0; i < pixels.length; i += 4, p += 1) {
+    const l = 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2];
+    lum[p] = l;
+    sumLum += l;
+    if (l >= 245) brightPixels += 1;
+    if (l <= 24) darkPixels += 1;
+  }
+
+  let laplacianEnergy = 0;
+  let edgeCount = 0;
+  let topEdge = 0;
+  let bottomEdge = 0;
+  let leftEdge = 0;
+  let rightEdge = 0;
+  const borderBandY = Math.max(4, Math.floor(sampleH * 0.15));
+  const borderBandX = Math.max(4, Math.floor(sampleW * 0.15));
+  const cols = sampleW;
+
+  for (let y = 1; y < sampleH - 1; y += 1) {
+    for (let x = 1; x < sampleW - 1; x += 1) {
+      const idx = y * cols + x;
+      const c = lum[idx];
+      const l = lum[idx - 1];
+      const r = lum[idx + 1];
+      const t = lum[idx - cols];
+      const b = lum[idx + cols];
+      const gx = Math.abs(r - l);
+      const gy = Math.abs(b - t);
+      const edgeStrength = gx + gy;
+      const lap = Math.abs((4 * c) - l - r - t - b);
+      laplacianEnergy += lap;
+      if (edgeStrength > 58) edgeCount += 1;
+
+      if (y <= borderBandY) topEdge += edgeStrength;
+      if (y >= sampleH - borderBandY) bottomEdge += edgeStrength;
+      if (x <= borderBandX) leftEdge += edgeStrength;
+      if (x >= sampleW - borderBandX) rightEdge += edgeStrength;
+    }
+  }
+
+  const coreTotal = Math.max(1, (sampleW - 2) * (sampleH - 2));
+  const brightness = sumLum / total;
+  const blurScore = laplacianEnergy / coreTotal;
+  const edgeRatio = edgeCount / coreTotal;
+  const glareRatio = brightPixels / total;
+  const darkRatio = darkPixels / total;
+  const tbSkew = Math.abs(topEdge - bottomEdge) / Math.max(1, topEdge + bottomEdge);
+  const lrSkew = Math.abs(leftEdge - rightEdge) / Math.max(1, leftEdge + rightEdge);
+  const perspectiveSkew = Math.max(tbSkew, lrSkew);
+
+  const issues = [];
+  if (blurScore < 22) issues.push('blur');
+  if (glareRatio > 0.18) issues.push('glare');
+  if (darkRatio > 0.55 || brightness < 40) issues.push('dark');
+  if (edgeRatio < 0.08) issues.push('low_edge');
+  if (perspectiveSkew > 0.62) issues.push('angle');
+
+  return {
+    ok: issues.length === 0,
+    issues,
+    metrics: {
+      brightness: Number(brightness.toFixed(1)),
+      blurScore: Number(blurScore.toFixed(1)),
+      glareRatio: Number((glareRatio * 100).toFixed(1)),
+      edgeRatio: Number((edgeRatio * 100).toFixed(1)),
+      perspectiveSkew: Number((perspectiveSkew * 100).toFixed(1)),
+    },
+  };
 };
 
 // â”€â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -520,7 +669,7 @@ const confLevel = (score) => {
 const confDotClass = (score) => `conf-dot conf-${confLevel(score)}`;
 
 const sourceLabel = (source) => {
-  if (source === 'learned') return { className: 'source-badge source-learned', icon: 'ðŸ§ ', text: 'Learned' };
+  if (source === 'learned') return { className: 'source-badge source-learned', icon: 'AI', text: 'Learned' };
   if (source === 'fuzzy_match') return { className: 'source-badge source-ai', icon: 'ðŸ”', text: 'Matched' };
   if (source === 'fuzzy_history' || source === 'consignee_pattern') return { className: 'source-badge source-history', icon: 'ðŸ“Š', text: 'History' };
   if (source === 'delhivery_pincode' || source === 'india_post' || source === 'pincode_lookup' || source === 'indiapost_lookup') return { className: 'source-badge source-pincode', icon: 'ðŸ“', text: 'Pincode' };
@@ -578,6 +727,8 @@ export default function MobileScannerPage() {
   const [offlineQueue, setOfflineQueue] = useState([]);
   const [docDetected, setDocDetected] = useState(false);
   const [docStableTicks, setDocStableTicks] = useState(0);
+  const [captureQuality, setCaptureQuality] = useState({ ok: false, issues: [], metrics: null });
+  const [captureMeta, setCaptureMeta] = useState({ kb: 0, width: 0, height: 0, quality: CAPTURE_JPEG_QUALITY });
   const [captureCameraReady, setCaptureCameraReady] = useState(false);
   const [sessionDuration, setSessionDuration] = useState('0m');
   const [pairedLabel, setPairedLabel] = useState('Connected');
@@ -586,10 +737,28 @@ export default function MobileScannerPage() {
   const [scannerEngine, setScannerEngine] = useState('idle');
   const [lastDetectionMeta, setLastDetectionMeta] = useState(null);
   const [barcodeFailCount, setBarcodeFailCount] = useState(0);
+  const [barcodeReframeCount, setBarcodeReframeCount] = useState(0);
+  const [lastLockTimeMs, setLastLockTimeMs] = useState(null);
 
   // 'barcode' = narrow landscape strip, 'document' = full AWB slip portrait frame.
   // Auto-switches to 'document' after BARCODE_FAIL_THRESHOLD consecutive misses.
   const [scanMode, setScanMode] = useState('barcode');
+  const [scanWorkflowMode, setScanWorkflowMode] = useState(() => {
+    if (typeof window === 'undefined') return 'fast';
+    try {
+      const saved = localStorage.getItem(WORKFLOW_MODE_KEY);
+      if (saved === 'fast' || saved === 'ocr') return saved;
+    } catch {}
+    return isE2eMock ? 'ocr' : 'fast';
+  });
+  const [deviceProfile, setDeviceProfile] = useState(() => {
+    if (typeof window === 'undefined') return DEVICE_PROFILES.phone;
+    try {
+      const saved = localStorage.getItem(DEVICE_PROFILE_KEY);
+      if (saved === DEVICE_PROFILES.phone || saved === DEVICE_PROFILES.rugged) return saved;
+    } catch {}
+    return DEVICE_PROFILES.phone;
+  });
   // Counts consecutive frames where no barcode was found. Reset to 0 on any
   // successful detection. When it reaches BARCODE_FAIL_THRESHOLD the scanner
   // auto-switches to document mode and vibrates.
@@ -630,6 +799,14 @@ export default function MobileScannerPage() {
   // callback always sees the latest state, not the value at the time the callback
   // was memoized.
   const scannedAwbsRef = useRef(new Set());
+  const barcodeSamplesRef = useRef([]);
+  const barcodeStabilityRef = useRef({ awb: '', hits: 0, lastSeenAt: 0 });
+  const barcodeReframeCountRef = useRef(0);
+  const captureReadyHapticRef = useRef(false);
+  const lastCaptureAtRef = useRef(0);
+  const submitFastBarcodeRef = useRef(null);
+  const scanHintRef = useRef({ message: '', at: 0 });
+  const lockTelemetryRef = useRef({ lockTimeMs: null, candidateCount: 1, ambiguous: false, alternatives: [] });
 
   const goStep = useCallback((next) => {
     setStep(next);
@@ -640,18 +817,60 @@ export default function MobileScannerPage() {
     setBarcodeFailCount(nextCount);
   }, []);
 
-  const switchToDocumentMode = useCallback(() => {
+  const syncBarcodeReframeCount = useCallback((nextCount) => {
+    barcodeReframeCountRef.current = nextCount;
+    setBarcodeReframeCount(nextCount);
+  }, []);
+
+  const showScanHint = useCallback((message, haptic = 'warning') => {
+    if (!message) return;
+    const now = Date.now();
+    if (scanHintRef.current.message === message && (now - scanHintRef.current.at) < SCAN_HINT_COOLDOWN_MS) return;
+    scanHintRef.current = { message, at: now };
+    setErrorMsg(message);
+    if (haptic) pulseHaptic(haptic);
+  }, []);
+
+  const switchToDocumentMode = useCallback((message) => {
     syncBarcodeFailCount(0);
+    syncBarcodeReframeCount(0);
     setScanMode('document');
-    setErrorMsg('No barcode lock yet. Capture label instead or tap "Back to barcode mode" and hold steady.');
-    vibrate([80, 60, 80]);
-  }, [syncBarcodeFailCount]);
+    setErrorMsg(
+      message
+      || 'No barcode lock yet. Capture label instead or tap "Back to barcode mode" and hold steady.'
+    );
+    pulseHaptic('warning');
+  }, [syncBarcodeFailCount, syncBarcodeReframeCount]);
+
+  const handleBarcodeFallbackAttempt = useCallback(() => {
+    const nextAttempt = barcodeReframeCountRef.current + 1;
+    if (nextAttempt <= BARCODE_REFRAME_ATTEMPTS) {
+      syncBarcodeReframeCount(nextAttempt);
+      syncBarcodeFailCount(0);
+      setErrorMsg(
+        `No lock yet. Reframe ${nextAttempt}/${BARCODE_REFRAME_ATTEMPTS}: move closer, reduce glare, keep barcode horizontal.`
+      );
+      pulseHaptic('retry');
+      return;
+    }
+    switchToDocumentMode('No stable barcode lock after reframe retries. Capture label for OCR fallback.');
+  }, [switchToDocumentMode, syncBarcodeFailCount, syncBarcodeReframeCount]);
 
   const handleCaptureWithoutBarcode = useCallback(() => {
     setLockedAwb('');
     setErrorMsg('');
     goStep(STEPS.CAPTURING);
   }, [goStep]);
+
+  const isStableBarcodeRead = useCallback((awb) => {
+    const now = Date.now();
+    const samples = barcodeSamplesRef.current.filter((entry) => (now - entry.at) <= BARCODE_STABILITY_WINDOW_MS);
+    samples.push({ awb, at: now });
+    barcodeSamplesRef.current = samples;
+    const hits = samples.reduce((count, entry) => (entry.awb === awb ? count + 1 : count), 0);
+    barcodeStabilityRef.current = { awb, hits, lastSeenAt: now };
+    return hits >= BARCODE_STABILITY_HITS;
+  }, []);
 
   const ensureVideoStreamPlaying = useCallback(async () => {
     if (!isProbablySecureContextForCamera()) {
@@ -722,7 +941,7 @@ export default function MobileScannerPage() {
   const flushOfflineQueue = useCallback(() => {
     if (!socket || !socket.connected || !offlineQueue.length) return;
     offlineQueue.forEach((item) => {
-      if (!item?.payload?.awb || !item?.payload?.imageBase64) return;
+      if (!item?.payload?.awb) return;
       socket.emit('scanner:scan', item.payload);
     });
     saveOfflineQueue([]);
@@ -844,7 +1063,7 @@ export default function MobileScannerPage() {
       if (data.status === 'error') {
         setFlash('error');
         playErrorBeep();
-        vibrate([100, 50, 100]);
+        pulseHaptic('error');
         goStep(STEPS.ERROR);
         setErrorMsg(data.error || 'Scan failed on desktop.');
         return;
@@ -867,7 +1086,7 @@ export default function MobileScannerPage() {
       } else {
         // Auto-approved
         playSuccessBeep();
-        vibrate([50, 30, 50]);
+        pulseHaptic('success');
         const item = {
           awb: data.awb,
           clientCode: data.clientCode,
@@ -884,170 +1103,192 @@ export default function MobileScannerPage() {
     // Desktop approved our mobile-submitted approval
     s.on('scanner:approval-result', ({ success, message, awb }) => {
       if (success) {
-        play      // â”€â”€ Path 1: Native BarcodeDetector (Robust & Fast on Chrome Android) â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      if (typeof window.BarcodeDetector !== 'undefined') {
-        let useNative = true;
-
-        let supportedFormats = NATIVE_BARCODE_FORMATS;
-        try {
-          const available = await window.BarcodeDetector.getSupportedFormats();
-          supportedFormats = NATIVE_BARCODE_FORMATS.filter(f => available.includes(f));
-          if (!supportedFormats.length) supportedFormats = NATIVE_BARCODE_FORMATS;
-        } catch { /* use defaults */ }
-
-        if (!supportedFormats.includes('itf')) {
-          // This device's native detector can't read Trackon barcodes â€” use ZXing.
-          console.log('[MobileScanner] Native BarcodeDetector lacks ITF â€” falling back to ZXing');
-          useNative = false;
-        }
-
-      if (useNative) {
-          setScannerEngine('native');
-          const detector = new window.BarcodeDetector({ formats: supportedFormats });
-          let timerId = null;
-          let stopped = false;
-
-          const tick = async () => {
-            if (stopped) return;
-            if (scanBusyRef.current || currentStepRef.current !== STEPS.SCANNING) return;
-            const video = videoRef.current;
-            if (!video || video.readyState < 2) {
-              timerId = setTimeout(tick, 60);
-              return;
-            }
-            try {
-              const barcodes = await detector.detect(video);
-              if (barcodes.length > 0 && barcodes[0].rawValue) {
-                syncBarcodeFailCount(0); // reset on successful detection
-                setLastDetectionMeta({
-                  value: barcodes[0].rawValue,
-                  format: String(barcodes[0].format || 'unknown'),
-                  engine: 'native',
-                  at: Date.now(),
-                  sinceStartMs: scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null,
-                });
-                handleBarcodeDetectedRef.current?.(barcodes[0].rawValue);
-              } else {
-                // No barcode in this frame — count consecutive misses
-                const nextFailCount = barcodeFailCountRef.current + 1;
-                syncBarcodeFailCount(nextFailCount);
-                if (nextFailCount >= BARCODE_FAIL_THRESHOLD) {
-                  switchToDocumentMode();
-                }
-              }
-            } catch { /* frame not ready */ }
-            // ~50-70ms between frames keeps CPU reasonable while still fast enough.
-            if (currentStepRef.current === STEPS.SCANNING) {
-              timerId = setTimeout(tick, 60);
-            }
-          };
-
-          scannerRef.current = {
-            _type: 'native',
-            reset: () => {
-              stopped = true;
-              if (timerId) clearTimeout(timerId);
-              timerId = null;
-            },
-          };
-
-          setTimeout(tick, 300); // Give camera autofocus lead time
-          return; // â†  native path active, skip ZXing
-        }
+        playSuccessBeep();
+        pulseHaptic('success');
+        setFlash('success');
+        const item = {
+          awb: reviewData?.awb || awb,
+          clientCode: reviewForm.clientCode,
+          clientName: reviewData?.clientName || reviewForm.clientCode,
+          destination: reviewForm.destination || '',
+          weight: parseFloat(reviewForm.weight) || 0,
+        };
+        setLastSuccess(item);
+        addToQueue(item);
+        goStep(STEPS.SUCCESS);
+      } else {
+        playErrorBeep();
+        pulseHaptic('error');
+        setErrorMsg(message || 'Approval failed.');
       }
+    });
 
-      // â”€â”€ Path 2: ZXing Fallback â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      const [{ BrowserMultiFormatReader }, zxingCore] = await Promise.all([
-        import('@zxing/browser'),
-        import('@zxing/library'),
-      ]);
+    s.on('scanner:ready-for-next', () => {
+      // Desktop is ready; keep current mobile state.
+    });
 
-      const hints = new Map([
-        [zxingCore.DecodeHintType.POSSIBLE_FORMATS, [
-          zxingCore.BarcodeFormat.CODE_128,  // Trackon, DTDC primary format
-          zxingCore.BarcodeFormat.ITF,       // Trackon 12-digit numeric AWBs
-          zxingCore.BarcodeFormat.CODE_39,
-          zxingCore.BarcodeFormat.CODE_93,
-          zxingCore.BarcodeFormat.CODABAR,
-          zxingCore.BarcodeFormat.EAN_13,
-          zxingCore.BarcodeFormat.EAN_8,
-        ]],
-        [zxingCore.DecodeHintType.TRY_HARDER, true],
-        [zxingCore.DecodeHintType.ASSUME_GS1, false],
-        [zxingCore.DecodeHintType.CHARACTER_SET, 'UTF-8'],
-      ]);
+    setSocket(s);
+    return () => { s.disconnect(); };
+  }, [pin, addToQueue, reviewData, reviewForm, goStep, navigate, isE2eMock]);
 
-      const reader = new BrowserMultiFormatReader(hints, 40);
-      setScannerEngine('zxing');
-      scannerRef.current = reader;
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(offlineQueueKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) {
+        setOfflineQueue(parsed);
+      }
+    } catch {}
+  }, [offlineQueueKey]);
 
-      reader.decodeFromVideoElement(videoRef.current, (result) => {
-        if (scanBusyRef.current) return;
-        if (result) {
-          syncBarcodeFailCount(0); // reset on successful detection
-          let format = 'unknown';
-          try {
-            format = String(result.getBarcodeFormat?.() || 'unknown');
-          } catch {}
-          setLastDetectionMeta({
-            value: result.getText?.() || '',
-            format,
-            engine: 'zxing',
-            at: Date.now(),
-            sinceStartMs: scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null,
-          });
-          handleBarcodeDetectedRef.current?.(result.getText());
-        } else {
-          // ZXing fires the callback with null on every failed frame
-          const nextFailCount = barcodeFailCountRef.current + 1;
-          syncBarcodeFailCount(nextFailCount);
-          if (nextFailCount >= BARCODE_FAIL_THRESHOLD) {
-            switchToDocumentMode();
-          }
-        }
-      });
+  useEffect(() => {
+    try {
+      localStorage.setItem(WORKFLOW_MODE_KEY, scanWorkflowMode);
+    } catch {}
+  }, [scanWorkflowMode]);
 
-    } catch (err) {
-      setErrorMsg('Scanner boot failed: ' + err.message);
+  useEffect(() => {
+    try {
+      localStorage.setItem(DEVICE_PROFILE_KEY, deviceProfile);
+    } catch {}
+  }, [deviceProfile]);
+
+  useEffect(() => {
+    if (connStatus === 'paired' && socket?.connected && offlineQueue.length) {
+      flushOfflineQueue();
     }
-  }, [ensureVideoStreamPlaying, stopBarcodeScanner, switchToDocumentMode, syncBarcodeFailCount]);         setLastDetectionMeta({
+  }, [connStatus, socket, offlineQueue.length, flushOfflineQueue]);
+
+  const stopCamera = useCallback(async () => {
+    try {
+      setCaptureCameraReady(false);
+      if (scanbotRef.current) {
+        try {
+          const sdk = scanbotRef.current;
+          if (sdk?.barcodeScanner) await sdk.barcodeScanner.dispose();
+        } catch {}
+        scanbotRef.current = null;
+      }
+      if (scannerRef.current) {
+        try { await scannerRef.current.reset(); } catch {}
+        scannerRef.current = null;
+      }
+      if (videoRef.current?.srcObject) {
+        videoRef.current.srcObject.getTracks().forEach(t => t.stop());
+        videoRef.current.srcObject = null;
+      }
+    } catch {}
+  }, []);
+
+  // Stops only the barcode scanner/reader; leaves camera stream alive.
+  const stopBarcodeScanner = useCallback(async () => {
+    try {
+      setScannerEngine('idle');
+      if (scanbotRef.current) {
+        try { await scanbotRef.current.barcodeScanner.dispose(); } catch {}
+        scanbotRef.current = null;
+      }
+      if (scannerRef.current) {
+        try {
+          if (scannerRef.current._type === 'native') {
+            scannerRef.current.reset();
+          } else {
+            await scannerRef.current.reset();
+          }
+        } catch {}
+        scannerRef.current = null;
+      }
+    } catch {}
+  }, []);
+
+  const startBarcodeScanner = useCallback(async () => {
+    if (!videoRef.current) return;
+    await stopBarcodeScanner();
+
+    try {
+      scannerStartedAtRef.current = Date.now();
+      await ensureVideoStreamPlaying();
+
+      // Path 1: Prefer ZXing for Trackon-style labels.
+      if (PREFER_ZXING_FOR_TRACKON) {
+        const [{ BrowserMultiFormatReader }, zxingCore] = await Promise.all([
+          import('@zxing/browser'),
+          import('@zxing/library'),
+        ]);
+
+        const hints = new Map([
+          [zxingCore.DecodeHintType.POSSIBLE_FORMATS, [
+            zxingCore.BarcodeFormat.CODE_128,
+            zxingCore.BarcodeFormat.ITF,
+            zxingCore.BarcodeFormat.CODE_39,
+            zxingCore.BarcodeFormat.CODE_93,
+            zxingCore.BarcodeFormat.CODABAR,
+            zxingCore.BarcodeFormat.EAN_13,
+            zxingCore.BarcodeFormat.EAN_8,
+          ]],
+          [zxingCore.DecodeHintType.TRY_HARDER, true],
+          [zxingCore.DecodeHintType.ASSUME_GS1, false],
+          [zxingCore.DecodeHintType.CHARACTER_SET, 'UTF-8'],
+        ]);
+
+        const reader = new BrowserMultiFormatReader(hints, 40);
+        setScannerEngine('zxing');
+        scannerRef.current = reader;
+
+        reader.decodeFromVideoElement(videoRef.current, (result) => {
+          if (scanBusyRef.current) return;
+          if (result) {
+            syncBarcodeFailCount(0);
+            let format = 'unknown';
+            try {
+              format = String(result.getBarcodeFormat?.() || 'unknown');
+            } catch {}
+            setLastDetectionMeta({
               value: result.getText?.() || '',
               format,
               engine: 'zxing',
               at: Date.now(),
               sinceStartMs: scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null,
+              candidateCount: 1,
+              ambiguous: false,
+              alternatives: [],
             });
-            handleBarcodeDetectedRef.current?.(result.getText());
+            handleBarcodeDetectedRef.current?.(result.getText(), {
+              candidateCount: 1,
+              ambiguous: false,
+              alternatives: [],
+              format,
+              engine: 'zxing',
+            });
           } else {
-            // ZXing fires the callback with null on every failed frame
             const nextFailCount = barcodeFailCountRef.current + 1;
             syncBarcodeFailCount(nextFailCount);
             if (nextFailCount >= BARCODE_FAIL_THRESHOLD) {
-              switchToDocumentMode();
+              handleBarcodeFallbackAttempt();
             }
           }
         });
         return;
       }
 
-      // â”€â”€ Path 2: Native BarcodeDetector fallback (Chrome Android, iOS 17+) â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // Path 2: Native BarcodeDetector fallback.
       if (typeof window.BarcodeDetector !== 'undefined') {
         let useNative = true;
 
         let supportedFormats = NATIVE_BARCODE_FORMATS;
         try {
           const available = await window.BarcodeDetector.getSupportedFormats();
-          supportedFormats = NATIVE_BARCODE_FORMATS.filter(f => available.includes(f));
+          supportedFormats = NATIVE_BARCODE_FORMATS.filter((f) => available.includes(f));
           if (!supportedFormats.length) supportedFormats = NATIVE_BARCODE_FORMATS;
-        } catch { /* use defaults */ }
+        } catch {}
 
         if (!supportedFormats.includes('itf')) {
-          // This device's native detector can't read Trackon barcodes â€” use ZXing.
-          console.log('[MobileScanner] Native BarcodeDetector lacks ITF â€” falling back to ZXing');
+          console.log('[MobileScanner] Native BarcodeDetector lacks ITF, falling back to ZXing');
           useNative = false;
         }
 
-      if (useNative) {
+        if (useNative) {
           setScannerEngine('native');
           const detector = new window.BarcodeDetector({ formats: supportedFormats });
           let timerId = null;
@@ -1055,36 +1296,52 @@ export default function MobileScannerPage() {
 
           const tick = async () => {
             if (stopped) return;
-            if (scanBusyRef.current || currentStepRef.current !== STEPS.SCANNING) return;
+            if (currentStepRef.current !== STEPS.SCANNING) return;
+            if (scanBusyRef.current) {
+              timerId = setTimeout(tick, BARCODE_POLL_INTERVAL_MS);
+              return;
+            }
             const video = videoRef.current;
             if (!video || video.readyState < 2) {
-              timerId = setTimeout(tick, 60);
+              timerId = setTimeout(tick, BARCODE_POLL_INTERVAL_MS);
               return;
             }
             try {
               const barcodes = await detector.detect(video);
-              if (barcodes.length > 0 && barcodes[0].rawValue) {
-                syncBarcodeFailCount(0); // reset on successful detection
+              const rawCandidates = barcodes
+                .map((barcode) => String(barcode?.rawValue || '').trim())
+                .filter(Boolean);
+              if (rawCandidates.length > 0) {
+                const ranked = rankBarcodeCandidates(rawCandidates);
+                const selectedRaw = ranked.awb || rawCandidates[0];
+                syncBarcodeFailCount(0);
                 setLastDetectionMeta({
-                  value: barcodes[0].rawValue,
+                  value: selectedRaw,
                   format: String(barcodes[0].format || 'unknown'),
                   engine: 'native',
                   at: Date.now(),
                   sinceStartMs: scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null,
+                  candidateCount: rawCandidates.length,
+                  ambiguous: ranked.ambiguous,
+                  alternatives: ranked.alternatives,
                 });
-                handleBarcodeDetectedRef.current?.(barcodes[0].rawValue);
+                handleBarcodeDetectedRef.current?.(selectedRaw, {
+                  candidateCount: rawCandidates.length,
+                  ambiguous: ranked.ambiguous,
+                  alternatives: ranked.alternatives,
+                  format: String(barcodes[0].format || 'unknown'),
+                  engine: 'native',
+                });
               } else {
-                // No barcode in this frame — count consecutive misses
                 const nextFailCount = barcodeFailCountRef.current + 1;
                 syncBarcodeFailCount(nextFailCount);
                 if (nextFailCount >= BARCODE_FAIL_THRESHOLD) {
-                  switchToDocumentMode();
+                  handleBarcodeFallbackAttempt();
                 }
               }
-            } catch { /* frame not ready */ }
-            // ~50-70ms between frames keeps CPU reasonable while still fast enough.
+            } catch {}
             if (currentStepRef.current === STEPS.SCANNING) {
-              timerId = setTimeout(tick, 60);
+              timerId = setTimeout(tick, BARCODE_POLL_INTERVAL_MS);
             }
           };
 
@@ -1097,39 +1354,72 @@ export default function MobileScannerPage() {
             },
           };
 
-          setTimeout(tick, 300);
-          return; // â† native path active, skip ZXing
+          setTimeout(tick, 220);
+          return;
         }
-        // useNative=false: surface the init error below
       }
       throw new Error('Unable to initialize a barcode scanner on this device.');
     } catch (err) {
       setErrorMsg('Camera access failed: ' + err.message);
     }
-  }, [ensureVideoStreamPlaying, stopBarcodeScanner, switchToDocumentMode, syncBarcodeFailCount]);
+  }, [ensureVideoStreamPlaying, stopBarcodeScanner, handleBarcodeFallbackAttempt, syncBarcodeFailCount]);
   // Note: handleBarcodeDetected is intentionally NOT in the dep array here.
   // The scanner is set up once per SCANNING entry; the ref ensures it always
   // calls the latest callback without needing to restart the scanner.
 
-  const handleBarcodeDetected = useCallback((rawText) => {
-    const awb = normalizeBarcodeCandidate(rawText) || String(rawText || '').trim().replace(/\s+/g, '').toUpperCase();
-    if (!awb || awb.length < 6 || scanBusyRef.current || currentStepRef.current !== STEPS.SCANNING) return;
+  const handleBarcodeDetected = useCallback((rawText, detectionMeta = {}) => {
+    const compactRaw = String(rawText || '').trim().replace(/\s+/g, '').toUpperCase();
+    const awb = normalizeBarcodeCandidate(rawText) || compactRaw;
+    if (scanBusyRef.current || currentStepRef.current !== STEPS.SCANNING) return;
+    if (!awb || awb.length < 8) {
+      const partial = compactRaw.replace(/[^A-Z0-9]/g, '');
+      if (partial.length >= 4) {
+        showScanHint('Partial barcode detected. Move closer so full AWB is visible.');
+      }
+      return;
+    }
+    if (detectionMeta?.ambiguous) {
+      const nextFailCount = barcodeFailCountRef.current + 1;
+      syncBarcodeFailCount(nextFailCount);
+      showScanHint('Multiple barcodes detected. Keep only the AWB barcode inside the strip.', 'retry');
+      if (nextFailCount >= BARCODE_FAIL_THRESHOLD) {
+        handleBarcodeFallbackAttempt();
+      }
+      return;
+    }
+    if (!isE2eMock && !isStableBarcodeRead(awb)) return;
     scanBusyRef.current = true;
 
     // Duplicate detection â€” read from the stable ref so this check is never stale
     // even when the scanner callback was closed over an old render.
     if (scannedAwbsRef.current.has(awb)) {
-      vibrate([100, 50, 100, 50, 100]);
+      pulseHaptic('duplicate');
       playErrorBeep();
       setDuplicateWarning(awb);
-      setTimeout(() => { setDuplicateWarning(''); scanBusyRef.current = false; }, 2500);
+      setTimeout(() => {
+        setDuplicateWarning('');
+        scanBusyRef.current = false;
+        barcodeStabilityRef.current = { awb: '', hits: 0, lastSeenAt: 0 };
+        barcodeSamplesRef.current = [];
+      }, 2500);
       return;
     }
 
     clearTimeout(lockToCaptureTimerRef.current);
-    vibrate([50]);
+    pulseHaptic('lock');
     playCaptureBeep();
     setLockedAwb(awb);
+    const lockTimeMs = scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null;
+    setLastLockTimeMs(lockTimeMs);
+    lockTelemetryRef.current = {
+      lockTimeMs,
+      candidateCount: Number(detectionMeta?.candidateCount || 1),
+      ambiguous: Boolean(detectionMeta?.ambiguous),
+      alternatives: Array.isArray(detectionMeta?.alternatives) ? detectionMeta.alternatives.slice(0, 3) : [],
+    };
+    syncBarcodeReframeCount(0);
+    syncBarcodeFailCount(0);
+    setErrorMsg('');
 
     // Update session â€” also keep scannedAwbsRef in sync for future duplicate checks.
       setSessionCtx(prev => {
@@ -1140,13 +1430,18 @@ export default function MobileScannerPage() {
         return next;
       });
 
+    if (scanWorkflowMode === 'fast') {
+      submitFastBarcodeRef.current?.(awb);
+      return;
+    }
+
     // Jump straight into document capture and keep the lock message as an overlay.
     lockToCaptureTimerRef.current = setTimeout(() => {
       if (currentStepRef.current === STEPS.SCANNING) {
         goStep(STEPS.CAPTURING);
       }
     }, LOCK_TO_CAPTURE_DELAY);
-  }, [goStep]); // sessionCtx removed from deps â€” duplicate check now uses scannedAwbsRef
+  }, [goStep, isStableBarcodeRead, scanWorkflowMode, isE2eMock, syncBarcodeFailCount, syncBarcodeReframeCount, showScanHint, handleBarcodeFallbackAttempt]); // sessionCtx removed from deps â€” duplicate check now uses scannedAwbsRef
 
   // Keep handleBarcodeDetectedRef pointing at the latest callback so the scanner
   // (which is set up once per SCANNING entry) always calls current logic.
@@ -1158,6 +1453,11 @@ export default function MobileScannerPage() {
   useEffect(() => {
     if (step === STEPS.SCANNING) {
       scanBusyRef.current = false;
+      barcodeStabilityRef.current = { awb: '', hits: 0, lastSeenAt: 0 };
+      barcodeSamplesRef.current = [];
+      lockTelemetryRef.current = { lockTimeMs: null, candidateCount: 1, ambiguous: false, alternatives: [] };
+      setLastLockTimeMs(null);
+      syncBarcodeReframeCount(0);
       syncBarcodeFailCount(0);
       setScanMode('barcode'); // always start fresh in barcode mode
       startBarcodeScanner();
@@ -1175,7 +1475,7 @@ export default function MobileScannerPage() {
       // alive so CAPTURING can reuse it instantly with no black-frame flicker.
       if (step === STEPS.SCANNING) stopBarcodeScanner();
     };
-  }, [step, startBarcodeScanner, stopBarcodeScanner, syncBarcodeFailCount, isE2eMock, mockBarcodeRaw]);
+  }, [step, startBarcodeScanner, stopBarcodeScanner, syncBarcodeFailCount, syncBarcodeReframeCount, isE2eMock, mockBarcodeRaw]);
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // PHOTO CAPTURE (Document mode)
@@ -1199,57 +1499,44 @@ export default function MobileScannerPage() {
     if (step === STEPS.CAPTURING) startDocumentCamera();
   }, [step, startDocumentCamera]);
 
+  const evaluateCaptureQuality = useCallback(() => {
+    const video = videoRef.current;
+    const guide = guideRef.current;
+    return analyzeCaptureQuality(video, guide);
+  }, []);
+
   useEffect(() => {
     if (step !== STEPS.CAPTURING) {
       setDocDetected(false);
       setDocStableTicks(0);
+      setCaptureQuality({ ok: false, issues: [], metrics: null });
       autoCaptureTriggeredRef.current = false;
+      captureReadyHapticRef.current = false;
       return;
     }
 
-    // Just detect whether a document is in frame to give visual feedback.
-    // We do NOT auto-capture â€” user must press the shutter button.
+    // Detect capture quality live to gate blur/glare/angle before shutter.
     const tick = setInterval(() => {
-      const video = videoRef.current;
-      const guide = guideRef.current;
-      if (!video || !guide || !video.videoWidth || !video.videoHeight) return;
-
-      const crop = cropRectForCoverVideo(video, guide);
-      if (!crop) return;
-      const sx = Math.max(0, Math.floor(crop.x));
-      const sy = Math.max(0, Math.floor(crop.y));
-      const sw = Math.max(24, Math.floor(crop.w));
-      const sh = Math.max(24, Math.floor(crop.h));
-
-      const sampleCanvas = document.createElement('canvas');
-      const sampleW = 96; const sampleH = 72;
-      sampleCanvas.width = sampleW; sampleCanvas.height = sampleH;
-      const ctx = sampleCanvas.getContext('2d', { willReadFrequently: true });
-      if (!ctx) return;
-      ctx.drawImage(video, sx, sy, Math.min(sw, video.videoWidth - sx), Math.min(sh, video.videoHeight - sy), 0, 0, sampleW, sampleH);
-      const img = ctx.getImageData(0, 0, sampleW, sampleH).data;
-
-      let sum = 0, sumSq = 0, edgeCount = 0, px = 0;
-      for (let i = 0; i < img.length; i += 4) {
-        const lum = 0.2126 * img[i] + 0.7152 * img[i + 1] + 0.0722 * img[i + 2];
-        sum += lum; sumSq += lum * lum;
-        if (i > 0 && Math.abs(lum - px) > 26) edgeCount++;
-        px = lum;
-      }
-      const total = sampleW * sampleH;
-      const mean = sum / total;
-      const contrast = Math.sqrt(Math.max(0, sumSq / total - mean * mean));
-      const edgeRatio = edgeCount / Math.max(total, 1);
-      const detected = mean > 35 && mean < 225 && contrast > 24 && edgeRatio > 0.12;
-
-      setDocDetected(detected);
-      setDocStableTicks(prev => detected ? Math.min(prev + 1, 8) : 0);
-    }, 320);
+      const quality = evaluateCaptureQuality();
+      if (!quality) return;
+      setCaptureQuality(quality);
+      setDocDetected(quality.ok);
+      setDocStableTicks((prev) => {
+        const next = quality.ok ? Math.min(prev + 1, 8) : 0;
+        const becameReady = next >= DOC_STABLE_MIN_TICKS && !captureReadyHapticRef.current;
+        if (becameReady) {
+          pulseHaptic('tap');
+          captureReadyHapticRef.current = true;
+        }
+        if (!quality.ok) captureReadyHapticRef.current = false;
+        return next;
+      });
+    }, 280);
 
     return () => clearInterval(tick);
-  }, [step]);
+  }, [step, evaluateCaptureQuality]);
 
-  const captureDocumentRegion = useCallback(() => {
+  const captureDocumentRegion = useCallback((opts = {}) => {
     const video = videoRef.current;
     const guide = guideRef.current;
     if (!video || !guide || !video.videoWidth) return null;
@@ -1263,35 +1550,65 @@ export default function MobileScannerPage() {
     const cropH = crop.h;
     if (!cropW || !cropH) return null;
 
+    const maxWidth = Math.max(640, Number(opts.maxWidth || CAPTURE_MAX_WIDTH));
+    const jpegQuality = Math.min(0.85, Math.max(0.55, Number(opts.quality || CAPTURE_JPEG_QUALITY)));
     const canvas = document.createElement('canvas');
-    canvas.width = Math.min(1200, Math.round(cropW));
+    canvas.width = Math.min(maxWidth, Math.round(cropW));
     canvas.height = Math.round((canvas.width / cropW) * cropH);
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
-
-    return canvas.toDataURL('image/jpeg', 0.75).split(',')[1] || null;
+    const dataUrl = canvas.toDataURL('image/jpeg', jpegQuality);
+    const base64 = dataUrl.split(',')[1] || '';
+    if (!base64) return null;
+    const approxBytes = Math.floor((base64.length * 3) / 4);
+    return {
+      base64,
+      width: canvas.width,
+      height: canvas.height,
+      approxBytes,
+      quality: jpegQuality,
+    };
   }, []);
 
   const handleCapturePhoto = useCallback(() => {
+    const now = Date.now();
+    if (now - lastCaptureAtRef.current < DOC_CAPTURE_MIN_INTERVAL_MS) return;
+    lastCaptureAtRef.current = now;
+
+    const quality = evaluateCaptureQuality() || captureQuality;
+    if (!quality?.ok || docStableTicks < DOC_STABLE_MIN_TICKS) {
+      setErrorMsg(describeCaptureIssues(quality?.issues) || 'Capture quality is low. Hold steady and align the AWB in the frame.');
+      pulseHaptic('warning');
+      playErrorBeep();
+      return;
+    }
+
     setFlash('white');
     playCaptureBeep();
-    vibrate([30]);
+    pulseHaptic('tap');
 
-    const image = captureDocumentRegion();
-    if (!image) {
+    const shot = captureDocumentRegion({ maxWidth: CAPTURE_MAX_WIDTH, quality: CAPTURE_JPEG_QUALITY });
+    if (!shot?.base64) {
       setErrorMsg('Could not capture image. Try again.');
       scanBusyRef.current = false;
       return;
     }
 
-    setCapturedImage(`data:image/jpeg;base64,${image}`);
+    setCaptureMeta({
+      kb: Math.round((shot.approxBytes || 0) / 1024),
+      width: shot.width || 0,
+      height: shot.height || 0,
+      quality: shot.quality || CAPTURE_JPEG_QUALITY,
+    });
+    setCapturedImage(`data:image/jpeg;base64,${shot.base64}`);
     stopCamera();
     goStep(STEPS.PREVIEW);
-  }, [captureDocumentRegion, stopCamera, goStep]);
+  }, [captureDocumentRegion, stopCamera, goStep, evaluateCaptureQuality, captureQuality, docStableTicks]);
 
   const handleMockCapturePhoto = useCallback(() => {
     if (!isE2eMock) return;
     const mockImage = 'data:image/jpeg;base64,ZmFrZS1tb2NrLWltYWdl';
+    setCaptureMeta({ kb: 0, width: 0, height: 0, quality: CAPTURE_JPEG_QUALITY });
     setCapturedImage(mockImage);
     stopCamera();
     goStep(STEPS.PREVIEW);
@@ -1302,6 +1619,89 @@ export default function MobileScannerPage() {
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // SEND TO DESKTOP (OCR Pipeline)
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
+  const buildSessionContextPayload = useCallback(() => ({
+    scanNumber: sessionCtx.scanNumber,
+    recentClient: sessionCtx.dominantClient,
+    dominantClient: sessionCtx.dominantClient,
+    dominantClientCount: sessionCtx.dominantClientCount,
+    sessionDurationMin: Math.round((Date.now() - sessionCtx.startedAt) / 60000),
+    scanWorkflowMode,
+    scanMode,
+    deviceProfile,
+    hardwareClass: deviceProfile === DEVICE_PROFILES.rugged ? 'rugged' : 'phone',
+    captureQuality: {
+      ok: Boolean(captureQuality.ok),
+      issues: Array.isArray(captureQuality.issues) ? captureQuality.issues.slice(0, 8) : [],
+      metrics: captureQuality.metrics || null,
+    },
+    captureMeta: {
+      kb: captureMeta.kb || 0,
+      width: captureMeta.width || 0,
+      height: captureMeta.height || 0,
+      quality: captureMeta.quality || CAPTURE_JPEG_QUALITY,
+    },
+    lockTimeMs: Number.isFinite(Number(lockTelemetryRef.current?.lockTimeMs)) ? Number(lockTelemetryRef.current.lockTimeMs) : null,
+    lockCandidateCount: Number.isFinite(Number(lockTelemetryRef.current?.candidateCount)) ? Number(lockTelemetryRef.current.candidateCount) : 1,
+    lockAlternatives: Array.isArray(lockTelemetryRef.current?.alternatives) ? lockTelemetryRef.current.alternatives.slice(0, 3) : [],
+  }), [sessionCtx, scanWorkflowMode, scanMode, deviceProfile, captureQuality, captureMeta]);
+
+  const submitFastBarcode = useCallback((awb) => {
+    const cleanAwb = String(awb || '').trim().toUpperCase();
+    if (!cleanAwb) return;
+
+    goStep(STEPS.PROCESSING);
+
+    if (isE2eMock) {
+      setTimeout(() => {
+        const item = {
+          awb: cleanAwb,
+          clientCode: 'MOCKCL',
+          clientName: 'Mock Client',
+          destination: 'Delhi',
+          weight: 1.25,
+        };
+        setLastSuccess(item);
+        addToQueue(item);
+        goStep(STEPS.SUCCESS);
+      }, 120);
+      return;
+    }
+
+    const payload = {
+      awb: cleanAwb,
+      imageBase64: null,
+      focusImageBase64: null,
+      scanMode: 'fast_barcode_only',
+      sessionContext: buildSessionContextPayload(),
+    };
+
+    if (!socket || !socket.connected || connStatus !== 'paired') {
+      enqueueOfflineScan(payload);
+      playSuccessBeep();
+      pulseHaptic('success');
+      const item = { awb: cleanAwb, clientCode: 'OFFLINE', clientName: 'Queued Offline', destination: '', weight: 0 };
+      setLastSuccess({ ...item, offlineQueued: true });
+      addToQueue(item);
+      goStep(STEPS.SUCCESS);
+      return;
+    }
+
+    socket.emit('scanner:scan', payload);
+
+    setTimeout(() => {
+      if (currentStepRef.current === STEPS.PROCESSING) {
+        setErrorMsg('Barcode processing timed out. Please try scanning again.');
+        playErrorBeep();
+        pulseHaptic('error');
+        goStep(STEPS.ERROR);
+      }
+    }, FAST_SCAN_TIMEOUT_MS);
+  }, [socket, connStatus, goStep, isE2eMock, enqueueOfflineScan, addToQueue, buildSessionContextPayload]);
+
+  useEffect(() => {
+    submitFastBarcodeRef.current = submitFastBarcode;
+  }, [submitFastBarcode]);
 
   const submitForProcessing = useCallback(() => {
     if (!capturedImage) return;
@@ -1322,15 +1722,6 @@ export default function MobileScannerPage() {
       return;
     }
 
-    // Build session context for the intelligence engine
-    const ctxPayload = {
-      scanNumber: sessionCtx.scanNumber,
-      recentClient: sessionCtx.dominantClient,
-      dominantClient: sessionCtx.dominantClient,
-      dominantClientCount: sessionCtx.dominantClientCount,
-      sessionDurationMin: Math.round((Date.now() - sessionCtx.startedAt) / 60000),
-    };
-
     // Extract base64 from data URL
     const imageBase64 = capturedImage.split(',')[1] || capturedImage;
 
@@ -1338,12 +1729,14 @@ export default function MobileScannerPage() {
       awb: lockedAwb || '',
       imageBase64,
       focusImageBase64: imageBase64,
-      sessionContext: ctxPayload,
+      scanMode: 'ocr_label',
+      sessionContext: buildSessionContextPayload(),
     };
 
     if (!socket || !socket.connected || connStatus !== 'paired') {
       enqueueOfflineScan(payload);
       playSuccessBeep();
+      pulseHaptic('success');
       const item = { awb: lockedAwb || 'PENDING_OCR', clientCode: 'OFFLINE', clientName: 'Queued Offline', destination: '', weight: 0 };
       setLastSuccess({ ...item, offlineQueued: true });
       addToQueue(item);
@@ -1353,14 +1746,16 @@ export default function MobileScannerPage() {
 
     socket.emit('scanner:scan', payload);
 
-    // Timeout fallback â€” 40s to give Gemini Vision enough time on slow connections
+    // Timeout fallback for slow OCR processing
     setTimeout(() => {
       if (currentStepRef.current === STEPS.PROCESSING) {
-        setErrorMsg('OCR timed out after 40 seconds. Check that GEMINI_API_KEY is set on Railway, then try again.');
+        setErrorMsg('OCR timed out after 40 seconds. Retake the label photo and try again.');
+        playErrorBeep();
+        pulseHaptic('error');
         goStep(STEPS.ERROR);
       }
     }, 40000);
-  }, [socket, lockedAwb, capturedImage, sessionCtx, goStep, connStatus, enqueueOfflineScan, addToQueue, isE2eMock]);
+  }, [socket, lockedAwb, capturedImage, goStep, connStatus, enqueueOfflineScan, addToQueue, isE2eMock, buildSessionContextPayload]);
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // APPROVAL
@@ -1407,6 +1802,8 @@ export default function MobileScannerPage() {
         pin,
         ocrFields,
         approvedFields,
+        courier: reviewData?.courier || reviewData?.ocrExtracted?.courier || '',
+        deviceProfile,
       });
     }
 
@@ -1427,6 +1824,8 @@ export default function MobileScannerPage() {
         // Wait for approval-result from desktop
       } else {
         goStep(STEPS.REVIEWING);
+        playErrorBeep();
+        pulseHaptic('error');
         setErrorMsg(response?.message || 'Approval failed.');
       }
     });
@@ -1445,37 +1844,49 @@ export default function MobileScannerPage() {
         };
       });
     }
-  }, [socket, reviewData, reviewForm, lockedAwb, pin, goStep, addToQueue, isE2eMock]);
+  }, [socket, reviewData, reviewForm, lockedAwb, pin, goStep, addToQueue, isE2eMock, deviceProfile]);
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // RESET / NEXT SCAN
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-  const resetForNextScan = useCallback(() => {
+  const resetForNextScan = useCallback((nextStep = STEPS.IDLE) => {
     clearTimeout(autoNextTimer.current);
     clearTimeout(lockToCaptureTimerRef.current);
     setLockedAwb('');
     setCapturedImage(null);
+    setCaptureMeta({ kb: 0, width: 0, height: 0, quality: CAPTURE_JPEG_QUALITY });
     setReviewData(null);
     setReviewForm({});
     setProcessingFields({});
     setLastSuccess(null);
+    setLastLockTimeMs(null);
     setErrorMsg('');
     setDuplicateWarning('');
+    setDocDetected(false);
+    setDocStableTicks(0);
+    setCaptureQuality({ ok: false, issues: [], metrics: null });
     scanBusyRef.current = false;
+    barcodeStabilityRef.current = { awb: '', hits: 0, lastSeenAt: 0 };
+    barcodeSamplesRef.current = [];
+    lockTelemetryRef.current = { lockTimeMs: null, candidateCount: 1, ambiguous: false, alternatives: [] };
+    captureReadyHapticRef.current = false;
+    syncBarcodeReframeCount(0);
     // scannedAwbsRef is intentionally NOT cleared here â€” duplicates should be
     // tracked across the entire session, not just one scan cycle. Clear it only
     // if you add an explicit "new session" action.
-    goStep(STEPS.IDLE);
-  }, [goStep]);
+    goStep(nextStep);
+  }, [goStep, syncBarcodeReframeCount]);
 
   // Auto-return to the home screen after SUCCESS
   useEffect(() => {
     if (step === STEPS.SUCCESS) {
-      autoNextTimer.current = setTimeout(resetForNextScan, AUTO_NEXT_DELAY);
+      const nextStep = scanWorkflowMode === 'fast' ? STEPS.SCANNING : STEPS.IDLE;
+      const delayMs = scanWorkflowMode === 'fast' ? FAST_AUTO_NEXT_DELAY : AUTO_NEXT_DELAY;
+      autoNextTimer.current = setTimeout(() => resetForNextScan(nextStep), delayMs);
       return () => clearTimeout(autoNextTimer.current);
     }
-  }, [step, resetForNextScan]);
+  }, [step, resetForNextScan, scanWorkflowMode]);
 
   // Voice feedback on review data & success
   useEffect(() => {
@@ -1502,6 +1913,12 @@ export default function MobileScannerPage() {
 
   const isStepActive = (s) => step === s;
   const stepClass = (s) => `msp-step ${step === s ? 'active' : ''}`;
+  const successAutoDelayMs = scanWorkflowMode === 'fast' ? FAST_AUTO_NEXT_DELAY : AUTO_NEXT_DELAY;
+  const successAutoSeconds = Math.max(1, Math.round(successAutoDelayMs / 1000));
+  const captureQualityHint = captureQuality.ok
+    ? 'AWB quality looks good - press shutter'
+    : (describeCaptureIssues(captureQuality.issues) || 'Fit AWB slip fully in frame and hold steady');
+  const captureReadyForShutter = captureCameraReady && captureQuality.ok && docStableTicks >= DOC_STABLE_MIN_TICKS;
 
   // â”€â”€ Confidence data from reviewData â”€â”€
   const fieldConfidence = useMemo(() => {
@@ -1523,17 +1940,26 @@ export default function MobileScannerPage() {
     ['Step', step],
     ['Connection', connStatus],
     ['Engine', scannerEngine],
+    ['Workflow', scanWorkflowMode],
+    ['Device', deviceProfile],
     ['Scan mode', scanMode],
     ['Fail count', String(barcodeFailCount)],
+    ['Reframe retries', `${barcodeReframeCount}/${BARCODE_REFRAME_ATTEMPTS}`],
     ['Camera', captureCameraReady ? 'ready' : 'waiting'],
     ['Doc detect', docDetected ? `yes (${docStableTicks})` : 'no'],
+    ['Capture quality', captureQuality.ok ? 'good' : (captureQuality.issues.join(', ') || 'pending')],
+    ['Capture metrics', captureQuality.metrics ? `blur ${captureQuality.metrics.blurScore} | glare ${captureQuality.metrics.glareRatio}% | skew ${captureQuality.metrics.perspectiveSkew}%` : '-'],
+    ['JPEG last shot', captureMeta.kb ? `${captureMeta.kb}KB ${captureMeta.width}x${captureMeta.height} q=${captureMeta.quality}` : '-'],
     ['Secure ctx', isProbablySecureContextForCamera() ? 'yes' : 'no'],
     ['AWB lock', lockedAwb || '-'],
+    ['Lock ms', lastLockTimeMs != null ? String(lastLockTimeMs) : '-'],
+    ['Lock candidates', String(lockTelemetryRef.current?.candidateCount || 1)],
     ['Queued', String(offlineQueue.length)],
     ['Scans', String(sessionCtx.scanNumber)],
     ['Last format', lastDetectionMeta?.format || '-'],
     ['Last code', lastDetectionMeta?.value || '-'],
     ['Decode ms', lastDetectionMeta?.sinceStartMs != null ? String(lastDetectionMeta.sinceStartMs) : '-'],
+    ['False-lock', reviewData?.scanTelemetry?.falseLock ? 'yes' : 'no'],
   ];
 
   return (
@@ -1708,6 +2134,98 @@ export default function MobileScannerPage() {
               <div className="home-cta-text">
                 {sessionCtx.scanNumber === 0 ? 'Tap to start your first scan' : 'Tap to scan next parcel'}
               </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 14, width: '100%', maxWidth: 320 }}>
+                <button
+                  type="button"
+                  data-testid="workflow-fast-btn"
+                  onClick={() => setScanWorkflowMode('fast')}
+                  style={{
+                    flex: 1,
+                    borderRadius: 999,
+                    border: `1px solid ${scanWorkflowMode === 'fast' ? theme.primary : theme.border}`,
+                    background: scanWorkflowMode === 'fast' ? theme.primaryLight : theme.surface,
+                    color: scanWorkflowMode === 'fast' ? theme.primary : theme.muted,
+                    fontWeight: 700,
+                    fontSize: '0.72rem',
+                    padding: '9px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Zap size={13} /> Fast scan
+                </button>
+                <button
+                  type="button"
+                  data-testid="workflow-ocr-btn"
+                  onClick={() => setScanWorkflowMode('ocr')}
+                  style={{
+                    flex: 1,
+                    borderRadius: 999,
+                    border: `1px solid ${scanWorkflowMode === 'ocr' ? theme.primary : theme.border}`,
+                    background: scanWorkflowMode === 'ocr' ? theme.primaryLight : theme.surface,
+                    color: scanWorkflowMode === 'ocr' ? theme.primary : theme.muted,
+                    fontWeight: 700,
+                    fontSize: '0.72rem',
+                    padding: '9px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Brain size={13} /> OCR label
+                </button>
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 8, width: '100%', maxWidth: 320 }}>
+                <button
+                  type="button"
+                  data-testid="device-profile-phone-btn"
+                  onClick={() => setDeviceProfile(DEVICE_PROFILES.phone)}
+                  style={{
+                    flex: 1,
+                    borderRadius: 999,
+                    border: `1px solid ${deviceProfile === DEVICE_PROFILES.phone ? theme.primary : theme.border}`,
+                    background: deviceProfile === DEVICE_PROFILES.phone ? theme.primaryLight : theme.surface,
+                    color: deviceProfile === DEVICE_PROFILES.phone ? theme.primary : theme.muted,
+                    fontWeight: 700,
+                    fontSize: '0.7rem',
+                    padding: '8px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Camera size={13} /> Phone lens
+                </button>
+                <button
+                  type="button"
+                  data-testid="device-profile-rugged-btn"
+                  onClick={() => setDeviceProfile(DEVICE_PROFILES.rugged)}
+                  style={{
+                    flex: 1,
+                    borderRadius: 999,
+                    border: `1px solid ${deviceProfile === DEVICE_PROFILES.rugged ? theme.primary : theme.border}`,
+                    background: deviceProfile === DEVICE_PROFILES.rugged ? theme.primaryLight : theme.surface,
+                    color: deviceProfile === DEVICE_PROFILES.rugged ? theme.primary : theme.muted,
+                    fontWeight: 700,
+                    fontSize: '0.7rem',
+                    padding: '8px 12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Shield size={13} /> Rugged
+                </button>
+              </div>
 
               {/* Manual AWB Entry */}
               <form
@@ -1806,14 +2324,22 @@ export default function MobileScannerPage() {
             <div id="scanbot-camera-container" style={{ position: 'absolute', inset: 0, display: scanbotRef.current ? 'block' : 'none' }} />
             <div className="cam-overlay">
               {/* Guide: narrow landscape strip in barcode mode, tall portrait in document mode */}
-              <div
-                className="scan-guide"
-                style={
-                  scanMode === 'barcode'
-                    ? { width: BARCODE_SCAN_REGION.w, height: BARCODE_SCAN_REGION.h, borderRadius: 10, maxHeight: '20vw', transition: 'all 0.4s ease' }
-                    : { width: DOC_CAPTURE_REGION.w, height: DOC_CAPTURE_REGION.h, borderRadius: 14, maxHeight: '75vh', transition: 'all 0.4s ease', borderColor: 'rgba(251,191,36,0.85)', boxShadow: '0 0 0 3px rgba(251,191,36,0.2)' }
-                }
-              >
+                <div
+                  className="scan-guide"
+                  style={
+                    scanMode === 'barcode'
+                      ? {
+                        width: BARCODE_SCAN_REGION.w,
+                        height: BARCODE_SCAN_REGION.h,
+                        borderRadius: 10,
+                        maxHeight: '20vw',
+                        transition: 'all 0.4s ease',
+                        borderColor: errorMsg ? 'rgba(248,113,113,0.92)' : undefined,
+                        boxShadow: errorMsg ? '0 0 0 3px rgba(248,113,113,0.2)' : undefined,
+                      }
+                      : { width: DOC_CAPTURE_REGION.w, height: DOC_CAPTURE_REGION.h, borderRadius: 14, maxHeight: '75vh', transition: 'all 0.4s ease', borderColor: 'rgba(251,191,36,0.85)', boxShadow: '0 0 0 3px rgba(251,191,36,0.2)' }
+                  }
+                >
                 <div className="scan-guide-corner corner-tl" />
                 <div className="scan-guide-corner corner-tr" />
                 <div className="scan-guide-corner corner-bl" />
@@ -1844,8 +2370,22 @@ export default function MobileScannerPage() {
             </div>
             <div className="cam-bottom">
               {scanMode === 'barcode' ? (
-                <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: '0.82rem', fontWeight: 600, textAlign: 'center' }}>
-                  Align barcode inside the strip
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, color: 'rgba(255,255,255,0.85)', fontSize: '0.82rem', fontWeight: 600, textAlign: 'center' }}>
+                  <div>
+                    {scanWorkflowMode === 'fast'
+                      ? 'Align barcode inside the strip - auto-save on lock'
+                      : 'Align barcode inside the strip - camera opens for label capture after lock'}
+                  </div>
+                  {barcodeReframeCount > 0 && (
+                    <div style={{ color: '#FDE68A', fontSize: '0.74rem', fontWeight: 700 }}>
+                      Reframe retry {barcodeReframeCount}/{BARCODE_REFRAME_ATTEMPTS}
+                    </div>
+                  )}
+                  {!!errorMsg && (
+                    <div style={{ color: '#FCA5A5', fontSize: '0.72rem', fontWeight: 700 }}>
+                      {errorMsg}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
@@ -1863,7 +2403,13 @@ export default function MobileScannerPage() {
                     <button
                       className="cam-hud-chip"
                       style={{ border: 'none', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 700 }}
-                      onClick={() => { syncBarcodeFailCount(0); setScanMode('barcode'); }}
+                      onClick={() => {
+                        syncBarcodeFailCount(0);
+                        syncBarcodeReframeCount(0);
+                        setErrorMsg('');
+                        setScanMode('barcode');
+                        pulseHaptic('tap');
+                      }}
                     >
                       Back to barcode mode
                     </button>
@@ -1871,6 +2417,14 @@ export default function MobileScannerPage() {
                 </div>
               )}
               <div style={{ display: 'flex', gap: 12 }}>
+                <button
+                  className="cam-hud-chip"
+                  onClick={() => setScanWorkflowMode((prev) => (prev === 'fast' ? 'ocr' : 'fast'))}
+                  style={{ border: 'none', cursor: 'pointer', gap: 5 }}
+                >
+                  {scanWorkflowMode === 'fast' ? <Zap size={13} /> : <Brain size={13} />}
+                  {scanWorkflowMode === 'fast' ? 'FAST' : 'OCR'}
+                </button>
                 <button className="cam-hud-chip" onClick={() => setVoiceEnabled(!voiceEnabled)} style={{ border: 'none', cursor: 'pointer' }}>
                   {voiceEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
                 </button>
@@ -1919,14 +2473,19 @@ export default function MobileScannerPage() {
             </div>
             <div className="cam-bottom">
               <div style={{ color: docDetected ? 'rgba(16,185,129,0.95)' : 'rgba(255,255,255,0.85)', fontSize: '0.82rem', fontWeight: 600, textAlign: 'center', transition: 'color 0.3s' }}>
-                {docDetected ? 'AWB area in frame - press shutter' : 'Fit the AWB slip inside the frame so we can read the printed AWB'}
+                {captureQualityHint}
               </div>
+              {captureQuality.metrics && (
+                <div style={{ color: 'rgba(255,255,255,0.66)', fontSize: '0.72rem', textAlign: 'center' }}>
+                  Blur {captureQuality.metrics.blurScore} | Glare {captureQuality.metrics.glareRatio}% | Skew {captureQuality.metrics.perspectiveSkew}%
+                </div>
+              )}
               <button
                 className="capture-btn"
                 data-testid="capture-photo-btn"
                 onClick={handleCapturePhoto}
-                disabled={!captureCameraReady}
-                style={{ opacity: captureCameraReady ? 1 : 0.4 }}
+                disabled={!captureReadyForShutter}
+                style={{ opacity: captureReadyForShutter ? 1 : 0.4 }}
               >
                 <div className="capture-btn-inner" />
               </button>
@@ -1942,7 +2501,15 @@ export default function MobileScannerPage() {
               )}
               <button
                 style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', fontSize: '0.72rem', padding: '6px 16px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}
-                onClick={() => { setLockedAwb(''); scanBusyRef.current = false; goStep(STEPS.SCANNING); }}
+                onClick={() => {
+                  setLockedAwb('');
+                  setErrorMsg('');
+                  syncBarcodeFailCount(0);
+                  syncBarcodeReframeCount(0);
+                  scanBusyRef.current = false;
+                  pulseHaptic('tap');
+                  goStep(STEPS.SCANNING);
+                }}
               >
                 â† Rescan barcode
               </button>
@@ -1957,6 +2524,11 @@ export default function MobileScannerPage() {
               <div>
                 <div style={{ fontSize: '0.72rem', color: theme.muted, fontWeight: 600 }}>CAPTURED</div>
                 <div className="mono" style={{ fontSize: '1rem', fontWeight: 700 }}>{lockedAwb || 'Printed AWB OCR'}</div>
+                {captureMeta.kb > 0 && (
+                  <div style={{ fontSize: '0.68rem', color: theme.mutedLight }}>
+                    {captureMeta.kb}KB • {captureMeta.width}×{captureMeta.height}
+                  </div>
+                )}
               </div>
             </div>
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
@@ -1983,7 +2555,7 @@ export default function MobileScannerPage() {
               </div>
               <div className="mono" style={{ fontSize: '0.82rem', color: theme.muted }}>{lockedAwb}</div>
               <div style={{ fontSize: '0.72rem', color: theme.mutedLight, marginTop: 6 }}>
-                Reading AWB label with Gemini Visionâ€¦
+                {capturedImage ? 'Reading AWB label with local OCR...' : 'Saving barcode scan...'}
               </div>
             </div>
             {['Client', 'Consignee', 'Destination', 'Pincode', 'Weight', 'Order No'].map((label) => (
@@ -2016,7 +2588,7 @@ export default function MobileScannerPage() {
                 <div className="mono" style={{ fontSize: '0.95rem', fontWeight: 700 }}>{reviewData?.awb || lockedAwb}</div>
               </div>
               {intelligence?.learnedFieldCount > 0 && (
-                <div className="source-badge source-learned">ðŸ§  {intelligence.learnedFieldCount} auto-corrected</div>
+                <div className="source-badge source-learned">AI {intelligence.learnedFieldCount} auto-corrected</div>
               )}
             </div>
             <div className="scroll-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -2080,7 +2652,7 @@ export default function MobileScannerPage() {
                     <div className="field-label">Weight (kg)</div>
                     <input className="field-input" value={reviewForm.weight || ''} onChange={(e) => setReviewForm(f => ({ ...f, weight: e.target.value }))} placeholder="0.0" inputMode="decimal" />
                     {intelligence?.weightAnomaly?.anomaly && (
-                      <div style={{ fontSize: '0.6rem', color: theme.warning, marginTop: 2, fontWeight: 500 }}>âš ï¸ {intelligence.weightAnomaly.warning}</div>
+                      <div style={{ fontSize: '0.6rem', color: theme.warning, marginTop: 2, fontWeight: 500 }}>Warning: {intelligence.weightAnomaly.warning}</div>
                     )}
                   </div>
                 </div>
@@ -2137,11 +2709,16 @@ export default function MobileScannerPage() {
             </div>
             <div style={{ fontSize: '0.72rem', color: theme.muted }}>
               {lastSuccess?.offlineQueued
-                ? `${offlineQueue.length} queued for sync â€¢ Auto-continuing in 3s`
-                : `#${sessionCtx.scanNumber} scanned â€¢ Auto-continuing in 3s`}
+                ? `${offlineQueue.length} queued for sync - Auto-continuing in ${successAutoSeconds}s`
+                : `#${sessionCtx.scanNumber} scanned - Auto-continuing in ${successAutoSeconds}s`}
             </div>
-            <button data-testid="scan-next-btn" className="btn btn-primary btn-lg btn-full" onClick={resetForNextScan} style={{ maxWidth: 320 }}>
-              <Camera size={18} /> Scan Next Parcel
+            <button
+              data-testid="scan-next-btn"
+              className="btn btn-primary btn-lg btn-full"
+              onClick={() => resetForNextScan(scanWorkflowMode === 'fast' ? STEPS.SCANNING : STEPS.IDLE)}
+              style={{ maxWidth: 320 }}
+            >
+              <Camera size={18} /> {scanWorkflowMode === 'fast' ? 'Keep Scanning' : 'Scan Next Parcel'}
             </button>
           </div>
         </div>

@@ -42,7 +42,7 @@ async function resolveLocation(line) {
       state = state || office.State;
       district = district || office.District;
       city = city || office.Name;
-    } catch (e) {}
+    } catch (e) { void e; }
   }
   return { state, district, city, pincode };
 }

@@ -92,10 +92,11 @@ model Client {
   transactions  WalletTransaction[]
   clientUsers   ClientUser[]
   importedRows  ShipmentImportRow[]
-  DraftOrder    DraftOrder[]
-  autoTopupRule Json?               @map("auto_topup_rule")
-  brandSettings Json?               @map("brand_settings")
-  apiKeys       ClientApiKey[]
+  DraftOrder      DraftOrder[]
+  returnRequests  ReturnRequest[]
+  autoTopupRule   Json?               @map("auto_topup_rule")
+  brandSettings   Json?               @map("brand_settings")
+  apiKeys         ClientApiKey[]
 
   @@index([code])
   @@map("clients")
@@ -172,8 +173,9 @@ model Shipment {
   invoiceItems   InvoiceItem[]
   trackingEvents TrackingEvent[]
   ndrEvents      NDREvent[]
-  importRows     ShipmentImportRow[]
-  DraftOrder     DraftOrder?
+  importRows      ShipmentImportRow[]
+  DraftOrder      DraftOrder?
+  returnRequests  ReturnRequest[]
 
   @@index([date])
   @@index([clientCode])
@@ -572,4 +574,36 @@ model DraftOrder {
   @@index([clientCode])
   @@index([status])
   @@map("draft_orders")
+}
+
+model ReturnRequest {
+  id              Int       @id @default(autoincrement())
+  shipmentId      Int       @map("shipment_id")
+  originalAwb     String    @map("original_awb") @db.VarChar(50)
+  clientCode      String    @map("client_code") @db.VarChar(20)
+  reason          String    // customer_return, damaged, wrong_item, size_exchange, other
+  reasonDetail    String?   @map("reason_detail") @db.Text
+  status          String    @default("PENDING") // PENDING, APPROVED, LABEL_READY, PICKUP_BOOKED, IN_TRANSIT, RECEIVED, RETURNED_TO_CLIENT, REJECTED
+  returnMethod    String    @default("PICKUP") @map("return_method") // PICKUP, SELF_SHIP
+  reverseAwb      String?   @map("reverse_awb") @db.VarChar(50)
+  reverseCourier  String?   @map("reverse_courier")
+  pickupAddress   String?   @map("pickup_address") @db.Text
+  pickupCity      String?   @map("pickup_city")
+  pickupState     String?   @map("pickup_state")
+  pickupPincode   String?   @map("pickup_pincode") @db.VarChar(10)
+  pickupPhone     String?   @map("pickup_phone")
+  pickupDate      String?   @map("pickup_date") @db.VarChar(10)
+  labelUrl        String?   @map("label_url")
+  adminNotes      String?   @map("admin_notes") @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  shipment        Shipment  @relation(fields: [shipmentId], references: [id])
+  client          Client    @relation(fields: [clientCode], references: [code])
+
+  @@index([clientCode])
+  @@index([status])
+  @@index([returnMethod])
+  @@index([originalAwb])
+  @@map("return_requests")
 }

@@ -1,3 +1,4 @@
+/* global vi */
 // src/config/__mocks__/prisma.js
 
 const mockTx = {
@@ -16,13 +17,16 @@ const mockPrisma = {
   quote:      { findFirst: vi.fn(), create: vi.fn(), count: vi.fn(), findMany: vi.fn(), update: vi.fn(), groupBy: vi.fn(), aggregate: vi.fn() },
   jobQueue:   { create: vi.fn(), update: vi.fn(), count: vi.fn() },
   nDREvent:   { findMany: vi.fn(), count: vi.fn(), create: vi.fn(), update: vi.fn() },
-  auditLog:   { create: vi.fn() },
+  auditLog:   { create: vi.fn(), findMany: vi.fn() },
   refreshToken: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
   walletTransaction: { create: vi.fn(), update: vi.fn(), findFirst: vi.fn(), count: vi.fn(), findMany: vi.fn() },
   trackingEvent: { create: vi.fn(), createMany: vi.fn(), findMany: vi.fn(), count: vi.fn() },
   pickupRequest: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), count: vi.fn() },
   courierInvoice: { create: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), update: vi.fn(), count: vi.fn() },
   delhiveryPincode: { findUnique: vi.fn() },
+  draftOrder: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), count: vi.fn(), update: vi.fn(), delete: vi.fn() },
+  clientApiKey: { findMany: vi.fn(), findFirst: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn(), count: vi.fn() },
+  returnRequest: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), count: vi.fn() },
   $queryRaw:  vi.fn(),
   $executeRaw: vi.fn(),
   $transaction: vi.fn((arg) => {

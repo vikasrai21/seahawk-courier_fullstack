@@ -13,7 +13,8 @@ import {
   PiggyBank,
   ShieldCheck,
   Zap,
-  ArrowRight
+  ArrowRight,
+  History
 } from 'lucide-react';
 import api from '../services/api';
 import { Modal } from '../components/ui/Modal';

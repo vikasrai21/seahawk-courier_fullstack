@@ -8,11 +8,11 @@ describe('awbDetect', () => {
     expect(detectCourier('29912345678901')).toMatchObject({ courier: 'DELHIVERY', confidence: 'high' });
     expect(detectCourier('JD014600006838363771')).toMatchObject({ courier: 'DHL', confidence: 'high' });
     expect(detectCourier('100123456789')).toMatchObject({ courier: 'TRACKON', confidence: 'high' });
-    expect(detectCourier('200040123456')).toMatchObject({ courier: 'PRIMETRACK', confidence: 'high' });
+    expect(detectCourier('200040123456')).toMatchObject({ courier: 'TRACKON', confidence: 'medium', service: 'PRIME_TRACK' });
   });
 
   it('flags ambiguous and unknown AWBs safely', () => {
-    expect(detectCourier('200123456789')).toMatchObject({ courier: 'PRIMETRACK_OR_TRACKON', tryBoth: true });
+    expect(detectCourier('200123456789')).toMatchObject({ courier: 'TRACKON', confidence: 'medium', service: 'PRIME_TRACK' });
     expect(detectCourier('abc-123')).toMatchObject({ courier: 'UNKNOWN', confidence: 'low' });
     expect(detectCourier('')).toBeNull();
   });

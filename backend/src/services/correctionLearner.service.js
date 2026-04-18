@@ -3,6 +3,14 @@
 const prisma = require('../config/prisma');
 const logger = require('../utils/logger');
 
+const TRACKED_FIELDS = ['clientName', 'clientCode', 'consignee', 'destination'];
+const FIELD_MIN_COUNTS = {
+  clientName: 2,
+  clientCode: 3,
+  consignee: 2,
+  destination: 2,
+};
+
 function normalize(value) {
   return String(value || '')
     .toUpperCase()
@@ -39,10 +47,9 @@ async function saveCorrection({ field, original, corrected }) {
  * Record corrections by comparing OCR-extracted fields to user-approved fields.
  */
 async function recordCorrections(ocrFields = {}, approvedFields = {}) {
-  const trackedFields = ['clientName', 'clientCode', 'consignee', 'destination'];
   const saved = [];
 
-  for (const field of trackedFields) {
+  for (const field of TRACKED_FIELDS) {
     const original = normalize(ocrFields[field] || '');
     const corrected = normalize(approvedFields[field] || '');
 
@@ -69,10 +76,11 @@ async function lookupCorrection(field, ocrValue) {
       where: { field_original: { field, original: normValue } },
     });
 
-    if (match && match.count >= 2) {
+    const minCount = FIELD_MIN_COUNTS[field] || 2;
+    if (match && match.count >= minCount) {
       return {
         corrected: match.corrected,
-        confidence: Math.min(0.99, 0.80 + match.count * 0.03),
+        confidence: Math.min(0.99, 0.78 + match.count * 0.03),
         count: match.count,
       };
     }
@@ -87,9 +95,7 @@ async function lookupCorrection(field, ocrValue) {
  * Modifies the fields and adds metadata about the source.
  */
 async function applyLearnedCorrections(ocrResult = {}) {
-  const fields = ['clientName', 'consignee', 'destination'];
-
-  for (const field of fields) {
+  for (const field of TRACKED_FIELDS) {
     if (!ocrResult[field]) continue;
 
     const learned = await lookupCorrection(field, ocrResult[field]);
@@ -102,6 +108,39 @@ async function applyLearnedCorrections(ocrResult = {}) {
   }
 
   return ocrResult;
+}
+
+async function getCorrectionMetrics() {
+  try {
+    const [rows, aggregate] = await Promise.all([
+      prisma.scanCorrection.groupBy({
+        by: ['field'],
+        _count: { id: true },
+        _sum: { count: true },
+        orderBy: { _sum: { count: 'desc' } },
+      }),
+      prisma.scanCorrection.aggregate({
+        _count: { id: true },
+        _sum: { count: true },
+      }),
+    ]);
+
+    return {
+      distinctPairs: aggregate?._count?.id || 0,
+      totalCorrectionsObserved: aggregate?._sum?.count || 0,
+      byField: rows.map((row) => ({
+        field: row.field,
+        distinctPairs: row?._count?.id || 0,
+        totalCorrectionsObserved: row?._sum?.count || 0,
+      })),
+    };
+  } catch {
+    return {
+      distinctPairs: 0,
+      totalCorrectionsObserved: 0,
+      byField: [],
+    };
+  }
 }
 
 /**
@@ -145,5 +184,6 @@ module.exports = {
   applyLearnedCorrections,
   getTopCorrections,
   discoverNewAliases,
+  getCorrectionMetrics,
   normalize,
 };

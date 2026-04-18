@@ -128,6 +128,7 @@ seahawk/
 - Node.js 20+
 - PostgreSQL 16+
 - Redis 7+ (required for job queues)
+- Python 3.10+ (for free local OCR engine)
 - Git
 
 ### 1. Clone and install
@@ -160,6 +161,15 @@ NODE_ENV=development
 ```
 
 See `.env.example` for the full list of optional carrier API keys, SMTP, Razorpay, S3, and Sentry config.
+
+### 2.1 Enable free local OCR (recommended)
+
+```bash
+cd backend
+npm run ocr:local:setup
+```
+
+This installs `rapidocr-onnxruntime` + `zxing-cpp` for scanner OCR/barcode extraction without Gemini quotas.
 
 ### 3. Run database migrations
 
@@ -363,6 +373,10 @@ Notes:
 | `NODE_ENV` | ✅ | `development` or `production` |
 | `PORT` | — | HTTP port, default `3001` |
 | `CORS_ORIGIN` | — | Comma-separated allowed origins |
+| `OCR_ENGINE` | — | `local` (default), `auto`, or `gemini` |
+| `OCR_PYTHON_BIN` | — | Python executable path for local OCR (default `python`) |
+| `OCR_LOCAL_TIMEOUT_MS` | — | Timeout for local OCR process (default `60000`) |
+| `GEMINI_API_KEY` | — | Optional Gemini fallback when `OCR_ENGINE=auto/gemini` |
 | `SMTP_HOST/USER/PASS` | — | Email notifications |
 | `WHATSAPP_TOKEN` | — | Meta Cloud API for WhatsApp updates |
 | `DELHIVERY_API_KEY` | — | Delhivery carrier integration |

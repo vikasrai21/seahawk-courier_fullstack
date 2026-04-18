@@ -35,6 +35,12 @@ const COURIERS = {
   'DTDC': dtdcSvc
 };
 
+function resolveEnqueueTrackingSync() {
+  if (typeof queueSvc?.enqueueTrackingSync === 'function') return queueSvc.enqueueTrackingSync.bind(queueSvc);
+  if (typeof queueSvc?.default?.enqueueTrackingSync === 'function') return queueSvc.default.enqueueTrackingSync.bind(queueSvc.default);
+  return null;
+}
+
 function buildFilters({ client, courier, status, dateFrom, dateTo, q }) {
   const where = {};
   if (client)  where.clientCode = client;
@@ -308,15 +314,19 @@ async function bulkImport(shipments, userId) {
   }
   
   if (trackingCandidates.length > 0) {
-    const uniqueCandidates = [...new Map(trackingCandidates.map((item) => [item.awb, item])).values()];
-    for (const candidate of uniqueCandidates) {
-      try {
-        await queueSvc.enqueueTrackingSync(candidate.shipmentId, candidate.awb, candidate.carrier);
-        trackingQueued++;
-      } catch (err) {
-        logger.warn(`[Import] Tracking sync enqueue failed for ${candidate.awb}: ${err.message}`);
+      const uniqueCandidates = [...new Map(trackingCandidates.map((item) => [item.awb, item])).values()];
+      const enqueueTrackingSync = resolveEnqueueTrackingSync();
+      for (const candidate of uniqueCandidates) {
+        try {
+          if (!enqueueTrackingSync) {
+            throw new Error('enqueueTrackingSync is unavailable');
+          }
+          await enqueueTrackingSync(candidate.shipmentId, candidate.awb, candidate.carrier);
+          trackingQueued++;
+        } catch (err) {
+          logger.warn(`[Import] Tracking sync enqueue failed for ${candidate.awb}: ${err.message}`);
+        }
       }
-    }
   }
 
   if (imported > 0) clearCache();
@@ -549,9 +559,26 @@ async function attachClientSuggestion(savedShipment, ocrHints = null) {
 }
 
 async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}) {
-  const { captureOnly = false, source = 'scanner', ocrHints = null } = options;
+  const { captureOnly = false, source = 'scanner', ocrHints = null, forceLiveTrackingInCapture = false } = options;
   if (!courier || courier === 'AUTO') {
     courier = autoDetectCourier(awb);
+  }
+
+  if (captureOnly && !forceLiveTrackingInCapture) {
+    const captured = await createOrReuseCapturedShipment(awb, userId, courier, source, ocrHints);
+    const enriched = await attachClientSuggestion(captured.shipment, ocrHints);
+    return {
+      ...captured,
+      shipment: enriched.shipment,
+      meta: {
+        existed: captured.existed,
+        source: captured.source,
+        trackingUnavailable: true,
+        trackingError: null,
+        clientSuggestion: enriched.clientSuggestion,
+        ocrExtracted: summarizeOcrHints(ocrHints),
+      },
+    };
   }
 
   let shipment = await prisma.shipment.findUnique({ where: { awb } });

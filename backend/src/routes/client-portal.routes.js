@@ -14,8 +14,14 @@ const portalAssistant = require('../controllers/client-portal/portal.assistant')
 const portalWallet = require('../controllers/client-portal/portal.wallet');
 const portalInvoices = require('../controllers/client-portal/portal.invoices');
 const developerRoutes = require('./developer.routes');
+const returnService = require('../services/return.service');
 
 const clientOnly = requireRole('CLIENT', 'ADMIN');
+const actorFromReq = (req) => ({
+  userId: req.user?.id || null,
+  userEmail: req.user?.email || null,
+  ip: req.ip || null,
+});
 
 router.get('/stats', protect, clientOnly, asyncHandler(portalStats.stats));
 router.get('/shipments', protect, clientOnly, asyncHandler(portalStats.shipments));
@@ -61,4 +67,81 @@ router.post('/support-ticket', protect, clientOnly, asyncHandler(portalMisc.supp
 router.get('/developer/diagnostics', protect, clientOnly, asyncHandler(portalReliability.developerDiagnostics));
 router.use('/developer', protect, clientOnly, developerRoutes);
 
+// ── Return Requests (Client Portal) ────────────────────────────────────────
+router.get('/returns/eligible', protect, clientOnly, asyncHandler(async (req, res) => {
+  const clientCode = req.user.clientCode;
+  if (!clientCode) return res.status(403).json({ success: false, message: 'Client account required' });
+  const { page, limit, search } = req.query;
+  const result = await returnService.getEligibleShipments(clientCode, { page, limit, search });
+  res.json({ success: true, data: result });
+}));
+
+router.get('/returns', protect, clientOnly, asyncHandler(async (req, res) => {
+  const clientCode = req.user.clientCode;
+  if (!clientCode) return res.status(403).json({ success: false, message: 'Client account required' });
+  const { status, returnMethod, reason, dateFrom, dateTo, page, limit, search } = req.query;
+  const result = await returnService.listReturns({
+    clientCode, status, returnMethod, reason, dateFrom, dateTo, page, limit, search,
+  });
+  res.json({ success: true, data: result });
+}));
+
+router.post('/returns', protect, clientOnly, asyncHandler(async (req, res) => {
+  const clientCode = req.user.clientCode;
+  if (!clientCode) return res.status(403).json({ success: false, message: 'Client account required' });
+  const {
+    shipmentId,
+    reason,
+    returnMethod,
+    reasonDetail,
+    pickupAddress,
+    pickupCity,
+    pickupState,
+    pickupPincode,
+    pickupPhone,
+  } = req.body;
+  const result = await returnService.createReturnRequest({
+    shipmentId,
+    clientCode,
+    createdBy: req.user.id,
+    reason,
+    returnMethod,
+    reasonDetail,
+    pickupAddress,
+    pickupCity,
+    pickupState,
+    pickupPincode,
+    pickupPhone,
+  }, actorFromReq(req));
+  res.json({ success: true, data: result });
+}));
+
+router.post('/returns/:id/generate-label', protect, clientOnly, asyncHandler(async (req, res) => {
+  const ret = await returnService.getReturn(req.params.id);
+  if (ret.clientCode !== req.user.clientCode) {
+    return res.status(403).json({ success: false, message: 'Access denied' });
+  }
+  const result = await returnService.generateSelfShipLabel(req.params.id, actorFromReq(req));
+  res.json({ success: true, data: result });
+}));
+
+router.get('/returns/:id/timeline', protect, clientOnly, asyncHandler(async (req, res) => {
+  const ret = await returnService.getReturn(req.params.id);
+  if (ret.clientCode !== req.user.clientCode) {
+    return res.status(403).json({ success: false, message: 'Access denied' });
+  }
+  const { limit } = req.query;
+  const timeline = await returnService.getReturnTimeline(req.params.id, { limit });
+  res.json({ success: true, data: timeline });
+}));
+
+router.get('/returns/:id', protect, clientOnly, asyncHandler(async (req, res) => {
+  const ret = await returnService.getReturn(req.params.id);
+  if (ret.clientCode !== req.user.clientCode) {
+    return res.status(403).json({ success: false, message: 'Access denied' });
+  }
+  res.json({ success: true, data: ret });
+}));
+
 module.exports = router;
+

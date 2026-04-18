@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Package, Truck, User, MapPin, Calendar, Clock, Info, ShieldCheck, Zap } from 'lucide-react';
+import { Package, Truck, User, MapPin, Calendar, Clock, Info, ShieldCheck, Zap, Activity, RefreshCw } from 'lucide-react';
 import api from '../services/api';
 import { STATUSES } from './ui/StatusBadge';
 

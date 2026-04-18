@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const prisma = require('../config/prisma');
 const config = require('../config');
 const logger = require('../utils/logger');
+const scannerQuality = require('../services/scannerQuality.service');
 
 let io = null;
 
@@ -225,12 +226,22 @@ async function initSocket(server) {
     });
 
     // Desktop relays correction diffs for the learning system
-    socket.on('scanner:learn-corrections', ({ pin, ocrFields, approvedFields }) => {
-      // This is handled server-side: call the correction learner directly
+    socket.on('scanner:learn-corrections', async ({ pin, ocrFields, approvedFields, courier, deviceProfile }) => {
       try {
         const correctionLearner = require('../services/correctionLearner.service');
-        correctionLearner.recordCorrections(ocrFields || {}, approvedFields || {})
-          .catch(err => logger.warn(`[Learning] Socket correction save failed: ${err.message}`));
+        const saved = await correctionLearner.recordCorrections(ocrFields || {}, approvedFields || {});
+        const changedFields = ['clientName', 'clientCode', 'consignee', 'destination']
+          .filter((field) => String(ocrFields?.[field] || '').trim() && String(approvedFields?.[field] || '').trim())
+          .filter((field) => String(ocrFields?.[field] || '').trim() !== String(approvedFields?.[field] || '').trim())
+          .length;
+
+        scannerQuality.recordCorrectionEvent({
+          pin,
+          courier,
+          deviceProfile,
+          changedFields,
+          savedCorrections: saved.length,
+        });
       } catch (err) {
         logger.warn(`[Learning] Socket correction failed: ${err.message}`);
       }
@@ -293,12 +304,20 @@ function handleMobileScannerConnection(socket) {
   });
 
   // Phone sends a scanned barcode — server handles OCR directly (no desktop tab required)
-  socket.on('scanner:scan', async ({ awb, imageBase64, focusImageBase64, sessionContext }) => {
+  socket.on('scanner:scan', async ({ awb, imageBase64, focusImageBase64, sessionContext, scanMode }) => {
     const currentSession = scanSessions.get(pin);
     if (!currentSession || currentSession.phoneSocketId !== socket.id) return;
 
-    currentSession.scanCount++;
+    const scanStartedAt = Date.now();
     const cleanAwb = String(awb || '').trim();
+    const deviceProfile = String(sessionContext?.deviceProfile || sessionContext?.hardwareClass || 'phone-camera').trim() || 'phone-camera';
+    const lockTimeMs = Number.isFinite(Number(sessionContext?.lockTimeMs)) ? Number(sessionContext.lockTimeMs) : null;
+    const lockCandidateCount = Number.isFinite(Number(sessionContext?.lockCandidateCount)) ? Number(sessionContext.lockCandidateCount) : null;
+    const qualityIssues = Array.isArray(sessionContext?.captureQuality?.issues)
+      ? sessionContext.captureQuality.issues.filter(Boolean).map((issue) => String(issue).toLowerCase()).slice(0, 8)
+      : [];
+
+    currentSession.scanCount++;
     logger.info(`Remote scan #${currentSession.scanCount}: AWB ${cleanAwb} via PIN ${pin}`);
 
     // Also relay to desktop if it's open (for the ScanAWBPage live feed)
@@ -306,6 +325,7 @@ function handleMobileScannerConnection(socket) {
       awb: cleanAwb,
       imageBase64: imageBase64 || null,
       focusImageBase64: focusImageBase64 || null,
+      scanMode: scanMode || null,
       scanNumber: currentSession.scanCount,
       timestamp: new Date().toISOString(),
       sessionContext: sessionContext || {},
@@ -313,21 +333,98 @@ function handleMobileScannerConnection(socket) {
 
     // --- SERVER-SIDE OCR PIPELINE (runs regardless of desktop tab state) ---
     if (!imageBase64 && !focusImageBase64) {
-      // No image — just acknowledge with AWB only
-      socket.emit('scanner:scan-processed', {
-        awb: cleanAwb,
-        status: 'pending_review',
-        clientCode: '',
-        clientName: '',
-        consignee: '',
-        destination: '',
-        pincode: '',
-        weight: 0,
-        amount: 0,
-        orderNo: '',
-        reviewRequired: true,
-        noImage: true,
-      });
+      if (!cleanAwb) {
+        scannerQuality.recordScanEvent({
+          pin,
+          source: 'mobile_scanner_fast',
+          scanMode: scanMode || 'fast_barcode_only',
+          deviceProfile,
+          lockedAwb: cleanAwb,
+          success: false,
+          reviewRequired: false,
+          hadImage: false,
+          lockTimeMs,
+          totalMs: Date.now() - scanStartedAt,
+          qualityIssues,
+        });
+        socket.emit('scanner:scan-processed', {
+          awb: '',
+          status: 'error',
+          error: 'Barcode scan did not include an AWB.',
+        });
+        return;
+      }
+
+      try {
+        const shipmentSvc = require('../services/shipment.service');
+        const result = await shipmentSvc.scanAwbAndUpdate(cleanAwb, currentSession.userId, null, {
+          captureOnly: true,
+          source: scanMode === 'fast_barcode_only' ? 'mobile_scanner_fast' : 'mobile_scanner',
+          sessionContext: sessionContext || {},
+        });
+        const shipment = result?.shipment || null;
+        const totalMs = Date.now() - scanStartedAt;
+        scannerQuality.recordScanEvent({
+          pin,
+          source: scanMode === 'fast_barcode_only' ? 'mobile_scanner_fast' : 'mobile_scanner',
+          scanMode: scanMode || 'fast_barcode_only',
+          deviceProfile,
+          courier: shipment?.courier || '',
+          awb: cleanAwb,
+          lockedAwb: cleanAwb,
+          awbSource: 'fast_input',
+          success: true,
+          reviewRequired: false,
+          hadImage: false,
+          lockTimeMs,
+          totalMs,
+          qualityIssues,
+        });
+
+        socket.emit('scanner:scan-processed', {
+          awb: cleanAwb,
+          shipmentId: shipment?.id || null,
+          status: 'ok',
+          clientCode: shipment?.clientCode || '',
+          clientName: shipment?.client?.company || shipment?.clientCode || '',
+          consignee: shipment?.consignee || '',
+          destination: shipment?.destination || '',
+          pincode: shipment?.pincode || '',
+          weight: shipment?.weight || 0,
+          amount: shipment?.amount || 0,
+          orderNo: shipment?.orderNo || '',
+          reviewRequired: false,
+          noImage: true,
+          scanTelemetry: {
+            totalMs,
+            deviceProfile,
+            lockTimeMs,
+            lockCandidateCount,
+          },
+        });
+      } catch (noImageErr) {
+        logger.error(`[Scanner OCR] AWB-only save failed for ${cleanAwb}: ${noImageErr.message}`);
+        scannerQuality.recordScanEvent({
+          pin,
+          source: 'mobile_scanner_fast',
+          scanMode: scanMode || 'fast_barcode_only',
+          deviceProfile,
+          awb: cleanAwb,
+          lockedAwb: cleanAwb,
+          awbSource: 'fast_input',
+          success: false,
+          reviewRequired: false,
+          hadImage: false,
+          lockTimeMs,
+          totalMs: Date.now() - scanStartedAt,
+          qualityIssues,
+        });
+        socket.emit('scanner:scan-processed', {
+          awb: cleanAwb,
+          status: 'error',
+          error: noImageErr.message || 'Unable to save barcode scan.',
+        });
+      }
       return;
     }
 
@@ -336,8 +433,22 @@ function handleMobileScannerConnection(socket) {
       const intelligenceEngine = require('../services/intelligenceEngine.service');
       const correctionLearner = require('../services/correctionLearner.service');
       const shipmentSvc = require('../services/shipment.service');
+      const withTimeout = (promise, timeoutMs, stage) => new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`Stage timeout (${stage}) after ${timeoutMs}ms`)), timeoutMs);
+        promise
+          .then((value) => {
+            clearTimeout(timer);
+            resolve(value);
+          })
+          .catch((error) => {
+            clearTimeout(timer);
+            reject(error);
+          });
+      });
 
-      // Build context for AI prompt
+      const ocrStartedAt = Date.now();
+
+      // Build context for OCR prompt + intelligence enrichment
       const [clients, corrections] = await Promise.all([
         intelligenceEngine.getActiveClientsForPrompt(),
         correctionLearner.getTopCorrections(20),
@@ -351,40 +462,120 @@ function handleMobileScannerConnection(socket) {
       };
 
       // Score helper — prefer image with more extracted fields
-      const scoreOcr = (d) => {
-        if (!d?.success) return 0;
-        return [d.clientName, d.consignee, d.destination, d.pincode, d.orderNo, d.weight, d.amount]
-          .filter(v => typeof v === 'number' ? v > 0 : String(v || '').trim().length > 0).length;
+      const scoreOcr = (details) => {
+        if (!details?.success) return 0;
+        return [details.clientName, details.consignee, details.destination, details.pincode, details.orderNo, details.weight, details.amount]
+          .filter((value) => (typeof value === 'number' ? value > 0 : String(value || '').trim().length > 0)).length;
       };
 
-      const attempts = [];
-      if (focusImageBase64) attempts.push(extractShipmentFromImage(focusImageBase64, 'image/jpeg', ocrOptions));
-      if (imageBase64)      attempts.push(extractShipmentFromImage(imageBase64, 'image/jpeg', ocrOptions));
+      const ocrTotalBudgetMs = Math.max(8000, Number.parseInt(process.env.SCANNER_OCR_BUDGET_MS || '22000', 10) || 22000);
+      const focusBudgetMs = Math.max(5000, Math.floor(ocrTotalBudgetMs * 0.6));
+      const fullBudgetMs = Math.max(4000, ocrTotalBudgetMs - focusBudgetMs);
+      const ocrAttempts = [];
 
-      const settled = await Promise.allSettled(attempts);
-      const successful = settled
-        .filter(r => r.status === 'fulfilled' && r.value?.success)
-        .map(r => r.value)
-        .sort((a, b) => scoreOcr(b) - scoreOcr(a));
+      const runOcrAttempt = async (label, base64Payload, timeoutMs) => {
+        if (!base64Payload) return null;
+        const startedAt = Date.now();
+        try {
+          const value = await withTimeout(
+            extractShipmentFromImage(base64Payload, 'image/jpeg', ocrOptions),
+            timeoutMs,
+            label
+          );
+          const item = {
+            label,
+            status: 'fulfilled',
+            latencyMs: Date.now() - startedAt,
+            score: scoreOcr(value),
+            awbSource: value?.awbSource || '',
+            value,
+          };
+          ocrAttempts.push(item);
+          return item;
+        } catch (error) {
+          const item = {
+            label,
+            status: 'rejected',
+            latencyMs: Date.now() - startedAt,
+            score: 0,
+            reason: error.message,
+          };
+          ocrAttempts.push(item);
+          logger.warn(`[Scanner OCR] ${label} attempt failed for AWB ${cleanAwb || 'unknown'}: ${error.message}`);
+          return item;
+        }
+      };
 
-      let ocrHints = null;
-      if (successful.length) {
-        ocrHints = await intelligenceEngine.resolveEntities(successful[0], { sessionContext: sessionContext || {} });
+      const focusAttempt = focusImageBase64
+        ? await runOcrAttempt('focus', focusImageBase64, focusBudgetMs)
+        : null;
+      const focusScore = focusAttempt?.status === 'fulfilled' ? focusAttempt.score : 0;
+      if (imageBase64 && (!focusAttempt || focusScore < 3)) {
+        await runOcrAttempt('full', imageBase64, fullBudgetMs);
       }
 
-      const effectiveAwb = String(cleanAwb || ocrHints?.awb || successful[0]?.awb || '').trim();
+      const successful = ocrAttempts
+        .filter((attempt) => attempt.status === 'fulfilled' && attempt.value?.success)
+        .sort((a, b) => b.score - a.score);
+
+      const bestAttempt = successful[0] || null;
+      let ocrHints = null;
+      if (bestAttempt?.value) {
+        try {
+          ocrHints = await withTimeout(
+            intelligenceEngine.resolveEntities(bestAttempt.value, { sessionContext: sessionContext || {} }),
+            4000,
+            'entity-resolution'
+          );
+        } catch (resolveErr) {
+          logger.warn(`[Scanner OCR] Intelligence resolve timed out: ${resolveErr.message}`);
+          ocrHints = bestAttempt.value;
+        }
+      }
+
+      const effectiveAwb = String(cleanAwb || ocrHints?.awb || bestAttempt?.value?.awb || '').trim();
+      const totalMs = Date.now() - scanStartedAt;
+      const ocrLatencyMs = Date.now() - ocrStartedAt;
+      const falseLock = Boolean(cleanAwb && effectiveAwb && String(cleanAwb).toUpperCase() !== String(effectiveAwb).toUpperCase());
+
       if (!effectiveAwb) {
+        scannerQuality.recordScanEvent({
+          pin,
+          source: 'mobile_scanner_ocr',
+          scanMode: scanMode || 'ocr_label',
+          deviceProfile,
+          success: false,
+          reviewRequired: true,
+          hadImage: true,
+          totalMs,
+          ocrLatencyMs,
+          lockTimeMs,
+          qualityIssues,
+        });
         socket.emit('scanner:scan-processed', {
           awb: '',
           status: 'error',
           error: 'Could not read the AWB from the label. Please retake the photo or enter it manually.',
+          scanTelemetry: {
+            totalMs,
+            ocrMs: ocrLatencyMs,
+            attempts: ocrAttempts.map((attempt) => ({
+              label: attempt.label,
+              status: attempt.status,
+              latencyMs: attempt.latencyMs,
+              score: attempt.score,
+              reason: attempt.reason || '',
+            })),
+            deviceProfile,
+            lockTimeMs,
+            lockCandidateCount,
+          },
         });
         return;
       }
 
       // Create/update shipment record
       let shipment = null;
-      let meta = {};
       try {
         const result = await shipmentSvc.scanAwbAndUpdate(effectiveAwb, currentSession.userId, null, {
           captureOnly: true,
@@ -393,7 +584,6 @@ function handleMobileScannerConnection(socket) {
           sessionContext: sessionContext || {},
         });
         shipment = result.shipment;
-        meta = result.meta || {};
       } catch (svcErr) {
         logger.warn(`[Scanner OCR] shipment upsert failed: ${svcErr.message}`);
       }
@@ -401,6 +591,27 @@ function handleMobileScannerConnection(socket) {
       const intel = ocrHints?._intelligence || {};
       const clientCode = ocrHints?.clientCode || shipment?.clientCode || '';
       const clientName = ocrHints?.clientName || shipment?.client?.company || clientCode;
+      const resolvedCourier = ocrHints?.courier || shipment?.courier || bestAttempt?.value?.courier || '';
+      const awbSource = ocrHints?.awbSource || bestAttempt?.value?.awbSource || (cleanAwb ? 'fast_input' : '');
+
+      scannerQuality.recordScanEvent({
+        pin,
+        source: 'mobile_scanner_ocr',
+        scanMode: scanMode || 'ocr_label',
+        deviceProfile,
+        courier: resolvedCourier,
+        awb: effectiveAwb,
+        lockedAwb: cleanAwb,
+        awbSource,
+        falseLock,
+        success: true,
+        reviewRequired: true,
+        hadImage: true,
+        totalMs,
+        ocrLatencyMs,
+        lockTimeMs,
+        qualityIssues,
+      });
 
       socket.emit('scanner:scan-processed', {
         awb: effectiveAwb,
@@ -417,17 +628,51 @@ function handleMobileScannerConnection(socket) {
         reviewRequired: true,
         ocrExtracted: ocrHints || null,
         intelligence: intel,
+        scanTelemetry: {
+          totalMs,
+          ocrMs: ocrLatencyMs,
+          attempts: ocrAttempts.map((attempt) => ({
+            label: attempt.label,
+            status: attempt.status,
+            latencyMs: attempt.latencyMs,
+            score: attempt.score,
+            awbSource: attempt.awbSource || '',
+            reason: attempt.reason || '',
+          })),
+          deviceProfile,
+          courier: resolvedCourier,
+          lockTimeMs,
+          lockCandidateCount,
+          falseLock,
+        },
       });
 
       logger.info(`[Scanner OCR] AWB ${effectiveAwb} → client=${clientCode} dest=${ocrHints?.destination || 'NA'}`);
     } catch (err) {
       logger.error(`[Scanner OCR] Failed for AWB ${cleanAwb}: ${err.message}`);
+      scannerQuality.recordScanEvent({
+        pin,
+        source: 'mobile_scanner_ocr',
+        scanMode: scanMode || 'ocr_label',
+        deviceProfile,
+        awb: cleanAwb,
+        lockedAwb: cleanAwb,
+        awbSource: cleanAwb ? 'fast_input' : '',
+        success: false,
+        reviewRequired: true,
+        hadImage: true,
+        lockTimeMs,
+        totalMs: Date.now() - scanStartedAt,
+        qualityIssues,
+      });
       socket.emit('scanner:scan-processed', {
         awb: cleanAwb,
         status: 'error',
-        error: err.message.includes('GEMINI_API_KEY')
-          ? 'AI Vision is not configured. Please set GEMINI_API_KEY on Railway.'
-          : `OCR failed: ${err.message}`,
+        error: err.message.includes('OCR_LOCAL_SETUP')
+          ? 'Local OCR is not installed. Run "cd backend && npm run ocr:local:setup" and set OCR_PYTHON_BIN if needed.'
+          : err.message.includes('OCR_GEMINI_SETUP')
+            ? 'Gemini OCR is not configured. Set GEMINI_API_KEY or switch OCR_ENGINE=local.'
+            : `OCR failed: ${err.message}`,
       });
     }
   });

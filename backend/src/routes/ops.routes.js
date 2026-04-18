@@ -5,11 +5,13 @@
 const router = require('express').Router();
 const prisma  = require('../config/prisma');
 const R       = require('../utils/response');
-const { protect, requireRole, staffOnly } = require('../middleware/auth.middleware');
+const { protect, requireRole } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validate.middleware');
 const stateMachine = require('../services/stateMachine');
 const walletSvc = require('../services/wallet.service');
 const reconciliationSvc = require('../services/reconciliation.service');
+const correctionLearner = require('../services/correctionLearner.service');
+const scannerQuality = require('../services/scannerQuality.service');
 const { auditLog } = require('../utils/audit');
 const logger = require('../utils/logger');
 const { bulkStatusSchema } = require('../validators/ops.validator');
@@ -69,6 +71,23 @@ router.post('/assistant/execute', allowOpsAssistant, async (req, res) => {
 });
 
 router.use(staffOrOwner);
+
+// ── GET /api/ops/scanner-quality ────────────────────────────────────────────
+router.get('/scanner-quality', allowOpsAssistant, async (req, res) => {
+  try {
+    const windowMinutes = Math.max(5, parseInt(req.query.windowMinutes, 10) || 240);
+    const [qualitySnapshot, correctionMetrics] = await Promise.all([
+      Promise.resolve(scannerQuality.getScannerQualitySnapshot({ windowMinutes })),
+      correctionLearner.getCorrectionMetrics(),
+    ]);
+    R.ok(res, {
+      ...qualitySnapshot,
+      persistedCorrections: correctionMetrics,
+    });
+  } catch (err) {
+    R.error(res, err.message);
+  }
+});
 
 // ── POST /api/ops/bulk-status ─────────────────────────────────────────────
 router.post('/bulk-status', validate(bulkStatusSchema), async (req, res) => {

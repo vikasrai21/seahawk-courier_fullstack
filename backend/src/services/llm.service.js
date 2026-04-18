@@ -35,7 +35,7 @@ function extractJsonObject(text) {
 
   try {
     return JSON.parse(raw);
-  } catch {}
+  } catch (e) { void e; }
 
   const start = raw.indexOf('{');
   const end = raw.lastIndexOf('}');

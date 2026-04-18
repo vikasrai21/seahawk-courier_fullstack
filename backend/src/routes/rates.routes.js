@@ -7,6 +7,14 @@ const R = require('../utils/response');
 const { validate } = require('../middleware/validate.middleware');
 const { autoSuggestSchema, bulkCalculateSchema, verifySchema } = require('../validators/rates.validator');
 const { intelligence } = require('../controllers/rates.intelligence');
+const { lookupPincode } = require('../services/pincode.service');
+const {
+  stateToZones,
+  courierCost,
+  proposalSell,
+  COURIERS,
+  getRateAge,
+} = require('../utils/rateEngine');
 
 const SERVICE_CODE_TO_COURIER = {
   AR1: 'dtdc_exp',

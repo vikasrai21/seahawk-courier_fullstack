@@ -5,6 +5,7 @@
     "lint": "npm run lint --prefix backend && npm run lint --prefix frontend",
     "typecheck": "npm run typecheck --prefix backend && npm run typecheck --prefix frontend",
     "test": "npm run test:ci --prefix backend && npm run test --prefix frontend",
+    "test:integration": "npm run test:integration --prefix backend",
     "test:e2e": "playwright test --config=e2e/playwright.config.cjs",
     "test:e2e:install": "playwright install chromium",
     "verify": "npm run lint && npm run typecheck && npm run test",

@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "description": "Courier scanner gold dataset with explicit collection, labeling, and storage pipeline metadata.",
+  "pipeline": {
+    "collection": {
+      "method": "manual-upload",
+      "command": "cd backend && npm run scanner:dataset:collect -- <imageDir> [datasetPath]",
+      "notes": "Collect raw AWB slip images into this fixture folder or mounted object-storage sync folder."
+    },
+    "labeling": {
+      "requiredStatus": "verified",
+      "process": "ops-qc reviews label image, confirms AWB in courier portal/POD view, then sets expectedAwb + label.status=verified",
+      "fields": [
+        "courier",
+        "expectedAwb or expectedAwbPattern",
+        "label.reviewedBy",
+        "label.verifiedAt"
+      ]
+    },
+    "storage": {
+      "localDir": "backend/src/tests/fixtures/scanner-gold",
+      "objectStoreBucketEnv": "SCANNER_DATASET_BUCKET",
+      "objectStorePrefixEnv": "SCANNER_DATASET_PREFIX",
+      "notes": "Use local fixture for CI, mirror to object store for long-term retention."
+    }
+  },
+  "cases": []
+}

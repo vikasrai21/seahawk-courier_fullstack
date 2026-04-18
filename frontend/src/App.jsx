@@ -29,6 +29,7 @@ const ClientDeveloperHubPage = lazy(() => import('./pages/client/ClientDeveloper
 const ClientWalletPage = lazy(() => import('./pages/client/ClientWalletPage'));
 const ClientInvoicesPage = lazy(() => import('./pages/client/ClientInvoicesPage'));
 const ClientGovernancePage = lazy(() => import('./pages/client/ClientGovernancePage'));
+const ClientReturnsPage = lazy(() => import('./pages/client/ClientReturnsPage'));
 const LandingPage = lazy(() => import('./pages/public/LandingPage'));
 const PublicTrackPage = lazy(() => import('./pages/public/PublicTrackPage'));
 const ServicesPage = lazy(() => import('./pages/public/ServicesPage'));
@@ -71,6 +72,7 @@ const SupportTicketsPage = lazy(() => import('./pages/SupportTicketsPage'));
 const OwnerAuditPage = lazy(() => import('./pages/OwnerAuditPage'));
 const MobileScannerPage = lazy(() => import('./pages/MobileScannerPage'));
 const DirectMobileScannerPage = lazy(() => import('./pages/DirectMobileScannerPage'));
+const ReturnsManagementPage = lazy(() => import('./pages/ReturnsManagementPage'));
 
 function AuthLoadingScreen() {
   return (
@@ -187,6 +189,7 @@ function AppRoutes() {
               <Route path="wallet" element={withToast(ClientWalletPage)} />
               <Route path="invoices" element={withToast(ClientInvoicesPage)} />
               <Route path="governance" element={withToast(ClientGovernancePage)} />
+              <Route path="returns" element={withToast(ClientReturnsPage)} />
               <Route path="*" element={<Navigate to="/portal" replace />} />
             </Route>
 
@@ -230,6 +233,7 @@ function AppRoutes() {
                       <Route path="/users" element={<PrivateRoute adminOnly>{withToast(UsersPage)}</PrivateRoute>} />
                       <Route path="/audit-logs" element={<PrivateRoute adminOnly><AuditPage /></PrivateRoute>} />
                       <Route path="/rate-mgmt" element={<PrivateRoute adminOnly>{withToast(RateManagementPage)}</PrivateRoute>} />
+                      <Route path="/returns" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}>{withToast(ReturnsManagementPage)}</PrivateRoute>} />
                     </Routes>
                   </AppLayout>
                 </StaffRoute>

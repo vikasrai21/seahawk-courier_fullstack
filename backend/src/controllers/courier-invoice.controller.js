@@ -37,7 +37,7 @@ const getMonthlySummary = asyncHandler(async (req, res) => {
   const [receivedCount, verifiedCount, totals, recoveries] = await Promise.all([
     // Bills received this month
     prisma.courierInvoice.count({
-      where: { fromDate: { gte: firstDay }, fromDate: { lte: lastDay } }
+      where: { fromDate: { gte: firstDay, lte: lastDay } }
     }),
     // Bills verified this month
     prisma.courierInvoice.count({
@@ -46,7 +46,7 @@ const getMonthlySummary = asyncHandler(async (req, res) => {
     // Total billed amount
     prisma.courierInvoice.aggregate({
       _sum: { totalAmount: true },
-      where: { fromDate: { gte: firstDay }, fromDate: { lte: lastDay } }
+      where: { fromDate: { gte: firstDay, lte: lastDay } }
     }),
     // Cumulative recovery (year to date)
     prisma.courierInvoiceItem.aggregate({

@@ -10,7 +10,7 @@ import {
   LogOut, UserCircle, Menu, X, ChevronRight, FileText,
   Receipt, ScrollText, Calculator, Activity, Layers,
   CreditCard, GitCompare, Shield, Settings2, MessageCircle,
-  Sun, Moon, ScanLine, Bell
+  Sun, Moon, ScanLine, Bell, RotateCcw
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { usePWA } from '../../hooks/usePWA';
@@ -53,6 +53,7 @@ const navGroups = [
       { to: '/app/track',     label: 'Track',               icon: Search, isSecondary: true },
       { to: '/app/ndr',       label: 'NDR Management',      icon: ShieldAlert, isSecondary: true },
       { to: '/app/pickups',   label: 'Pickup Scheduler',    icon: Calendar, isSecondary: true },
+      { to: '/app/returns',   label: 'Returns',              icon: RotateCcw, badge: 'NEW', roles: ['ADMIN','OPS_MANAGER'] },
       { to: '/app/daily',     label: 'Daily Sheet',         icon: Calendar, isSecondary: true },
       { to: '/app/monthly',   label: 'Monthly Report',      icon: BarChart2, isSecondary: true },
     ],

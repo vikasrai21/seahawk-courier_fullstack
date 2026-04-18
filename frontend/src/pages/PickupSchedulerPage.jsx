@@ -14,7 +14,9 @@ import {
   ShieldCheck,
   ArrowRight,
   TrendingUp,
-  AlertTriangle
+  AlertTriangle,
+  CheckCircle2,
+  Zap
 } from 'lucide-react';
 import api from '../services/api';
 import { Modal } from '../components/ui/Modal';

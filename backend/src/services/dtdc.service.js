@@ -71,7 +71,7 @@ function extractToken(rawText) {
     const parsed = JSON.parse(rawText);
     const token = parsed?.token || parsed?.accessToken || parsed?.access_token || parsed?.data?.token || parsed?.data?.accessToken;
     if (token) return String(token).trim();
-  } catch {}
+  } catch (e) { void e; }
 
   return rawText.replace(/^"+|"+$/g, '').trim();
 }

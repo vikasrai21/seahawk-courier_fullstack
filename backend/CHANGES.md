@@ -219,6 +219,38 @@ Applied `<EmptyState>` with contextual icons, titles, and "clear filters" action
 ### useDebounce applied to all search inputs
 Added 300ms debounce to: `NDRPage`, `QuoteHistoryPage`, `WalletPage`, `ClientsPage` (in addition to `ShipmentDashboardPage` from Batch 2). All search inputs across the entire app now debounce.
 
+---
+
+## Batch 4 — Returns Phase 2 (Self-Ship)
+
+### Prepaid label + self-ship flow
+- **`prisma/schema.prisma`** — `ReturnRequest` now includes `returnMethod` (`PICKUP` / `SELF_SHIP`) with index support.
+- **`prisma/migrations/20260416184500_add_return_method_self_ship/migration.sql`** — Adds `return_method` column with backfill/default and index.
+- **`src/services/return.service.js`** — Return flow now supports self-ship labels:
+  - new status: `LABEL_READY`
+  - method-aware booking (`PICKUP` -> `PICKUP_BOOKED`, `SELF_SHIP` -> `LABEL_READY`)
+  - new `generateSelfShipLabel()` service
+  - reverse tracking sync now includes `LABEL_READY` returns
+  - stats now include `labelReady`
+- **`src/routes/return.routes.js`** — Added `POST /api/returns/:id/generate-label`.
+- **`src/routes/client-portal.routes.js`** — Client return request accepts `returnMethod`, and clients can call `POST /api/portal/returns/:id/generate-label` for their own self-ship returns.
+
+### UI updates
+- **`frontend/src/pages/client/ClientReturnsPage.jsx`**
+  - Added return-method selection in return request form.
+  - Added `LABEL_READY` status rendering.
+  - Added prepaid label download + WhatsApp share actions for self-ship returns.
+- **`frontend/src/pages/ReturnsManagementPage.jsx`**
+  - Added `LABEL_READY` status visibility and filters.
+  - Added method-aware actions: generate label vs book pickup.
+  - Added method column and detailed method display in return modal.
+
+### Tests/docs
+- **`src/tests/unit/returnService.test.js`** — Added coverage for:
+  - self-ship request creation
+  - self-ship label generation status transition
+- **`src/docs/openapi.js`** — Added docs for `POST /api/returns/{id}/generate-label`.
+
 ### All alert() calls removed — zero remaining
 Fixed `ContactPage` (both `/contact` and `/pages/public/ContactPage`) — replaced with `formError` inline state.
 
@@ -237,3 +269,92 @@ Fixed `ContactPage` (both `/contact` and `/pages/public/ContactPage`) — replac
 - **5 analytics endpoints** Redis-cached
 - **0 alert() calls** remaining
 - **0 localStorage** auth/sensitive references
+
+---
+
+## Batch 4 — Reverse Logistics Phase 1 Hardening
+
+### Return data model migration
+- Added Prisma SQL migration: `prisma/migrations/20260416170500_add_return_requests/migration.sql`
+- Creates `return_requests` table with indexes and FK constraints to `shipments` and `clients`
+
+### Multi-courier reverse booking with fallback
+- `src/services/return.service.js` now books reverse pickups through carrier orchestration (Trackon/Delhivery/DTDC/BlueDart)
+- Applies courier recommendation + fallback order and surfaces detailed booking failure instead of silent no-op
+
+### Reverse tracking sync automation
+- New service methods:
+  - `syncReverseTracking(id)` for one return
+  - `syncActiveReverseReturns(limit)` for active reverse shipments
+- New admin APIs:
+  - `POST /api/returns/:id/sync-tracking`
+  - `POST /api/returns/sync-tracking`
+- Scheduler now runs reverse return tracking sync every 30 minutes
+
+### UX updates for return operations
+- `ReturnsManagementPage` now supports:
+  - Sync tracking action from return detail modal
+  - Reverse label quick-open link when available
+
+### Environment additions
+- Added optional reverse-hub variables in `.env.example`:
+  - `REVERSE_HUB_NAME`, `REVERSE_HUB_ADDRESS`, `REVERSE_HUB_CITY`, `REVERSE_HUB_STATE`, `REVERSE_HUB_PIN`, `REVERSE_HUB_PHONE`
+
+---
+
+## Batch 5 — Returns Enterprise Hardening (No Billing Scope)
+
+### Lifecycle governance + stricter validation
+- **`src/services/return.service.js`**
+  - Introduced explicit status transition guardrails for enterprise-safe state changes.
+  - Added method-aware transition restrictions (`SELF_SHIP` cannot move to `PICKUP_BOOKED`, `PICKUP` cannot move to `LABEL_READY`).
+  - Replaced generic runtime errors with structured `AppError` responses for clearer API behavior and better incident handling.
+  - Hardened ID/address/phone/pincode normalization and validation for return creation and status updates.
+
+### Auditability and timeline visibility
+- **`src/services/return.service.js`**
+  - Added audit-log writes for return creation, approval/rejection, label generation/booking, tracking-driven updates, and manual status changes.
+  - Added `getReturnTimeline(id)` to provide a chronological audit trail for each return.
+- **`src/routes/return.routes.js`**
+  - Added `GET /api/returns/:id/timeline`.
+  - Routes now use async error middleware and pass actor context (`userId`, `userEmail`, `ip`) into return service operations.
+- **`src/routes/client-portal.routes.js`**
+  - Added `GET /api/portal/returns/:id/timeline` (client-scoped access check).
+  - Portal return list now supports `returnMethod` and `reason` filtering.
+
+### API docs + tests
+- **`src/docs/openapi.js`**
+  - Expanded returns list query params (`returnMethod`, `reason`, date range).
+  - Added docs for `GET /api/returns/{id}/timeline` and `PATCH /api/returns/{id}/status` (including `force` override).
+- **`src/tests/unit/returnService.test.js`**
+  - Added coverage for invalid manual transition blocking.
+  - Added coverage for return timeline retrieval from audit logs.
+- **`src/tests/integration/returns.e2e.test.js`**
+  - Added end-to-end integration scenario for client return creation, admin approval, transition guard validation, and timeline visibility.
+- **`src/config/__mocks__/prisma.js`**
+  - Added `auditLog.findMany` mock support for timeline unit tests.
+
+---
+
+## Batch 6 — Developer Hub Test Hardening
+
+### Developer Hub ingestion coverage
+- **`src/tests/unit/integrationIngest.service.test.js`**
+  - Added focused unit tests for:
+    - scope normalization and wildcard authorization checks
+    - live ingest draft creation with idempotency behavior
+    - duplicate detection path and duplicate audit logging
+    - dead-letter queue job creation
+    - connector pull ingestion flow
+- **`src/config/__mocks__/prisma.js`**
+  - Extended Prisma mock with Developer Hub entities: `draftOrder` and `clientApiKey`.
+
+### Developer Hub E2E flow
+- **`src/tests/integration/developerHub.e2e.test.js`**
+  - Added end-to-end integration scenario for:
+    - developer integration mapping setup
+    - client API key creation/policy updates
+    - public ecommerce webhook ingest
+    - idempotency replay handling
+    - sandbox-mode acceptance behavior
+    - developer event/log visibility checks
