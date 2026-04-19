@@ -468,9 +468,9 @@ function handleMobileScannerConnection(socket) {
           .filter((value) => (typeof value === 'number' ? value > 0 : String(value || '').trim().length > 0)).length;
       };
 
-      const ocrTotalBudgetMs = Math.max(8000, Number.parseInt(process.env.SCANNER_OCR_BUDGET_MS || '22000', 10) || 22000);
-      const focusBudgetMs = Math.max(5000, Math.floor(ocrTotalBudgetMs * 0.6));
-      const fullBudgetMs = Math.max(4000, ocrTotalBudgetMs - focusBudgetMs);
+      const ocrTotalBudgetMs = Math.max(8000, Number.parseInt(process.env.SCANNER_OCR_BUDGET_MS || '30000', 10) || 30000);
+      const focusBudgetMs = Math.max(8000, Math.floor(ocrTotalBudgetMs * 0.6));
+      const fullBudgetMs = Math.max(6000, ocrTotalBudgetMs - focusBudgetMs);
       const ocrAttempts = [];
 
       const runOcrAttempt = async (label, base64Payload, timeoutMs) => {

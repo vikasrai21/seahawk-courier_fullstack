@@ -9,7 +9,14 @@ const { detectCourier } = require('../utils/awbDetect');
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 let genAI;
 if (GEMINI_API_KEY) genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+// Gemini resilience state
 let _geminiCooldownUntil = null;
+const GEMINI_MODELS = [
+  'gemini-2.0-flash-lite',   // highest free-tier limits (separate quota pool)
+  'gemini-2.0-flash',        // powerful, moderate free-tier
+  'gemini-1.5-flash',        // legacy, separate quota pool
+];
+const _modelCooldowns = new Map();  // model → cooldownUntil timestamp
 
 const OCR_ENGINES = new Set(['local', 'gemini', 'auto']);
 const LOCAL_OCR_SCRIPT = path.join(__dirname, 'ocr.local.py');
@@ -536,18 +543,42 @@ function buildPrompt(knownAwb = '', contextData = {}) {
     ? `Most recent scans in this session were for client: ${sessionContext.recentClient}.`
     : 'No recent client context.';
 
-  return `You are an expert OCR system for Seahawk Courier & Cargo, an Indian logistics company.
-You are processing a shipment label image.
+  return `You are an expert courier label OCR system for Seahawk Courier & Cargo, India.
+You MUST extract EVERY field from this shipment label, including HANDWRITTEN text.
 
 Known AWB: ${knownAwb || 'UNKNOWN'}.
 Never invent a different AWB when known AWB is provided.
 
-Extract these fields:
-- awb, courier
-- clientName, senderCompany, senderAddress
-- consignee, destination, pincode, phone
-- weight (kg), amount (INR), orderNo
-- rawText (all visible text)
+## LABEL ZONE GUIDE (Indian courier labels)
+These labels typically have these zones. Read ALL zones carefully:
+- TOP ZONE: Courier logo (Trackon/DTDC/Delhivery/BlueDart), barcode, AWB number
+- CONSIGNOR/SENDER ZONE: Company name (this is the CLIENT), sender address. Often labeled "CONSIGNOR" or "FROM". May be handwritten.
+- CONSIGNEE/RECEIVER ZONE: Person name, full address with city + 6-digit pincode, phone. Often labeled "CONSIGNEE" or "TO" or "DELIVER TO". The name here is the consignee. May be HANDWRITTEN - read it carefully character by character.
+- DETAILS ZONE: Weight (kg), dimensions, number of pieces, charges/amount in INR, DOX/N.DOX indicator
+- ORIGIN/DESTINATION ZONE: Origin city and destination city, often in large print or separate boxes
+
+## HANDWRITING INSTRUCTIONS
+Many Indian courier labels have HANDWRITTEN consignee names, addresses, and destinations.
+- Read handwritten text carefully, character by character
+- Indian names often end with: -al, -ani, -wal, -and, -esh, -ar, -an, -at, -pur, -bad, -abad
+- Common Indian city names: Delhi, Mumbai, Kolkata, Chennai, Hyderabad, Bengaluru, Pune, Jaipur, Lucknow, Chandigarh, Bhopal, Indore, Ahmedabad, Surat, Nagpur, Patna, Amritsar, Ludhiana, Bhatinda/Bathinda, Jalandhar
+- If a field says "CONSIGNEE" followed by handwritten text, that text IS the consignee name
+- If text appears next to a 6-digit number, the text is likely the city and the number is the pincode
+
+## EXTRACT THESE FIELDS
+- awb: The tracking/waybill number (numeric, 10-14 digits)
+- courier: Trackon, DTDC, Delhivery, BlueDart, or other
+- clientName: The SENDER/CONSIGNOR company name (who is shipping the package)
+- senderCompany: Same as clientName
+- senderAddress: Full sender address
+- consignee: The RECEIVER name (person or company receiving the package)
+- destination: CITY name only (not full address)
+- pincode: 6-digit Indian postal code
+- phone: 10-digit Indian mobile number
+- weight: Weight in kilograms (number)
+- amount: Cash amount in INR (COD/charges)
+- orderNo: Order/invoice/reference number if visible
+- rawText: ALL visible text on the label, including handwritten
 
 Known clients:
 ${clientList}
@@ -559,12 +590,104 @@ Session context:
 ${sessionHint}
 
 Rules:
-1) Prefer explicit values on label over guesses.
-2) If unsure, return empty string/null and lower confidence.
-3) destination is city name only; pincode is 6-digit.
-4) Return JSON only.`;
+1) Read EVERY zone. Do NOT skip handwritten text.
+2) consignee = the person RECEIVING, not the sender.
+3) clientName = the SENDER/CONSIGNOR, not the receiver.
+4) destination is city name ONLY, never full address.
+5) pincode is exactly 6 digits.
+6) Prefer explicit values on label over guesses.
+7) Set confidence 0.0-1.0 for each field based on legibility.
+8) Return JSON only.`;
 }
 
+const GEMINI_RESPONSE_SCHEMA = {
+  type: SchemaType.OBJECT,
+  properties: {
+    success: { type: SchemaType.BOOLEAN },
+    labelType: { type: SchemaType.STRING, nullable: true },
+    awb: { type: SchemaType.STRING },
+    courier: { type: SchemaType.STRING, nullable: true },
+    clientName: { type: SchemaType.STRING, nullable: true },
+    clientNameConfidence: { type: SchemaType.NUMBER, nullable: true },
+    clientNameSource: { type: SchemaType.STRING, nullable: true },
+    senderName: { type: SchemaType.STRING, nullable: true },
+    senderCompany: { type: SchemaType.STRING, nullable: true },
+    senderAddress: { type: SchemaType.STRING, nullable: true },
+    merchant: { type: SchemaType.STRING, nullable: true },
+    consignee: { type: SchemaType.STRING, nullable: true },
+    consigneeConfidence: { type: SchemaType.NUMBER, nullable: true },
+    phone: { type: SchemaType.STRING, nullable: true },
+    destination: { type: SchemaType.STRING, nullable: true },
+    destinationConfidence: { type: SchemaType.NUMBER, nullable: true },
+    pincode: { type: SchemaType.STRING, nullable: true },
+    pincodeConfidence: { type: SchemaType.NUMBER, nullable: true },
+    returnAddress: { type: SchemaType.STRING, nullable: true },
+    weight: { type: SchemaType.NUMBER, nullable: true },
+    weightConfidence: { type: SchemaType.NUMBER, nullable: true },
+    amount: { type: SchemaType.NUMBER, nullable: true },
+    amountConfidence: { type: SchemaType.NUMBER, nullable: true },
+    orderNo: { type: SchemaType.STRING, nullable: true },
+    oid: { type: SchemaType.STRING, nullable: true },
+    rawText: { type: SchemaType.STRING },
+  },
+  required: ['success', 'awb'],
+};
+
+function isRetryableGeminiError(msg) {
+  return msg.includes('429') || msg.includes('503') || msg.includes('500')
+    || msg.includes('Quota') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED')
+    || msg.includes('overloaded') || msg.includes('UNAVAILABLE')
+    || msg.includes('INTERNAL') || msg.includes('timed out');
+}
+
+function isRateLimitError(msg) {
+  return msg.includes('429') || msg.includes('Quota') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED');
+}
+
+/**
+ * Try a single Gemini model. Returns the extraction result or throws.
+ */
+async function tryGeminiModel(modelName, normalizedBase64, mimeType, knownAwb, contextData) {
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: GEMINI_RESPONSE_SCHEMA,
+    },
+  });
+
+  const startedAt = Date.now();
+  const result = await model.generateContent([
+    buildPrompt(knownAwb, contextData),
+    { inlineData: { data: normalizedBase64, mimeType: mimeType || 'image/jpeg' } },
+  ]);
+
+  const parsed = JSON.parse(result.response.text());
+  if (knownAwb && (!parsed.awb || String(parsed.awb).trim().length < 6)) {
+    parsed.awb = knownAwb;
+  }
+  const enhanced = enhanceParsedDetails(parsed, knownAwb);
+  enhanced._runtime = {
+    ...(parsed?._runtime || {}),
+    engine: 'gemini',
+    model: modelName,
+    totalMs: Date.now() - startedAt,
+  };
+
+  logger.info(
+    `[OCR Gemini:${modelName}] awb=${enhanced.awb || 'NA'} courier=${enhanced.courier || 'NA'} ` +
+      `client=${enhanced.clientName || 'NA'} consignee=${enhanced.consignee || 'NA'} ` +
+      `dest=${enhanced.destination || 'NA'} pin=${enhanced.pincode || 'NA'} wt=${enhanced.weight || 0} ` +
+      `(${enhanced._runtime.totalMs}ms)`
+  );
+  return enhanced;
+}
+
+/**
+ * Enterprise-grade Gemini extraction with model rotation + retry.
+ * Tries multiple models (each with separate quota pools) so if one model's
+ * free-tier quota runs out, it swaps to the next.
+ */
 async function extractWithGemini(base64Data, mimeType, options = {}) {
   if (!genAI) {
     throw new Error('OCR_GEMINI_SETUP: GEMINI_API_KEY is missing.');
@@ -582,72 +705,57 @@ async function extractWithGemini(base64Data, mimeType, options = {}) {
     sessionContext: options.sessionContext || {},
   };
 
-  const model = genAI.getGenerativeModel({
-    model: process.env.GEMINI_MODEL || 'gemini-2.0-flash',
-    generationConfig: {
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: SchemaType.OBJECT,
-        properties: {
-          success: { type: SchemaType.BOOLEAN },
-          labelType: { type: SchemaType.STRING, nullable: true },
-          awb: { type: SchemaType.STRING },
-          courier: { type: SchemaType.STRING, nullable: true },
-          clientName: { type: SchemaType.STRING, nullable: true },
-          clientNameConfidence: { type: SchemaType.NUMBER, nullable: true },
-          clientNameSource: { type: SchemaType.STRING, nullable: true },
-          senderName: { type: SchemaType.STRING, nullable: true },
-          senderCompany: { type: SchemaType.STRING, nullable: true },
-          senderAddress: { type: SchemaType.STRING, nullable: true },
-          merchant: { type: SchemaType.STRING, nullable: true },
-          consignee: { type: SchemaType.STRING, nullable: true },
-          consigneeConfidence: { type: SchemaType.NUMBER, nullable: true },
-          phone: { type: SchemaType.STRING, nullable: true },
-          destination: { type: SchemaType.STRING, nullable: true },
-          destinationConfidence: { type: SchemaType.NUMBER, nullable: true },
-          pincode: { type: SchemaType.STRING, nullable: true },
-          pincodeConfidence: { type: SchemaType.NUMBER, nullable: true },
-          returnAddress: { type: SchemaType.STRING, nullable: true },
-          weight: { type: SchemaType.NUMBER, nullable: true },
-          weightConfidence: { type: SchemaType.NUMBER, nullable: true },
-          amount: { type: SchemaType.NUMBER, nullable: true },
-          amountConfidence: { type: SchemaType.NUMBER, nullable: true },
-          orderNo: { type: SchemaType.STRING, nullable: true },
-          oid: { type: SchemaType.STRING, nullable: true },
-          rawText: { type: SchemaType.STRING },
-        },
-        required: ['success', 'awb'],
-      },
-    },
+  // Use env override, or rotate through available models
+  const explicitModel = process.env.GEMINI_MODEL;
+  const modelsToTry = explicitModel ? [explicitModel] : GEMINI_MODELS.filter((m) => {
+    const cooldown = _modelCooldowns.get(m);
+    if (!cooldown) return true;
+    if (Date.now() > cooldown) { _modelCooldowns.delete(m); return true; }
+    return false;
   });
 
-  try {
-    const startedAt = Date.now();
-    const result = await model.generateContent([
-      buildPrompt(knownAwb, contextData),
-      { inlineData: { data: normalizedBase64, mimeType: mimeType || 'image/jpeg' } },
-    ]);
-
-    const parsed = JSON.parse(result.response.text());
-    if (knownAwb && (!parsed.awb || String(parsed.awb).trim().length < 6)) {
-      parsed.awb = knownAwb;
+  if (!modelsToTry.length) {
+    // All models on cooldown — check if any have expired
+    for (const [m, ts] of _modelCooldowns) {
+      if (Date.now() > ts) { _modelCooldowns.delete(m); modelsToTry.push(m); }
     }
-    const enhanced = enhanceParsedDetails(parsed, knownAwb);
-    enhanced._runtime = {
-      ...(parsed?._runtime || {}),
-      engine: 'gemini',
-      totalMs: Date.now() - startedAt,
-    };
-
-    logger.info(
-      `[OCR Gemini] awb=${enhanced.awb || 'NA'} courier=${enhanced.courier || 'NA'} ` +
-        `client=${enhanced.clientName || 'NA'} consignee=${enhanced.consignee || 'NA'} ` +
-        `dest=${enhanced.destination || 'NA'} pin=${enhanced.pincode || 'NA'} wt=${enhanced.weight || 0}`
-    );
-    return enhanced;
-  } catch (error) {
-    throw new Error(`OCR_GEMINI_RUNTIME: ${error.message}`);
+    if (!modelsToTry.length) {
+      throw new Error('OCR_GEMINI_RUNTIME: All Gemini models are rate-limited. Waiting for cooldown.');
+    }
   }
+
+  let lastError = null;
+  for (const modelName of modelsToTry) {
+    // Retry up to 2 times per model (for transient 500/503 errors)
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await tryGeminiModel(modelName, normalizedBase64, mimeType, knownAwb, contextData);
+      } catch (err) {
+        const msg = String(err.message || '');
+        lastError = err;
+
+        if (isRateLimitError(msg)) {
+          // This model's quota is exhausted — cooldown and try next model
+          _modelCooldowns.set(modelName, Date.now() + 90000); // 90s cooldown per model
+          logger.warn(`[OCR Gemini] Model ${modelName} rate-limited. Cooldown 90s. Trying next model.`);
+          break; // break retry loop, try next model
+        }
+
+        if (isRetryableGeminiError(msg) && attempt < 1) {
+          const delayMs = (attempt + 1) * 1500;
+          logger.warn(`[OCR Gemini] Model ${modelName} transient error: ${msg}. Retry in ${delayMs}ms.`);
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue; // retry same model
+        }
+
+        // Non-retryable error (auth, schema, etc.) — skip this model
+        logger.error(`[OCR Gemini] Model ${modelName} failed: ${msg}`);
+        break;
+      }
+    }
+  }
+
+  throw new Error(`OCR_GEMINI_RUNTIME: All models failed. Last error: ${lastError?.message || 'unknown'}`);
 }
 
 exports.extractShipmentFromImage = async (base64Data, mimeType, options = {}) => {
@@ -661,48 +769,44 @@ exports.extractShipmentFromImage = async (base64Data, mimeType, options = {}) =>
     return extractWithGemini(base64Data, mimeType, options);
   }
 
-  // auto: local first, gemini fallback if local did a poor job (e.g. handwriting)
-  // Gemini fallback has a tight timeout to avoid eating the socket OCR budget.
-  const GEMINI_FALLBACK_TIMEOUT_MS = 8000;
+  // ═══════════════════════════════════════════════════════════════════════
+  // AUTO MODE: Gemini-first with local OCR running in parallel as backup.
+  // Gemini is vastly superior for handwritten labels + field understanding.
+  // Local OCR is fast and reliable for barcodes and basic printed text.
+  // ═══════════════════════════════════════════════════════════════════════
+  const GEMINI_BUDGET_MS = 12000;
 
-  try {
-    const localResult = await extractWithLocal(base64Data, mimeType, options);
-    
-    const isQuality = localResult.awb && localResult.consignee && localResult.destination;
-    
-    if (!isQuality && genAI && !_geminiCooldownUntil) {
-      logger.info('[OCR] Local extraction missed key fields. Falling back to Gemini AI (8s budget).');
-      try {
-        const geminiPromise = extractWithGemini(base64Data, mimeType, options);
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Gemini fallback timed out after 8s')), GEMINI_FALLBACK_TIMEOUT_MS)
-        );
-        return await Promise.race([geminiPromise, timeoutPromise]);
-      } catch (geminiError) {
-        const msg = geminiError.message || '';
-        // If rate-limited, set a 60-second cooldown to avoid wasting time on subsequent scans
-        if (msg.includes('429') || msg.includes('Quota') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED')) {
-          _geminiCooldownUntil = Date.now() + 60000;
-          logger.warn(`[OCR] Gemini rate-limited. Cooling down for 60s.`);
-        }
-        logger.warn(`[OCR] Gemini fallback failed: ${msg}. Using partial local result.`);
-        return localResult;
-      }
-    } else if (!isQuality && _geminiCooldownUntil) {
-      if (Date.now() > _geminiCooldownUntil) {
-        _geminiCooldownUntil = null; // cooldown expired, will try next time
-      } else {
-        logger.info('[OCR] Gemini on cooldown. Returning partial local result.');
-      }
+  if (genAI) {
+    // Launch local OCR immediately (it's fast, ~5-8s, gives us a safety net)
+    const localPromise = extractWithLocal(base64Data, mimeType, options).catch((err) => {
+      logger.warn(`[OCR Auto] Local engine failed in background: ${err.message}`);
+      return null;
+    });
+
+    try {
+      // Race Gemini against a timeout
+      const geminiPromise = extractWithGemini(base64Data, mimeType, options);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Gemini budget exceeded')), GEMINI_BUDGET_MS)
+      );
+      const geminiResult = await Promise.race([geminiPromise, timeoutPromise]);
+
+      // Gemini succeeded — use it. Cancel interest in local result.
+      return geminiResult;
+    } catch (geminiError) {
+      const msg = geminiError.message || '';
+      logger.warn(`[OCR Auto] Gemini pipeline failed: ${msg}. Waiting for local OCR fallback.`);
+
+      // Gemini failed — wait for local OCR result (it's already running)
+      const localResult = await localPromise;
+      if (localResult) return localResult;
+
+      // Both failed
+      throw new Error(`OCR_AUTO_RUNTIME: Gemini failed (${msg}). Local OCR also unavailable.`);
     }
-    
-    return localResult;
-  } catch (localError) {
-    logger.warn(`[OCR] Local engine failed in auto mode: ${localError.message}`);
-    if (genAI) {
-      return extractWithGemini(base64Data, mimeType, options);
-    }
-    throw localError;
   }
+
+  // No Gemini API key — pure local
+  return extractWithLocal(base64Data, mimeType, options);
 };
 

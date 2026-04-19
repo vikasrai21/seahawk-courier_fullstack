@@ -58,7 +58,7 @@ export function setUnauthorizedHandler(handler) {
 
 const api = axios.create({
   baseURL:     import.meta.env.VITE_API_URL || '/api',
-  timeout:     30_000,
+  timeout:     45_000,
   withCredentials: true,
 });
 
