@@ -217,23 +217,29 @@ const css = `
 .corner-br { bottom: -2px; right: -2px; border-left: none; border-top: none; border-radius: 0 0 8px 0; }
 
 /* â”€â”€ Scan laser â”€â”€ */
-@keyframes laserScan {
-  0%, 100% { top: 15%; opacity: 0.8; }
-  50% { top: 82%; opacity: 1; }
+@keyframes laserSparkMove {
+  0% { left: 2%; transform: translateX(-50%) scale(1); opacity: 0.8; }
+  10% { transform: translateX(-50%) scale(1.5); box-shadow: 0 0 15px 4px #fff, 0 0 30px 10px #ff0000; opacity: 1; }
+  50% { left: 50%; transform: translateX(-50%) scale(2); box-shadow: 0 0 20px 6px #fff, 0 0 40px 15px #ff0000; opacity: 1; }
+  90% { transform: translateX(-50%) scale(1.5); box-shadow: 0 0 15px 4px #fff, 0 0 30px 10px #ff0000; opacity: 1; }
+  100% { left: 98%; transform: translateX(-50%) scale(1); opacity: 0.8; }
+}
+@keyframes laserPulse {
+  0%, 100% { opacity: 0.6; box-shadow: 0 0 4px rgba(255, 0, 0, 0.8), 0 0 8px rgba(255, 0, 0, 0.4); }
+  50% { opacity: 1; box-shadow: 0 0 6px rgba(255, 0, 0, 1), 0 0 15px rgba(255, 0, 0, 0.8); }
 }
 .scan-laser {
   position: absolute; left: 4%; right: 4%; height: 2px;
-  background: rgba(239, 68, 68, 0.9);
-  box-shadow: 0 0 4px rgba(239, 68, 68, 0.8), 0 0 10px rgba(239, 68, 68, 0.6);
-  animation: laserScan 2s linear infinite;
-  display: flex;
-  justify-content: space-evenly;
-  align-items: center;
+  top: 50%; transform: translateY(-50%);
+  background: rgba(255, 0, 0, 0.9);
+  animation: laserPulse 2s ease-in-out infinite;
 }
-.scan-laser-dot {
+.scan-laser-spark {
+  position: absolute; top: 50%; margin-top: -2.5px;
   width: 5px; height: 5px; border-radius: 50%;
   background: #ffffff;
-  box-shadow: 0 0 6px #ffffff, 0 0 10px red;
+  box-shadow: 0 0 8px 2px #ffffff, 0 0 20px 5px #ff0000;
+  animation: laserSparkMove 1.8s ease-in-out infinite alternate;
 }
 
 /* â”€â”€ HUD (top bar on camera) â”€â”€ */
@@ -2375,9 +2381,7 @@ export default function MobileScannerPage({ standalone = false }) {
                 {/* Laser only in barcode mode */}
                 {scanMode === 'barcode' && (
                   <div className="scan-laser">
-                    <div className="scan-laser-dot" />
-                    <div className="scan-laser-dot" style={{ transform: 'scale(1.3)' }} />
-                    <div className="scan-laser-dot" />
+                    <div className="scan-laser-spark" />
                   </div>
                 )}
               </div>
