@@ -10,7 +10,8 @@ import { createBarcodeScanner } from '../utils/barcodeEngine.js';
 import {
   Camera, Check, AlertCircle, RotateCcw, Send, ChevronRight, Volume2, VolumeX,
   Wifi, WifiOff, Zap, Package, ScanLine, Shield, RefreshCw, X, Brain,
-  BarChart3, History, Clock, CheckCircle2, List, ArrowLeft, Trash2, CloudUpload
+  BarChart3, History, Clock, CheckCircle2, List, ArrowLeft, Trash2, CloudUpload,
+  CalendarDays
 } from 'lucide-react';
 
 // â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -496,6 +497,32 @@ const css = `
   box-shadow: 0 2px 4px rgba(0,0,0,0.02);
 }
 .home-stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.home-date-chip {
+  display: flex; align-items: center; gap: 6px;
+  background: linear-gradient(135deg, #1E293B, #334155);
+  border: 1px solid #475569; border-radius: 12px;
+  padding: 10px 14px; margin-bottom: 12px;
+  cursor: pointer; position: relative;
+  transition: all 0.2s ease;
+}
+.home-date-chip:active { transform: scale(0.97); }
+.home-date-label {
+  font-size: 0.68rem; font-weight: 500; color: #94A3B8;
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.home-date-value {
+  font-size: 1rem; font-weight: 700; color: #F8FAFC;
+  line-height: 1.2;
+}
+.home-date-change {
+  font-size: 0.65rem; font-weight: 500; color: #38BDF8;
+  margin-left: auto;
+}
+.home-date-chip input[type="date"] {
+  position: absolute; inset: 0; opacity: 0;
+  width: 100%; height: 100%; cursor: pointer;
+  -webkit-appearance: none;
+}
 .home-stat-card {
   background: #FFFFFF;
   border: 1px solid #E2E8F0; border-radius: 12px;
@@ -696,6 +723,15 @@ export default function MobileScannerPage({ standalone = false }) {
 
   // â”€â”€ Settings â”€â”€
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+
+  // ── Session date (for batch scanning across dates) ──
+  const [sessionDate, setSessionDate] = useState(() => {
+    try {
+      const saved = localStorage.getItem('seahawk_scanner_session_date');
+      if (saved && /^\d{4}-\d{2}-\d{2}$/.test(saved)) return saved;
+    } catch {}
+    return new Date().toISOString().slice(0, 10);
+  });
 
   // â”€â”€ Refs â”€â”€
   const videoRef = useRef(null);
@@ -1102,12 +1138,14 @@ export default function MobileScannerPage({ standalone = false }) {
         // Auto-approved
         playSuccessBeep();
         pulseHaptic('success');
+        if (voiceEnabled) speak(`Auto approved. ${data.clientName || ''}. ${data.destination || ''}.`);
         const item = {
           awb: data.awb,
           clientCode: data.clientCode,
           clientName: data.clientName,
           destination: data.destination || '',
           weight: data.weight || 0,
+          autoApproved: true,
         };
         setLastSuccess(item);
         addToQueue(item);
@@ -1544,6 +1582,7 @@ export default function MobileScannerPage({ standalone = false }) {
     dominantClient: sessionCtx.dominantClient,
     dominantClientCount: sessionCtx.dominantClientCount,
     sessionDurationMin: Math.round((Date.now() - sessionCtx.startedAt) / 60000),
+    sessionDate,
     scanWorkflowMode,
     scanMode,
     deviceProfile,
@@ -1562,7 +1601,7 @@ export default function MobileScannerPage({ standalone = false }) {
     lockTimeMs: Number.isFinite(Number(lockTelemetryRef.current?.lockTimeMs)) ? Number(lockTelemetryRef.current.lockTimeMs) : null,
     lockCandidateCount: Number.isFinite(Number(lockTelemetryRef.current?.candidateCount)) ? Number(lockTelemetryRef.current.candidateCount) : 1,
     lockAlternatives: Array.isArray(lockTelemetryRef.current?.alternatives) ? lockTelemetryRef.current.alternatives.slice(0, 3) : [],
-  }), [sessionCtx, scanWorkflowMode, scanMode, deviceProfile, captureQuality, captureMeta]);
+  }), [sessionCtx, sessionDate, scanWorkflowMode, scanMode, deviceProfile, captureQuality, captureMeta]);
 
   const submitFastBarcode = useCallback(async (awb) => {
     const cleanAwb = String(awb || '').trim().toUpperCase();
@@ -2180,6 +2219,37 @@ export default function MobileScannerPage({ standalone = false }) {
                   <div className="home-stat-label">Session</div>
                 </div>
               </div>
+
+              {/* Session Date Selector */}
+              <div className="home-date-chip">
+                <CalendarDays size={18} color="#38BDF8" />
+                <div>
+                  <div className="home-date-label">Scan Date</div>
+                  <div className="home-date-value">
+                    {new Date(sessionDate + 'T00:00:00').toLocaleDateString('en-IN', {
+                      day: '2-digit', month: 'short', year: 'numeric'
+                    })}
+                    {sessionDate === new Date().toISOString().slice(0, 10) && (
+                      <span style={{ fontSize: '0.65rem', color: '#10B981', marginLeft: 6, fontWeight: 500 }}>TODAY</span>
+                    )}
+                  </div>
+                </div>
+                <div className="home-date-change">Change ▸</div>
+                <input
+                  type="date"
+                  value={sessionDate}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                      setSessionDate(val);
+                      try { localStorage.setItem('seahawk_scanner_session_date', val); } catch {}
+                      pulseHaptic('light');
+                    }
+                  }}
+                />
+              </div>
+
             </div>
 
             <div className="home-scan-section">

@@ -3,12 +3,14 @@
 const prisma = require('../config/prisma');
 const logger = require('../utils/logger');
 
-const TRACKED_FIELDS = ['clientName', 'clientCode', 'consignee', 'destination'];
+const TRACKED_FIELDS = ['clientName', 'clientCode', 'consignee', 'destination', 'pincode', 'weight'];
 const FIELD_MIN_COUNTS = {
-  clientName: 2,
-  clientCode: 3,
-  consignee: 2,
-  destination: 2,
+  clientName: 1,
+  clientCode: 2,
+  consignee: 1,
+  destination: 1,
+  pincode: 1,
+  weight: 2,
 };
 
 function normalize(value) {

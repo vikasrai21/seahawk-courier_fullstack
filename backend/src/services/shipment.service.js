@@ -486,10 +486,10 @@ function buildOcrPatch(ocrHints = null) {
   return patch;
 }
 
-function buildCapturedShipmentPayload(awb, courier, userId, source) {
+function buildCapturedShipmentPayload(awb, courier, userId, source, overrideDate = null) {
   return {
     awb,
-    date: new Date().toISOString().split('T')[0],
+    date: overrideDate || new Date().toISOString().split('T')[0],
     clientCode: 'MISC',
     consignee: 'UNKNOWN',
     destination: 'UNKNOWN',
@@ -507,7 +507,7 @@ function buildCapturedShipmentPayload(awb, courier, userId, source) {
   };
 }
 
-async function createOrReuseCapturedShipment(awb, userId, courier, source = 'scanner', ocrHints = null) {
+async function createOrReuseCapturedShipment(awb, userId, courier, source = 'scanner', ocrHints = null, overrideDate = null) {
   const ocrPatch = buildOcrPatch(ocrHints);
   const existingShipment = await prisma.shipment.findUnique({
     where: { awb },
@@ -537,9 +537,9 @@ async function createOrReuseCapturedShipment(awb, userId, courier, source = 'sca
 
   const createdShipment = await prisma.shipment.create({
     data: {
-      ...buildCapturedShipmentPayload(awb, courier, userId, source),
+      ...buildCapturedShipmentPayload(awb, courier, userId, source, overrideDate),
       ...ocrPatch,
-      remarks: ocrPatch.remarks || buildCapturedShipmentPayload(awb, courier, userId, source).remarks,
+      remarks: ocrPatch.remarks || buildCapturedShipmentPayload(awb, courier, userId, source, overrideDate).remarks,
     },
     include: { client: { select: { company: true } } },
   });
@@ -588,13 +588,16 @@ async function attachClientSuggestion(savedShipment, ocrHints = null) {
 }
 
 async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}) {
-  const { captureOnly = false, source = 'scanner', ocrHints = null, forceLiveTrackingInCapture = false } = options;
+  const { captureOnly = false, source = 'scanner', ocrHints = null, forceLiveTrackingInCapture = false, overrideDate = null } = options;
   if (!courier || courier === 'AUTO') {
     courier = autoDetectCourier(awb);
   }
 
+  // Validate overrideDate format if provided (YYYY-MM-DD)
+  const effectiveDate = (overrideDate && /^\d{4}-\d{2}-\d{2}$/.test(overrideDate)) ? overrideDate : null;
+
   if (captureOnly && !forceLiveTrackingInCapture) {
-    const captured = await createOrReuseCapturedShipment(awb, userId, courier, source, ocrHints);
+    const captured = await createOrReuseCapturedShipment(awb, userId, courier, source, ocrHints, effectiveDate);
     const enriched = await attachClientSuggestion(captured.shipment, ocrHints);
     return {
       ...captured,
@@ -664,7 +667,7 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
     savedShipment = await prisma.shipment.create({
       data: {
         awb,
-        date: new Date().toISOString().split('T')[0],
+        date: effectiveDate || new Date().toISOString().split('T')[0],
         clientCode: 'MISC',
         consignee: updateData.consignee || 'UNKNOWN',
         destination: updateData.destination || 'UNKNOWN',

@@ -303,7 +303,13 @@ const scanMobile = asyncHandler(async (req, res) => {
   const intelligenceEngine = require('../services/intelligenceEngine.service');
   const correctionLearner = require('../services/correctionLearner.service');
   const shipmentSvc = require('../services/shipment.service');
+  const courierPrefill = require('../services/courierPrefill.service');
   const logger = require('../utils/logger');
+
+  // Launch courier API pre-fill in parallel with OCR
+  const apiPrefillPromise = cleanAwb
+    ? courierPrefill.prefillFromApi(cleanAwb).catch(() => null)
+    : Promise.resolve(null);
 
   const [clients, corrections] = await Promise.all([
     intelligenceEngine.getActiveClientsForPrompt(),
@@ -343,6 +349,15 @@ const scanMobile = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Could not read the AWB from the label image.' });
   }
 
+  // Merge courier API pre-fill data
+  const apiData = await apiPrefillPromise;
+  if (apiData && ocrHints) {
+    ocrHints = courierPrefill.mergeApiPrefill(ocrHints, apiData);
+  } else if (apiData && !ocrHints) {
+    ocrHints = { ...apiData, success: true, awb: effectiveAwb };
+  }
+
+  const sessionDate = (sessionContext?.sessionDate || '').trim();
   let shipment = null;
   try {
     const result = await shipmentSvc.scanAwbAndUpdate(effectiveAwb, req.user?.id, null, {
@@ -350,6 +365,7 @@ const scanMobile = asyncHandler(async (req, res) => {
       source: 'mobile_scanner_direct',
       ocrHints,
       sessionContext: sessionContext || {},
+      overrideDate: sessionDate || null,
     });
     shipment = result.shipment;
   } catch (svcErr) {
@@ -376,13 +392,31 @@ const scanMobile = asyncHandler(async (req, res) => {
     }
   }
 
+  // Confidence-based auto-approve
+  const autoApproveThreshold = Number(process.env.SCANNER_AUTO_APPROVE_THRESHOLD || 0.85);
+  const shouldAutoApprove = (() => {
+    if (!clientCode || clientCode === 'MISC') return false;
+    const consignee = ocrHints?.consignee || shipment?.consignee || '';
+    const destination = ocrHints?.destination || shipment?.destination || '';
+    if (!consignee || !destination) return false;
+    const confidences = [
+      ocrHints?.clientNameConfidence || 0,
+      ocrHints?.consigneeConfidence || 0,
+      ocrHints?.destinationConfidence || 0,
+      ocrHints?.pincodeConfidence || 0,
+    ].filter(c => c > 0);
+    if (confidences.length < 3) return false;
+    return confidences.every(c => c >= autoApproveThreshold);
+  })();
+  const reviewRequired = !shouldAutoApprove;
+
   const resultPayload = {
     success: true,
     awb: effectiveAwb,
     shipmentId: shipment?.id || null,
     linkedDraftId,
     courier: shipment?.courier || ocrHints?.courier || '',
-    status: 'pending_review',
+    status: reviewRequired ? 'pending_review' : 'ok',
     clientCode,
     clientName,
     consignee: ocrHints?.consignee || shipment?.consignee || '',
@@ -391,7 +425,8 @@ const scanMobile = asyncHandler(async (req, res) => {
     weight: ocrHints?.weight || shipment?.weight || 0,
     amount: ocrHints?.amount || shipment?.amount || 0,
     orderNo: ocrHints?.orderNo || '',
-    reviewRequired: true,
+    reviewRequired,
+    autoApproved: !reviewRequired,
     ocrExtracted: ocrHints || null,
     intelligence: intel,
   };

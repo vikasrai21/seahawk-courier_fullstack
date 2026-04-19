@@ -357,10 +357,12 @@ function handleMobileScannerConnection(socket) {
 
       try {
         const shipmentSvc = require('../services/shipment.service');
+        const fastSessionDate = (sessionContext?.sessionDate || '').trim();
         const result = await shipmentSvc.scanAwbAndUpdate(cleanAwb, currentSession.userId, null, {
           captureOnly: true,
           source: scanMode === 'fast_barcode_only' ? 'mobile_scanner_fast' : 'mobile_scanner',
           sessionContext: sessionContext || {},
+          overrideDate: fastSessionDate || null,
         });
         const shipment = result?.shipment || null;
         const totalMs = Date.now() - scanStartedAt;
@@ -433,6 +435,7 @@ function handleMobileScannerConnection(socket) {
       const intelligenceEngine = require('../services/intelligenceEngine.service');
       const correctionLearner = require('../services/correctionLearner.service');
       const shipmentSvc = require('../services/shipment.service');
+      const courierPrefill = require('../services/courierPrefill.service');
       const withTimeout = (promise, timeoutMs, stage) => new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error(`Stage timeout (${stage}) after ${timeoutMs}ms`)), timeoutMs);
         promise
@@ -447,6 +450,11 @@ function handleMobileScannerConnection(socket) {
       });
 
       const ocrStartedAt = Date.now();
+
+      // Launch courier API pre-fill in parallel — never blocks OCR
+      const apiPrefillPromise = cleanAwb
+        ? courierPrefill.prefillFromApi(cleanAwb).catch(() => null)
+        : Promise.resolve(null);
 
       // Build context for OCR prompt + intelligence enrichment
       const [clients, corrections] = await Promise.all([
@@ -574,7 +582,16 @@ function handleMobileScannerConnection(socket) {
         return;
       }
 
+      // ── Merge courier API pre-fill data (was running in parallel) ──────
+      const apiData = await apiPrefillPromise;
+      if (apiData && ocrHints) {
+        ocrHints = courierPrefill.mergeApiPrefill(ocrHints, apiData);
+      } else if (apiData && !ocrHints) {
+        ocrHints = { ...apiData, success: true, awb: effectiveAwb };
+      }
+
       // Create/update shipment record
+      const sessionDate = (sessionContext?.sessionDate || '').trim();
       let shipment = null;
       try {
         const result = await shipmentSvc.scanAwbAndUpdate(effectiveAwb, currentSession.userId, null, {
@@ -582,6 +599,7 @@ function handleMobileScannerConnection(socket) {
           source: 'mobile_scanner',
           ocrHints,
           sessionContext: sessionContext || {},
+          overrideDate: sessionDate || null,
         });
         shipment = result.shipment;
       } catch (svcErr) {
@@ -594,6 +612,24 @@ function handleMobileScannerConnection(socket) {
       const resolvedCourier = ocrHints?.courier || shipment?.courier || bestAttempt?.value?.courier || '';
       const awbSource = ocrHints?.awbSource || bestAttempt?.value?.awbSource || (cleanAwb ? 'fast_input' : '');
 
+      // ── Confidence-based auto-approve ────────────────────────────────
+      const autoApproveThreshold = Number(process.env.SCANNER_AUTO_APPROVE_THRESHOLD || 0.85);
+      const shouldAutoApprove = (() => {
+        if (!clientCode || clientCode === 'MISC') return false;
+        const consignee = ocrHints?.consignee || shipment?.consignee || '';
+        const destination = ocrHints?.destination || shipment?.destination || '';
+        if (!consignee || !destination) return false;
+        const confidences = [
+          ocrHints?.clientNameConfidence || 0,
+          ocrHints?.consigneeConfidence || 0,
+          ocrHints?.destinationConfidence || 0,
+          ocrHints?.pincodeConfidence || 0,
+        ].filter(c => c > 0);
+        if (confidences.length < 3) return false;
+        return confidences.every(c => c >= autoApproveThreshold);
+      })();
+      const reviewRequired = !shouldAutoApprove;
+
       scannerQuality.recordScanEvent({
         pin,
         source: 'mobile_scanner_ocr',
@@ -605,7 +641,7 @@ function handleMobileScannerConnection(socket) {
         awbSource,
         falseLock,
         success: true,
-        reviewRequired: true,
+        reviewRequired,
         hadImage: true,
         totalMs,
         ocrLatencyMs,
@@ -616,7 +652,7 @@ function handleMobileScannerConnection(socket) {
       socket.emit('scanner:scan-processed', {
         awb: effectiveAwb,
         shipmentId: shipment?.id || null,
-        status: 'pending_review',
+        status: reviewRequired ? 'pending_review' : 'ok',
         clientCode,
         clientName,
         consignee: ocrHints?.consignee || shipment?.consignee || '',
@@ -625,7 +661,8 @@ function handleMobileScannerConnection(socket) {
         weight: ocrHints?.weight || shipment?.weight || 0,
         amount: ocrHints?.amount || shipment?.amount || 0,
         orderNo: ocrHints?.orderNo || '',
-        reviewRequired: true,
+        reviewRequired,
+        autoApproved: !reviewRequired,
         ocrExtracted: ocrHints || null,
         intelligence: intel,
         scanTelemetry: {
@@ -644,6 +681,7 @@ function handleMobileScannerConnection(socket) {
           lockTimeMs,
           lockCandidateCount,
           falseLock,
+          apiPrefill: !!apiData,
         },
       });
 
