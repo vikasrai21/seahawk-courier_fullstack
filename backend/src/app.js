@@ -30,6 +30,13 @@ cspDirectives.connectSrc = [
     'https://api.postalpincode.in',
   ]),
 ];
+cspDirectives.scriptSrc = [
+  ...new Set([
+    ...(cspDirectives.scriptSrc || cspDirectives.defaultSrc || ["'self'"]),
+    "'unsafe-eval'",
+    "'wasm-unsafe-eval'",
+  ]),
+];
 
 app.use(helmet({
   contentSecurityPolicy: config.isProd ? { directives: cspDirectives } : false,
