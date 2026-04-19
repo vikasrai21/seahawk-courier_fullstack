@@ -33,12 +33,11 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { exportJsonToExcel, readExcelAsJson } from '../utils/excel';
-import { BrowserMultiFormatReader } from '@zxing/browser';
-import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { normalizeBarcodeCandidate } from '../utils/barcode.js';
+import { createBarcodeScanner } from '../utils/barcodeEngine.js';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { generateQRCodeDataURL } from '../utils/qrcode';
 
@@ -207,38 +206,7 @@ const reviewDiffFields = (reviewScan, reviewForm) => {
   }));
 };
 
-const BARCODE_FORMATS = [
-  BarcodeFormat.CODE_128,
-  BarcodeFormat.CODE_39,
-  BarcodeFormat.CODE_93,
-  BarcodeFormat.ITF,
-  BarcodeFormat.CODABAR,
-  BarcodeFormat.EAN_13,
-  BarcodeFormat.EAN_8,
-  BarcodeFormat.UPC_A,
-  BarcodeFormat.UPC_E,
-  BarcodeFormat.PDF_417,
-];
 
-const NATIVE_BARCODE_FORMATS = [
-  'code_128',
-  'code_39',
-  'code_93',
-  'codabar',
-  'ean_13',
-  'ean_8',
-  'itf',
-  'qr_code',
-];
-
-const createBarcodeHints = () => {
-  const hints = new Map();
-  hints.set(DecodeHintType.POSSIBLE_FORMATS, BARCODE_FORMATS);
-  hints.set(DecodeHintType.TRY_HARDER, true);
-  hints.set(DecodeHintType.ASSUME_GS1, false); // false = don't mangle ITF/numeric barcodes (Trackon fix)
-  hints.set(DecodeHintType.CHARACTER_SET, 'UTF-8');
-  return hints;
-};
 
 export default function ScanAWBPage({ toast }) {
   const navigate = useNavigate();
@@ -277,6 +245,7 @@ export default function ScanAWBPage({ toast }) {
   const spreadsheetInputRef = useRef(null);
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
+  const barcodeEngineRef = useRef(null); // WASM-powered barcode engine
   const scanBusyRef = useRef(false);
   const scanLockUntilRef = useRef(0);
   const lastDecodedRef = useRef('');
@@ -331,6 +300,8 @@ export default function ScanAWBPage({ toast }) {
 
   const stopCamera = async () => {
     try {
+      // Stop WASM barcode engine
+      if (barcodeEngineRef.current) { barcodeEngineRef.current.stop(); }
       await scannerRef.current?.reset();
     } catch (err) {
       console.debug('Camera reset failed', err);
@@ -792,104 +763,36 @@ export default function ScanAWBPage({ toast }) {
         triggerFeedback('success');
       };
 
-      if (typeof window !== 'undefined' && typeof window.BarcodeDetector !== 'undefined') {
-        let useNative = true;
-        let stream = null;
-
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            await videoRef.current.play();
-          }
-
-          let supportedFormats = NATIVE_BARCODE_FORMATS;
-          try {
-            const available = await window.BarcodeDetector.getSupportedFormats();
-            supportedFormats = NATIVE_BARCODE_FORMATS.filter((format) => available.includes(format));
-            if (!supportedFormats.length) supportedFormats = NATIVE_BARCODE_FORMATS;
-          } catch {}
-
-          // ITF is required for Trackon 12-digit numeric barcodes.
-          // If the device's native detector doesn't support it, fall through to
-          // ZXing which handles ITF reliably on all platforms.
-          if (!supportedFormats.includes('itf')) {
-            console.log('[Scanner] Native BarcodeDetector lacks ITF support — using ZXing for Trackon compatibility');
-            useNative = false;
-          }
-
-          if (useNative) {
-            const detector = new window.BarcodeDetector({ formats: supportedFormats });
-            let timerId = null;
-            let stopped = false;
-
-            const tick = async () => {
-              if (stopped) return;
-              const video = videoRef.current;
-              if (!video || video.readyState < 2) {
-                timerId = window.setTimeout(tick, 40);
-                return;
-              }
-              try {
-                const codes = await detector.detect(video);
-                if (codes.length > 0 && codes[0].rawValue) {
-                  lockBarcode(codes[0].rawValue);
-                }
-              } catch (err) {
-                if (err?.name !== 'NotFoundException') {
-                  setCameraError(err.message || 'Unable to read barcode from camera');
-                }
-              }
-              if (!stopped) timerId = window.setTimeout(tick, 35);
-            };
-
-            scannerRef.current = {
-              reset: async () => {
-                stopped = true;
-                if (timerId) window.clearTimeout(timerId);
-              },
-            };
-
-            window.setTimeout(tick, 250);
-            return; // native path active
-          }
-        } catch (streamErr) {
-          // Stream failed before we could even check native support — will fall through to ZXing below
-          if (!videoRef.current?.srcObject) {
-            setCameraError(streamErr.message || 'Camera access failed');
-            vibrate([120, 60, 120]);
-            await stopCamera();
-            return;
-          }
-        }
-        // If useNative is false (ITF missing), fall through to ZXing.
-        // The video stream is already running so ZXing will reuse it.
+      // Get camera stream first
+      const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
       }
 
-      // ZXing path — handles ITF (Trackon) + Code128 (DTDC/Delhivery) on all browsers.
-      // Interval 40ms ≈ 25fps scan — fast enough for real-world barcode reads.
-      const scanner = new BrowserMultiFormatReader(createBarcodeHints(), 40);
-      scannerRef.current = scanner;
+      // Use the WASM-powered barcode engine
+      if (!barcodeEngineRef.current) {
+        barcodeEngineRef.current = createBarcodeScanner();
+      }
 
-      const decodeCallback = async (result, err) => {
-        if (result) {
-          lockBarcode(result.getText());
-          return;
-        }
-
-        if (err && err.name !== 'NotFoundException') {
-          setCameraError(err.message || 'Unable to read barcode from camera');
-        }
+      // Wrap in a scanner-compatible ref for stopCamera()
+      scannerRef.current = {
+        reset: () => {
+          barcodeEngineRef.current?.stop();
+        },
       };
 
-      // If the stream is already running (native ITF fallthrough), use the video element directly.
-      if (videoRef.current?.srcObject) {
-        scanner.decodeFromVideoElement(videoRef.current, decodeCallback);
-      } else if (typeof scanner.decodeFromConstraints === 'function') {
-        await scanner.decodeFromConstraints({ video: videoConstraints }, videoRef.current, decodeCallback);
-      } else {
-        await scanner.decodeFromVideoDevice(undefined, videoRef.current, decodeCallback);
-      }
+      await barcodeEngineRef.current.start(videoRef.current, null, {
+        onDetected: (rawValue) => {
+          lockBarcode(rawValue);
+        },
+        onFail: () => {
+          // Desktop doesn't need fail counting — just keep scanning
+        },
+        onEngineReady: (engineName) => {
+          console.log(`[DesktopScanner] Barcode engine ready: ${engineName}`);
+        },
+      });
     } catch (err) {
       setCameraError(err.message || 'Camera access failed');
       vibrate([120, 60, 120]);

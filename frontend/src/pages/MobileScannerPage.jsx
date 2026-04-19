@@ -6,6 +6,7 @@ import { cropRectForCoverVideo } from '../utils/videoCoverCrop.js';
 import { normalizeBarcodeCandidate, rankBarcodeCandidates } from '../utils/barcode.js';
 import { analyzeCaptureQuality, describeCaptureIssues } from '../utils/scannerQuality.js';
 import { evaluateBarcodeStability, nextBarcodeFallbackState } from '../utils/scannerStateMachine.js';
+import { createBarcodeScanner } from '../utils/barcodeEngine.js';
 import {
   Camera, Check, AlertCircle, RotateCcw, Send, ChevronRight, Volume2, VolumeX,
   Wifi, WifiOff, Zap, Package, ScanLine, Shield, RefreshCw, X, Brain,
@@ -26,31 +27,21 @@ const OFFLINE_QUEUE_KEY_PREFIX = 'mobile_scanner_offline_queue';
 const WORKFLOW_MODE_KEY = 'mobile_scanner_workflow_mode';
 const DEVICE_PROFILE_KEY = 'mobile_scanner_device_profile';
 const LOCK_TO_CAPTURE_DELAY = 80; // fast transition after barcode lock
-const BARCODE_STABILITY_WINDOW_MS = 1100;
-const BARCODE_STABILITY_HITS = 3;
-const BARCODE_FAIL_THRESHOLD = 160;
+const BARCODE_STABILITY_WINDOW_MS = 1500;
+const BARCODE_STABILITY_HITS = 2;
+const BARCODE_FAIL_THRESHOLD = 100;
 const BARCODE_REFRAME_ATTEMPTS = 2;
 const BARCODE_POLL_INTERVAL_MS = 45;
 const DOC_STABLE_MIN_TICKS = 2;
 const DOC_CAPTURE_MIN_INTERVAL_MS = 500;
 const CAPTURE_MAX_WIDTH = 960;
 const CAPTURE_JPEG_QUALITY = 0.68;
-const PREFER_ZXING_FOR_TRACKON = String(import.meta.env.VITE_PREFER_ZXING_FOR_TRACKON || '1') !== '0';
 const SCAN_HINT_COOLDOWN_MS = 900;
 const DEVICE_PROFILES = {
   phone: 'phone-camera',
   rugged: 'rugged-scanner',
 };
 
-// After this many consecutive frames with no barcode detected, auto-switch the
-// scan region to document mode and vibrate to alert the operator.
-// Smart fallback now performs quick reframe retries before OCR mode.
-
-// Native BarcodeDetector formats (supported on Chrome Android + iOS 17+)
-const NATIVE_BARCODE_FORMATS = [
-  'code_128', 'code_39', 'code_93', 'codabar',
-  'ean_13', 'ean_8', 'itf', 'qr_code',
-];
 
 const STEPS = {
   IDLE: 'IDLE',
@@ -693,6 +684,7 @@ export default function MobileScannerPage({ standalone = false }) {
   const submitFastBarcodeRef = useRef(null);
   const scanHintRef = useRef({ message: '', at: 0 });
   const lockTelemetryRef = useRef({ lockTimeMs: null, candidateCount: 1, ambiguous: false, alternatives: [] });
+  const barcodeEngineRef = useRef(null); // WASM-powered barcode engine
 
   const goStep = useCallback((next) => {
     setStep(next);
@@ -1120,6 +1112,8 @@ export default function MobileScannerPage({ standalone = false }) {
   const stopCamera = useCallback(async () => {
     try {
       setCaptureCameraReady(false);
+      // Stop WASM barcode engine
+      if (barcodeEngineRef.current) { barcodeEngineRef.current.stop(); }
       if (scanbotRef.current) {
         try {
           const sdk = scanbotRef.current;
@@ -1138,10 +1132,11 @@ export default function MobileScannerPage({ standalone = false }) {
     } catch {}
   }, []);
 
-  // Stops only the barcode scanner/reader; leaves camera stream alive.
   const stopBarcodeScanner = useCallback(async () => {
     try {
       setScannerEngine('idle');
+      // Stop WASM barcode engine
+      if (barcodeEngineRef.current) { barcodeEngineRef.current.stop(); }
       if (scanbotRef.current) {
         try { await scanbotRef.current.barcodeScanner.dispose(); } catch {}
         scanbotRef.current = null;
@@ -1167,155 +1162,48 @@ export default function MobileScannerPage({ standalone = false }) {
       scannerStartedAtRef.current = Date.now();
       await ensureVideoStreamPlaying();
 
-      // Path 1: Prefer ZXing for Trackon-style labels.
-      if (PREFER_ZXING_FOR_TRACKON) {
-        const [{ BrowserMultiFormatReader }, zxingCore] = await Promise.all([
-          import('@zxing/browser'),
-          import('@zxing/library'),
-        ]);
+      // Create & start the WASM-powered barcode engine
+      if (!barcodeEngineRef.current) {
+        barcodeEngineRef.current = createBarcodeScanner();
+      }
 
-        const hints = new Map([
-          [zxingCore.DecodeHintType.POSSIBLE_FORMATS, [
-            zxingCore.BarcodeFormat.CODE_128,
-            zxingCore.BarcodeFormat.ITF,
-            zxingCore.BarcodeFormat.CODE_39,
-            zxingCore.BarcodeFormat.CODE_93,
-            zxingCore.BarcodeFormat.CODABAR,
-            zxingCore.BarcodeFormat.EAN_13,
-            zxingCore.BarcodeFormat.EAN_8,
-          ]],
-          [zxingCore.DecodeHintType.TRY_HARDER, true],
-          [zxingCore.DecodeHintType.ASSUME_GS1, false],
-          [zxingCore.DecodeHintType.CHARACTER_SET, 'UTF-8'],
-        ]);
-
-        const reader = new BrowserMultiFormatReader(hints, 40);
-        setScannerEngine('zxing');
-        scannerRef.current = reader;
-
-        reader.decodeFromVideoElement(videoRef.current, (result) => {
+      await barcodeEngineRef.current.start(videoRef.current, guideRef.current, {
+        onDetected: (rawValue, meta) => {
           if (scanBusyRef.current) return;
-          if (result) {
-            syncBarcodeFailCount(0);
-            let format = 'unknown';
-            try {
-              format = String(result.getBarcodeFormat?.() || 'unknown');
-            } catch {}
-            setLastDetectionMeta({
-              value: result.getText?.() || '',
-              format,
-              engine: 'zxing',
-              at: Date.now(),
-              sinceStartMs: scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null,
-              candidateCount: 1,
-              ambiguous: false,
-              alternatives: [],
-            });
-            handleBarcodeDetectedRef.current?.(result.getText(), {
-              candidateCount: 1,
-              ambiguous: false,
-              alternatives: [],
-              format,
-              engine: 'zxing',
-            });
-          } else {
-            const nextFailCount = barcodeFailCountRef.current + 1;
-            syncBarcodeFailCount(nextFailCount);
-            if (nextFailCount >= BARCODE_FAIL_THRESHOLD) {
-              handleBarcodeFallbackAttempt();
-            }
+          syncBarcodeFailCount(0);
+          const format = meta?.format || 'unknown';
+          const engine = meta?.engine || 'unknown';
+          setLastDetectionMeta({
+            value: rawValue,
+            format,
+            engine,
+            at: Date.now(),
+            sinceStartMs: scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null,
+            candidateCount: meta?.candidateCount || 1,
+            ambiguous: false,
+            alternatives: meta?.alternatives || [],
+          });
+          setScannerEngine(engine);
+          handleBarcodeDetectedRef.current?.(rawValue, {
+            candidateCount: meta?.candidateCount || 1,
+            ambiguous: false,
+            alternatives: meta?.alternatives || [],
+            format,
+            engine,
+          });
+        },
+        onFail: () => {
+          const nextFailCount = barcodeFailCountRef.current + 1;
+          syncBarcodeFailCount(nextFailCount);
+          if (nextFailCount >= BARCODE_FAIL_THRESHOLD) {
+            handleBarcodeFallbackAttempt();
           }
-        });
-        return;
-      }
-
-      // Path 2: Native BarcodeDetector fallback.
-      if (typeof window.BarcodeDetector !== 'undefined') {
-        let useNative = true;
-
-        let supportedFormats = NATIVE_BARCODE_FORMATS;
-        try {
-          const available = await window.BarcodeDetector.getSupportedFormats();
-          supportedFormats = NATIVE_BARCODE_FORMATS.filter((f) => available.includes(f));
-          if (!supportedFormats.length) supportedFormats = NATIVE_BARCODE_FORMATS;
-        } catch {}
-
-        if (!supportedFormats.includes('itf')) {
-          console.log('[MobileScanner] Native BarcodeDetector lacks ITF, falling back to ZXing');
-          useNative = false;
-        }
-
-        if (useNative) {
-          setScannerEngine('native');
-          const detector = new window.BarcodeDetector({ formats: supportedFormats });
-          let timerId = null;
-          let stopped = false;
-
-          const tick = async () => {
-            if (stopped) return;
-            if (currentStepRef.current !== STEPS.SCANNING) return;
-            if (scanBusyRef.current) {
-              timerId = setTimeout(tick, BARCODE_POLL_INTERVAL_MS);
-              return;
-            }
-            const video = videoRef.current;
-            if (!video || video.readyState < 2) {
-              timerId = setTimeout(tick, BARCODE_POLL_INTERVAL_MS);
-              return;
-            }
-            try {
-              const barcodes = await detector.detect(video);
-              const rawCandidates = barcodes
-                .map((barcode) => String(barcode?.rawValue || '').trim())
-                .filter(Boolean);
-              if (rawCandidates.length > 0) {
-                const ranked = rankBarcodeCandidates(rawCandidates);
-                const selectedRaw = ranked.awb || rawCandidates[0];
-                syncBarcodeFailCount(0);
-                setLastDetectionMeta({
-                  value: selectedRaw,
-                  format: String(barcodes[0].format || 'unknown'),
-                  engine: 'native',
-                  at: Date.now(),
-                  sinceStartMs: scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null,
-                  candidateCount: rawCandidates.length,
-                  ambiguous: ranked.ambiguous,
-                  alternatives: ranked.alternatives,
-                });
-                handleBarcodeDetectedRef.current?.(selectedRaw, {
-                  candidateCount: rawCandidates.length,
-                  ambiguous: ranked.ambiguous,
-                  alternatives: ranked.alternatives,
-                  format: String(barcodes[0].format || 'unknown'),
-                  engine: 'native',
-                });
-              } else {
-                const nextFailCount = barcodeFailCountRef.current + 1;
-                syncBarcodeFailCount(nextFailCount);
-                if (nextFailCount >= BARCODE_FAIL_THRESHOLD) {
-                  handleBarcodeFallbackAttempt();
-                }
-              }
-            } catch {}
-            if (currentStepRef.current === STEPS.SCANNING) {
-              timerId = setTimeout(tick, BARCODE_POLL_INTERVAL_MS);
-            }
-          };
-
-          scannerRef.current = {
-            _type: 'native',
-            reset: () => {
-              stopped = true;
-              if (timerId) clearTimeout(timerId);
-              timerId = null;
-            },
-          };
-
-          setTimeout(tick, 220);
-          return;
-        }
-      }
-      throw new Error('Unable to initialize a barcode scanner on this device.');
+        },
+        onEngineReady: (engineName) => {
+          console.log(`[MobileScanner] Barcode engine ready: ${engineName}`);
+          setScannerEngine(engineName);
+        },
+      });
     } catch (err) {
       setErrorMsg('Camera access failed: ' + err.message);
     }

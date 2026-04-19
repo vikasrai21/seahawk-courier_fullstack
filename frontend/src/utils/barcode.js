@@ -16,12 +16,20 @@ const SCORE_WEIGHT = {
 };
 
 const COURIER_RULES = {
-  trackon: [/^1\d{11}$/, /^\d{12}$/],
+  trackon: [/^1\d{11,12}$/, /^2\d{10,12}$/, /^\d{12,13}$/],
   dtdc: [/^[A-Z]{1,2}\d{8,11}$/, /^\d{9,12}$/],
   delhivery: [/^\d{12,15}$/],
   bluedart: [/^\d{9,12}$/, /^[A-Z0-9]{10,14}$/],
   default: [/^\d{10,14}$/, /^[A-Z]{1,2}\d{8,11}$/],
 };
+
+// Trackon AWB prefixes — these should NEVER be mistaken for phone numbers
+const TRACKON_PREFIXES = [
+  /^1004\d{7,9}$/,   // 100454974120 format (12-13 digits)
+  /^2000\d{6,8}$/,   // 20006228088 format  (11-12 digits)
+  /^1\d{11}$/,        // Generic 12-digit starting with 1
+  /^2\d{10,11}$/,     // Generic 11-12 digit starting with 2
+];
 
 function courierKey(value = '') {
   const courier = String(value || '').toLowerCase();
@@ -33,7 +41,13 @@ function courierKey(value = '') {
 }
 
 function isLikelyPhone(value = '') {
+  // Don't flag Trackon AWBs as phone numbers
+  if (TRACKON_PREFIXES.some((rx) => rx.test(value))) return false;
   return /^[6-9]\d{9}$/.test(value);
+}
+
+function isLikelyTrackonAwb(value = '') {
+  return TRACKON_PREFIXES.some((rx) => rx.test(value));
 }
 
 function isValidEan13(value = '') {
@@ -58,13 +72,20 @@ function scoreCandidate(candidate, source, courierHint) {
     score += SCORE_WEIGHT.courierRuleMatch;
   }
 
+  // Trackon AWB boost — these are high-confidence, never phone numbers
+  if (isLikelyTrackonAwb(candidate)) {
+    score += 8;
+  }
+
   if (isLikelyPhone(candidate)) {
     score += SCORE_WEIGHT.likelyPhonePenalty;
   }
   if (/^0\d{12}$/.test(candidate)) {
-    score -= 4;
+    // Leading-zero 13-digit — could be ITF with padding
+    // Reduced penalty since it might be a valid padded Trackon AWB
+    score -= 2;
   }
-  if (isValidEan13(candidate) && key === 'default') {
+  if (isValidEan13(candidate) && key === 'default' && !isLikelyTrackonAwb(candidate)) {
     score += SCORE_WEIGHT.likelyEan13Penalty;
   }
 
@@ -99,11 +120,21 @@ function collectCandidatesFromRaw(rawValue = '', courierHint = '') {
       const match = token.match(/([A-Z0-9-]{6,24})$/);
       if (match?.[1]) push(match[1], 'context');
     });
-  (raw.match(/\b\d{10,14}\b/g) || []).forEach((token) => push(token, 'raw'));
+  // Expanded to capture 9-14 digit numbers (Trackon 11-digit AWBs)
+  (raw.match(/\b\d{9,14}\b/g) || []).forEach((token) => push(token, 'raw'));
   (raw.match(/\b[A-Z]{1,2}\d{8,11}\b/g) || []).forEach((token) => push(token, 'raw'));
 
+  // Handle ITF odd-digit barcodes: ITF requires even digit count, so decoders
+  // often add a leading zero. Try both the padded and stripped versions.
   [...candidates.keys()].forEach((candidate) => {
-    if (/^0\d{12}$/.test(candidate)) push(candidate.slice(1), 'raw');
+    if (/^0\d{10,13}$/.test(candidate)) {
+      // Padded — also try the stripped version
+      push(candidate.slice(1), 'raw');
+    }
+    if (/^\d{11}$/.test(candidate)) {
+      // 11-digit — also try with leading zero (ITF padding)
+      push('0' + candidate, 'raw');
+    }
   });
 
   return [...candidates.values()].sort((a, b) => b.score - a.score);

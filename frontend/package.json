@@ -32,7 +32,8 @@
     "scanbot-web-sdk": "^8.1.1",
     "seahawk-fullstack": "file:..",
     "socket.io-client": "^4.8.3",
-    "zustand": "^5.0.12"
+    "zustand": "^5.0.12",
+    "zxing-wasm": "^3.0.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
