@@ -105,8 +105,28 @@ const getMonthlyStats = asyncHandler(async (req, res) => {
   R.ok(res, rows);
 });
 
+async function maybeLinkDraftToScan(shipment, ocrHints, clientCode, effectiveAwb) {
+  if (!shipment || !ocrHints || !clientCode) return null;
+  const draftSvc = require('../services/draftOrder.service');
+  const logger = require('../utils/logger');
+  try {
+    const draft = await draftSvc.autoDiscoverDraft(clientCode, ocrHints);
+    if (!draft) return null;
+    await draftSvc.linkToShipment(draft.id, shipment.id);
+    logger.info(`[Auto-Bind] Linked physical AWB ${effectiveAwb} to Draft Order #${draft.id}`);
+    return draft.id;
+  } catch (err) {
+    logger.warn(`[Auto-Bind] Failed to evaluate draft linking: ${err.message}`);
+    return null;
+  }
+}
+
 const scanAwb = asyncHandler(async (req, res) => {
   let ocrHints = null;
+  const scannerFlow = require('../services/scannerFlow.service');
+  const lookup = req.body.awb
+    ? await scannerFlow.resolveLookupPrefill(req.body.awb, req.body.courier || '')
+    : { hints: null };
   if (req.body.imageBase64 || req.body.focusImageBase64) {
     try {
       const { extractShipmentFromImage } = require('../services/ocr.service');
@@ -167,6 +187,13 @@ const scanAwb = asyncHandler(async (req, res) => {
     } catch (_err) {
       // Non-blocking by design: barcode capture should still proceed.
     }
+  }
+
+  if (lookup.hints && ocrHints) {
+    const courierPrefill = require('../services/courierPrefill.service');
+    ocrHints = courierPrefill.mergeApiPrefill(ocrHints, lookup.hints);
+  } else if (lookup.hints && !ocrHints) {
+    ocrHints = lookup.hints;
   }
 
   const result = await svc.scanAwbAndUpdate(req.body.awb, req.user?.id, req.body.courier, {
@@ -295,21 +322,64 @@ const scanMobile = asyncHandler(async (req, res) => {
   const { awb, imageBase64, focusImageBase64, sessionContext } = req.body;
   const cleanAwb = String(awb || '').trim();
 
-  if (!imageBase64 && !focusImageBase64) {
-    return res.status(400).json({ success: false, message: 'Image base64 is required.' });
-  }
-
   const { extractShipmentFromImage } = require('../services/ocr.service');
   const intelligenceEngine = require('../services/intelligenceEngine.service');
   const correctionLearner = require('../services/correctionLearner.service');
   const shipmentSvc = require('../services/shipment.service');
-  const courierPrefill = require('../services/courierPrefill.service');
+  const scannerFlow = require('../services/scannerFlow.service');
   const logger = require('../utils/logger');
+  const sessionDate = (sessionContext?.sessionDate || '').trim();
 
-  // Launch courier API pre-fill in parallel with OCR
-  const apiPrefillPromise = cleanAwb
-    ? courierPrefill.prefillFromApi(cleanAwb).catch(() => null)
-    : Promise.resolve(null);
+  const lookup = cleanAwb
+    ? await scannerFlow.resolveLookupPrefill(cleanAwb)
+    : { awb: '', hints: null, evaluation: scannerFlow.evaluateLookupCoverage(null) };
+
+  if (!imageBase64 && !focusImageBase64) {
+    if (!cleanAwb) {
+      return res.status(400).json({ success: false, message: 'AWB is required.' });
+    }
+
+    if (!lookup.evaluation.readyForNoPhoto) {
+      return R.ok(res, {
+        success: true,
+        awb: cleanAwb,
+        status: 'photo_required',
+        requiresImageCapture: true,
+        missingFields: lookup.evaluation.missingForNoPhoto,
+        ocrExtracted: lookup.hints || null,
+        intelligence: lookup.hints?._intelligence || {},
+      }, 'Lookup incomplete. Capture label photo for OCR fallback.');
+    }
+
+    let shipment = null;
+    try {
+      const result = await shipmentSvc.scanAwbAndUpdate(cleanAwb, req.user?.id, null, {
+        captureOnly: true,
+        source: 'mobile_scanner_lookup',
+        ocrHints: lookup.hints,
+        sessionContext: sessionContext || {},
+        overrideDate: sessionDate || null,
+      });
+      shipment = result.shipment;
+    } catch (svcErr) {
+      logger.warn(`[Mobile Scanner Lookup] shipment upsert failed: ${svcErr.message}`);
+    }
+
+    const clientCode = lookup.hints?.clientCode || shipment?.clientCode || '';
+    const linkedDraftId = await maybeLinkDraftToScan(shipment, lookup.hints, clientCode, cleanAwb);
+    const resultPayload = scannerFlow.buildScanResultPayload({
+      awb: cleanAwb,
+      shipment,
+      ocrHints: lookup.hints,
+      linkedDraftId,
+      extra: {
+        requiresImageCapture: false,
+        lookupDecision: lookup.evaluation,
+      },
+    });
+
+    return R.ok(res, resultPayload, 'Lookup scan processed successfully');
+  }
 
   const [clients, corrections] = await Promise.all([
     intelligenceEngine.getActiveClientsForPrompt(),
@@ -323,41 +393,48 @@ const scanMobile = asyncHandler(async (req, res) => {
     sessionContext: sessionContext || {},
   };
 
-  const scoreOcr = (d) => {
-    if (!d?.success) return 0;
-    return [d.clientName, d.consignee, d.destination, d.pincode, d.orderNo, d.weight, d.amount]
-      .filter(v => typeof v === 'number' ? v > 0 : String(v || '').trim().length > 0).length;
-  };
+  let ocrHints = lookup.hints;
+  let effectiveAwb = cleanAwb;
 
-  const attempts = [];
-  if (focusImageBase64) attempts.push(extractShipmentFromImage(focusImageBase64, 'image/jpeg', ocrOptions));
-  if (imageBase64)      attempts.push(extractShipmentFromImage(imageBase64, 'image/jpeg', ocrOptions));
+  if (!lookup.evaluation.readyForNoPhoto || !cleanAwb) {
+    const scoreOcr = (d) => {
+      if (!d?.success) return 0;
+      return [d.clientName, d.consignee, d.destination, d.pincode, d.orderNo, d.weight, d.amount]
+        .filter(v => typeof v === 'number' ? v > 0 : String(v || '').trim().length > 0).length;
+    };
 
-  const settled = await Promise.allSettled(attempts);
-  const successful = settled
-    .filter(r => r.status === 'fulfilled' && r.value?.success)
-    .map(r => r.value)
-    .sort((a, b) => scoreOcr(b) - scoreOcr(a));
+    const attempts = [];
+    if (focusImageBase64) attempts.push(extractShipmentFromImage(focusImageBase64, 'image/jpeg', ocrOptions));
+    if (imageBase64)      attempts.push(extractShipmentFromImage(imageBase64, 'image/jpeg', ocrOptions));
 
-  let ocrHints = null;
-  if (successful.length) {
-    ocrHints = await intelligenceEngine.resolveEntities(successful[0], { sessionContext: sessionContext || {} });
+    const settled = await Promise.allSettled(attempts);
+    const successful = settled
+      .filter(r => r.status === 'fulfilled' && r.value?.success)
+      .map(r => r.value)
+      .sort((a, b) => scoreOcr(b) - scoreOcr(a));
+
+    let extractedHints = null;
+    if (successful.length) {
+      extractedHints = await intelligenceEngine.resolveEntities(successful[0], { sessionContext: sessionContext || {} });
+    }
+
+    effectiveAwb = String(cleanAwb || extractedHints?.awb || successful[0]?.awb || '').trim();
+    if (!effectiveAwb) {
+      return res.status(400).json({ success: false, message: 'Could not read the AWB from the label image.' });
+    }
+
+    const effectiveLookup = effectiveAwb === lookup.awb
+      ? lookup
+      : await scannerFlow.resolveLookupPrefill(effectiveAwb);
+
+    if (effectiveLookup.hints && extractedHints) {
+      const courierPrefill = require('../services/courierPrefill.service');
+      ocrHints = courierPrefill.mergeApiPrefill(extractedHints, effectiveLookup.hints);
+    } else {
+      ocrHints = extractedHints || effectiveLookup.hints;
+    }
   }
 
-  const effectiveAwb = String(cleanAwb || ocrHints?.awb || successful[0]?.awb || '').trim();
-  if (!effectiveAwb) {
-    return res.status(400).json({ success: false, message: 'Could not read the AWB from the label image.' });
-  }
-
-  // Merge courier API pre-fill data
-  const apiData = await apiPrefillPromise;
-  if (apiData && ocrHints) {
-    ocrHints = courierPrefill.mergeApiPrefill(ocrHints, apiData);
-  } else if (apiData && !ocrHints) {
-    ocrHints = { ...apiData, success: true, awb: effectiveAwb };
-  }
-
-  const sessionDate = (sessionContext?.sessionDate || '').trim();
   let shipment = null;
   try {
     const result = await shipmentSvc.scanAwbAndUpdate(effectiveAwb, req.user?.id, null, {
@@ -372,64 +449,18 @@ const scanMobile = asyncHandler(async (req, res) => {
     logger.warn(`[Mobile Scanner OCR] shipment upsert failed: ${svcErr.message}`);
   }
 
-  const intel = ocrHints?._intelligence || {};
   const clientCode = ocrHints?.clientCode || shipment?.clientCode || '';
-  const clientName = ocrHints?.clientName || shipment?.client?.company || clientCode;
-
-  // Autonomous Draft Order Binding
-  const draftSvc = require('../services/draftOrder.service');
-  let linkedDraftId = null;
-  if (shipment && ocrHints && clientCode) {
-    try {
-      const draft = await draftSvc.autoDiscoverDraft(clientCode, ocrHints);
-      if (draft) {
-        await draftSvc.linkToShipment(draft.id, shipment.id);
-        linkedDraftId = draft.id;
-        logger.info(`[Auto-Bind] Linked physical AWB ${effectiveAwb} to Draft Order #${draft.id}`);
-      }
-    } catch (e) {
-      logger.warn(`[Auto-Bind] Failed to evaluate draft linking: ${e.message}`);
-    }
-  }
-
-  // Confidence-based auto-approve
-  const autoApproveThreshold = Number(process.env.SCANNER_AUTO_APPROVE_THRESHOLD || 0.85);
-  const shouldAutoApprove = (() => {
-    if (!clientCode || clientCode === 'MISC') return false;
-    const consignee = ocrHints?.consignee || shipment?.consignee || '';
-    const destination = ocrHints?.destination || shipment?.destination || '';
-    if (!consignee || !destination) return false;
-    const confidences = [
-      ocrHints?.clientNameConfidence || 0,
-      ocrHints?.consigneeConfidence || 0,
-      ocrHints?.destinationConfidence || 0,
-      ocrHints?.pincodeConfidence || 0,
-    ].filter(c => c > 0);
-    if (confidences.length < 3) return false;
-    return confidences.every(c => c >= autoApproveThreshold);
-  })();
-  const reviewRequired = !shouldAutoApprove;
-
-  const resultPayload = {
-    success: true,
+  const linkedDraftId = await maybeLinkDraftToScan(shipment, ocrHints, clientCode, effectiveAwb);
+  const resultPayload = scannerFlow.buildScanResultPayload({
     awb: effectiveAwb,
-    shipmentId: shipment?.id || null,
+    shipment,
+    ocrHints,
     linkedDraftId,
-    courier: shipment?.courier || ocrHints?.courier || '',
-    status: reviewRequired ? 'pending_review' : 'ok',
-    clientCode,
-    clientName,
-    consignee: ocrHints?.consignee || shipment?.consignee || '',
-    destination: ocrHints?.destination || shipment?.destination || '',
-    pincode: ocrHints?.pincode || shipment?.pincode || '',
-    weight: ocrHints?.weight || shipment?.weight || 0,
-    amount: ocrHints?.amount || shipment?.amount || 0,
-    orderNo: ocrHints?.orderNo || '',
-    reviewRequired,
-    autoApproved: !reviewRequired,
-    ocrExtracted: ocrHints || null,
-    intelligence: intel,
-  };
+    extra: {
+      requiresImageCapture: false,
+      lookupDecision: scannerFlow.evaluateLookupCoverage(ocrHints),
+    },
+  });
 
   R.ok(res, resultPayload, 'Mobile scan processed successfully');
 });

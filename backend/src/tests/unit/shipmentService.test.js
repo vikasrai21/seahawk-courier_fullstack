@@ -225,5 +225,42 @@ describe('shipment.service', () => {
       }));
       expect(['local_existing', 'captured_placeholder']).toContain(result.meta.source);
     });
+
+    it('applies overrideDate when reusing an existing shipment in capture mode', async () => {
+      vi.spyOn(dtdcService.default, 'getTracking').mockResolvedValue(null);
+      mockPrisma.shipment.findUnique.mockResolvedValue({
+        id: 11,
+        awb: 'Z66077872',
+        courier: 'DTDC',
+        status: 'Booked',
+        date: '2026-04-19',
+        remarks: '',
+        client: null,
+      });
+      mockPrisma.shipment.update.mockResolvedValue({
+        id: 11,
+        awb: 'Z66077872',
+        courier: 'DTDC',
+        status: 'Booked',
+        date: '2026-04-18',
+        remarks: 'SCAN_CAPTURED: Intake awaiting tracking sync',
+        client: null,
+      });
+
+      await shipmentService.scanAwbAndUpdate('Z66077872', 8, 'DTDC', {
+        captureOnly: true,
+        source: 'scanner',
+        overrideDate: '2026-04-18',
+      });
+
+      expect(mockPrisma.shipment.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { awb: 'Z66077872' },
+        data: expect.objectContaining({
+          courier: 'DTDC',
+          updatedById: 8,
+          date: '2026-04-18',
+        }),
+      }));
+    });
   });
 });

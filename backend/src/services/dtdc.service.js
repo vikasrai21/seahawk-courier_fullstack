@@ -159,6 +159,7 @@ async function getTracking(awb) {
         ? parseDTDCTimestamp(header.strStatusTransOn, header.strStatusTransTime)
         : null,
       recipient:    header.strRemarks || '',
+      rawData:      data,
       events:       details.map((event) => ({
         status: mapDTDCStatus(event.strAction || event.strCode || ''),
         location: event.strOrigin || event.strDestination || '',

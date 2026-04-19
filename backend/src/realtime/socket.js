@@ -33,6 +33,21 @@ function cleanupExpiredSessions() {
 // Cleanup every 2 minutes
 setInterval(cleanupExpiredSessions, 2 * 60 * 1000);
 
+async function maybeLinkDraftToScan(shipment, ocrHints, clientCode, effectiveAwb) {
+  if (!shipment || !ocrHints || !clientCode) return null;
+  const draftSvc = require('../services/draftOrder.service');
+  try {
+    const draft = await draftSvc.autoDiscoverDraft(clientCode, ocrHints);
+    if (!draft) return null;
+    await draftSvc.linkToShipment(draft.id, shipment.id);
+    logger.info(`[Auto-Bind] Linked physical AWB ${effectiveAwb} to Draft Order #${draft.id}`);
+    return draft.id;
+  } catch (err) {
+    logger.warn(`[Auto-Bind] Failed to evaluate draft linking: ${err.message}`);
+    return null;
+  }
+}
+
 // ── Auth resolver ───────────────────────────────────────────────────────────
 
 async function resolveSocketUser(token) {
@@ -357,18 +372,84 @@ function handleMobileScannerConnection(socket) {
 
       try {
         const shipmentSvc = require('../services/shipment.service');
+        const scannerFlow = require('../services/scannerFlow.service');
         const fastSessionDate = (sessionContext?.sessionDate || '').trim();
+        const lookup = await scannerFlow.resolveLookupPrefill(cleanAwb);
+        const totalMs = Date.now() - scanStartedAt;
+
+        if (scanMode !== 'fast_barcode_only') {
+          if (!lookup.evaluation.readyForNoPhoto) {
+            socket.emit('scanner:scan-processed', {
+              awb: cleanAwb,
+              status: 'photo_required',
+              requiresImageCapture: true,
+              missingFields: lookup.evaluation.missingForNoPhoto,
+              ocrExtracted: lookup.hints || null,
+              intelligence: lookup.hints?._intelligence || {},
+            });
+            return;
+          }
+
+          let shipment = null;
+          try {
+            const result = await shipmentSvc.scanAwbAndUpdate(cleanAwb, currentSession.userId, null, {
+              captureOnly: true,
+              source: 'mobile_scanner_lookup',
+              ocrHints: lookup.hints || null,
+              sessionContext: sessionContext || {},
+              overrideDate: fastSessionDate || null,
+            });
+            shipment = result?.shipment || null;
+          } catch (svcErr) {
+            logger.warn(`[Scanner Lookup] shipment upsert failed: ${svcErr.message}`);
+          }
+
+          const clientCode = lookup.hints?.clientCode || shipment?.clientCode || '';
+          const linkedDraftId = await maybeLinkDraftToScan(shipment, lookup.hints, clientCode, cleanAwb);
+          const resultPayload = scannerFlow.buildScanResultPayload({
+            awb: cleanAwb,
+            shipment,
+            ocrHints: lookup.hints,
+            linkedDraftId,
+            extra: {
+              requiresImageCapture: false,
+              lookupDecision: lookup.evaluation,
+            },
+          });
+
+          scannerQuality.recordScanEvent({
+            pin,
+            source: 'mobile_scanner_lookup',
+            scanMode: scanMode || 'lookup_first',
+            deviceProfile,
+            courier: resultPayload.courier || '',
+            awb: cleanAwb,
+            lockedAwb: cleanAwb,
+            awbSource: 'fast_input',
+            success: true,
+            reviewRequired: resultPayload.reviewRequired,
+            hadImage: false,
+            lockTimeMs,
+            totalMs,
+            qualityIssues,
+          });
+
+          socket.emit('scanner:scan-processed', resultPayload);
+          return;
+        }
+
+        const prefilledHints = lookup.hints || null;
         const result = await shipmentSvc.scanAwbAndUpdate(cleanAwb, currentSession.userId, null, {
           captureOnly: true,
-          source: scanMode === 'fast_barcode_only' ? 'mobile_scanner_fast' : 'mobile_scanner',
+          source: 'mobile_scanner_fast',
+          ocrHints: prefilledHints,
           sessionContext: sessionContext || {},
           overrideDate: fastSessionDate || null,
         });
         const shipment = result?.shipment || null;
-        const totalMs = Date.now() - scanStartedAt;
         scannerQuality.recordScanEvent({
           pin,
-          source: scanMode === 'fast_barcode_only' ? 'mobile_scanner_fast' : 'mobile_scanner',
+          source: 'mobile_scanner_fast',
           scanMode: scanMode || 'fast_barcode_only',
           deviceProfile,
           courier: shipment?.courier || '',
@@ -435,7 +516,7 @@ function handleMobileScannerConnection(socket) {
       const intelligenceEngine = require('../services/intelligenceEngine.service');
       const correctionLearner = require('../services/correctionLearner.service');
       const shipmentSvc = require('../services/shipment.service');
-      const courierPrefill = require('../services/courierPrefill.service');
+      const scannerFlow = require('../services/scannerFlow.service');
       const withTimeout = (promise, timeoutMs, stage) => new Promise((resolve, reject) => {
         const timer = setTimeout(() => reject(new Error(`Stage timeout (${stage}) after ${timeoutMs}ms`)), timeoutMs);
         promise
@@ -451,10 +532,9 @@ function handleMobileScannerConnection(socket) {
 
       const ocrStartedAt = Date.now();
 
-      // Launch courier API pre-fill in parallel — never blocks OCR
-      const apiPrefillPromise = cleanAwb
-        ? courierPrefill.prefillFromApi(cleanAwb).catch(() => null)
-        : Promise.resolve(null);
+      const lookup = cleanAwb
+        ? await scannerFlow.resolveLookupPrefill(cleanAwb)
+        : { awb: '', hints: null, evaluation: scannerFlow.evaluateLookupCoverage(null) };
 
       // Build context for OCR prompt + intelligence enrichment
       const [clients, corrections] = await Promise.all([
@@ -514,34 +594,54 @@ function handleMobileScannerConnection(socket) {
         }
       };
 
-      const focusAttempt = focusImageBase64
-        ? await runOcrAttempt('focus', focusImageBase64, focusBudgetMs)
-        : null;
-      const focusScore = focusAttempt?.status === 'fulfilled' ? focusAttempt.score : 0;
-      if (imageBase64 && (!focusAttempt || focusScore < 3)) {
-        await runOcrAttempt('full', imageBase64, fullBudgetMs);
-      }
+      let ocrHints = lookup.hints;
+      let effectiveAwb = cleanAwb;
+      let bestAttempt = null;
+      if (!lookup.evaluation.readyForNoPhoto || !cleanAwb) {
+        const focusAttempt = focusImageBase64
+          ? await runOcrAttempt('focus', focusImageBase64, focusBudgetMs)
+          : null;
+        const focusScore = focusAttempt?.status === 'fulfilled' ? focusAttempt.score : 0;
+        if (imageBase64 && (!focusAttempt || focusScore < 3)) {
+          await runOcrAttempt('full', imageBase64, fullBudgetMs);
+        }
 
-      const successful = ocrAttempts
-        .filter((attempt) => attempt.status === 'fulfilled' && attempt.value?.success)
-        .sort((a, b) => b.score - a.score);
+        const successful = ocrAttempts
+          .filter((attempt) => attempt.status === 'fulfilled' && attempt.value?.success)
+          .sort((a, b) => b.score - a.score);
 
-      const bestAttempt = successful[0] || null;
-      let ocrHints = null;
-      if (bestAttempt?.value) {
-        try {
-          ocrHints = await withTimeout(
-            intelligenceEngine.resolveEntities(bestAttempt.value, { sessionContext: sessionContext || {} }),
-            4000,
-            'entity-resolution'
-          );
-        } catch (resolveErr) {
-          logger.warn(`[Scanner OCR] Intelligence resolve timed out: ${resolveErr.message}`);
-          ocrHints = bestAttempt.value;
+        bestAttempt = successful[0] || null;
+        let extractedHints = null;
+        if (bestAttempt?.value) {
+          try {
+            extractedHints = await withTimeout(
+              intelligenceEngine.resolveEntities(bestAttempt.value, { sessionContext: sessionContext || {} }),
+              4000,
+              'entity-resolution'
+            );
+          } catch (resolveErr) {
+            logger.warn(`[Scanner OCR] Intelligence resolve timed out: ${resolveErr.message}`);
+            extractedHints = bestAttempt.value;
+          }
+        }
+
+        effectiveAwb = String(cleanAwb || extractedHints?.awb || bestAttempt?.value?.awb || '').trim();
+        const effectiveLookup = effectiveAwb && effectiveAwb !== lookup.awb
+          ? await scannerFlow.resolveLookupPrefill(effectiveAwb)
+          : lookup;
+        ocrHints = extractedHints || effectiveLookup.hints;
+        if (effectiveLookup.hints && extractedHints) {
+          ocrHints = {
+            ...effectiveLookup.hints,
+            ...extractedHints,
+            _intelligence: {
+              ...(effectiveLookup.hints?._intelligence || {}),
+              ...(extractedHints?._intelligence || {}),
+            },
+          };
         }
       }
 
-      const effectiveAwb = String(cleanAwb || ocrHints?.awb || bestAttempt?.value?.awb || '').trim();
       const totalMs = Date.now() - scanStartedAt;
       const ocrLatencyMs = Date.now() - ocrStartedAt;
       const falseLock = Boolean(cleanAwb && effectiveAwb && String(cleanAwb).toUpperCase() !== String(effectiveAwb).toUpperCase());
@@ -582,14 +682,6 @@ function handleMobileScannerConnection(socket) {
         return;
       }
 
-      // ── Merge courier API pre-fill data (was running in parallel) ──────
-      const apiData = await apiPrefillPromise;
-      if (apiData && ocrHints) {
-        ocrHints = courierPrefill.mergeApiPrefill(ocrHints, apiData);
-      } else if (apiData && !ocrHints) {
-        ocrHints = { ...apiData, success: true, awb: effectiveAwb };
-      }
-
       // Create/update shipment record
       const sessionDate = (sessionContext?.sessionDate || '').trim();
       let shipment = null;
@@ -606,29 +698,20 @@ function handleMobileScannerConnection(socket) {
         logger.warn(`[Scanner OCR] shipment upsert failed: ${svcErr.message}`);
       }
 
-      const intel = ocrHints?._intelligence || {};
       const clientCode = ocrHints?.clientCode || shipment?.clientCode || '';
-      const clientName = ocrHints?.clientName || shipment?.client?.company || clientCode;
+      const linkedDraftId = await maybeLinkDraftToScan(shipment, ocrHints, clientCode, effectiveAwb);
       const resolvedCourier = ocrHints?.courier || shipment?.courier || bestAttempt?.value?.courier || '';
       const awbSource = ocrHints?.awbSource || bestAttempt?.value?.awbSource || (cleanAwb ? 'fast_input' : '');
-
-      // ── Confidence-based auto-approve ────────────────────────────────
-      const autoApproveThreshold = Number(process.env.SCANNER_AUTO_APPROVE_THRESHOLD || 0.85);
-      const shouldAutoApprove = (() => {
-        if (!clientCode || clientCode === 'MISC') return false;
-        const consignee = ocrHints?.consignee || shipment?.consignee || '';
-        const destination = ocrHints?.destination || shipment?.destination || '';
-        if (!consignee || !destination) return false;
-        const confidences = [
-          ocrHints?.clientNameConfidence || 0,
-          ocrHints?.consigneeConfidence || 0,
-          ocrHints?.destinationConfidence || 0,
-          ocrHints?.pincodeConfidence || 0,
-        ].filter(c => c > 0);
-        if (confidences.length < 3) return false;
-        return confidences.every(c => c >= autoApproveThreshold);
-      })();
-      const reviewRequired = !shouldAutoApprove;
+      const resultPayload = scannerFlow.buildScanResultPayload({
+        awb: effectiveAwb,
+        shipment,
+        ocrHints,
+        linkedDraftId,
+        extra: {
+          requiresImageCapture: false,
+          lookupDecision: scannerFlow.evaluateLookupCoverage(ocrHints),
+        },
+      });
 
       scannerQuality.recordScanEvent({
         pin,
@@ -641,7 +724,7 @@ function handleMobileScannerConnection(socket) {
         awbSource,
         falseLock,
         success: true,
-        reviewRequired,
+        reviewRequired: resultPayload.reviewRequired,
         hadImage: true,
         totalMs,
         ocrLatencyMs,
@@ -650,21 +733,7 @@ function handleMobileScannerConnection(socket) {
       });
 
       socket.emit('scanner:scan-processed', {
-        awb: effectiveAwb,
-        shipmentId: shipment?.id || null,
-        status: reviewRequired ? 'pending_review' : 'ok',
-        clientCode,
-        clientName,
-        consignee: ocrHints?.consignee || shipment?.consignee || '',
-        destination: ocrHints?.destination || shipment?.destination || '',
-        pincode: ocrHints?.pincode || shipment?.pincode || '',
-        weight: ocrHints?.weight || shipment?.weight || 0,
-        amount: ocrHints?.amount || shipment?.amount || 0,
-        orderNo: ocrHints?.orderNo || '',
-        reviewRequired,
-        autoApproved: !reviewRequired,
-        ocrExtracted: ocrHints || null,
-        intelligence: intel,
+        ...resultPayload,
         scanTelemetry: {
           totalMs,
           ocrMs: ocrLatencyMs,
@@ -681,7 +750,7 @@ function handleMobileScannerConnection(socket) {
           lockTimeMs,
           lockCandidateCount,
           falseLock,
-          apiPrefill: !!apiData,
+          apiPrefill: Boolean(lookup.apiData),
         },
       });
 

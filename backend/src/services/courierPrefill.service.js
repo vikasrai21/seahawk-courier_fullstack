@@ -6,11 +6,11 @@ const { detectCourier } = require('../utils/awbDetect');
 const PREFILL_TIMEOUT_MS = 5000;
 
 /**
- * Attempt to pre-fill shipment fields by querying the courier's tracking API.
+ * Attempt to pre-fill shipment fields by querying courier APIs.
  *
- * Different couriers return different levels of detail:
- *   - Delhivery: consignee, address, pincode, weight, COD (verbose endpoint)
- *   - DTDC/Trackon/BlueDart/Primtrack: destination city from scan events
+ * Preferred order:
+ *   1. Structured shipment-details lookup by AWB
+ *   2. Tracking lookup fallback for couriers that only expose scan history
  *
  * This function NEVER throws — failures return null silently.
  * It runs in parallel with the OCR pipeline so it never blocks scanning.
@@ -45,45 +45,59 @@ async function prefillFromApi(awb, courierHint) {
   try {
     const { CourierFactory } = require('./couriers/CourierFactory');
     const provider = CourierFactory.get(factoryName);
+    const deadline = Date.now() + PREFILL_TIMEOUT_MS;
+    const runWithinBudget = async (promiseFactory) => {
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        throw new Error('Prefill timeout');
+      }
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Prefill timeout')), remainingMs)
+      );
+      return Promise.race([Promise.resolve().then(promiseFactory), timeoutPromise]);
+    };
 
-    // Race the API call against a timeout
-    const trackingPromise = provider.trackShipment(cleanAwb);
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Prefill timeout')), PREFILL_TIMEOUT_MS)
+    let detailsData = null;
+    let trackData = null;
+
+    if (typeof provider.getShipmentDetails === 'function') {
+      detailsData = await runWithinBudget(() => provider.getShipmentDetails(cleanAwb)).catch(() => null);
+    }
+
+    const detailsHaveUsefulData = !!(
+      detailsData?.consignee ||
+      detailsData?.destination ||
+      detailsData?.pincode ||
+      detailsData?.weight ||
+      detailsData?.phone
     );
 
-    const trackData = await Promise.race([trackingPromise, timeoutPromise]);
-    if (!trackData) return null;
+    if (!detailsHaveUsefulData && typeof provider.trackShipment === 'function') {
+      trackData = await runWithinBudget(() => provider.trackShipment(cleanAwb)).catch(() => null);
+    }
+
+    if (!detailsData && !trackData) return null;
 
     // Extract what we can from the tracking response
     const result = {
       source: 'courier_api',
       courier: factoryName,
+      lookupType: detailsHaveUsefulData ? 'shipment_details' : 'tracking',
     };
 
-    // ── Delhivery: rich consignment data from verbose endpoint ──────────
-    if (factoryName === 'Delhivery') {
-      // Delhivery's trackShipment (with verbose=1) returns consignment details
-      // within the Shipment object. The events also contain location data.
-      const events = trackData.events || [];
-      const latestLocation = events.length > 0 ? events[0].location : '';
-
-      if (latestLocation) {
-        result.destination = String(latestLocation).toUpperCase().trim();
-      }
-
-      // The Delhivery response may contain additional shipment details
-      // depending on the API access level. Extract whatever is available.
-      if (trackData.consignee) result.consignee = trackData.consignee;
-      if (trackData.pincode) result.pincode = String(trackData.pincode);
-      if (trackData.weight) result.weight = Number(trackData.weight);
-      if (trackData.codAmount) result.amount = Number(trackData.codAmount);
-      if (trackData.phone) result.phone = String(trackData.phone);
-      if (trackData.expectedDelivery) result.expectedDelivery = trackData.expectedDelivery;
+    if (detailsData) {
+      if (detailsData.consignee) result.consignee = detailsData.consignee;
+      if (detailsData.destination) result.destination = String(detailsData.destination).toUpperCase().trim();
+      if (detailsData.pincode) result.pincode = String(detailsData.pincode);
+      if (detailsData.weight) result.weight = Number(detailsData.weight);
+      if (detailsData.codAmount) result.amount = Number(detailsData.codAmount);
+      if (detailsData.phone) result.phone = String(detailsData.phone);
+      if (detailsData.expectedDelivery) result.expectedDelivery = detailsData.expectedDelivery;
+      if (detailsData.trackingStatus) result.trackingStatus = detailsData.trackingStatus;
     }
 
     // ── All couriers: extract destination city from tracking events ─────
-    if (!result.destination) {
+    if (!result.destination && trackData) {
       const events = trackData.events || [];
       // The destination is typically the LAST event's location in the tracking
       // chain, or the first event if there's only one (the booking location).
@@ -101,17 +115,17 @@ async function prefillFromApi(awb, courierHint) {
     }
 
     // Extract status for context
-    if (trackData.status) {
+    if (trackData?.status && !result.trackingStatus) {
       result.trackingStatus = trackData.status;
     }
 
     // Only return if we actually got useful data
-    const hasUsefulData = result.consignee || result.destination || result.pincode || result.weight;
+    const hasUsefulData = result.consignee || result.destination || result.pincode || result.weight || result.phone;
     if (!hasUsefulData) return null;
 
     logger.info(
       `[Prefill] ${factoryName} AWB ${cleanAwb}: ` +
-      `dest=${result.destination || 'NA'} consignee=${result.consignee || 'NA'} ` +
+      `mode=${result.lookupType || 'unknown'} dest=${result.destination || 'NA'} consignee=${result.consignee || 'NA'} ` +
       `pin=${result.pincode || 'NA'} wt=${result.weight || 'NA'}`
     );
 
@@ -184,8 +198,9 @@ function mergeApiPrefill(ocrHints, apiData, minConfidenceToProtect = 0.80) {
   merged._intelligence.apiPrefill = {
     courier: apiData.courier,
     source: apiData.source,
+    lookupType: apiData.lookupType || 'tracking',
     fieldsApplied: Object.keys(apiData).filter(k =>
-      k !== 'source' && k !== 'courier' && k !== 'trackingStatus' && apiData[k]
+      k !== 'source' && k !== 'courier' && k !== 'lookupType' && k !== 'trackingStatus' && apiData[k]
     ),
   };
 

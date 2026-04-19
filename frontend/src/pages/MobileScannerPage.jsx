@@ -24,6 +24,7 @@ const DOC_CAPTURE_REGION  = { w: '92vw', h: '130vw' }; // ~A4 portrait proportio
 const AUTO_NEXT_DELAY = 3500;
 const FAST_AUTO_NEXT_DELAY = 900;
 const FAST_SCAN_TIMEOUT_MS = 10000;
+const LOOKUP_DECISION_TIMEOUT_MS = 12000;
 const OFFLINE_QUEUE_KEY_PREFIX = 'mobile_scanner_offline_queue';
 const WORKFLOW_MODE_KEY = 'mobile_scanner_workflow_mode';
 const DEVICE_PROFILE_KEY = 'mobile_scanner_device_profile';
@@ -615,6 +616,8 @@ const confDotClass = (score) => `conf-dot conf-${confLevel(score)}`;
 
 const sourceLabel = (source) => {
   if (source === 'learned') return { className: 'source-badge source-learned', icon: 'AI', text: 'Learned' };
+  if (source === 'awb_master') return { className: 'source-badge source-ai', icon: 'DB', text: 'Lookup' };
+  if (source === 'courier_api') return { className: 'source-badge source-history', icon: 'API', text: 'Courier' };
   if (source === 'fuzzy_match') return { className: 'source-badge source-ai', icon: 'ðŸ”', text: 'Matched' };
   if (source === 'fuzzy_history' || source === 'consignee_pattern') return { className: 'source-badge source-history', icon: 'ðŸ“Š', text: 'History' };
   if (source === 'delhivery_pincode' || source === 'india_post' || source === 'pincode_lookup' || source === 'indiapost_lookup') return { className: 'source-badge source-pincode', icon: 'ðŸ“', text: 'Pincode' };
@@ -760,6 +763,7 @@ export default function MobileScannerPage({ standalone = false }) {
   const captureReadyHapticRef = useRef(false);
   const lastCaptureAtRef = useRef(0);
   const submitFastBarcodeRef = useRef(null);
+  const submitLookupDecisionRef = useRef(null);
   const scanHintRef = useRef({ message: '', at: 0 });
   const lockTelemetryRef = useRef({ lockTimeMs: null, candidateCount: 1, ambiguous: false, alternatives: [] });
   const barcodeEngineRef = useRef(null); // WASM-powered barcode engine
@@ -997,11 +1001,12 @@ export default function MobileScannerPage({ standalone = false }) {
       goStep(STEPS.CAPTURING);
       return;
     }
-    // Same iOS gesture reliability: prime the camera stream immediately.
-    ensureVideoStreamPlaying()
-      .then(() => goStep(STEPS.CAPTURING))
-      .catch((err) => setErrorMsg(err?.message || 'Camera access failed.'));
-  }, [manualAwb, connStatus, ensureVideoStreamPlaying, goStep, isE2eMock, isStandalone]);
+    if (scanWorkflowMode === 'fast') {
+      submitFastBarcodeRef.current?.(awb);
+      return;
+    }
+    submitLookupDecisionRef.current?.(awb);
+  }, [manualAwb, connStatus, goStep, isE2eMock, isStandalone, scanWorkflowMode]);
 
   const terminateSession = useCallback(() => {
     if (!window.confirm(isStandalone ? 'Exit this scanner session on the phone?' : 'End this mobile scanner session on the phone?')) return;
@@ -1120,37 +1125,12 @@ export default function MobileScannerPage({ standalone = false }) {
         return;
       }
 
-      setReviewData(data);
-      setReviewForm({
-        clientCode: data.clientCode || '',
-        consignee: data.consignee || '',
-        destination: data.destination || '',
-        pincode: data.pincode || '',
-        weight: data.weight || 0,
-        amount: data.amount || 0,
-        orderNo: data.orderNo || '',
-      });
-      setProcessingFields({});
-
-      if (data.reviewRequired) {
-        goStep(STEPS.REVIEWING);
-      } else {
-        // Auto-approved
-        playSuccessBeep();
-        pulseHaptic('success');
-        if (voiceEnabled) speak(`Auto approved. ${data.clientName || ''}. ${data.destination || ''}.`);
-        const item = {
-          awb: data.awb,
-          clientCode: data.clientCode,
-          clientName: data.clientName,
-          destination: data.destination || '',
-          weight: data.weight || 0,
-          autoApproved: true,
-        };
-        setLastSuccess(item);
-        addToQueue(item);
-        goStep(STEPS.SUCCESS);
+      if (data.status === 'photo_required' || data.requiresImageCapture) {
+        handleLookupNeedsPhoto(data);
+        return;
       }
+
+      applyProcessedScanResult(data);
     });
 
     // Desktop approved our mobile-submitted approval
@@ -1182,7 +1162,7 @@ export default function MobileScannerPage({ standalone = false }) {
 
     setSocket(s);
     return () => { s.disconnect(); };
-  }, [pin, addToQueue, reviewData, reviewForm, goStep, navigate, isE2eMock, isStandalone]);
+  }, [pin, addToQueue, reviewData, reviewForm, goStep, navigate, isE2eMock, isStandalone, applyProcessedScanResult, handleLookupNeedsPhoto]);
 
   useEffect(() => {
     try {
@@ -1391,13 +1371,8 @@ export default function MobileScannerPage({ standalone = false }) {
       return;
     }
 
-    // Jump straight into document capture and keep the lock message as an overlay.
-    lockToCaptureTimerRef.current = setTimeout(() => {
-      if (currentStepRef.current === STEPS.SCANNING) {
-        goStep(STEPS.CAPTURING);
-      }
-    }, LOCK_TO_CAPTURE_DELAY);
-  }, [goStep, isStableBarcodeRead, scanWorkflowMode, isE2eMock, syncBarcodeFailCount, syncBarcodeReframeCount, showScanHint, handleBarcodeFallbackAttempt]); // sessionCtx removed from deps â€” duplicate check now uses scannedAwbsRef
+    submitLookupDecisionRef.current?.(awb);
+  }, [isStableBarcodeRead, scanWorkflowMode, isE2eMock, syncBarcodeFailCount, syncBarcodeReframeCount, showScanHint, handleBarcodeFallbackAttempt]); // sessionCtx removed from deps â€” duplicate check now uses scannedAwbsRef
 
   // Keep handleBarcodeDetectedRef pointing at the latest callback so the scanner
   // (which is set up once per SCANNING entry) always calls current logic.
@@ -1603,6 +1578,48 @@ export default function MobileScannerPage({ standalone = false }) {
     lockAlternatives: Array.isArray(lockTelemetryRef.current?.alternatives) ? lockTelemetryRef.current.alternatives.slice(0, 3) : [],
   }), [sessionCtx, sessionDate, scanWorkflowMode, scanMode, deviceProfile, captureQuality, captureMeta]);
 
+  const handleLookupNeedsPhoto = useCallback((data = null) => {
+    if (data) setReviewData(data);
+    setProcessingFields({});
+    setErrorMsg('');
+    goStep(STEPS.CAPTURING);
+  }, [goStep]);
+
+  const applyProcessedScanResult = useCallback((data) => {
+    if (!data) return;
+    setReviewData(data);
+    setReviewForm({
+      clientCode: data.clientCode || '',
+      consignee: data.consignee || '',
+      destination: data.destination || '',
+      pincode: data.pincode || '',
+      weight: data.weight || 0,
+      amount: data.amount || 0,
+      orderNo: data.orderNo || '',
+    });
+    setProcessingFields({});
+
+    if (data.reviewRequired) {
+      goStep(STEPS.REVIEWING);
+      return;
+    }
+
+    playSuccessBeep();
+    pulseHaptic('success');
+    if (voiceEnabled) speak(`Auto approved. ${data.clientName || ''}. ${data.destination || ''}.`);
+    const item = {
+      awb: data.awb,
+      clientCode: data.clientCode,
+      clientName: data.clientName,
+      destination: data.destination || '',
+      weight: data.weight || 0,
+      autoApproved: true,
+    };
+    setLastSuccess(item);
+    addToQueue(item);
+    goStep(STEPS.SUCCESS);
+  }, [addToQueue, goStep, voiceEnabled]);
+
   const submitFastBarcode = useCallback(async (awb) => {
     const cleanAwb = String(awb || '').trim().toUpperCase();
     if (!cleanAwb) return;
@@ -1696,6 +1713,72 @@ export default function MobileScannerPage({ standalone = false }) {
     submitFastBarcodeRef.current = submitFastBarcode;
   }, [submitFastBarcode]);
 
+  const submitLookupDecision = useCallback(async (awb) => {
+    const cleanAwb = String(awb || '').trim().toUpperCase();
+    if (!cleanAwb) return;
+
+    goStep(STEPS.PROCESSING);
+
+    if (isE2eMock) {
+      goStep(STEPS.CAPTURING);
+      return;
+    }
+
+    const payload = {
+      awb: cleanAwb,
+      scanMode: 'lookup_first',
+      sessionContext: buildSessionContextPayload(),
+    };
+
+    if (isStandalone) {
+      if (!navigator.onLine) {
+        handleLookupNeedsPhoto({ awb: cleanAwb, status: 'photo_required', requiresImageCapture: true });
+        return;
+      }
+
+      try {
+        const result = await api.post('/shipments/scan-mobile', payload);
+        const data = result?.data || result;
+        if (data.status === 'error' || !data.success) {
+          setFlash('error');
+          playErrorBeep();
+          pulseHaptic('error');
+          goStep(STEPS.ERROR);
+          setErrorMsg(data.error || data.message || 'Lookup failed.');
+          return;
+        }
+        if (data.status === 'photo_required' || data.requiresImageCapture) {
+          handleLookupNeedsPhoto(data);
+          return;
+        }
+        applyProcessedScanResult(data);
+      } catch (err) {
+        setErrorMsg(err?.message || 'Lookup failed. Please try again.');
+        playErrorBeep();
+        pulseHaptic('error');
+        goStep(STEPS.ERROR);
+      }
+      return;
+    }
+
+    if (!socket || !socket.connected || connStatus !== 'paired') {
+      handleLookupNeedsPhoto({ awb: cleanAwb, status: 'photo_required', requiresImageCapture: true });
+      return;
+    }
+
+    socket.emit('scanner:scan', payload);
+    setTimeout(() => {
+      if (currentStepRef.current === STEPS.PROCESSING) {
+        setErrorMsg('Lookup timed out. Capture the label photo and continue.');
+        goStep(STEPS.CAPTURING);
+      }
+    }, LOOKUP_DECISION_TIMEOUT_MS);
+  }, [socket, connStatus, goStep, isE2eMock, buildSessionContextPayload, isStandalone, handleLookupNeedsPhoto, applyProcessedScanResult]);
+
+  useEffect(() => {
+    submitLookupDecisionRef.current = submitLookupDecision;
+  }, [submitLookupDecision]);
+
   const submitForProcessing = useCallback(async () => {
     if (!capturedImage) return;
     goStep(STEPS.PROCESSING);
@@ -1749,35 +1832,11 @@ export default function MobileScannerPage({ standalone = false }) {
           setErrorMsg(data.error || data.message || 'Scan failed.');
           return;
         }
-
-        setReviewData(data);
-        setReviewForm({
-          clientCode: data.clientCode || '',
-          consignee: data.consignee || '',
-          destination: data.destination || '',
-          pincode: data.pincode || '',
-          weight: data.weight || 0,
-          amount: data.amount || 0,
-          orderNo: data.orderNo || '',
-        });
-        setProcessingFields({});
-
-        if (data.reviewRequired) {
-          goStep(STEPS.REVIEWING);
-        } else {
-          playSuccessBeep();
-          pulseHaptic('success');
-          const item = {
-            awb: data.awb,
-            clientCode: data.clientCode,
-            clientName: data.clientName,
-            destination: data.destination || '',
-            weight: data.weight || 0,
-          };
-          setLastSuccess(item);
-          addToQueue(item);
-          goStep(STEPS.SUCCESS);
+        if (data.status === 'photo_required' || data.requiresImageCapture) {
+          handleLookupNeedsPhoto(data);
+          return;
         }
+        applyProcessedScanResult(data);
       } catch (err) {
         setErrorMsg(err?.message || 'Server error. Please try again.');
         playErrorBeep();
@@ -1809,7 +1868,7 @@ export default function MobileScannerPage({ standalone = false }) {
         goStep(STEPS.ERROR);
       }
     }, 40000);
-  }, [socket, lockedAwb, capturedImage, goStep, connStatus, enqueueOfflineScan, addToQueue, isE2eMock, buildSessionContextPayload, isStandalone]);
+  }, [socket, lockedAwb, capturedImage, goStep, connStatus, enqueueOfflineScan, addToQueue, isE2eMock, buildSessionContextPayload, isStandalone, applyProcessedScanResult, handleLookupNeedsPhoto]);
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // APPROVAL
@@ -2022,8 +2081,8 @@ export default function MobileScannerPage({ standalone = false }) {
       clientCode: { confidence: ocrData?.clientNameConfidence || 0, source: ocrData?.clientNameSource || null },
       consignee: { confidence: ocrData?.consigneeConfidence || 0, source: ocrData?.consigneeSource || null },
       destination: { confidence: ocrData?.destinationConfidence || 0, source: ocrData?.destinationSource || null },
-      pincode: { confidence: ocrData?.pincodeConfidence || 0, source: null },
-      weight: { confidence: ocrData?.weightConfidence || 0, source: null },
+      pincode: { confidence: ocrData?.pincodeConfidence || 0, source: ocrData?.pincodeSource || null },
+      weight: { confidence: ocrData?.weightConfidence || 0, source: ocrData?.weightSource || null },
     };
   }, [reviewData]);
 

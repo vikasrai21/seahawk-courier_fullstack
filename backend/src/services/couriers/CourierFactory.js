@@ -10,11 +10,54 @@ class ICourierProvider {
   get name()    { throw new Error('name not implemented'); }
   get enabled() { return false; }
   async createShipment(_payload)           { throw new Error(`${this.name}: createShipment not implemented`); }
+  async getShipmentDetails(_awb)           { return null; }
   async trackShipment(_awb)                { throw new Error(`${this.name}: trackShipment not implemented`); }
   async cancelShipment(_awb)               { throw new Error(`${this.name}: cancelShipment not implemented`); }
   async getLabel(_awb)                     { throw new Error(`${this.name}: getLabel not implemented`); }
   async calculateRate(_payload)            { throw new Error(`${this.name}: calculateRate not implemented`); }
   async checkServiceability(_originPin, _destPin) { throw new Error(`${this.name}: checkServiceability not implemented`); }
+}
+
+function hasTrackonCredentials() {
+  return !!(process.env.TRACKON_APP_KEY || process.env.TRACKON_API_KEY)
+    && !!(process.env.TRACKON_USER_ID || process.env.TRACKON_CUSTOMER_ID || process.env.TRACKON_CLIENT_ID)
+    && !!process.env.TRACKON_PASSWORD;
+}
+
+function firstPresent(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined) continue;
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return null;
+}
+
+function numericValue(...values) {
+  for (const value of values) {
+    if (value === null || value === undefined || value === '') continue;
+    const num = Number(value);
+    if (Number.isFinite(num) && num > 0) return num;
+  }
+  return null;
+}
+
+function normalizeWeightKg(value) {
+  const num = numericValue(value);
+  if (!num) return null;
+  return num > 50 ? Number((num / 1000).toFixed(3)) : num;
+}
+
+function compactShipmentDetails(details) {
+  const compacted = Object.fromEntries(
+    Object.entries(details || {}).filter(([, value]) => {
+      if (value === null || value === undefined) return false;
+      if (typeof value === 'number') return Number.isFinite(value) && value > 0;
+      return String(value).trim().length > 0;
+    })
+  );
+  return Object.keys(compacted).length ? compacted : null;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -27,6 +70,16 @@ class DelhiveryProvider extends ICourierProvider {
 
   _headers() {
     return { Authorization: `Token ${process.env.DELHIVERY_API_KEY}`, 'Content-Type': 'application/json' };
+  }
+
+  async _getVerboseShipment(awb) {
+    const res = await fetch(`${this.baseUrl}/api/v1/packages/json/?waybill=${awb}&verbose=1`,
+      { headers: this._headers(), signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error(`Delhivery tracking failed: ${res.status}`);
+    const data = await res.json();
+    const shipment = data?.ShipmentData?.[0]?.Shipment;
+    if (!shipment) throw new Error(`AWB ${awb} not found on Delhivery`);
+    return shipment;
   }
 
   async createShipment(payload) {
@@ -57,20 +110,72 @@ class DelhiveryProvider extends ICourierProvider {
     return { awb, labelUrl: `${this.baseUrl}/api/p/packing_slip?wbns=${awb}&pdf=true`, courier: 'Delhivery' };
   }
 
+  async getShipmentDetails(awb) {
+    const s = await this._getVerboseShipment(awb);
+    const shipTo = s?.Consignee || s?.consignee || {};
+    const destination = firstPresent(
+      shipTo.city,
+      shipTo.City,
+      s?.Destination,
+      s?.DestinationCity,
+      s?.destination_city,
+      s?.destination,
+      s?.city
+    );
+    const pincode = firstPresent(
+      shipTo.pin,
+      shipTo.pincode,
+      shipTo.Pin,
+      shipTo.Pincode,
+      s?.DestinationPinCode,
+      s?.DestinationPincode,
+      s?.destination_pin,
+      s?.pin
+    );
+    const deliveryAddress = firstPresent(
+      shipTo.address,
+      shipTo.Address,
+      shipTo.add,
+      shipTo.Add,
+      s?.DestinationAddress,
+      s?.destination_address,
+      s?.add
+    );
+
+    return compactShipmentDetails({
+      consignee: firstPresent(
+        shipTo.name,
+        shipTo.Name,
+        shipTo.consignee,
+        s?.ConsigneeName,
+        s?.ReceiverName,
+        s?.name
+      ),
+      phone: firstPresent(shipTo.phone, shipTo.Phone, shipTo.mobile, shipTo.Mobile, s?.Phone, s?.phone),
+      deliveryAddress,
+      destination: destination ? String(destination).toUpperCase() : null,
+      deliveryState: firstPresent(shipTo.state, shipTo.State, s?.DestinationState, s?.state),
+      pincode: pincode ? String(pincode) : null,
+      weight: normalizeWeightKg(firstPresent(s?.ChargedWeight, s?.charged_weight, s?.Weight, s?.weight)),
+      codAmount: numericValue(s?.CODAmount, s?.cod_amount, s?.CollectableAmount, s?.collectable_amount, s?.InvoiceAmount),
+      expectedDelivery: firstPresent(s?.ExpectedDeliveryDate, s?.expectedDelivery, s?.EDD),
+      trackingStatus: firstPresent(s?.Status?.Status, s?.Status, s?.status),
+    });
+  }
+
   async trackShipment(awb) {
-    const res = await fetch(`${this.baseUrl}/api/v1/packages/json/?waybill=${awb}&verbose=1`,
-      { headers: this._headers(), signal: AbortSignal.timeout(10000) });
-    if (!res.ok) throw new Error(`Delhivery tracking failed: ${res.status}`);
-    const data = await res.json();
-    const s = data?.ShipmentData?.[0]?.Shipment;
-    if (!s) throw new Error(`AWB ${awb} not found on Delhivery`);
+    const s = await this._getVerboseShipment(awb);
     const events = (s.Scans || []).map(sc => ({
       status: sc.ScanDetail?.Scan || sc.ScanDetail?.Instructions || 'Update',
       location: sc.ScanDetail?.ScannedLocation || '',
       description: sc.ScanDetail?.Instructions || '',
       timestamp: sc.ScanDetail?.ScanDateTime ? new Date(sc.ScanDetail.ScanDateTime) : new Date(),
     }));
-    return { status: this._mapStatus(s.Status), expectedDelivery: s.ExpectedDeliveryDate || null, events };
+    return {
+      status: this._mapStatus(firstPresent(s?.Status?.Status, s?.Status, s?.status)),
+      expectedDelivery: s.ExpectedDeliveryDate || null,
+      events,
+    };
   }
 
   async cancelShipment(awb) {
@@ -107,12 +212,18 @@ class DelhiveryProvider extends ICourierProvider {
 // ─────────────────────────────────────────────────────────────
 class DTDCProvider extends ICourierProvider {
   get name()    { return 'DTDC'; }
-  get enabled() { return !!process.env.DTDC_CUSTOMER_CODE && !!process.env.DTDC_API_KEY; }
+  get enabled() {
+    const dtdcTrackingSvc = require('../dtdc.service');
+    return dtdcTrackingSvc.isConfigured();
+  }
   get baseUrl() { return process.env.DTDC_API_URL || 'http://blktapi.dtdc.com'; }
 
   _headers() { return { 'APPKEY': process.env.DTDC_API_KEY, 'Content-Type': 'application/json' }; }
 
   async createShipment(payload) {
+    if (!process.env.DTDC_CUSTOMER_CODE) {
+      throw new Error('DTDC createShipment requires DTDC_CUSTOMER_CODE. Tracking can still work without it.');
+    }
     const { awb, consignee, phone, deliveryAddress, deliveryCity, deliveryState, pincode, weight, codAmount } = payload;
     const res = await fetch(`${this.baseUrl}/dtdcConnectRestApi/api/v1/addShipment`, {
       method: 'POST', headers: this._headers(), signal: AbortSignal.timeout(15000),
@@ -128,13 +239,37 @@ class DTDCProvider extends ICourierProvider {
     return { awb, labelUrl: data?.labelUrl || null, courier: 'DTDC' };
   }
 
+  async getShipmentDetails(awb) {
+    const dtdcTrackingSvc = require('../dtdc.service');
+    const tracking = await dtdcTrackingSvc.getTracking(awb);
+    if (!tracking) throw new Error(`AWB ${awb} not found on DTDC`);
+    const header = tracking.rawData?.trackHeader || {};
+    return compactShipmentDetails({
+      consignee: firstPresent(header?.strConsigneeName, tracking?.recipient),
+      phone: firstPresent(header?.strMobileNo, header?.strConsigneeMobile),
+      deliveryAddress: firstPresent(header?.strConsigneeAddress, header?.strAddress1, header?.strAddress2),
+      destination: firstPresent(header?.strDestination, tracking?.destination),
+      pincode: firstPresent(header?.strPincode, header?.strDestPincode),
+      weight: normalizeWeightKg(firstPresent(header?.strWeight, header?.strActualWeight)),
+      codAmount: numericValue(header?.strCodAmount, header?.strCollectableAmount),
+      trackingStatus: firstPresent(tracking?.rawStatus, tracking?.statusDetail, tracking?.status),
+      expectedDelivery: tracking?.expectedDate || null,
+    });
+  }
+
   async trackShipment(awb) {
-    const res = await fetch(`${this.baseUrl}/dtdcConnectRestApi/api/v1/trackSingle/${awb}`, { headers: this._headers(), signal: AbortSignal.timeout(10000) });
-    if (!res.ok) throw new Error(`DTDC tracking failed: ${res.status}`);
-    const data = await res.json();
+    const dtdcTrackingSvc = require('../dtdc.service');
+    const tracking = await dtdcTrackingSvc.getTracking(awb);
+    if (!tracking) throw new Error(`AWB ${awb} not found on DTDC`);
     return {
-      status: data?.shipmentStatus || 'Unknown',
-      events: (data?.trackDetails || []).map(e => ({ status: e.status || '', location: e.location || '', timestamp: e.dateTime ? new Date(e.dateTime) : new Date() })),
+      status: tracking.status || 'Unknown',
+      expectedDelivery: tracking.expectedDate || null,
+      events: (tracking.events || []).map(e => ({
+        status: e.status || '',
+        location: e.location || '',
+        description: e.description || '',
+        timestamp: e.timestamp ? new Date(e.timestamp) : new Date(),
+      })),
     };
   }
 
@@ -184,6 +319,26 @@ class BlueDartProvider extends ICourierProvider {
     if (!res.ok) throw new Error(`BlueDart API error: ${res.status}`);
     const data = await res.json();
     return { awb, labelUrl: data?.LabelUrl || null, courier: 'BlueDart' };
+  }
+
+  async getShipmentDetails(awb) {
+    const res = await fetch(`${this.baseUrl}/in/transportation/track/v1/getFlightDetails`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000),
+      body: JSON.stringify({ Profile: this._profile(), WaybillNos: [awb], AWBType: 'awb', licKey: process.env.BLUEDART_LICENSE_KEY, noOfResults: 10 }),
+    });
+    if (!res.ok) throw new Error(`BlueDart tracking failed: ${res.status}`);
+    const data = await res.json();
+    const detail = data?.TrackingByFlightNoDtls?.[0] || {};
+    const consignee = detail?.Consignee || detail?.consignee || {};
+    return compactShipmentDetails({
+      consignee: firstPresent(consignee.ConsigneeName, consignee.name, detail?.ConsigneeName),
+      phone: firstPresent(consignee.ConsigneeMobile, consignee.phone, detail?.PhoneNo),
+      deliveryAddress: firstPresent(consignee.ConsigneeAddress1, detail?.ConsigneeAddress1, detail?.Address),
+      destination: firstPresent(consignee.ConsigneeAddress2, detail?.Destination, detail?.DestinationCity),
+      pincode: firstPresent(consignee.ConsigneePincode, detail?.Pincode, detail?.DestinationPincode),
+      weight: normalizeWeightKg(firstPresent(detail?.ActualWeight, detail?.ChargedWeight, detail?.Weight)),
+      trackingStatus: firstPresent(detail?.Status, detail?.CurrentStatus),
+    });
   }
 
   async trackShipment(awb) {
@@ -289,6 +444,33 @@ class TrackonProvider extends ICourierProvider {
     return { awb: match[0], labelUrl: null, courier: 'Trackon' };
   }
 
+  async getShipmentDetails(awb) {
+    const auth = this._auth();
+    const query = new URLSearchParams({
+      AWBNo: String(awb || ''),
+      AppKey: auth.appKey,
+      userID: auth.userId,
+      Password: auth.password,
+    });
+    const res = await fetch(`${this.baseUrl}/CrmApi/t1/AWBTrackingCustomer?${query.toString()}`, {
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) throw new Error(`Trackon tracking failed: ${res.status}`);
+    const data = await res.json();
+    const summary = data?.CustomersummaryTrack || data?.summaryTrack || {};
+    return compactShipmentDetails({
+      consignee: firstPresent(summary.CONSIGNEE_NAME, summary.CLIENT_NAME, summary.CONSIGNEE),
+      phone: firstPresent(summary.MOBILE_NO, summary.CONSIGNEE_MOBILE, summary.PHONE),
+      deliveryAddress: firstPresent(summary.ADDRESS, summary.ADDRESS_LINE1),
+      destination: firstPresent(summary.DESTINATION, summary.CITY, summary.CURRENT_CITY),
+      pincode: firstPresent(summary.PINCODE, summary.PIN_CODE),
+      weight: normalizeWeightKg(firstPresent(summary.WEIGHT, summary.ACTUAL_WEIGHT)),
+      trackingStatus: firstPresent(summary.CURRENT_STATUS, summary.STATUS),
+      expectedDelivery: firstPresent(summary.EDD, summary.EXPECTED_DELIVERY_DATE),
+    });
+  }
+
   async trackShipment(awb) {
     const auth = this._auth();
     const query = new URLSearchParams({
@@ -303,7 +485,7 @@ class TrackonProvider extends ICourierProvider {
     });
     if (!res.ok) throw new Error(`Trackon tracking failed: ${res.status}`);
     const data = await res.json();
-    const summary = data?.summaryTrack || {};
+    const summary = data?.CustomersummaryTrack || data?.summaryTrack || {};
     const scans = Array.isArray(data?.lstDetails) ? data.lstDetails : [];
     return {
       status: summary.CURRENT_STATUS || 'Unknown',
@@ -361,7 +543,7 @@ function toTrackonDate(eventDate, eventTime) {
 // ─────────────────────────────────────────────────────────────
 class PrimtrackProvider extends ICourierProvider {
   get name()    { return 'Primtrack'; }
-  get enabled() { return !!process.env.PRIMTRACK_API_KEY && !!process.env.PRIMTRACK_CLIENT_ID; }
+  get enabled() { return (!!process.env.PRIMTRACK_API_KEY && !!process.env.PRIMTRACK_CLIENT_ID) || hasTrackonCredentials(); }
   get baseUrl() { return process.env.PRIMTRACK_API_URL || 'https://api.primetrack.in'; }
 
   _headers() {
@@ -372,7 +554,14 @@ class PrimtrackProvider extends ICourierProvider {
     };
   }
 
+  _trackonFallback() {
+    return new TrackonProvider();
+  }
+
   async createShipment(payload) {
+    if (!process.env.PRIMTRACK_API_KEY || !process.env.PRIMTRACK_CLIENT_ID) {
+      return this._trackonFallback().createShipment(payload);
+    }
     const { awb, consignee, phone, deliveryAddress, deliveryCity, deliveryState, pincode, weight, codAmount } = payload;
     const res = await fetch(`${this.baseUrl}/v1/shipments/create`, {
       method: 'POST', headers: this._headers(), signal: AbortSignal.timeout(15000),
@@ -405,7 +594,34 @@ class PrimtrackProvider extends ICourierProvider {
     return { awb, labelUrl: data.data?.labelUrl || null, courier: 'Primtrack' };
   }
 
+  async getShipmentDetails(awb) {
+    if (!process.env.PRIMTRACK_API_KEY || !process.env.PRIMTRACK_CLIENT_ID) {
+      const details = await this._trackonFallback().getShipmentDetails(awb);
+      return details ? { ...details } : details;
+    }
+    const res = await fetch(`${this.baseUrl}/v1/shipments/track/${awb}`, { headers: this._headers(), signal: AbortSignal.timeout(10000) });
+    if (!res.ok) throw new Error(`Primtrack tracking failed: ${res.status}`);
+    const data = await res.json();
+    const shipment = data?.data || {};
+    const consignee = shipment?.consignee || {};
+    return compactShipmentDetails({
+      consignee: firstPresent(consignee.name, shipment?.consigneeName),
+      phone: firstPresent(consignee.phone, shipment?.phone),
+      deliveryAddress: firstPresent(consignee.address, shipment?.deliveryAddress),
+      destination: firstPresent(consignee.city, shipment?.destination, shipment?.destinationCity),
+      deliveryState: firstPresent(consignee.state, shipment?.destinationState),
+      pincode: firstPresent(consignee.pincode, shipment?.pincode),
+      weight: normalizeWeightKg(firstPresent(shipment?.weight, shipment?.package?.weight)),
+      codAmount: numericValue(shipment?.codAmount, shipment?.package?.codAmount),
+      trackingStatus: firstPresent(shipment?.currentStatus, shipment?.status),
+    });
+  }
+
   async trackShipment(awb) {
+    if (!process.env.PRIMTRACK_API_KEY || !process.env.PRIMTRACK_CLIENT_ID) {
+      const tracking = await this._trackonFallback().trackShipment(awb);
+      return tracking ? { ...tracking } : tracking;
+    }
     const res = await fetch(`${this.baseUrl}/v1/shipments/track/${awb}`, { headers: this._headers(), signal: AbortSignal.timeout(10000) });
     if (!res.ok) throw new Error(`Primtrack tracking failed: ${res.status}`);
     const data = await res.json();
@@ -422,14 +638,25 @@ class PrimtrackProvider extends ICourierProvider {
   }
 
   async cancelShipment(awb) {
+    if (!process.env.PRIMTRACK_API_KEY || !process.env.PRIMTRACK_CLIENT_ID) {
+      return this._trackonFallback().cancelShipment(awb);
+    }
     const res = await fetch(`${this.baseUrl}/v1/shipments/cancel/${awb}`, { method: 'DELETE', headers: this._headers(), signal: AbortSignal.timeout(10000) });
     const data = await res.json();
     return { success: data.success, message: data.message };
   }
 
-  async getLabel(awb) { return { url: `${this.baseUrl}/v1/shipments/label/${awb}`, type: 'url' }; }
+  async getLabel(awb) {
+    if (!process.env.PRIMTRACK_API_KEY || !process.env.PRIMTRACK_CLIENT_ID) {
+      return this._trackonFallback().getLabel(awb);
+    }
+    return { url: `${this.baseUrl}/v1/shipments/label/${awb}`, type: 'url' };
+  }
 
   async calculateRate({ originPin, destPin, weight, cod }) {
+    if (!process.env.PRIMTRACK_API_KEY || !process.env.PRIMTRACK_CLIENT_ID) {
+      return this._trackonFallback().calculateRate({ originPin, destPin, weight, cod });
+    }
     const res = await fetch(`${this.baseUrl}/v1/rates/calculate`, {
       method: 'POST', headers: this._headers(), signal: AbortSignal.timeout(10000),
       body: JSON.stringify({ fromPincode: originPin, toPincode: destPin, weight: weight || 0.5, codAmount: cod || 0 }),
@@ -438,6 +665,9 @@ class PrimtrackProvider extends ICourierProvider {
   }
 
   async checkServiceability(originPin, destPin) {
+    if (!process.env.PRIMTRACK_API_KEY || !process.env.PRIMTRACK_CLIENT_ID) {
+      return this._trackonFallback().checkServiceability(originPin, destPin);
+    }
     const res = await fetch(`${this.baseUrl}/v1/serviceability?from=${originPin}&to=${destPin}`, { headers: this._headers(), signal: AbortSignal.timeout(10000) });
     const data = await res.json();
     return { courier: 'Primtrack', serviceable: !!data?.data?.serviceable, destPin };

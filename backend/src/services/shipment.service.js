@@ -448,6 +448,7 @@ function summarizeOcrHints(ocrHints = null) {
     clientCode: String(ocrHints.clientCode || '').trim(),
     consignee: String(ocrHints.consignee || '').trim(),
     destination: String(ocrHints.destination || '').trim(),
+    phone: String(ocrHints.phone || '').trim(),
     pincode: String(ocrHints.pincode || extractPincode(ocrHints.destination) || '').trim(),
     weight: Number(ocrHints.weight || 0) || 0,
     amount: Number(ocrHints.amount || 0) || 0,
@@ -475,8 +476,10 @@ function buildOcrPatch(ocrHints = null) {
   const summary = summarizeOcrHints(ocrHints);
   if (!summary) return patch;
 
+  if (summary.clientCode && summary.clientCode.toUpperCase() !== 'MISC') patch.clientCode = summary.clientCode.toUpperCase();
   if (summary.consignee) patch.consignee = summary.consignee.toUpperCase();
   if (summary.destination) patch.destination = summary.destination.toUpperCase();
+  if (summary.phone) patch.phone = summary.phone;
   if (summary.pincode) patch.pincode = summary.pincode;
   if (summary.weight > 0) patch.weight = summary.weight;
   if (summary.amount > 0) patch.amount = summary.amount;
@@ -515,13 +518,15 @@ async function createOrReuseCapturedShipment(awb, userId, courier, source = 'sca
   });
 
   if (existingShipment) {
+    const updatedRemarks = existingShipment.remarks || ocrPatch.remarks || 'SCAN_CAPTURED: Intake awaiting tracking sync';
     const updatedShipment = await prisma.shipment.update({
       where: { awb },
       data: {
+        ...(overrideDate ? { date: overrideDate } : {}),
         courier,
         updatedById: userId,
         ...ocrPatch,
-        remarks: existingShipment.remarks || ocrPatch.remarks || 'SCAN_CAPTURED: Intake awaiting tracking sync',
+        remarks: updatedRemarks,
       },
       include: { client: { select: { company: true } } },
     });
@@ -627,7 +632,7 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
 
   if (!trackingData) {
     if (captureOnly) {
-      const captured = await createOrReuseCapturedShipment(awb, userId, courier, source, ocrHints);
+      const captured = await createOrReuseCapturedShipment(awb, userId, courier, source, ocrHints, effectiveDate);
       const enriched = await attachClientSuggestion(captured.shipment, ocrHints);
       return {
         ...captured,
@@ -656,6 +661,9 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
   if (trackingData.destination) updateData.destination = trackingData.destination.toUpperCase();
   if (trackingData.status && trackingData.status !== 'Booked') updateData.status = normalizeStatus(trackingData.status);
   updateData.courier = courier;
+  if (ocrPatch.clientCode && (!shipment || shipment.clientCode === 'MISC')) updateData.clientCode = ocrPatch.clientCode;
+  if (ocrPatch.phone && (!shipment || !shipment.phone)) updateData.phone = ocrPatch.phone;
+  if (effectiveDate) updateData.date = effectiveDate;
   if (ocrPatch.pincode) updateData.pincode = ocrPatch.pincode;
   if (ocrPatch.weight && (!shipment || !shipment.weight || shipment.weight <= 0.5)) updateData.weight = ocrPatch.weight;
   if (ocrPatch.amount && (!shipment || !shipment.amount)) updateData.amount = ocrPatch.amount;
@@ -668,9 +676,10 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
       data: {
         awb,
         date: effectiveDate || new Date().toISOString().split('T')[0],
-        clientCode: 'MISC',
+        clientCode: updateData.clientCode || 'MISC',
         consignee: updateData.consignee || 'UNKNOWN',
         destination: updateData.destination || 'UNKNOWN',
+        phone: updateData.phone || null,
         pincode: updateData.pincode || null,
         weight: 0.5,
         amount: updateData.amount || 0,
