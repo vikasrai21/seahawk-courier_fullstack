@@ -767,6 +767,11 @@ export default function MobileScannerPage({ standalone = false }) {
   const scanHintRef = useRef({ message: '', at: 0 });
   const lockTelemetryRef = useRef({ lockTimeMs: null, candidateCount: 1, ambiguous: false, alternatives: [] });
   const barcodeEngineRef = useRef(null); // WASM-powered barcode engine
+  const reviewDataRef = useRef(null);
+  const reviewFormRef = useRef({});
+  const addToQueueRef = useRef(null);
+  const handleLookupNeedsPhotoRef = useRef(null);
+  const applyProcessedScanResultRef = useRef(null);
 
   const goStep = useCallback((next) => {
     setStep(next);
@@ -968,6 +973,18 @@ export default function MobileScannerPage({ standalone = false }) {
     });
   }, [TODAY_KEY]);
 
+  useEffect(() => {
+    addToQueueRef.current = addToQueue;
+  }, [addToQueue]);
+
+  useEffect(() => {
+    reviewDataRef.current = reviewData;
+  }, [reviewData]);
+
+  useEffect(() => {
+    reviewFormRef.current = reviewForm;
+  }, [reviewForm]);
+
   const handleStartScanning = useCallback(() => {
     if (connStatus !== 'paired') {
       setErrorMsg(isStandalone ? 'Scanner is offline. Reconnect internet and retry.' : 'Phone is not connected to the desktop session.');
@@ -1005,7 +1022,8 @@ export default function MobileScannerPage({ standalone = false }) {
       submitFastBarcodeRef.current?.(awb);
       return;
     }
-    submitLookupDecisionRef.current?.(awb);
+    setCaptureCameraReady(true);
+    goStep(STEPS.CAPTURING);
   }, [manualAwb, connStatus, goStep, isE2eMock, isStandalone, scanWorkflowMode]);
 
   const terminateSession = useCallback(() => {
@@ -1074,6 +1092,14 @@ export default function MobileScannerPage({ standalone = false }) {
     addToQueue(item);
     goStep(STEPS.SUCCESS);
   }, [addToQueue, goStep, voiceEnabled]);
+
+  useEffect(() => {
+    handleLookupNeedsPhotoRef.current = handleLookupNeedsPhoto;
+  }, [handleLookupNeedsPhoto]);
+
+  useEffect(() => {
+    applyProcessedScanResultRef.current = applyProcessedScanResult;
+  }, [applyProcessedScanResult]);
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // SOCKET CONNECTION
@@ -1168,28 +1194,30 @@ export default function MobileScannerPage({ standalone = false }) {
       }
 
       if (data.status === 'photo_required' || data.requiresImageCapture) {
-        handleLookupNeedsPhoto(data);
+        handleLookupNeedsPhotoRef.current?.(data);
         return;
       }
 
-      applyProcessedScanResult(data);
+      applyProcessedScanResultRef.current?.(data);
     });
 
     // Desktop approved our mobile-submitted approval
     s.on('scanner:approval-result', ({ success, message, awb }) => {
+      const activeReviewData = reviewDataRef.current || {};
+      const activeReviewForm = reviewFormRef.current || {};
       if (success) {
         playSuccessBeep();
         pulseHaptic('success');
         setFlash('success');
         const item = {
-          awb: reviewData?.awb || awb,
-          clientCode: reviewForm.clientCode,
-          clientName: reviewData?.clientName || reviewForm.clientCode,
-          destination: reviewForm.destination || '',
-          weight: parseFloat(reviewForm.weight) || 0,
+          awb: activeReviewData?.awb || awb,
+          clientCode: activeReviewForm.clientCode,
+          clientName: activeReviewData?.clientName || activeReviewForm.clientCode,
+          destination: activeReviewForm.destination || '',
+          weight: parseFloat(activeReviewForm.weight) || 0,
         };
         setLastSuccess(item);
-        addToQueue(item);
+        addToQueueRef.current?.(item);
         goStep(STEPS.SUCCESS);
       } else {
         playErrorBeep();
@@ -1204,7 +1232,7 @@ export default function MobileScannerPage({ standalone = false }) {
 
     setSocket(s);
     return () => { s.disconnect(); };
-  }, [pin, addToQueue, reviewData, reviewForm, goStep, navigate, isE2eMock, isStandalone, applyProcessedScanResult, handleLookupNeedsPhoto]);
+  }, [pin, goStep, navigate, isE2eMock, isStandalone]);
 
   useEffect(() => {
     try {
@@ -1413,8 +1441,9 @@ export default function MobileScannerPage({ standalone = false }) {
       return;
     }
 
-    submitLookupDecisionRef.current?.(awb);
-  }, [isStableBarcodeRead, scanWorkflowMode, isE2eMock, syncBarcodeFailCount, syncBarcodeReframeCount, showScanHint, handleBarcodeFallbackAttempt]); // sessionCtx removed from deps â€” duplicate check now uses scannedAwbsRef
+    setCaptureCameraReady(true);
+    goStep(STEPS.CAPTURING);
+  }, [goStep, isStableBarcodeRead, scanWorkflowMode, isE2eMock, syncBarcodeFailCount, syncBarcodeReframeCount, showScanHint, handleBarcodeFallbackAttempt]); // sessionCtx removed from deps â€” duplicate check now uses scannedAwbsRef
 
   // Keep handleBarcodeDetectedRef pointing at the latest callback so the scanner
   // (which is set up once per SCANNING entry) always calls current logic.
