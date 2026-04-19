@@ -1918,10 +1918,13 @@ export default function MobileScannerPage({ standalone = false }) {
   const totalWeight = sessionCtx.scannedItems.reduce((sum, item) => sum + (item.weight || 0), 0);
 
   const intelligence = reviewData?.ocrExtracted?.intelligence || reviewData?.intelligence || null;
+  const wasmError = barcodeEngineRef.current?.getDiagnostics?.()?.wasmFailReason;
+
   const diagnosticsRows = [
     ['Step', step],
     ['Connection', connStatus],
     ['Engine', scannerEngine],
+    ...(wasmError ? [['WASM Error', wasmError]] : []),
     ['Workflow', scanWorkflowMode],
     ['Device', deviceProfile],
     ['Scan mode', scanMode],

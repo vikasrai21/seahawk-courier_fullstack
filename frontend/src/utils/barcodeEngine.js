@@ -122,12 +122,14 @@ function cropVideoCenter(video) {
 // ═══════════════════════════════════════════════════════════════════════════
 // WASM Engine (primary — best ITF detection)
 // ═══════════════════════════════════════════════════════════════════════════
+// Store the reason if WASM fails so we can surface it in diagnostics
+let wasmFailReason = null;
+
 async function loadWasmReader() {
   try {
     const { readBarcodesFromImageData, setZXingModuleOverrides } = await import('zxing-wasm/reader');
 
     // Point the WASM loader to our locally-hosted binary instead of relying on CDN
-    // This avoids cross-origin blocks on iOS Safari and ensures reliable loading
     setZXingModuleOverrides({
       locateFile: (path, prefix) => {
         if (path.endsWith('.wasm')) {
@@ -145,15 +147,20 @@ async function loadWasmReader() {
     warmupCanvas.height = 2;
     const warmupCtx = warmupCanvas.getContext('2d');
     const warmupData = warmupCtx.getImageData(0, 0, 2, 2);
+    
+    // Increase timeout to 25s — on bad 3G/4G, fetching a 1.5MB file can take a while
+    const WASM_WARMUP_TIMEOUT_MS = 25000;
+
     await Promise.race([
       readBarcodesFromImageData(warmupData, { formats: ['ITF'], tryHarder: false }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('WASM warmup timeout')), WASM_WARMUP_TIMEOUT_MS)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('WASM warmup timeout (25s exceeded)')), WASM_WARMUP_TIMEOUT_MS)),
     ]);
 
     console.log('[BarcodeEngine] WASM engine ready ✓');
     return readBarcodesFromImageData;
   } catch (err) {
-    console.error('[BarcodeEngine] WASM load failed, will use fallback:', err.message, err);
+    wasmFailReason = err.message || 'Unknown WASM load error';
+    console.error('[BarcodeEngine] WASM load failed, will use fallback:', wasmFailReason, err);
     return null;
   }
 }
@@ -449,5 +456,12 @@ export function createBarcodeScanner() {
     return engineName;
   }
 
-  return { start, stop, getEngine };
+  function getDiagnostics() {
+    return {
+      engineName,
+      wasmFailReason,
+    };
+  }
+
+  return { start, stop, getEngine, getDiagnostics };
 }
