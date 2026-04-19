@@ -998,7 +998,19 @@ export default function MobileScannerPage({ standalone = false }) {
       navigate('/');
     });
     s.on('disconnect', () => setConnStatus('disconnected'));
-    s.on('reconnect', () => { if (connStatus === 'paired') goStep(STEPS.SCANNING); });
+    s.on('reconnect', () => {
+      // CRITICAL: Never interrupt active scan workflows on reconnect.
+      // The old code used a stale connStatus closure that always saw 'paired',
+      // causing the phone to jump back to SCANNING mid-processing.
+      const cs = currentStepRef.current;
+      if (cs === STEPS.PROCESSING || cs === STEPS.REVIEWING || cs === STEPS.APPROVING || cs === STEPS.SUCCESS) {
+        // Stay on current step — don't interrupt the workflow
+        setConnStatus('paired');
+        return;
+      }
+      setConnStatus('paired');
+      goStep(STEPS.SCANNING);
+    });
 
     // Desktop/Server processed our scan
     s.on('scanner:scan-processed', (data) => {
