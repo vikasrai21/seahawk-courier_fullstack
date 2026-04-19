@@ -30,9 +30,9 @@ cspDirectives.connectSrc = [
     'https://api.postalpincode.in',
   ]),
 ];
-cspDirectives.scriptSrc = [
+cspDirectives['script-src'] = [
   ...new Set([
-    ...(cspDirectives.scriptSrc || cspDirectives.defaultSrc || ["'self'"]),
+    ...(cspDirectives['script-src'] || ["'self'"]),
     "'unsafe-eval'",
     "'wasm-unsafe-eval'",
   ]),
