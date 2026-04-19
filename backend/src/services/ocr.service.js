@@ -360,10 +360,11 @@ function enhanceParsedDetails(parsed = {}, knownAwb = '') {
 }
 
 function resolveOcrEngine() {
-  const value = String(process.env.OCR_ENGINE || 'local').trim().toLowerCase();
+  const defaultEngine = process.env.GEMINI_API_KEY ? 'auto' : 'local';
+  const value = String(process.env.OCR_ENGINE || defaultEngine).trim().toLowerCase();
   if (OCR_ENGINES.has(value)) return value;
-  logger.warn(`[OCR] Unknown OCR_ENGINE="${value}". Falling back to "local".`);
-  return 'local';
+  logger.warn(`[OCR] Unknown OCR_ENGINE="${value}". Falling back to "${defaultEngine}".`);
+  return defaultEngine;
 }
 
 function rejectPendingLocalWorkerRequests(error) {
@@ -659,9 +660,23 @@ exports.extractShipmentFromImage = async (base64Data, mimeType, options = {}) =>
     return extractWithGemini(base64Data, mimeType, options);
   }
 
-  // auto: local first, gemini fallback only when configured.
+  // auto: local first, gemini fallback if local did a poor job (e.g. handwriting)
   try {
-    return await extractWithLocal(base64Data, mimeType, options);
+    const localResult = await extractWithLocal(base64Data, mimeType, options);
+    
+    const isQuality = localResult.awb && localResult.consignee && localResult.destination;
+    
+    if (!isQuality && genAI) {
+      logger.info('[OCR] Local extraction missed key fields. Falling back to Gemini AI.');
+      try {
+        return await extractWithGemini(base64Data, mimeType, options);
+      } catch (geminiError) {
+        logger.warn(`[OCR] Gemini fallback failed: ${geminiError.message}. Using partial local result.`);
+        return localResult;
+      }
+    }
+    
+    return localResult;
   } catch (localError) {
     logger.warn(`[OCR] Local engine failed in auto mode: ${localError.message}`);
     if (genAI) {
