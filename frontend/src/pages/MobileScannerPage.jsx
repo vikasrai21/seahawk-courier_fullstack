@@ -65,7 +65,7 @@ const vibrate = (pattern) => {
 
 const HAPTIC_PATTERN = {
   tap: [20],
-  lock: [100, 40, 100],
+  lock: [150], // Single heavy jolt like a physical hardware scanner
   success: [18, 28, 72],
   warning: [70, 50, 70],
   retry: [28, 40, 28],
@@ -94,6 +94,7 @@ const playTone = (freq, duration, type = 'sine') => {
 };
 
 const playSuccessBeep = () => { playTone(880, 0.12); setTimeout(() => playTone(1100, 0.10), 130); };
+const playHardwareBeep = () => playTone(2500, 0.08, 'square'); // Piercing industrial scanner beep
 const playCaptureBeep = () => playTone(600, 0.08);
 const playErrorBeep = () => playTone(200, 0.25, 'sawtooth');
 
@@ -1299,7 +1300,7 @@ export default function MobileScannerPage({ standalone = false }) {
 
     clearTimeout(lockToCaptureTimerRef.current);
     pulseHaptic('lock');
-    playSuccessBeep(); // Strong satisfyting beep immediately on scan
+    playHardwareBeep(); // True hardware beep
     setLockedAwb(awb);
     const lockTimeMs = scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null;
     setLastLockTimeMs(lockTimeMs);
