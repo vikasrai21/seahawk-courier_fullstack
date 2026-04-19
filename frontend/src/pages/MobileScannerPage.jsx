@@ -1000,9 +1000,22 @@ export default function MobileScannerPage({ standalone = false }) {
     s.on('disconnect', () => setConnStatus('disconnected'));
     s.on('reconnect', () => { if (connStatus === 'paired') goStep(STEPS.SCANNING); });
 
-    // Desktop processed our scan
+    // Desktop/Server processed our scan
     s.on('scanner:scan-processed', (data) => {
+      const currentStep = currentStepRef.current;
+
+      // Only process events when we're actually waiting for results (PROCESSING),
+      // or when we're in REVIEWING and receive an upgrade (non-error, better data).
+      // Ignore events during all other steps to prevent race conditions where
+      // a late-arriving desktop error overrides a successful server result.
+      if (currentStep !== STEPS.PROCESSING && currentStep !== STEPS.REVIEWING) {
+        return; // Ignore — we're not expecting scan results right now
+      }
+
       if (data.status === 'error') {
+        // Only show errors if we're still in PROCESSING (waiting for ANY result).
+        // If we're already in REVIEWING, a late error should NOT override it.
+        if (currentStep !== STEPS.PROCESSING) return;
         setFlash('error');
         playErrorBeep();
         pulseHaptic('error');
