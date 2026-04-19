@@ -27,8 +27,8 @@ const OFFLINE_QUEUE_KEY_PREFIX = 'mobile_scanner_offline_queue';
 const WORKFLOW_MODE_KEY = 'mobile_scanner_workflow_mode';
 const DEVICE_PROFILE_KEY = 'mobile_scanner_device_profile';
 const LOCK_TO_CAPTURE_DELAY = 80; // fast transition after barcode lock
-const BARCODE_STABILITY_WINDOW_MS = 1500;
-const BARCODE_STABILITY_HITS = 2;
+const BARCODE_STABILITY_WINDOW_MS = 500;
+const BARCODE_STABILITY_HITS = 1;
 const BARCODE_FAIL_THRESHOLD = 100;
 const BARCODE_REFRAME_ATTEMPTS = 2;
 const BARCODE_POLL_INTERVAL_MS = 45;
@@ -65,7 +65,7 @@ const vibrate = (pattern) => {
 
 const HAPTIC_PATTERN = {
   tap: [20],
-  lock: [24, 24, 24],
+  lock: [100, 40, 100],
   success: [18, 28, 72],
   warning: [70, 50, 70],
   retry: [28, 40, 28],
@@ -218,12 +218,22 @@ const css = `
 
 /* â”€â”€ Scan laser â”€â”€ */
 @keyframes laserScan {
-  0%, 100% { top: 15%; } 50% { top: 82%; }
+  0%, 100% { top: 15%; opacity: 0.8; }
+  50% { top: 82%; opacity: 1; }
 }
 .scan-laser {
-  position: absolute; left: 8%; right: 8%; height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(79,70,229,0.6), transparent);
-  animation: laserScan 2.5s ease-in-out infinite;
+  position: absolute; left: 4%; right: 4%; height: 2px;
+  background: rgba(239, 68, 68, 0.9);
+  box-shadow: 0 0 4px rgba(239, 68, 68, 0.8), 0 0 10px rgba(239, 68, 68, 0.6);
+  animation: laserScan 2s linear infinite;
+  display: flex;
+  justify-content: space-evenly;
+  align-items: center;
+}
+.scan-laser-dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 6px #ffffff, 0 0 10px red;
 }
 
 /* â”€â”€ HUD (top bar on camera) â”€â”€ */
@@ -1283,7 +1293,7 @@ export default function MobileScannerPage({ standalone = false }) {
 
     clearTimeout(lockToCaptureTimerRef.current);
     pulseHaptic('lock');
-    playCaptureBeep();
+    playSuccessBeep(); // Strong satisfyting beep immediately on scan
     setLockedAwb(awb);
     const lockTimeMs = scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null;
     setLastLockTimeMs(lockTimeMs);
@@ -2363,7 +2373,13 @@ export default function MobileScannerPage({ standalone = false }) {
                 <div className="scan-guide-corner corner-bl" />
                 <div className="scan-guide-corner corner-br" />
                 {/* Laser only in barcode mode */}
-                {scanMode === 'barcode' && <div className="scan-laser" />}
+                {scanMode === 'barcode' && (
+                  <div className="scan-laser">
+                    <div className="scan-laser-dot" />
+                    <div className="scan-laser-dot" style={{ transform: 'scale(1.3)' }} />
+                    <div className="scan-laser-dot" />
+                  </div>
+                )}
               </div>
             </div>
             <div className="cam-hud">

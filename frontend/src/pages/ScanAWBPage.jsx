@@ -449,16 +449,22 @@ export default function ScanAWBPage({ toast }) {
     if (!socket) return;
 
     const onPhoneConnected = ({ pin }) => {
-      setMobileStatus('connected');
+      setMobileStatus((prev) => {
+        if (prev !== 'connected') {
+          playSuccess();
+          vibrate([40, 30, 60]);
+          toast?.('📱 Mobile phone connected! Start scanning barcodes.', 'success');
+        }
+        return 'connected';
+      });
       setShowMobileModal(false);
-      playSuccess();
-      vibrate([40, 30, 60]);
-      toast?.('📱 Mobile phone connected! Start scanning barcodes.', 'success');
     };
 
     const onPhoneDisconnected = ({ totalScans }) => {
       setMobileStatus('disconnected');
-      toast?.(`📱 Phone disconnected. ${totalScans} scans completed.`, 'warning');
+      // Intentionally suppressed toast: Socket flutters during large image uploads
+      // result in brief disconnects. We don't want to spam the user.
+      // A true session termination is handled by onSessionEnded.
     };
 
     const onSessionEnded = ({ reason, totalScans }) => {
