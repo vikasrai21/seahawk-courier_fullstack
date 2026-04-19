@@ -986,6 +986,12 @@ export default function MobileScannerPage({ standalone = false }) {
       setConnStatus('paired');
       setPairedLabel(userEmail ? userEmail.split('@')[0] : 'Connected');
       setErrorMsg('');
+      // Don't interrupt active scan workflows — only go to IDLE if we're
+      // in a state that makes sense to reset (initial connect or error recovery).
+      const cs = currentStepRef.current;
+      if (cs === STEPS.PROCESSING || cs === STEPS.REVIEWING || cs === STEPS.APPROVING || cs === STEPS.SUCCESS) {
+        return; // Stay on current step — socket reconnected but workflow is active
+      }
       goStep(STEPS.IDLE);
     });
     s.on('scanner:error', ({ message }) => {
