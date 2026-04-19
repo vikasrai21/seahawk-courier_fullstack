@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
+import api from '../services/api';
 import { cropRectForCoverVideo } from '../utils/videoCoverCrop.js';
 import { normalizeBarcodeCandidate, rankBarcodeCandidates } from '../utils/barcode.js';
 import { analyzeCaptureQuality, describeCaptureIssues } from '../utils/scannerQuality.js';
@@ -568,10 +569,11 @@ const fmtDuration = (ms) => {
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // Component
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-export default function MobileScannerPage() {
+export default function MobileScannerPage({ standalone = false }) {
   const { pin } = useParams();
   const navigate = useNavigate();
-  const offlineQueueKey = `${OFFLINE_QUEUE_KEY_PREFIX}:${pin || 'unknown'}`;
+  const isStandalone = Boolean(standalone);
+  const offlineQueueKey = `${OFFLINE_QUEUE_KEY_PREFIX}:${isStandalone ? 'direct' : (pin || 'unknown')}`;
   const TODAY_KEY = useMemo(() => `mobile_scanner_daily_count:${new Date().toISOString().slice(0, 10)}`, []);
   const mockBarcodeRaw = useMemo(() => {
     try {
@@ -829,14 +831,55 @@ export default function MobileScannerPage() {
     return nextItem;
   }, [offlineQueue, saveOfflineQueue]);
 
-  const flushOfflineQueue = useCallback(() => {
-    if (!socket || !socket.connected || !offlineQueue.length) return;
+  const postStandaloneScanPayload = useCallback(async (payload) => {
+    const scanMode = String(payload?.scanMode || '').toLowerCase();
+    if (scanMode === 'fast_barcode_only') {
+      await api.post('/shipments/scan', {
+        awb: payload.awb,
+        courier: 'AUTO',
+        captureOnly: true,
+      });
+      return;
+    }
+
+    await api.post('/shipments/scan-mobile', {
+      awb: payload.awb,
+      imageBase64: payload.imageBase64,
+      focusImageBase64: payload.focusImageBase64 || payload.imageBase64,
+      sessionContext: payload.sessionContext || {},
+    });
+  }, []);
+
+  const flushOfflineQueue = useCallback(async () => {
+    if (!offlineQueue.length) return;
+
+    if (isStandalone) {
+      if (!navigator.onLine) return;
+      const remaining = [];
+      for (const item of offlineQueue) {
+        if (!item?.payload?.awb) continue;
+        try {
+          await postStandaloneScanPayload(item.payload);
+        } catch {
+          remaining.push(item);
+        }
+      }
+      saveOfflineQueue(remaining);
+      if (remaining.length) {
+        setErrorMsg(`Uploaded partially. ${remaining.length} scan(s) still queued.`);
+      } else {
+        setErrorMsg('');
+      }
+      return;
+    }
+
+    if (!socket || !socket.connected) return;
     offlineQueue.forEach((item) => {
       if (!item?.payload?.awb) return;
       socket.emit('scanner:scan', item.payload);
     });
     saveOfflineQueue([]);
-  }, [socket, offlineQueue, saveOfflineQueue]);
+  }, [isStandalone, socket, offlineQueue, saveOfflineQueue, postStandaloneScanPayload]);
 
   // â”€â”€ Step transition helper â”€â”€
   const addToQueue = useCallback((item) => {
@@ -853,7 +896,7 @@ export default function MobileScannerPage() {
 
   const handleStartScanning = useCallback(() => {
     if (connStatus !== 'paired') {
-      setErrorMsg('Phone is not connected to the desktop session.');
+      setErrorMsg(isStandalone ? 'Scanner is offline. Reconnect internet and retry.' : 'Phone is not connected to the desktop session.');
       return;
     }
     setErrorMsg('');
@@ -866,13 +909,16 @@ export default function MobileScannerPage() {
     ensureVideoStreamPlaying()
       .then(() => goStep(STEPS.SCANNING))
       .catch((err) => setErrorMsg(err?.message || 'Camera access failed.'));
-  }, [connStatus, ensureVideoStreamPlaying, goStep, isE2eMock]);
+  }, [connStatus, ensureVideoStreamPlaying, goStep, isE2eMock, isStandalone]);
 
   const handleManualAwbSubmit = useCallback((e) => {
     e?.preventDefault();
     const awb = manualAwb.trim().toUpperCase();
     if (!awb || awb.length < 6) { setErrorMsg('Enter a valid AWB number (min 6 chars)'); return; }
-    if (connStatus !== 'paired') { setErrorMsg('Not connected to desktop session.'); return; }
+    if (connStatus !== 'paired') {
+      setErrorMsg(isStandalone ? 'Scanner is offline. Reconnect internet and retry.' : 'Not connected to desktop session.');
+      return;
+    }
     setErrorMsg('');
     setManualAwb('');
     setLockedAwb(awb);
@@ -885,24 +931,28 @@ export default function MobileScannerPage() {
     ensureVideoStreamPlaying()
       .then(() => goStep(STEPS.CAPTURING))
       .catch((err) => setErrorMsg(err?.message || 'Camera access failed.'));
-  }, [manualAwb, connStatus, ensureVideoStreamPlaying, goStep, isE2eMock]);
+  }, [manualAwb, connStatus, ensureVideoStreamPlaying, goStep, isE2eMock, isStandalone]);
 
   const terminateSession = useCallback(() => {
-    if (!window.confirm('End this mobile scanner session on the phone?')) return;
+    if (!window.confirm(isStandalone ? 'Exit this scanner session on the phone?' : 'End this mobile scanner session on the phone?')) return;
+    if (isStandalone) {
+      navigate('/app/scan');
+      return;
+    }
     if (socket?.connected) {
       socket.emit('scanner:end-session', { reason: 'Mobile ended the session' });
     } else {
       navigate('/');
     }
-  }, [socket, navigate]);
+  }, [socket, navigate, isStandalone]);
 
   const saveAndUpload = useCallback(() => {
     if (offlineQueue.length > 0) {
-      flushOfflineQueue();
+      void flushOfflineQueue();
       return;
     }
-    window.alert('Everything is already synced.');
-  }, [offlineQueue.length, flushOfflineQueue]);
+    window.alert(isStandalone ? 'No queued scans to upload.' : 'Everything is already synced.');
+  }, [offlineQueue.length, flushOfflineQueue, isStandalone]);
 
   useEffect(() => {
     currentStepRef.current = step;
@@ -915,6 +965,15 @@ export default function MobileScannerPage() {
     if (isE2eMock) {
       setConnStatus('paired');
       setPairedLabel('Mock Mode');
+      setErrorMsg('');
+      goStep(STEPS.IDLE);
+      return undefined;
+    }
+
+    if (isStandalone) {
+      setSocket(null);
+      setConnStatus('paired');
+      setPairedLabel('Direct Mode');
       setErrorMsg('');
       goStep(STEPS.IDLE);
       return undefined;
@@ -1020,7 +1079,7 @@ export default function MobileScannerPage() {
 
     setSocket(s);
     return () => { s.disconnect(); };
-  }, [pin, addToQueue, reviewData, reviewForm, goStep, navigate, isE2eMock]);
+  }, [pin, addToQueue, reviewData, reviewForm, goStep, navigate, isE2eMock, isStandalone]);
 
   useEffect(() => {
     try {
@@ -1046,10 +1105,17 @@ export default function MobileScannerPage() {
   }, [deviceProfile]);
 
   useEffect(() => {
-    if (connStatus === 'paired' && socket?.connected && offlineQueue.length) {
-      flushOfflineQueue();
+    if (!offlineQueue.length) return;
+    if (isStandalone) {
+      if (connStatus === 'paired' && navigator.onLine) {
+        void flushOfflineQueue();
+      }
+      return;
     }
-  }, [connStatus, socket, offlineQueue.length, flushOfflineQueue]);
+    if (connStatus === 'paired' && socket?.connected) {
+      void flushOfflineQueue();
+    }
+  }, [connStatus, socket, offlineQueue.length, flushOfflineQueue, isStandalone]);
 
   const stopCamera = useCallback(async () => {
     try {
@@ -1537,7 +1603,7 @@ export default function MobileScannerPage() {
     lockAlternatives: Array.isArray(lockTelemetryRef.current?.alternatives) ? lockTelemetryRef.current.alternatives.slice(0, 3) : [],
   }), [sessionCtx, scanWorkflowMode, scanMode, deviceProfile, captureQuality, captureMeta]);
 
-  const submitFastBarcode = useCallback((awb) => {
+  const submitFastBarcode = useCallback(async (awb) => {
     const cleanAwb = String(awb || '').trim().toUpperCase();
     if (!cleanAwb) return;
 
@@ -1567,6 +1633,42 @@ export default function MobileScannerPage() {
       sessionContext: buildSessionContextPayload(),
     };
 
+    if (isStandalone) {
+      if (!navigator.onLine) {
+        enqueueOfflineScan(payload);
+        playSuccessBeep();
+        pulseHaptic('success');
+        const item = { awb: cleanAwb, clientCode: 'OFFLINE', clientName: 'Queued Offline', destination: '', weight: 0 };
+        setLastSuccess({ ...item, offlineQueued: true });
+        addToQueue(item);
+        goStep(STEPS.SUCCESS);
+        return;
+      }
+
+      try {
+        const res = await api.post('/shipments/scan', { awb: cleanAwb, courier: 'AUTO', captureOnly: true });
+        const shipment = res?.data?.shipment || {};
+        const item = {
+          awb: shipment.awb || cleanAwb,
+          clientCode: shipment.clientCode || 'MISC',
+          clientName: shipment.client?.company || shipment.clientCode || 'Scanned',
+          destination: shipment.destination || '',
+          weight: shipment.weight || 0,
+        };
+        setLastSuccess(item);
+        addToQueue(item);
+        playSuccessBeep();
+        pulseHaptic('success');
+        goStep(STEPS.SUCCESS);
+      } catch (err) {
+        setErrorMsg(err?.message || 'Barcode processing failed. Please try again.');
+        playErrorBeep();
+        pulseHaptic('error');
+        goStep(STEPS.ERROR);
+      }
+      return;
+    }
+
     if (!socket || !socket.connected || connStatus !== 'paired') {
       enqueueOfflineScan(payload);
       playSuccessBeep();
@@ -1588,13 +1690,13 @@ export default function MobileScannerPage() {
         goStep(STEPS.ERROR);
       }
     }, FAST_SCAN_TIMEOUT_MS);
-  }, [socket, connStatus, goStep, isE2eMock, enqueueOfflineScan, addToQueue, buildSessionContextPayload]);
+  }, [socket, connStatus, goStep, isE2eMock, enqueueOfflineScan, addToQueue, buildSessionContextPayload, isStandalone]);
 
   useEffect(() => {
     submitFastBarcodeRef.current = submitFastBarcode;
   }, [submitFastBarcode]);
 
-  const submitForProcessing = useCallback(() => {
+  const submitForProcessing = useCallback(async () => {
     if (!capturedImage) return;
     goStep(STEPS.PROCESSING);
     if (isE2eMock) {
@@ -1624,6 +1726,67 @@ export default function MobileScannerPage() {
       sessionContext: buildSessionContextPayload(),
     };
 
+    if (isStandalone) {
+      if (!navigator.onLine) {
+        enqueueOfflineScan(payload);
+        playSuccessBeep();
+        pulseHaptic('success');
+        const item = { awb: lockedAwb || 'PENDING_OCR', clientCode: 'OFFLINE', clientName: 'Queued Offline', destination: '', weight: 0 };
+        setLastSuccess({ ...item, offlineQueued: true });
+        addToQueue(item);
+        goStep(STEPS.SUCCESS);
+        return;
+      }
+
+      try {
+        const result = await api.post('/shipments/scan-mobile', payload);
+        const data = result?.data || result;
+        if (data.status === 'error' || !data.success) {
+          setFlash('error');
+          playErrorBeep();
+          pulseHaptic('error');
+          goStep(STEPS.ERROR);
+          setErrorMsg(data.error || data.message || 'Scan failed.');
+          return;
+        }
+
+        setReviewData(data);
+        setReviewForm({
+          clientCode: data.clientCode || '',
+          consignee: data.consignee || '',
+          destination: data.destination || '',
+          pincode: data.pincode || '',
+          weight: data.weight || 0,
+          amount: data.amount || 0,
+          orderNo: data.orderNo || '',
+        });
+        setProcessingFields({});
+
+        if (data.reviewRequired) {
+          goStep(STEPS.REVIEWING);
+        } else {
+          playSuccessBeep();
+          pulseHaptic('success');
+          const item = {
+            awb: data.awb,
+            clientCode: data.clientCode,
+            clientName: data.clientName,
+            destination: data.destination || '',
+            weight: data.weight || 0,
+          };
+          setLastSuccess(item);
+          addToQueue(item);
+          goStep(STEPS.SUCCESS);
+        }
+      } catch (err) {
+        setErrorMsg(err?.message || 'Server error. Please try again.');
+        playErrorBeep();
+        pulseHaptic('error');
+        goStep(STEPS.ERROR);
+      }
+      return;
+    }
+
     if (!socket || !socket.connected || connStatus !== 'paired') {
       enqueueOfflineScan(payload);
       playSuccessBeep();
@@ -1646,15 +1809,16 @@ export default function MobileScannerPage() {
         goStep(STEPS.ERROR);
       }
     }, 40000);
-  }, [socket, lockedAwb, capturedImage, goStep, connStatus, enqueueOfflineScan, addToQueue, isE2eMock, buildSessionContextPayload]);
+  }, [socket, lockedAwb, capturedImage, goStep, connStatus, enqueueOfflineScan, addToQueue, isE2eMock, buildSessionContextPayload, isStandalone]);
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // APPROVAL
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-  const submitApproval = useCallback(() => {
+  const submitApproval = useCallback(async () => {
     if (!reviewData) return;
     goStep(STEPS.APPROVING);
+    let approvalAccepted = !isStandalone;
     if (isE2eMock) {
       setTimeout(() => {
         const item = {
@@ -1667,62 +1831,101 @@ export default function MobileScannerPage() {
         setLastSuccess(item);
         addToQueue(item);
         setFlash('success');
+        approvalAccepted = true;
         goStep(STEPS.SUCCESS);
       }, 200);
       return;
     }
-    if (!socket) return;
+    const ocrFields = {
+      clientCode: reviewData.clientCode || '',
+      clientName: reviewData.clientName || '',
+      consignee: reviewData.consignee || '',
+      destination: reviewData.destination || '',
+    };
+    const approvedFields = {
+      clientCode: reviewForm.clientCode || '',
+      clientName: reviewForm.clientCode || '', // clientCode is our working field
+      consignee: reviewForm.consignee || '',
+      destination: reviewForm.destination || '',
+    };
 
-    // Record corrections for learning system
-    if (reviewData.ocrExtracted || reviewData) {
-      const ocrFields = {
-        clientCode: reviewData.clientCode || '',
-        clientName: reviewData.clientName || '',
-        consignee: reviewData.consignee || '',
-        destination: reviewData.destination || '',
-      };
-      const approvedFields = {
-        clientCode: reviewForm.clientCode || '',
-        clientName: reviewForm.clientCode || '', // clientCode is our working field
-        consignee: reviewForm.consignee || '',
-        destination: reviewForm.destination || '',
-      };
+    const fields = {
+      clientCode: reviewForm.clientCode,
+      consignee: reviewForm.consignee,
+      destination: reviewForm.destination,
+      pincode: reviewForm.pincode,
+      weight: parseFloat(reviewForm.weight) || 0,
+      amount: parseFloat(reviewForm.amount) || 0,
+      orderNo: reviewForm.orderNo || '',
+    };
 
-      // Send corrections to learning system via socket
-      socket.emit('scanner:learn-corrections', {
-        pin,
-        ocrFields,
-        approvedFields,
-        courier: reviewData?.courier || reviewData?.ocrExtracted?.courier || '',
-        deviceProfile,
-      });
-    }
+    if (isStandalone) {
+      try {
+        if (reviewData.ocrExtracted || reviewData) {
+          await api.post('/shipments/learn-corrections', { ocrFields, approvedFields });
+        }
+        if (reviewData.shipmentId) {
+          await api.put(`/shipments/${reviewData.shipmentId}`, fields);
+        } else {
+          await api.post('/shipments', { awb: reviewData.awb || lockedAwb, ...fields });
+        }
 
-    socket.emit('scanner:approval-submit', {
-      shipmentId: reviewData.shipmentId,
-      awb: reviewData.awb || lockedAwb,
-      fields: {
-        clientCode: reviewForm.clientCode,
-        consignee: reviewForm.consignee,
-        destination: reviewForm.destination,
-        pincode: reviewForm.pincode,
-        weight: parseFloat(reviewForm.weight) || 0,
-        amount: parseFloat(reviewForm.amount) || 0,
-        orderNo: reviewForm.orderNo || '',
-      },
-    }, (response) => {
-      if (response?.success) {
-        // Wait for approval-result from desktop
-      } else {
+        playSuccessBeep();
+        pulseHaptic('success');
+        setFlash('success');
+        const item = {
+          awb: reviewData?.awb || lockedAwb,
+          clientCode: reviewForm.clientCode,
+          clientName: reviewData?.clientName || reviewForm.clientCode,
+          destination: reviewForm.destination || '',
+          weight: parseFloat(reviewForm.weight) || 0,
+        };
+        setLastSuccess(item);
+        addToQueue(item);
+        approvalAccepted = true;
+        goStep(STEPS.SUCCESS);
+      } catch (err) {
         goStep(STEPS.REVIEWING);
         playErrorBeep();
         pulseHaptic('error');
-        setErrorMsg(response?.message || 'Approval failed.');
+        setErrorMsg(err?.message || 'Approval failed.');
       }
-    });
+    } else {
+      if (!socket) {
+        goStep(STEPS.REVIEWING);
+        setErrorMsg('Not connected to desktop session.');
+        return;
+      }
+
+      // Send corrections to learning system via socket
+      if (reviewData.ocrExtracted || reviewData) {
+        socket.emit('scanner:learn-corrections', {
+          pin,
+          ocrFields,
+          approvedFields,
+          courier: reviewData?.courier || reviewData?.ocrExtracted?.courier || '',
+          deviceProfile,
+        });
+      }
+
+      socket.emit('scanner:approval-submit', {
+        shipmentId: reviewData.shipmentId,
+        awb: reviewData.awb || lockedAwb,
+        fields,
+      }, (response) => {
+        if (response?.success) {
+          // Wait for approval-result from desktop
+        } else {
+          goStep(STEPS.REVIEWING);
+          playErrorBeep();
+          pulseHaptic('error');
+          setErrorMsg(response?.message || 'Approval failed.');
+        }
+      });
+    }
 
     // Update session client frequency
-    if (reviewForm.clientCode && reviewForm.clientCode !== 'MISC') {
+    if (approvalAccepted && reviewForm.clientCode && reviewForm.clientCode !== 'MISC') {
       setSessionCtx(prev => {
         const freq = { ...prev.clientFreq };
         freq[reviewForm.clientCode] = (freq[reviewForm.clientCode] || 0) + 1;
@@ -1735,7 +1938,7 @@ export default function MobileScannerPage() {
         };
       });
     }
-  }, [socket, reviewData, reviewForm, lockedAwb, pin, goStep, addToQueue, isE2eMock, deviceProfile]);
+  }, [socket, reviewData, reviewForm, lockedAwb, pin, goStep, addToQueue, isE2eMock, deviceProfile, isStandalone]);
 
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // RESET / NEXT SCAN
@@ -1940,7 +2143,9 @@ export default function MobileScannerPage() {
                 <div style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 4 }}>
                   {connStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
                 </div>
-                <div style={{ fontSize: '0.82rem', color: theme.muted }}>{errorMsg || `Connecting to session ${pin}`}</div>
+                <div style={{ fontSize: '0.82rem', color: theme.muted }}>
+                  {errorMsg || (isStandalone ? 'Preparing direct scanner session' : `Connecting to session ${pin}`)}
+                </div>
               </div>
               {connStatus === 'disconnected' && (
                 <button className="btn btn-primary" onClick={() => window.location.reload()}>
@@ -2241,7 +2446,7 @@ export default function MobileScannerPage() {
             </div>
             <div className="cam-hud">
               <div className="cam-hud-chip">
-                <Wifi size={12} /> {pin}
+                <Wifi size={12} /> {isStandalone ? 'DIRECT' : pin}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {/* Amber pill when auto-switched to document mode */}
