@@ -59,6 +59,16 @@ const requireRole = (...args) => (req, res, next) => {
   next();
 };
 
+const requireOwnerOrRole = (...args) => (req, res, next) => {
+  if (!req.user) return R.unauthorized(res);
+  if (req.user.isOwner) return next();
+  const allowed = Array.isArray(args[0]) ? args[0] : args;
+  if (!allowed.includes(req.user.role)) {
+    return R.forbidden(res, `Access denied. Required: owner or ${allowed.join(' or ')}`);
+  }
+  next();
+};
+
 const adminOnly    = requireRole('ADMIN');
 const staffOrAdmin = requireRole('STAFF', 'ADMIN');
 const managementOnly = requireRole('ADMIN', 'OPS_MANAGER');
@@ -104,6 +114,7 @@ module.exports = {
   protect,
   authenticate: protect,   // alias
   requireRole,
+  requireOwnerOrRole,
   adminOnly,
   ownerOnly,
   staffOrAdmin,

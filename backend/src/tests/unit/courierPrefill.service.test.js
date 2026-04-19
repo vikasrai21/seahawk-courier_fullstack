@@ -85,6 +85,44 @@ describe('courierPrefill.service', () => {
     });
   });
 
+  it('treats Primetrack hints as Trackon API lookups', async () => {
+    process.env.TRACKON_APP_KEY = 'test-app';
+    process.env.TRACKON_USER_ID = 'test-user';
+    process.env.TRACKON_PASSWORD = 'test-pass';
+    const fetchSpy = vi.spyOn(global, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          summaryTrack: {
+            CURRENT_STATUS: 'In Transit',
+          },
+          lstDetails: [],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          summaryTrack: {
+            CURRENT_STATUS: 'In Transit',
+          },
+          lstDetails: [
+            { CURRENT_CITY: 'Chandigarh', CURRENT_STATUS: 'Arrived', TRACKING_CODE: 'ARV', EVENTDATE: '19/04/2026', EVENTTIME: '10:30:00' },
+          ],
+        }),
+      });
+
+    const result = await prefillFromApi('200042724212', 'Primetrack');
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({
+      source: 'courier_api',
+      courier: 'Trackon',
+      lookupType: 'tracking',
+      destination: 'CHANDIGARH',
+      trackingStatus: 'In Transit',
+    });
+  });
+
   it('records shipment-details lookup metadata when merging API prefill', () => {
     const merged = mergeApiPrefill(
       {

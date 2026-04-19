@@ -106,12 +106,12 @@ function RouteLoadingScreen() {
   );
 }
 
-function PrivateRoute({ children, adminOnly = false, ownerOnly = false, roles = null }) {
+function PrivateRoute({ children, adminOnly = false, ownerOnly = false, roles = null, allowOwner = false }) {
   const { user, isAdmin, isOwner, hasRole } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   if (ownerOnly && !isOwner) return <Navigate to="/app" replace />;
-  if (adminOnly && !isAdmin) return <Navigate to="/app" replace />;
-  if (roles && !hasRole(...roles)) return <Navigate to="/app" replace />;
+  if (adminOnly && !(isAdmin || (allowOwner && isOwner))) return <Navigate to="/app" replace />;
+  if (roles && !(hasRole(...roles) || (allowOwner && isOwner))) return <Navigate to="/app" replace />;
   return children;
 }
 
@@ -229,7 +229,7 @@ function AppRoutes() {
                       <Route path="/analytics" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}>{withToast(AnalyticsPage)}</PrivateRoute>} />
                       <Route path="/ndr" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(NDRPage)}</PrivateRoute>} />
                       <Route path="/pickups" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(PickupSchedulerPage)}</PrivateRoute>} />
-                      <Route path="/users" element={<PrivateRoute adminOnly>{withToast(UsersPage)}</PrivateRoute>} />
+                      <Route path="/users" element={<PrivateRoute roles={['ADMIN']} allowOwner>{withToast(UsersPage)}</PrivateRoute>} />
                       <Route path="/audit-logs" element={<PrivateRoute adminOnly><AuditPage /></PrivateRoute>} />
                       <Route path="/rate-mgmt" element={<PrivateRoute adminOnly>{withToast(RateManagementPage)}</PrivateRoute>} />
                       <Route path="/returns" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}>{withToast(ReturnsManagementPage)}</PrivateRoute>} />

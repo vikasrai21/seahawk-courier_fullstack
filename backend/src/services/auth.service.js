@@ -217,26 +217,39 @@ async function cleanupExpiredTokens() {
   }
 }
 
+function parseUserId(id) {
+  const parsed = Number.parseInt(String(id), 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) throw new AppError('Invalid user id.', 400);
+  return parsed;
+}
+
+function normalizeClientCode(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
 async function createUser({ name, email, password, role, branch, clientCode }) {
-  const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+  const normalizedEmail = String(email || '').toLowerCase().trim();
+  const normalizedRole = role || 'STAFF';
+  const normalizedClientCode = normalizeClientCode(clientCode);
+  const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (existing) throw new AppError('Email already registered.', 409);
   const validRoles = ['ADMIN', 'OPS_MANAGER', 'STAFF', 'CLIENT'];
-  if (role && !validRoles.includes(role)) throw new AppError('Invalid role.', 400);
+  if (!validRoles.includes(normalizedRole)) throw new AppError('Invalid role.', 400);
 
   // CLIENT role must have a clientCode
-  if (role === 'CLIENT') {
-    if (!clientCode) throw new AppError('clientCode is required for CLIENT role.', 400);
-    const client = await prisma.client.findUnique({ where: { code: clientCode } });
-    if (!client) throw new AppError(`Client with code "${clientCode}" not found.`, 404);
+  if (normalizedRole === 'CLIENT') {
+    if (!normalizedClientCode) throw new AppError('clientCode is required for CLIENT role.', 400);
+    const client = await prisma.client.findUnique({ where: { code: normalizedClientCode } });
+    if (!client) throw new AppError(`Client with code "${normalizedClientCode}" not found.`, 404);
   }
 
   const hashed = await bcrypt.hash(password, SALT_ROUNDS);
   const user = await prisma.user.create({
     data: {
       name: sanitise(name),
-      email: email.toLowerCase(),
+      email: normalizedEmail,
       password: hashed,
-      role: role || 'STAFF',
+      role: normalizedRole,
       branch: sanitise(branch),
       mustChangePassword: false,
     },
@@ -244,32 +257,106 @@ async function createUser({ name, email, password, role, branch, clientCode }) {
   });
 
   // If CLIENT, create the ClientUser bridge record
-  if (role === 'CLIENT' && clientCode) {
+  if (normalizedRole === 'CLIENT') {
     await prisma.clientUser.create({
-      data: { userId: user.id, clientCode },
+      data: { userId: user.id, clientCode: normalizedClientCode },
     });
-    logger.info(`ClientUser link created: userId=${user.id} → clientCode=${clientCode}`);
+    logger.info(`ClientUser link created: userId=${user.id} → clientCode=${normalizedClientCode}`);
   }
 
   logger.info(`User created: ${user.email} [${user.role}]`);
-  return { ...user, clientCode: role === 'CLIENT' ? clientCode : undefined };
+  return { ...user, clientCode: normalizedRole === 'CLIENT' ? normalizedClientCode : null };
 }
 
 async function updateUser(id, data) {
+  const userId = parseUserId(id);
+  const existing = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, email: true, role: true, active: true, clientProfile: { select: { clientCode: true } } },
+  });
+  if (!existing) throw new AppError('User not found.', 404);
+
   const update = { ...data };
   if (update.password) {
     update.password = await bcrypt.hash(update.password, SALT_ROUNDS);
     update.mustChangePassword = false;
   }
-  if (update.email) update.email = update.email.toLowerCase();
+  if (update.email) {
+    update.email = String(update.email).toLowerCase().trim();
+    if (update.email !== existing.email) {
+      const duplicate = await prisma.user.findUnique({ where: { email: update.email } });
+      if (duplicate && duplicate.id !== userId) throw new AppError('Email already registered.', 409);
+    }
+  }
   if (update.name) update.name = sanitise(update.name);
   if (update.branch) update.branch = sanitise(update.branch);
-  if (update.active === false) await revokeAllUserTokens(parseInt(id));
-  return prisma.user.update({
-    where: { id: parseInt(id) },
-    data: update,
-    select: { id: true, name: true, email: true, role: true, branch: true, active: true },
+
+  const requestedRole = update.role || existing.role;
+  const hasClientCodeInput = Object.prototype.hasOwnProperty.call(update, 'clientCode');
+  const requestedClientCode = hasClientCodeInput ? normalizeClientCode(update.clientCode) : '';
+  delete update.clientCode;
+
+  let nextClientCode = null;
+  if (requestedRole === 'CLIENT') {
+    nextClientCode = hasClientCodeInput
+      ? requestedClientCode
+      : normalizeClientCode(existing.clientProfile?.clientCode);
+    if (!nextClientCode) throw new AppError('clientCode is required for CLIENT role.', 400);
+    const client = await prisma.client.findUnique({ where: { code: nextClientCode } });
+    if (!client) throw new AppError(`Client with code "${nextClientCode}" not found.`, 404);
+  }
+
+  const user = await prisma.$transaction(async (tx) => {
+    const updated = await tx.user.update({
+      where: { id: userId },
+      data: update,
+      select: { id: true, name: true, email: true, role: true, branch: true, active: true, mustChangePassword: true },
+    });
+
+    if (requestedRole === 'CLIENT') {
+      await tx.clientUser.upsert({
+        where: { userId },
+        update: { clientCode: nextClientCode },
+        create: { userId, clientCode: nextClientCode },
+      });
+    } else {
+      await tx.clientUser.deleteMany({ where: { userId } });
+    }
+
+    return updated;
   });
+
+  if (update.active === false) await revokeAllUserTokens(userId);
+
+  return { ...user, clientCode: nextClientCode, isOwner: isOwnerUser(user) };
+}
+
+async function deleteUser(id, actorUserId) {
+  const userId = parseUserId(id);
+  const actorId = actorUserId ? parseUserId(actorUserId) : null;
+  if (actorId && userId === actorId) {
+    throw new AppError('You cannot delete your own account.', 400);
+  }
+
+  const existing = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, name: true, email: true, role: true, branch: true, active: true, clientProfile: { select: { clientCode: true } } },
+  });
+  if (!existing) throw new AppError('User not found.', 404);
+
+  await prisma.user.delete({ where: { id: userId } });
+  logger.info(`User deleted: ${existing.email} [${existing.role}]`);
+
+  return {
+    id: existing.id,
+    name: existing.name,
+    email: existing.email,
+    role: existing.role,
+    branch: existing.branch,
+    active: existing.active,
+    clientCode: existing.clientProfile?.clientCode ?? null,
+    isOwner: isOwnerUser(existing),
+  };
 }
 
 async function changePassword(userId, currentPassword, newPassword) {
@@ -316,6 +403,7 @@ module.exports = {
   cleanupExpiredTokens,
   createUser,
   updateUser,
+  deleteUser,
   changePassword,
   getAllUsers,
   sanitise,

@@ -62,6 +62,20 @@ const updateUser = asyncHandler(async (req, res) => {
   R.ok(res, user, 'User updated');
 });
 
+const deleteUser = asyncHandler(async (req, res) => {
+  const deleted = await authService.deleteUser(req.params.id, req.user.id);
+  await auditLog({
+    userId: req.user.id,
+    userEmail: req.user.email,
+    action: 'DELETE_USER',
+    entity: 'USER',
+    entityId: req.params.id,
+    oldValue: { email: deleted.email, role: deleted.role, clientCode: deleted.clientCode || null },
+    ip: req.ip,
+  });
+  R.ok(res, deleted, 'User deleted');
+});
+
 const getAllUsers = asyncHandler(async (req, res) => {
   const { role } = req.query;
   let users = await authService.getAllUsers();
@@ -77,4 +91,4 @@ const changePassword = asyncHandler(async (req, res) => {
   R.ok(res, null, 'Password changed. Please log in again.');
 });
 
-module.exports = { login, logout, refresh, getMe, createUser, updateUser, getAllUsers, changePassword };
+module.exports = { login, logout, refresh, getMe, createUser, updateUser, deleteUser, getAllUsers, changePassword };

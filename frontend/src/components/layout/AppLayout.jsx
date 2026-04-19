@@ -88,17 +88,21 @@ const navGroups = [
 ];
 
 const adminItems = [
-  { to: '/app/users',    label: 'Users',           icon: UserCircle, isSecondary: true },
-  { to: '/app/audit-logs', label: 'Audit Logs',    icon: ShieldAlert, isSecondary: true },
-  { to: '/app/rate-mgmt',label: 'Rate Management', icon: Settings2, isSecondary: true },
+  { to: '/app/users',      label: 'Users',           icon: UserCircle, isSecondary: true, roles: ['OWNER', 'ADMIN'] },
+  { to: '/app/audit-logs', label: 'Audit Logs',      icon: ShieldAlert, isSecondary: true, roles: ['ADMIN'] },
+  { to: '/app/rate-mgmt',  label: 'Rate Management', icon: Settings2, isSecondary: true, roles: ['ADMIN'] },
 ];
 
 // ── Nav item ───────────────────────────────────────────────────────────────
 function NavItem({ to, label, icon: Icon, badge, roles: itemRoles, isSecondary }) {
   const { hasRole, isAdmin, isOwner } = useAuth();
   const { dark } = useTheme();
-  if (itemRoles?.includes('OWNER') && !isOwner) return null;
-  if (itemRoles && !isAdmin && !hasRole(...itemRoles)) return null;
+  if (itemRoles?.length) {
+    const allowsOwner = itemRoles.includes('OWNER') && isOwner;
+    const roleOnly = itemRoles.filter((role) => role !== 'OWNER');
+    const allowsRole = roleOnly.length > 0 && (isAdmin || hasRole(...roleOnly));
+    if (!allowsOwner && !allowsRole) return null;
+  }
 
   return (
     <NavLink
@@ -169,7 +173,7 @@ function SectionLabel({ label }) {
 
 // ── Sidebar content ────────────────────────────────────────────────────────
 function SidebarContent({ onClose }) {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, isOwner } = useAuth();
   const { dark, toggle } = useTheme();
   const navigate = useNavigate();
 
@@ -232,7 +236,7 @@ function SidebarContent({ onClose }) {
           </div>
         ))}
 
-        {isAdmin && (
+        {(isAdmin || isOwner) && (
           <div style={{ marginBottom: 20 }}>
             <SectionLabel label="Admin" />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

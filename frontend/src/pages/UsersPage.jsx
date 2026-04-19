@@ -1,12 +1,13 @@
 import { SkeletonTable } from '../components/ui/Skeleton';
 import { useState } from 'react';
-import { Plus, Edit2, Key, Link2, Shield, Users } from 'lucide-react';
+import { Plus, Edit2, Key, Link2, Shield, Trash2, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { useFetch } from '../hooks/useFetch';
 import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
+import { useAuth } from '../context/AuthContext';
 
 const ROLE_META = {
   ADMIN: { label: 'Admin', color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
@@ -32,11 +33,13 @@ function RoleBadge({ role }) {
 const EMPTY = { name: '', email: '', password: '', role: 'STAFF', branch: '', active: true, clientCode: '' };
 
 export default function UsersPage({ toast }) {
+  const { user: currentUser } = useAuth();
   const { data: users, loading, refetch } = useFetch('/auth/users');
   const { data: clients, loading: cliL } = useFetch('/clients');
 
   const [editUser, setEdit] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [tab, setTab] = useState('all');
 
@@ -49,7 +52,7 @@ export default function UsersPage({ toast }) {
   const save = async () => {
     if (!form.name || !form.email) { toast?.('Name and email are required', 'error'); return; }
     if (!editUser?.id && !form.password) { toast?.('Password is required for new users', 'error'); return; }
-    if (form.role === 'CLIENT' && !editUser?.id && !form.clientCode) {
+    if (form.role === 'CLIENT' && !form.clientCode) {
       toast?.('Select a client account to link this login to', 'error'); return;
     }
     setSaving(true);
@@ -67,6 +70,27 @@ export default function UsersPage({ toast }) {
     } catch (err) {
       toast?.(err.response?.data?.message || err.message, 'error');
     } finally { setSaving(false); }
+  };
+
+  const removeUser = async (u) => {
+    if (!u?.id) return;
+    if (currentUser?.id === u.id) {
+      toast?.('You cannot delete your own account', 'error');
+      return;
+    }
+    const ok = window.confirm(`Delete user "${u.name}" (${u.email})? This cannot be undone.`);
+    if (!ok) return;
+    setDeletingId(u.id);
+    try {
+      await api.delete(`/auth/users/${u.id}`);
+      await refetch();
+      if (editUser?.id === u.id) setEdit(null);
+      toast?.('User deleted ✓', 'success');
+    } catch (err) {
+      toast?.(err.response?.data?.message || err.message, 'error');
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   const allUsers = users || [];
@@ -149,10 +173,36 @@ export default function UsersPage({ toast }) {
                         <p style={{ fontWeight: 700, fontSize: 13, color: C.text, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.name}</p>
                         <p style={{ fontSize: 11, color: C.dim, margin: '1px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.email}</p>
                       </div>
-                      <button onClick={() => open(u)} style={{ padding: 5, borderRadius: 7, border: 'none', cursor: 'pointer', flexShrink: 0, background: 'rgba(59,130,246,0.08)', color: '#3b82f6', transition: 'background 0.15s' }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.18)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(59,130,246,0.08)'}
-                      ><Edit2 size={13} /></button>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                        <button onClick={() => open(u)} style={{ padding: 5, borderRadius: 7, border: 'none', cursor: 'pointer', background: 'rgba(59,130,246,0.08)', color: '#3b82f6', transition: 'background 0.15s' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.18)'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'rgba(59,130,246,0.08)'}
+                        ><Edit2 size={13} /></button>
+                        <button
+                          onClick={() => removeUser(u)}
+                          disabled={deletingId === u.id || currentUser?.id === u.id}
+                          title={currentUser?.id === u.id ? 'You cannot delete your own account' : 'Delete user'}
+                          style={{
+                            padding: 5,
+                            borderRadius: 7,
+                            border: 'none',
+                            cursor: currentUser?.id === u.id ? 'not-allowed' : 'pointer',
+                            background: currentUser?.id === u.id ? 'rgba(148,163,184,0.12)' : 'rgba(239,68,68,0.1)',
+                            color: currentUser?.id === u.id ? C.dim : '#ef4444',
+                            transition: 'background 0.15s',
+                          }}
+                          onMouseEnter={e => {
+                            if (currentUser?.id === u.id) return;
+                            e.currentTarget.style.background = 'rgba(239,68,68,0.2)';
+                          }}
+                          onMouseLeave={e => {
+                            if (currentUser?.id === u.id) return;
+                            e.currentTarget.style.background = 'rgba(239,68,68,0.1)';
+                          }}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
                       <RoleBadge role={u.role} />

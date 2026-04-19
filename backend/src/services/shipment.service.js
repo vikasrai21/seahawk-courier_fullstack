@@ -560,12 +560,12 @@ async function createOrReuseCapturedShipment(awb, userId, courier, source = 'sca
   };
 }
 
-async function attachClientSuggestion(savedShipment, ocrHints = null) {
+async function attachClientSuggestion(savedShipment, ocrHints = null, sessionContext = null) {
   if (!savedShipment?.id) {
     return { shipment: savedShipment, clientSuggestion: null };
   }
 
-  const suggestion = await clientMatcher.suggestClientForShipment(savedShipment, ocrHints);
+  const suggestion = await clientMatcher.suggestClientForShipment(savedShipment, ocrHints, sessionContext);
   if (!suggestion?.suggestedClientCode) {
     return { shipment: savedShipment, clientSuggestion: suggestion };
   }
@@ -593,7 +593,7 @@ async function attachClientSuggestion(savedShipment, ocrHints = null) {
 }
 
 async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}) {
-  const { captureOnly = false, source = 'scanner', ocrHints = null, forceLiveTrackingInCapture = false, overrideDate = null } = options;
+  const { captureOnly = false, source = 'scanner', ocrHints = null, forceLiveTrackingInCapture = false, overrideDate = null, sessionContext = null } = options;
   if (!courier || courier === 'AUTO') {
     courier = autoDetectCourier(awb);
   }
@@ -603,7 +603,7 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
 
   if (captureOnly && !forceLiveTrackingInCapture) {
     const captured = await createOrReuseCapturedShipment(awb, userId, courier, source, ocrHints, effectiveDate);
-    const enriched = await attachClientSuggestion(captured.shipment, ocrHints);
+    const enriched = await attachClientSuggestion(captured.shipment, ocrHints, sessionContext);
     return {
       ...captured,
       shipment: enriched.shipment,
@@ -633,7 +633,7 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
   if (!trackingData) {
     if (captureOnly) {
       const captured = await createOrReuseCapturedShipment(awb, userId, courier, source, ocrHints, effectiveDate);
-      const enriched = await attachClientSuggestion(captured.shipment, ocrHints);
+      const enriched = await attachClientSuggestion(captured.shipment, ocrHints, sessionContext);
       return {
         ...captured,
         shipment: enriched.shipment,
@@ -710,7 +710,7 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
   }
 
   clearCache();
-  const enriched = await attachClientSuggestion(savedShipment, ocrHints);
+  const enriched = await attachClientSuggestion(savedShipment, ocrHints, sessionContext);
   emitShipmentStatusUpdated(enriched.shipment);
   return {
     message: shipment ? 'Tracking data updated successfully' : 'Shipment automatically discovered and created',

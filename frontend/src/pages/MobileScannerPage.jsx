@@ -73,6 +73,7 @@ const HAPTIC_PATTERN = {
   retry: [28, 40, 28],
   error: [110, 55, 110],
   duplicate: [90, 50, 90, 50, 90],
+  review: [200, 40, 120],  // Heavy "thud" when review screen loads
 };
 
 const pulseHaptic = (kind = 'tap') => {
@@ -330,7 +331,7 @@ const css = `
   opacity: 0.5; cursor: default;
 }
 
-/* â”€â”€ Capture button (circular) â”€â”€ */
+/* ——— Capture button (circular) ——— */
 .capture-btn {
   width: 72px; height: 72px; border-radius: 50%;
   background: white; border: 4px solid rgba(255,255,255,0.4);
@@ -344,22 +345,26 @@ const css = `
   background: white; border: 2px solid #E5E7EB;
 }
 
-/* â”€â”€ Preview image â”€â”€ */
+/* ——— Preview image ——— */
 .preview-img {
   width: 100%; border-radius: 12px;
   object-fit: contain; max-height: 50vh;
   background: #F1F5F9;
 }
 
-/* â”€â”€ Field card in review â”€â”€ */
+/* ——— Field card in review ——— */
 .field-card {
   display: flex; align-items: flex-start; gap: 10px;
   padding: 12px 14px;
   background: ${theme.surface}; border: 1px solid ${theme.border};
+  border-left-width: 4px; border-left-style: solid; border-left-color: transparent;
   border-radius: 12px;
 }
-.field-card.warning { border-color: ${theme.warning}; background: ${theme.warningLight}; }
-.field-card.error-field { border-color: ${theme.error}; background: ${theme.errorLight}; }
+.field-card.conf-high { border-left-color: ${theme.success}; }
+.field-card.conf-med { border-left-color: ${theme.warning}; }
+.field-card.conf-low { border-left-color: ${theme.error}; }
+.field-card.warning { border-color: ${theme.warning}; background: ${theme.warningLight}; border-left-color: ${theme.warning}; }
+.field-card.error-field { border-color: ${theme.error}; background: ${theme.errorLight}; border-left-color: ${theme.error}; }
 .field-label {
   font-size: 0.65rem; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.05em;
@@ -377,7 +382,7 @@ const css = `
 }
 .field-input:focus { border-color: ${theme.primary}; box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
 
-/* â”€â”€ Confidence dot â”€â”€ */
+/* ——— Confidence dot ——— */
 .conf-dot {
   width: 8px; height: 8px; border-radius: 50%;
   flex-shrink: 0; margin-top: 4px;
@@ -386,7 +391,7 @@ const css = `
 .conf-med { background: ${theme.warning}; }
 .conf-low { background: ${theme.error}; }
 
-/* â”€â”€ Source badge â”€â”€ */
+/* ——— Source badge ——— */
 .source-badge {
   font-size: 0.6rem; padding: 2px 6px; border-radius: 6px;
   font-weight: 600; display: inline-flex; align-items: center; gap: 3px;
@@ -396,7 +401,7 @@ const css = `
 .source-history { background: ${theme.warningLight}; color: ${theme.warning}; }
 .source-pincode { background: ${theme.successLight}; color: ${theme.success}; }
 
-/* â”€â”€ Shimmer skeleton â”€â”€ */
+/* ——— Shimmer skeleton ——— */
 @keyframes shimmer {
   0% { background-position: -200% 0; }
   100% { background-position: 200% 0; }
@@ -408,7 +413,7 @@ const css = `
   border-radius: 8px;
 }
 
-/* â”€â”€ Success checkmark â”€â”€ */
+/* ——— Success checkmark ——— */
 @keyframes checkDraw {
   0% { stroke-dashoffset: 48; }
   100% { stroke-dashoffset: 0; }
@@ -426,7 +431,7 @@ const css = `
   animation: checkDraw 0.5s ease-out 0.5s forwards;
 }
 
-/* â”€â”€ Flash overlay â”€â”€ */
+/* ——— Flash overlay ——— */
 @keyframes flash { 0% { opacity: 0.8; } 100% { opacity: 0; } }
 .flash-overlay {
   position: fixed; inset: 0; z-index: 50;
@@ -437,7 +442,7 @@ const css = `
 .flash-success { background: rgba(5,150,105,0.2); }
 .flash-error { background: rgba(220,38,38,0.2); }
 
-/* â”€â”€ Duplicate warning â”€â”€ */
+/* ——— Duplicate warning ——— */
 @keyframes shake {
   0%, 100% { transform: translateX(0); }
   20%, 60% { transform: translateX(-6px); }
@@ -445,22 +450,22 @@ const css = `
 }
 .shake { animation: shake 0.5s ease-in-out; }
 
-/* â”€â”€ Offline banner â”€â”€ */
+/* ——— Offline banner ——— */
 .offline-banner {
   background: ${theme.warningLight}; color: ${theme.warning};
   text-align: center; padding: 6px; font-size: 0.72rem; font-weight: 600;
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 99;
 }
 
-/* â”€â”€ Scrollable panel â”€â”€ */
+/* ——— Scrollable panel ——— */
 .scroll-panel {
   flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
   padding: 16px 20px;
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+/* ──────────────────────────────────────────────────────────────────────────────────
    HOME SCREEN (aligned with direct mobile scanner)
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+   ────────────────────────────────────────────────────────────────────────────────── */
 .home-root {
   display: flex; flex-direction: column;
   min-height: 100dvh; overflow-y: auto;
@@ -605,7 +610,7 @@ const css = `
 .queue-empty-text { font-size: 0.8rem; color: #94A3B8; font-weight: 500; text-align: center; line-height: 1.5; }
 `;
 
-// â”€â”€â”€ Confidence helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ——— Confidence helpers ———————————————————————————————————————————————————————————
 const confLevel = (score) => {
   if (score >= 0.85) return 'high';
   if (score >= 0.55) return 'med';
@@ -618,9 +623,9 @@ const sourceLabel = (source) => {
   if (source === 'learned') return { className: 'source-badge source-learned', icon: 'AI', text: 'Learned' };
   if (source === 'awb_master') return { className: 'source-badge source-ai', icon: 'DB', text: 'Lookup' };
   if (source === 'courier_api') return { className: 'source-badge source-history', icon: 'API', text: 'Courier' };
-  if (source === 'fuzzy_match') return { className: 'source-badge source-ai', icon: 'ðŸ”', text: 'Matched' };
-  if (source === 'fuzzy_history' || source === 'consignee_pattern') return { className: 'source-badge source-history', icon: 'ðŸ“Š', text: 'History' };
-  if (source === 'delhivery_pincode' || source === 'india_post' || source === 'pincode_lookup' || source === 'indiapost_lookup') return { className: 'source-badge source-pincode', icon: 'ðŸ“', text: 'Pincode' };
+  if (source === 'fuzzy_match') return { className: 'source-badge source-ai', icon: '🔍', text: 'Matched' };
+  if (source === 'fuzzy_history' || source === 'consignee_pattern') return { className: 'source-badge source-history', icon: '📊', text: 'History' };
+  if (source === 'delhivery_pincode' || source === 'india_post' || source === 'pincode_lookup' || source === 'indiapost_lookup') return { className: 'source-badge source-pincode', icon: '📍', text: 'Pincode' };
   return null;
 };
 
@@ -629,9 +634,9 @@ const fmtDuration = (ms) => {
   return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
 };
 
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ══════════════════════════════════════════════════════════════════════════════════
 // Component
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ══════════════════════════════════════════════════════════════════════════════════
 export default function MobileScannerPage({ standalone = false }) {
   const { pin } = useParams();
   const navigate = useNavigate();
@@ -656,15 +661,15 @@ export default function MobileScannerPage({ standalone = false }) {
     }
   }, []);
 
-  // â”€â”€ Connection â”€â”€
+  // ——— Connection ———
   const [socket, setSocket] = useState(null);
   const [connStatus, setConnStatus] = useState('connecting'); // connecting | paired | disconnected
   const [errorMsg, setErrorMsg] = useState('');
 
-  // â”€â”€ State machine â”€â”€
+  // ——— State machine ———
   const [step, setStep] = useState(STEPS.IDLE);
 
-  // â”€â”€ Scan data â”€â”€
+  // ——— Scan data ———
   const [lockedAwb, setLockedAwb] = useState('');
   const [capturedImage, setCapturedImage] = useState(null);
   const [processingFields, setProcessingFields] = useState({});
@@ -713,7 +718,7 @@ export default function MobileScannerPage({ standalone = false }) {
   // auto-switches to document mode and vibrates.
   const barcodeFailCountRef = useRef(0);
 
-  // â”€â”€ Session context â”€â”€
+  // ——— Session context ———
   const [sessionCtx, setSessionCtx] = useState({
     scannedAwbs: new Set(),
     clientFreq: {},
@@ -724,7 +729,7 @@ export default function MobileScannerPage({ standalone = false }) {
     scannedItems: [],
   });
 
-  // â”€â”€ Settings â”€â”€
+  // ——— Settings ———
   const [voiceEnabled, setVoiceEnabled] = useState(false);
 
   // ── Session date (for batch scanning across dates) ──
@@ -736,7 +741,7 @@ export default function MobileScannerPage({ standalone = false }) {
     return new Date().toISOString().slice(0, 10);
   });
 
-  // â”€â”€ Refs â”€â”€
+  // ——— Refs ———
   const videoRef = useRef(null);
   const guideRef = useRef(null);
   const scannerRef = useRef(null); // ZXing reader
@@ -749,7 +754,7 @@ export default function MobileScannerPage({ standalone = false }) {
   const scannerStartedAtRef = useRef(0);
   // Stable ref to the latest handleBarcodeDetected callback.
   // startBarcodeScanner captures this ref (not the function directly) so the
-  // scanner always calls the current version â€” fixes the stale-closure bug where
+  // scanner always calls the current version — fixes the stale-closure bug where
   // the scanner was locked to the first-render handleBarcodeDetected and would
   // miss sessionCtx updates (duplicate detection, scan counts, etc.).
   const handleBarcodeDetectedRef = useRef(null);
@@ -960,7 +965,7 @@ export default function MobileScannerPage({ standalone = false }) {
     saveOfflineQueue([]);
   }, [isStandalone, socket, offlineQueue, saveOfflineQueue, postStandaloneScanPayload]);
 
-  // â”€â”€ Step transition helper â”€â”€
+  // ——— Step transition helper ———
   const addToQueue = useCallback((item) => {
     setSessionCtx((prev) => {
       const next = {
@@ -1069,10 +1074,13 @@ export default function MobileScannerPage({ standalone = false }) {
       weight: data.weight || 0,
       amount: data.amount || 0,
       orderNo: data.orderNo || '',
+      courier: data.courier || '',
     });
     setProcessingFields({});
 
     if (data.reviewRequired) {
+      pulseHaptic('review');
+      playHardwareBeep();
       goStep(STEPS.REVIEWING);
       return;
     }
@@ -1101,9 +1109,9 @@ export default function MobileScannerPage({ standalone = false }) {
     applyProcessedScanResultRef.current = applyProcessedScanResult;
   }, [applyProcessedScanResult]);
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ══════════════════════════════════════════════════════════════════════════════════
   // SOCKET CONNECTION
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ══════════════════════════════════════════════════════════════════════════════════
   useEffect(() => {
     if (isE2eMock) {
       setConnStatus('paired');
@@ -1396,7 +1404,7 @@ export default function MobileScannerPage({ standalone = false }) {
     if (!isE2eMock && !isStableBarcodeRead(awb)) return;
     scanBusyRef.current = true;
 
-    // Duplicate detection â€” read from the stable ref so this check is never stale
+    // Duplicate detection — read from the stable ref so this check is never stale
     // even when the scanner callback was closed over an old render.
     if (scannedAwbsRef.current.has(awb)) {
       pulseHaptic('duplicate');
@@ -1427,7 +1435,7 @@ export default function MobileScannerPage({ standalone = false }) {
     syncBarcodeFailCount(0);
     setErrorMsg('');
 
-    // Update session â€” also keep scannedAwbsRef in sync for future duplicate checks.
+    // Update session — also keep scannedAwbsRef in sync for future duplicate checks.
       setSessionCtx(prev => {
         const next = { ...prev, scanNumber: prev.scanNumber + 1 };
         next.scannedAwbs = new Set(prev.scannedAwbs);
@@ -1443,7 +1451,7 @@ export default function MobileScannerPage({ standalone = false }) {
 
     setCaptureCameraReady(true);
     goStep(STEPS.CAPTURING);
-  }, [goStep, isStableBarcodeRead, scanWorkflowMode, isE2eMock, syncBarcodeFailCount, syncBarcodeReframeCount, showScanHint, handleBarcodeFallbackAttempt]); // sessionCtx removed from deps â€” duplicate check now uses scannedAwbsRef
+  }, [goStep, isStableBarcodeRead, scanWorkflowMode, isE2eMock, syncBarcodeFailCount, syncBarcodeReframeCount, showScanHint, handleBarcodeFallbackAttempt]); // sessionCtx removed from deps — duplicate check now uses scannedAwbsRef
 
   // Keep handleBarcodeDetectedRef pointing at the latest callback so the scanner
   // (which is set up once per SCANNING entry) always calls current logic.
@@ -1473,15 +1481,15 @@ export default function MobileScannerPage({ standalone = false }) {
       }
     }
     return () => {
-      // When leaving SCANNING, stop only the barcode reader â€” keep the video stream
+      // When leaving SCANNING, stop only the barcode reader — keep the video stream
       // alive so CAPTURING can reuse it instantly with no black-frame flicker.
       if (step === STEPS.SCANNING) stopBarcodeScanner();
     };
   }, [step, startBarcodeScanner, stopBarcodeScanner, syncBarcodeFailCount, syncBarcodeReframeCount, isE2eMock, mockBarcodeRaw]);
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ══════════════════════════════════════════════════════════════════════════════════
   // PHOTO CAPTURE (Document mode)
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ══════════════════════════════════════════════════════════════════════════════════
 
   const startDocumentCamera = useCallback(async () => {
     if (isE2eMock) {
@@ -1616,11 +1624,11 @@ export default function MobileScannerPage({ standalone = false }) {
     goStep(STEPS.PREVIEW);
   }, [goStep, isE2eMock, stopCamera]);
 
-  // Auto-capture is intentionally disabled â€” user presses the shutter button manually.
+  // Auto-capture is intentionally disabled — user presses the shutter button manually.
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ══════════════════════════════════════════════════════════════════════════════════
   // SEND TO DESKTOP (OCR Pipeline)
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ══════════════════════════════════════════════════════════════════════════════════
 
   const buildSessionContextPayload = useCallback(() => ({
     scanNumber: sessionCtx.scanNumber,
@@ -1899,9 +1907,9 @@ export default function MobileScannerPage({ standalone = false }) {
     }, 40000);
   }, [socket, lockedAwb, capturedImage, goStep, connStatus, enqueueOfflineScan, addToQueue, isE2eMock, buildSessionContextPayload, isStandalone, applyProcessedScanResult, handleLookupNeedsPhoto]);
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ══════════════════════════════════════════════════════════════════════════════════
   // APPROVAL
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ══════════════════════════════════════════════════════════════════════════════════
 
   const submitApproval = useCallback(async () => {
     if (!reviewData) return;
@@ -1945,6 +1953,7 @@ export default function MobileScannerPage({ standalone = false }) {
       weight: parseFloat(reviewForm.weight) || 0,
       amount: parseFloat(reviewForm.amount) || 0,
       orderNo: reviewForm.orderNo || '',
+      courier: reviewForm.courier || '',
     };
 
     if (isStandalone) {
@@ -2028,9 +2037,9 @@ export default function MobileScannerPage({ standalone = false }) {
     }
   }, [socket, reviewData, reviewForm, lockedAwb, pin, goStep, addToQueue, isE2eMock, deviceProfile, isStandalone]);
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ══════════════════════════════════════════════════════════════════════════════════
   // RESET / NEXT SCAN
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ══════════════════════════════════════════════════════════════════════════════════
 
   const resetForNextScan = useCallback((nextStep = STEPS.IDLE) => {
     clearTimeout(autoNextTimer.current);
@@ -2054,7 +2063,7 @@ export default function MobileScannerPage({ standalone = false }) {
     lockTelemetryRef.current = { lockTimeMs: null, candidateCount: 1, ambiguous: false, alternatives: [] };
     captureReadyHapticRef.current = false;
     syncBarcodeReframeCount(0);
-    // scannedAwbsRef is intentionally NOT cleared here â€” duplicates should be
+    // scannedAwbsRef is intentionally NOT cleared here — duplicates should be
     // tracked across the entire session, not just one scan cycle. Clear it only
     // if you add an explicit "new session" action.
     goStep(nextStep);
@@ -2089,9 +2098,9 @@ export default function MobileScannerPage({ standalone = false }) {
     clearTimeout(lockToCaptureTimerRef.current);
   }, [stopCamera]);
 
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ══════════════════════════════════════════════════════════════════════════════════
   // RENDER
-  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+  // ══════════════════════════════════════════════════════════════════════════════════
 
   const isStepActive = (s) => step === s;
   const stepClass = (s) => `msp-step ${step === s ? 'active' : ''}`;
@@ -2102,7 +2111,7 @@ export default function MobileScannerPage({ standalone = false }) {
     : (describeCaptureIssues(captureQuality.issues) || 'Fit AWB slip fully in frame and hold steady');
   const captureReadyForShutter = captureCameraReady && captureQuality.ok && docStableTicks >= DOC_STABLE_MIN_TICKS;
 
-  // â”€â”€ Confidence data from reviewData â”€â”€
+  // ——— Confidence data from reviewData ———
   const fieldConfidence = useMemo(() => {
     if (!reviewData) return {};
     const ocrData = reviewData.ocrExtracted || reviewData;
@@ -2151,10 +2160,10 @@ export default function MobileScannerPage({ standalone = false }) {
     <>
       <style>{css}</style>
       <div className="msp-root">
-        {/* â”€â”€ Flash overlay â”€â”€ */}
+        {/* ——— Flash overlay ——— */}
         {flash && <div className={`flash-overlay flash-${flash}`} onAnimationEnd={() => setFlash(null)} />}
 
-        {/* â”€â”€ Duplicate warning overlay â”€â”€ */}
+        {/* ——— Duplicate warning overlay ——— */}
         {duplicateWarning && (
           <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(220,38,38,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }} className="shake">
             <AlertCircle size={48} color="white" />
@@ -2223,7 +2232,7 @@ export default function MobileScannerPage({ standalone = false }) {
           </div>
         )}
 
-        {/* â•â•â• IDLE / CONNECTING â•â•â• */}
+        {/* ═══ IDLE / CONNECTING ═══ */}
         {connStatus !== 'paired' && (
           <div className={stepClass(STEPS.IDLE)}>
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 24 }}>
@@ -2247,12 +2256,12 @@ export default function MobileScannerPage({ standalone = false }) {
           </div>
         )}
 
-        {/* â•â•â• PERSISTENT CAMERA VIDEO â•â•â• */}
+        {/* ═══ PERSISTENT CAMERA VIDEO ═══ */}
         {/* Lives outside all step divs so it NEVER gets unmounted/re-mounted.
             Both SCANNING and CAPTURING phases share this same element via videoRef.
             This is what eliminates the black-screen flicker between steps.
             Hidden when Scanbot is active because Scanbot renders into its own
-            container and owns its own camera stream â€” showing this element at
+            container and owns its own camera stream — showing this element at
             the same time would cause a double-consumer conflict. */}
         <video
           ref={videoRef}
@@ -2271,7 +2280,7 @@ export default function MobileScannerPage({ standalone = false }) {
           }}
         />
 
-        {/* â•â•â• IDLE / HOME â•â•â• */}
+        {/* ═══ IDLE / HOME ═══ */}
         <div className={stepClass(STEPS.IDLE)}>
           <div className="home-root">
             <div className="home-header">
@@ -2475,7 +2484,7 @@ export default function MobileScannerPage({ standalone = false }) {
                     className="btn btn-primary"
                     style={{ padding: '9px 14px', fontSize: '0.78rem', borderRadius: 10, opacity: manualAwb.trim().length >= 6 ? 1 : 0.45 }}
                   >
-                    Go â†’
+                    Go →
                   </button>
                 </div>
               </form>
@@ -2655,7 +2664,7 @@ export default function MobileScannerPage({ standalone = false }) {
           </div>
         </div>
 
-        {/* â•â•â• CAPTURING (Document mode) â•â•â• */}
+        {/* ═══ CAPTURING (Document mode) ═══ */}
         <div className={stepClass(STEPS.CAPTURING)}>
           <div className="cam-viewport" style={{ background: 'transparent' }}>
             {!captureCameraReady && (
@@ -2733,13 +2742,13 @@ export default function MobileScannerPage({ standalone = false }) {
                   goStep(STEPS.SCANNING);
                 }}
               >
-                â† Rescan barcode
+                ← Rescan barcode
               </button>
             </div>
           </div>
         </div>
 
-        {/* â•â•â• PREVIEW â•â•â• */}
+        {/* ═══ PREVIEW ═══ */}
         <div className={stepClass(STEPS.PREVIEW)}>
           <div style={{ background: theme.bg, display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${theme.border}` }}>
@@ -2767,7 +2776,7 @@ export default function MobileScannerPage({ standalone = false }) {
           </div>
         </div>
 
-        {/* â•â•â• PROCESSING â•â•â• */}
+        {/* ═══ PROCESSING ═══ */}
         <div className={stepClass(STEPS.PROCESSING)}>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 20, gap: 16 }}>
             <div style={{ textAlign: 'center', paddingTop: 24, paddingBottom: 8 }}>
@@ -2869,7 +2878,7 @@ export default function MobileScannerPage({ standalone = false }) {
                     <input className="field-input" value={reviewForm.pincode || ''} onChange={(e) => setReviewForm(f => ({ ...f, pincode: e.target.value }))} placeholder="6 digits" maxLength={6} inputMode="numeric" />
                   </div>
                 </div>
-                <div className={`field-card ${intelligence?.weightAnomaly?.anomaly ? 'warning' : ''}`}>
+                <div className={`field-card ${intelligence?.weightAnomaly?.anomaly ? 'warning' : 'conf-med'}`}>
                   <div style={{ flex: 1 }}>
                     <div className="field-label">Weight (kg)</div>
                     <input className="field-input" value={reviewForm.weight || ''} onChange={(e) => setReviewForm(f => ({ ...f, weight: e.target.value }))} placeholder="0.0" inputMode="decimal" />
@@ -2882,13 +2891,13 @@ export default function MobileScannerPage({ standalone = false }) {
 
               {/* Amount + Order No */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div className="field-card">
+                <div className="field-card conf-med">
                   <div style={{ flex: 1 }}>
-                    <div className="field-label">Amount (â‚¹)</div>
+                    <div className="field-label">Amount (₹)</div>
                     <input className="field-input" value={reviewForm.amount || ''} onChange={(e) => setReviewForm(f => ({ ...f, amount: e.target.value }))} placeholder="0" inputMode="decimal" />
                   </div>
                 </div>
-                <div className="field-card">
+                <div className="field-card conf-low">
                   <div style={{ flex: 1 }}>
                     <div className="field-label">Order No</div>
                     <input className="field-input" value={reviewForm.orderNo || ''} onChange={(e) => setReviewForm(f => ({ ...f, orderNo: e.target.value }))} placeholder="Optional" />

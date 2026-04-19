@@ -221,24 +221,71 @@ describe('auth.service', () => {
   // ── updateUser ───────────────────────────────────────────────────────────
   describe('updateUser', () => {
     it('hashes password if provided', async () => {
-      mockPrisma.user.update.mockResolvedValue({ id: 1, name: 'U', email: 'u@x.com', role: 'ADMIN' });
+      mockPrisma.user.findUnique.mockResolvedValue({ id: 1, email: 'u@x.com', role: 'ADMIN', active: true, clientProfile: null });
+      mockPrisma._mockTx.user.update.mockResolvedValue({ id: 1, name: 'U', email: 'u@x.com', role: 'ADMIN', active: true });
+      mockPrisma._mockTx.clientUser.deleteMany.mockResolvedValue({ count: 0 });
       await authService.updateUser(1, { password: 'newpass' });
-      const call = mockPrisma.user.update.mock.calls[0][0];
+      const call = mockPrisma._mockTx.user.update.mock.calls[0][0];
       expect(call.data.password).not.toBe('newpass'); // should be hashed
     });
 
     it('lowercases email', async () => {
-      mockPrisma.user.update.mockResolvedValue({ id: 1, email: 'u@x.com' });
+      mockPrisma.user.findUnique
+        .mockResolvedValueOnce({ id: 1, email: 'u@x.com', role: 'ADMIN', active: true, clientProfile: null })
+        .mockResolvedValueOnce(null);
+      mockPrisma._mockTx.user.update.mockResolvedValue({ id: 1, email: 'u@x.com', role: 'ADMIN', active: true });
+      mockPrisma._mockTx.clientUser.deleteMany.mockResolvedValue({ count: 0 });
       await authService.updateUser(1, { email: 'User@EXAMPLE.COM' });
-      const call = mockPrisma.user.update.mock.calls[0][0];
+      const call = mockPrisma._mockTx.user.update.mock.calls[0][0];
       expect(call.data.email).toBe('user@example.com');
     });
 
     it('revokes tokens when deactivating', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({ id: 1, email: 'u@x.com', role: 'STAFF', active: true, clientProfile: null });
       mockPrisma.refreshToken.updateMany.mockResolvedValue({ count: 1 });
-      mockPrisma.user.update.mockResolvedValue({ id: 1 });
+      mockPrisma._mockTx.user.update.mockResolvedValue({ id: 1, email: 'u@x.com', role: 'STAFF', active: false });
+      mockPrisma._mockTx.clientUser.deleteMany.mockResolvedValue({ count: 0 });
       await authService.updateUser(1, { active: false });
       expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalled();
+    });
+
+    it('upserts client link when updating CLIENT user', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({ id: 2, email: 'client@x.com', role: 'CLIENT', active: true, clientProfile: { clientCode: 'OLD' } });
+      mockPrisma.client.findUnique.mockResolvedValue({ code: 'NEW' });
+      mockPrisma._mockTx.user.update.mockResolvedValue({ id: 2, email: 'client@x.com', role: 'CLIENT', active: true });
+      mockPrisma._mockTx.clientUser.upsert.mockResolvedValue({});
+
+      await authService.updateUser(2, { role: 'CLIENT', clientCode: 'new' });
+
+      expect(mockPrisma._mockTx.clientUser.upsert).toHaveBeenCalledWith({
+        where: { userId: 2 },
+        update: { clientCode: 'NEW' },
+        create: { userId: 2, clientCode: 'NEW' },
+      });
+    });
+  });
+
+  describe('deleteUser', () => {
+    it('deletes a user account', async () => {
+      mockPrisma.user.findUnique.mockResolvedValue({
+        id: 9,
+        name: 'Client User',
+        email: 'client@x.com',
+        role: 'CLIENT',
+        branch: null,
+        active: true,
+        clientProfile: { clientCode: 'SEA' },
+      });
+      mockPrisma.user.delete.mockResolvedValue({});
+
+      const deleted = await authService.deleteUser(9, 1);
+
+      expect(mockPrisma.user.delete).toHaveBeenCalledWith({ where: { id: 9 } });
+      expect(deleted.clientCode).toBe('SEA');
+    });
+
+    it('blocks self-delete', async () => {
+      await expect(authService.deleteUser(3, 3)).rejects.toThrow('You cannot delete your own account.');
     });
   });
 

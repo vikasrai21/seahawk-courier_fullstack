@@ -37,9 +37,9 @@ async function prefillFromApi(awb, courierHint) {
   let factoryName = '';
   if (courierKey.includes('delhivery')) factoryName = 'Delhivery';
   else if (courierKey.includes('dtdc')) factoryName = 'DTDC';
-  else if (courierKey.includes('trackon')) factoryName = 'Trackon';
+  // PrimeTrack is handled as a Trackon service lane in Seahawk operations.
+  else if (courierKey.includes('trackon') || courierKey.includes('prim')) factoryName = 'Trackon';
   else if (courierKey.includes('blue')) factoryName = 'BlueDart';
-  else if (courierKey.includes('prim')) factoryName = 'Primtrack';
   else return null;
 
   try {

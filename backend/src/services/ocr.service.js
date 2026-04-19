@@ -33,7 +33,7 @@ const COURIER_NORMALIZE = {
   TRACKON: 'Trackon',
   BLUEDART: 'BlueDart',
   DHL: 'DHL',
-  PRIMETRACK: 'PrimeTrack',
+  PRIMETRACK: 'Trackon',
   UNKNOWN: '',
 };
 

@@ -5,18 +5,21 @@ const correctionLearner = require('./correctionLearner.service');
 // ── Score weights for different signal types ────────────────────────────────
 const SCORE = {
   ALIAS_EXACT:           100,  // Hardcoded alias from training data → instant match
+  AWB_EXACT_HISTORY:      95,  // This exact AWB was previously linked to a client
   OID_EXACT:              95,  // Delhivery OID matches client code/company exactly
   AWB_PREFIX:             80,  // AWB prefix pattern matches a known client
   CODE_IN_TEXT:           42,  // Client code found verbatim in OCR text
   COMPANY_IN_TEXT:        34,  // Company name found verbatim in OCR text
   SENDER_COMPANY_MATCH:  50,  // Sender/consignor company matches a known alias
   RETURN_ADDRESS_MATCH:  40,  // Return address contains client-linked keywords
+  SESSION_DOMINANT:       30,  // Session context: operator has been scanning this client
   CONSIGNEE_OVERLAP:     18,  // Consignee name overlaps with company tokens
   DESTINATION_OVERLAP:   12,  // Destination overlaps with client address
   ADDRESS_OVERLAP:       20,  // Address token overlap
   NOTES_OVERLAP:          8,  // Notes/alias overlap
   HISTORY_SAME_CONSIGNEE:     24,
   HISTORY_SAME_DESTINATION:   16,
+  HISTORY_COURIER_CLIENT:     15,  // Most frequent client for this courier recently
 };
 
 // ── Alias map: trained from March 2026 Excel + label images ─────────────────
@@ -249,9 +252,49 @@ async function getHistoryBoost({ consignee, destination }) {
   }, {});
 }
 
+// ── AWB exact history: check if this AWB was previously linked to a client ──
+
+async function getAwbHistoryMatch(awb) {
+  if (!awb) return null;
+  const existing = await prisma.shipment.findUnique({
+    where: { awb: String(awb).trim() },
+    select: { clientCode: true },
+  });
+  if (existing && existing.clientCode && existing.clientCode !== 'MISC') {
+    return existing.clientCode;
+  }
+  return null;
+}
+
+// ── Courier-client frequency: which client uses this courier most recently ──
+
+async function getCourierClientFrequency(courier) {
+  if (!courier) return {};
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const dateStr = sevenDaysAgo.toISOString().split('T')[0];
+
+  const rows = await prisma.shipment.groupBy({
+    by: ['clientCode'],
+    where: {
+      courier: { equals: courier, mode: 'insensitive' },
+      clientCode: { not: 'MISC' },
+      date: { gte: dateStr },
+    },
+    _count: { id: true },
+    orderBy: { _count: { id: 'desc' } },
+    take: 5,
+  });
+
+  return rows.reduce((acc, row) => {
+    acc[row.clientCode] = row._count.id;
+    return acc;
+  }, {});
+}
+
 // ── Main suggestion engine ──────────────────────────────────────────────────
 
-async function suggestClientForShipment(shipment, ocrHints = null) {
+async function suggestClientForShipment(shipment, ocrHints = null, sessionContext = null) {
   await refreshDynamicAliases();
 
   const clients = (await prisma.client.findMany({
@@ -308,6 +351,16 @@ async function suggestClientForShipment(shipment, ocrHints = null) {
   // ── FAST PATH: AWB prefix matching ──────────────────────────────────────
   const awbPrefixMatch = findAwbPrefixMatch(shipment?.awb);
 
+  // ── FAST PATH: AWB exact history (was this AWB previously assigned?) ────
+  const awbHistoryClient = await getAwbHistoryMatch(shipment?.awb);
+
+  // ── Session dominant client signal ──────────────────────────────────────
+  const sessionDominant = sessionContext?.dominantClient || null;
+  const sessionDominantCount = Number(sessionContext?.dominantClientCount || 0);
+
+  // ── Courier-client frequency ────────────────────────────────────────────
+  const courierFreq = await getCourierClientFrequency(shipment?.courier);
+
   // ── History boost ───────────────────────────────────────────────────────
   const historyBoost = await getHistoryBoost({
     consignee: shipment?.consignee || '',
@@ -330,6 +383,12 @@ async function suggestClientForShipment(shipment, ocrHints = null) {
       reasons.push(`trained alias: "${aliasMatch.phrase}"`);
     }
 
+    // ── AWB exact history (this AWB was previously linked to client) ────
+    if (awbHistoryClient && awbHistoryClient === client.code) {
+      score += SCORE.AWB_EXACT_HISTORY;
+      reasons.push('AWB previously linked to this client');
+    }
+
     // ── OID exact match against client code/company ─────────────────────
     if (oidText && (codeNorm === oidText || companyNorm === oidText || companyNorm.includes(oidText) || oidText.includes(companyNorm))) {
       score += SCORE.OID_EXACT;
@@ -340,6 +399,21 @@ async function suggestClientForShipment(shipment, ocrHints = null) {
     if (awbPrefixMatch && awbPrefixMatch === client.code) {
       score += SCORE.AWB_PREFIX;
       reasons.push('AWB prefix pattern match');
+    }
+
+    // ── Session dominant client (operator scanning same client batch) ───
+    if (sessionDominant && sessionDominant === client.code && sessionDominantCount >= 3) {
+      score += SCORE.SESSION_DOMINANT;
+      reasons.push(`session dominant (${sessionDominantCount} scans)`);
+    }
+
+    // ── Courier-client frequency (which client uses this courier most) ──
+    if (courierFreq[client.code]) {
+      const freqScore = Math.min(SCORE.HISTORY_COURIER_CLIENT, Math.round(courierFreq[client.code] * 0.5));
+      if (freqScore > 0) {
+        score += freqScore;
+        reasons.push(`courier-client freq (${courierFreq[client.code]} recent)`);
+      }
     }
 
     // ── Sender/consignor company match ──────────────────────────────────
@@ -432,7 +506,8 @@ async function suggestClientForShipment(shipment, ocrHints = null) {
   // ── Decision thresholds ───────────────────────────────────────────────
   // If alias or OID matched, auto-assign with very high confidence
   const hasAliasOrOidSignal = (aliasMatch && top?.code === aliasMatch.clientCode) ||
-    (awbPrefixMatch && top?.code === awbPrefixMatch);
+    (awbPrefixMatch && top?.code === awbPrefixMatch) ||
+    (awbHistoryClient && top?.code === awbHistoryClient);
   const shouldAutoAssign = hasAliasOrOidSignal || (confidence >= 88 && scoreGap >= 16);
   const hasStrongSignal = confidence >= 50;
   const needsConfirmation = !shouldAutoAssign && hasStrongSignal;

@@ -4,6 +4,8 @@ import { recommendCourierForBooking, normalizeCarrier } from '../../services/cou
 describe('courierDecision.service', () => {
   it('normalizes carrier names', () => {
     expect(normalizeCarrier('trackon')).toBe('Trackon');
+    expect(normalizeCarrier('Primetrack')).toBe('Trackon');
+    expect(normalizeCarrier('primtrack')).toBe('Trackon');
     expect(normalizeCarrier('DTDC')).toBe('DTDC');
     expect(normalizeCarrier('Delhivery')).toBe('Delhivery');
     expect(normalizeCarrier('')).toBe(null);

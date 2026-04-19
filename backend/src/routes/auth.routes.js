@@ -1,7 +1,7 @@
 // src/routes/auth.routes.js
 const router = require('express').Router();
 const ctrl   = require('../controllers/auth.controller');
-const { protect, adminOnly } = require('../middleware/auth.middleware');
+const { protect, requireOwnerOrRole } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validate.middleware');
 const { loginLimiter, sensitiveActionLimiter } = require('../middleware/rateLimiter');
 const { loginSchema, createUserSchema, updateUserSchema, changePasswordSchema } = require('../validators/auth.validator');
@@ -15,9 +15,10 @@ router.get( '/me',              protect,      ctrl.getMe);
 // Change password — rate limited
 router.put('/change-password', protect, sensitiveActionLimiter, validate(changePasswordSchema), ctrl.changePassword);
 
-// Management user management
-router.get( '/users',     protect, require('../middleware/auth.middleware').requireRole('ADMIN','OPS_MANAGER'), ctrl.getAllUsers);
-router.post('/users',     protect, adminOnly, validate(createUserSchema), ctrl.createUser);
-router.put( '/users/:id', protect, adminOnly, validate(updateUserSchema), ctrl.updateUser);
+// User management
+router.get( '/users',     protect, requireOwnerOrRole('ADMIN', 'OPS_MANAGER'), ctrl.getAllUsers);
+router.post('/users',     protect, requireOwnerOrRole('ADMIN'), validate(createUserSchema), ctrl.createUser);
+router.put( '/users/:id', protect, requireOwnerOrRole('ADMIN'), validate(updateUserSchema), ctrl.updateUser);
+router.delete('/users/:id', protect, requireOwnerOrRole('ADMIN'), ctrl.deleteUser);
 
 module.exports = router;

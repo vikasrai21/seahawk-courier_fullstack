@@ -5,7 +5,7 @@ const CARRIERS = ['Trackon', 'DTDC', 'Delhivery'];
 function normalizeCarrier(input) {
   const value = String(input || '').trim().toLowerCase();
   if (!value) return null;
-  if (value === 'trackon') return 'Trackon';
+  if (value === 'trackon' || value === 'primetrack' || value === 'primtrack' || value === 'prime track') return 'Trackon';
   if (value === 'dtdc') return 'DTDC';
   if (value === 'delhivery') return 'Delhivery';
   return null;
