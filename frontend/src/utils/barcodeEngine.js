@@ -124,7 +124,21 @@ function cropVideoCenter(video) {
 // ═══════════════════════════════════════════════════════════════════════════
 async function loadWasmReader() {
   try {
-    const { readBarcodesFromImageData } = await import('zxing-wasm/reader');
+    const { readBarcodesFromImageData, setZXingModuleOverrides } = await import('zxing-wasm/reader');
+
+    // Point the WASM loader to our locally-hosted binary instead of relying on CDN
+    // This avoids cross-origin blocks on iOS Safari and ensures reliable loading
+    setZXingModuleOverrides({
+      locateFile: (path, prefix) => {
+        if (path.endsWith('.wasm')) {
+          return '/wasm/' + path;
+        }
+        return prefix + path;
+      },
+    });
+
+    console.log('[BarcodeEngine] WASM module imported, warming up...');
+
     // Warm up the WASM module
     const warmupCanvas = document.createElement('canvas');
     warmupCanvas.width = 2;
@@ -135,9 +149,11 @@ async function loadWasmReader() {
       readBarcodesFromImageData(warmupData, { formats: ['ITF'], tryHarder: false }),
       new Promise((_, reject) => setTimeout(() => reject(new Error('WASM warmup timeout')), WASM_WARMUP_TIMEOUT_MS)),
     ]);
+
+    console.log('[BarcodeEngine] WASM engine ready ✓');
     return readBarcodesFromImageData;
   } catch (err) {
-    console.warn('[BarcodeEngine] WASM load failed, will use fallback:', err.message);
+    console.error('[BarcodeEngine] WASM load failed, will use fallback:', err.message, err);
     return null;
   }
 }
