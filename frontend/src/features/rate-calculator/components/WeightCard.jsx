@@ -19,7 +19,7 @@ export default function WeightCard({
   const volumetricDivisor = (selGroup === 'B2B' || selGroup === 'LTL' || shipType === 'surface') ? 4500 : 5000;
 
   return (
-    <div className="rate-section flex flex-col">
+    <div className="rate-section h-full flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
            <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-500 ${chargeWt > 0 ? 'bg-blue-500/10 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>

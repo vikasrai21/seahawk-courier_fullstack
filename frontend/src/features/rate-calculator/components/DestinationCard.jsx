@@ -42,7 +42,7 @@ export default function DestinationCard({
   ].filter(([, value]) => value);
 
   return (
-    <div className="rate-section flex flex-col">
+    <div className="rate-section h-full flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
            <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-500 ${locInfo && zone ? 'bg-orange-500/10 text-orange-600' : 'bg-slate-100 text-slate-400'}`}>

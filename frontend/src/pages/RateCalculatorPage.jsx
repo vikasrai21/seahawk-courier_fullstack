@@ -439,23 +439,23 @@ export default function RateCalculatorPage() {
       )}
 
       {/* Main Layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <div className="lg:col-span-4">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+        <div className="lg:col-span-4 h-full">
           <DestinationCard {...{pinLoad, query, handleQueryChange, zone, setQuery, setZone, setLocInfo, setExpanded, isPin, suggestions, selectCity, pinError, locInfo, odaOn, setOdaOn, odaAmt, setOdaAmt, zoneConf, delhiveryOda}} />
         </div>
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-4 h-full">
           <WeightCard {...{weight, setWeight, useVol, setUseVol, dims, setDims, chargeWt, volWt, targetMargin, setTargetMargin, results, selGroup, shipType, fmt}} />
         </div>
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-4 h-full">
           <TypeLevelCard {...{shipType, setType, setExpanded, setShowAll, svcLevel, setSvcLevel, ecoCount: results.filter(r=>r.level==='economy').length, premCount: results.filter(r=>r.level==='premium').length}} />
         </div>
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-4 h-full">
           <CourierSelectCard selGroup={selGroup} setSelGroup={v=>{setSelGroup(v);setExpanded(null);}} />
         </div>
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-4 h-full">
           <ClientCard {...{selClient, setSelClient, setContracts, setClientSearch, contractLoad, contracts, activeContract, fmt, clientSearch, setShowClients, showClients, filteredClients}} />
         </div>
-        <div className="lg:col-span-4">
+        <div className="lg:col-span-4 h-full">
           <div className="rate-section h-full">
              <div className="flex items-center justify-between mb-2">
                <p className="text-sm font-semibold text-slate-900">Delhivery check</p>

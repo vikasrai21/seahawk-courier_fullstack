@@ -4,7 +4,7 @@ import { COURIER_GROUPS } from '../core';
 
 export default function CourierSelectCard({ selGroup, setSelGroup }) {
   return (
-    <div className="rate-section flex flex-col">
+    <div className="rate-section h-full flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
            <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-amber-500/10 text-amber-600">
