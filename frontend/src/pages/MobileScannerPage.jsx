@@ -65,7 +65,7 @@ const vibrate = (pattern) => {
 
 const HAPTIC_PATTERN = {
   tap: [20],
-  lock: [150], // Single heavy jolt like a physical hardware scanner
+  lock: [400, 50, 200, 50, 100], // Extremely heavy mechanical jolt sequence
   success: [18, 28, 72],
   warning: [70, 50, 70],
   retry: [28, 40, 28],
@@ -94,7 +94,10 @@ const playTone = (freq, duration, type = 'sine') => {
 };
 
 const playSuccessBeep = () => { playTone(880, 0.12); setTimeout(() => playTone(1100, 0.10), 130); };
-const playHardwareBeep = () => playTone(2500, 0.08, 'square'); // Piercing industrial scanner beep
+const playHardwareBeep = () => { 
+  playTone(2700, 0.08, 'square'); 
+  setTimeout(() => playTone(3100, 0.05, 'square'), 60); 
+}; // Ultra-sharp piercing Zebra-style double chirp
 const playCaptureBeep = () => playTone(600, 0.08);
 const playErrorBeep = () => playTone(200, 0.25, 'sawtooth');
 
@@ -220,27 +223,49 @@ const css = `
 /* â”€â”€ Scan laser â”€â”€ */
 @keyframes laserSparkMove {
   0% { left: 2%; transform: translateX(-50%) scale(1); opacity: 0.8; }
-  10% { transform: translateX(-50%) scale(1.5); box-shadow: 0 0 15px 4px #fff, 0 0 30px 10px #ff0000; opacity: 1; }
-  50% { left: 50%; transform: translateX(-50%) scale(2); box-shadow: 0 0 20px 6px #fff, 0 0 40px 15px #ff0000; opacity: 1; }
-  90% { transform: translateX(-50%) scale(1.5); box-shadow: 0 0 15px 4px #fff, 0 0 30px 10px #ff0000; opacity: 1; }
+  25% { box-shadow: 0 0 15px 4px #fff, 0 0 30px 10px #ff0000; opacity: 1; }
+  50% { left: 50%; transform: translateX(-50%) scale(1.8); box-shadow: 0 0 25px 6px #fff, 0 0 45px 15px #ff0000; opacity: 1; }
+  75% { box-shadow: 0 0 15px 4px #fff, 0 0 30px 10px #ff0000; opacity: 1; }
   100% { left: 98%; transform: translateX(-50%) scale(1); opacity: 0.8; }
 }
+@keyframes sparkScatter {
+  0% { transform: scale(1.5) translate(0, 0) rotate(0deg); opacity: 1; }
+  100% { transform: scale(0) translate(15px, -20px) rotate(90deg); opacity: 0; }
+}
+@keyframes sparkScatterReverse {
+  0% { transform: scale(1.5) translate(0, 0) rotate(0deg); opacity: 1; }
+  100% { transform: scale(0) translate(-15px, 20px) rotate(-90deg); opacity: 0; }
+}
 @keyframes laserPulse {
-  0%, 100% { opacity: 0.6; box-shadow: 0 0 4px rgba(255, 0, 0, 0.8), 0 0 8px rgba(255, 0, 0, 0.4); }
-  50% { opacity: 1; box-shadow: 0 0 6px rgba(255, 0, 0, 1), 0 0 15px rgba(255, 0, 0, 0.8); }
+  0%, 100% { opacity: 0.5; box-shadow: 0 0 4px rgba(255, 0, 0, 0.8), 0 0 8px rgba(255, 0, 0, 0.4); }
+  50% { opacity: 1; box-shadow: 0 0 8px rgba(255, 0, 0, 1), 0 0 20px rgba(255, 0, 0, 0.8); }
 }
 .scan-laser {
-  position: absolute; left: 4%; right: 4%; height: 2px;
+  position: absolute; left: 2%; right: 2%; height: 2px;
   top: 50%; transform: translateY(-50%);
-  background: rgba(255, 0, 0, 0.9);
-  animation: laserPulse 2s ease-in-out infinite;
+  background: rgba(255, 0, 0, 0.95);
+  animation: laserPulse 1.5s ease-in-out infinite;
 }
 .scan-laser-spark {
-  position: absolute; top: 50%; margin-top: -2.5px;
-  width: 5px; height: 5px; border-radius: 50%;
+  position: absolute; top: 50%; margin-top: -3px;
+  width: 6px; height: 6px; border-radius: 50%;
   background: #ffffff;
-  box-shadow: 0 0 8px 2px #ffffff, 0 0 20px 5px #ff0000;
-  animation: laserSparkMove 1.8s ease-in-out infinite alternate;
+  box-shadow: 0 0 12px 3px #ffffff, 0 0 25px 8px #ff0000;
+  animation: laserSparkMove 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
+}
+.scan-laser-spark::before, .scan-laser-spark::after {
+  content: ''; position: absolute;
+  width: 3px; height: 3px; background: #fff; border-radius: 50%;
+  box-shadow: 0 0 5px #ff0000, 0 0 10px #ff0000;
+}
+.scan-laser-spark::before {
+  left: -8px; top: -6px;
+  animation: sparkScatter 0.6s infinite ease-out;
+}
+.scan-laser-spark::after {
+  right: -8px; top: 6px;
+  animation: sparkScatterReverse 0.7s infinite alternate ease-out;
+  animation-delay: 0.15s;
 }
 
 /* â”€â”€ HUD (top bar on camera) â”€â”€ */

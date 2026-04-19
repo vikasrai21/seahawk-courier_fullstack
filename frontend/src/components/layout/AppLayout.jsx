@@ -46,7 +46,6 @@ const navGroups = [
     label: 'Shipments',
     items: [
       { to: '/app/scan',      label: 'Scan AWB',            icon: ScanLine, badge: 'NEW', roles: ['ADMIN','OPS_MANAGER','STAFF'] },
-      { to: '/scan-mobile',   label: 'Mobile Scanner',      icon: ScanLine, badge: 'APP', roles: ['ADMIN','OPS_MANAGER','STAFF'] },
       { to: '/app/shipments', label: 'Shipments',           icon: Layers },
 
       { to: '/app/pending',   label: 'Pending',             icon: Clock, isSecondary: true },
