@@ -1033,6 +1033,48 @@ export default function MobileScannerPage({ standalone = false }) {
     currentStepRef.current = step;
   }, [step]);
 
+  const handleLookupNeedsPhoto = useCallback((data = null) => {
+    if (data) setReviewData(data);
+    setProcessingFields({});
+    setErrorMsg('');
+    goStep(STEPS.CAPTURING);
+  }, [goStep]);
+
+  const applyProcessedScanResult = useCallback((data) => {
+    if (!data) return;
+    setReviewData(data);
+    setReviewForm({
+      clientCode: data.clientCode || '',
+      consignee: data.consignee || '',
+      destination: data.destination || '',
+      pincode: data.pincode || '',
+      weight: data.weight || 0,
+      amount: data.amount || 0,
+      orderNo: data.orderNo || '',
+    });
+    setProcessingFields({});
+
+    if (data.reviewRequired) {
+      goStep(STEPS.REVIEWING);
+      return;
+    }
+
+    playSuccessBeep();
+    pulseHaptic('success');
+    if (voiceEnabled) speak(`Auto approved. ${data.clientName || ''}. ${data.destination || ''}.`);
+    const item = {
+      awb: data.awb,
+      clientCode: data.clientCode,
+      clientName: data.clientName,
+      destination: data.destination || '',
+      weight: data.weight || 0,
+      autoApproved: true,
+    };
+    setLastSuccess(item);
+    addToQueue(item);
+    goStep(STEPS.SUCCESS);
+  }, [addToQueue, goStep, voiceEnabled]);
+
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // SOCKET CONNECTION
   // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -1577,48 +1619,6 @@ export default function MobileScannerPage({ standalone = false }) {
     lockCandidateCount: Number.isFinite(Number(lockTelemetryRef.current?.candidateCount)) ? Number(lockTelemetryRef.current.candidateCount) : 1,
     lockAlternatives: Array.isArray(lockTelemetryRef.current?.alternatives) ? lockTelemetryRef.current.alternatives.slice(0, 3) : [],
   }), [sessionCtx, sessionDate, scanWorkflowMode, scanMode, deviceProfile, captureQuality, captureMeta]);
-
-  const handleLookupNeedsPhoto = useCallback((data = null) => {
-    if (data) setReviewData(data);
-    setProcessingFields({});
-    setErrorMsg('');
-    goStep(STEPS.CAPTURING);
-  }, [goStep]);
-
-  const applyProcessedScanResult = useCallback((data) => {
-    if (!data) return;
-    setReviewData(data);
-    setReviewForm({
-      clientCode: data.clientCode || '',
-      consignee: data.consignee || '',
-      destination: data.destination || '',
-      pincode: data.pincode || '',
-      weight: data.weight || 0,
-      amount: data.amount || 0,
-      orderNo: data.orderNo || '',
-    });
-    setProcessingFields({});
-
-    if (data.reviewRequired) {
-      goStep(STEPS.REVIEWING);
-      return;
-    }
-
-    playSuccessBeep();
-    pulseHaptic('success');
-    if (voiceEnabled) speak(`Auto approved. ${data.clientName || ''}. ${data.destination || ''}.`);
-    const item = {
-      awb: data.awb,
-      clientCode: data.clientCode,
-      clientName: data.clientName,
-      destination: data.destination || '',
-      weight: data.weight || 0,
-      autoApproved: true,
-    };
-    setLastSuccess(item);
-    addToQueue(item);
-    goStep(STEPS.SUCCESS);
-  }, [addToQueue, goStep, voiceEnabled]);
 
   const submitFastBarcode = useCallback(async (awb) => {
     const cleanAwb = String(awb || '').trim().toUpperCase();
