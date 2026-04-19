@@ -88,6 +88,35 @@ async function getAll(filters = {}, page = 1, limit = 50) {
         remarks: true,
         createdAt: true,
         updatedAt: true,
+        trackingEvents: {
+          orderBy: { timestamp: 'desc' },
+          take: 3,
+          select: {
+            id: true,
+            status: true,
+            location: true,
+            description: true,
+            timestamp: true,
+            rawData: true,
+          },
+        },
+        ndrEvents: {
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: {
+            id: true,
+            reason: true,
+            description: true,
+            attemptNo: true,
+            action: true,
+            createdAt: true,
+          },
+        },
+        _count: {
+          select: {
+            ndrEvents: true,
+          },
+        },
         client: { select: { company: true } },
         createdBy: { select: { name: true } },
       },
