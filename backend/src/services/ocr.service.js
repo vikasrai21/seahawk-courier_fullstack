@@ -9,6 +9,7 @@ const { detectCourier } = require('../utils/awbDetect');
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 let genAI;
 if (GEMINI_API_KEY) genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+let _geminiCooldownUntil = null;
 
 const OCR_ENGINES = new Set(['local', 'gemini', 'auto']);
 const LOCAL_OCR_SCRIPT = path.join(__dirname, 'ocr.local.py');
@@ -661,18 +662,37 @@ exports.extractShipmentFromImage = async (base64Data, mimeType, options = {}) =>
   }
 
   // auto: local first, gemini fallback if local did a poor job (e.g. handwriting)
+  // Gemini fallback has a tight timeout to avoid eating the socket OCR budget.
+  const GEMINI_FALLBACK_TIMEOUT_MS = 8000;
+
   try {
     const localResult = await extractWithLocal(base64Data, mimeType, options);
     
     const isQuality = localResult.awb && localResult.consignee && localResult.destination;
     
-    if (!isQuality && genAI) {
-      logger.info('[OCR] Local extraction missed key fields. Falling back to Gemini AI.');
+    if (!isQuality && genAI && !_geminiCooldownUntil) {
+      logger.info('[OCR] Local extraction missed key fields. Falling back to Gemini AI (8s budget).');
       try {
-        return await extractWithGemini(base64Data, mimeType, options);
+        const geminiPromise = extractWithGemini(base64Data, mimeType, options);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Gemini fallback timed out after 8s')), GEMINI_FALLBACK_TIMEOUT_MS)
+        );
+        return await Promise.race([geminiPromise, timeoutPromise]);
       } catch (geminiError) {
-        logger.warn(`[OCR] Gemini fallback failed: ${geminiError.message}. Using partial local result.`);
+        const msg = geminiError.message || '';
+        // If rate-limited, set a 60-second cooldown to avoid wasting time on subsequent scans
+        if (msg.includes('429') || msg.includes('Quota') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+          _geminiCooldownUntil = Date.now() + 60000;
+          logger.warn(`[OCR] Gemini rate-limited. Cooling down for 60s.`);
+        }
+        logger.warn(`[OCR] Gemini fallback failed: ${msg}. Using partial local result.`);
         return localResult;
+      }
+    } else if (!isQuality && _geminiCooldownUntil) {
+      if (Date.now() > _geminiCooldownUntil) {
+        _geminiCooldownUntil = null; // cooldown expired, will try next time
+      } else {
+        logger.info('[OCR] Gemini on cooldown. Returning partial local result.');
       }
     }
     
