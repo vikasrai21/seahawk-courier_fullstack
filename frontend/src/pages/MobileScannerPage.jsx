@@ -250,51 +250,100 @@ const css = `
 .corner-br { bottom: -2px; right: -2px; border-left: none; border-top: none; border-radius: 0 0 8px 0; }
 
 /* â”€â”€ Scan laser â”€â”€ */
-@keyframes laserSparkMove {
-  0% { left: 2%; transform: translateX(-50%) scale(1); opacity: 0.8; }
-  25% { box-shadow: 0 0 15px 4px #fff, 0 0 30px 10px #ff0000; opacity: 1; }
-  50% { left: 50%; transform: translateX(-50%) scale(1.8); box-shadow: 0 0 25px 6px #fff, 0 0 45px 15px #ff0000; opacity: 1; }
-  75% { box-shadow: 0 0 15px 4px #fff, 0 0 30px 10px #ff0000; opacity: 1; }
-  100% { left: 98%; transform: translateX(-50%) scale(1); opacity: 0.8; }
+@keyframes laserHeadSweep {
+  0% { left: 2%; }
+  100% { left: 98%; }
 }
-@keyframes sparkScatter {
-  0% { transform: scale(1.5) translate(0, 0) rotate(0deg); opacity: 1; }
-  100% { transform: scale(0) translate(15px, -20px) rotate(90deg); opacity: 0; }
+@keyframes laserLinePulse {
+  0%, 100% {
+    opacity: 0.78;
+    box-shadow: 0 0 7px rgba(255, 28, 32, 0.8), 0 0 20px rgba(255, 10, 16, 0.35);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 12px rgba(255, 36, 42, 0.95), 0 0 34px rgba(255, 12, 20, 0.55);
+  }
 }
-@keyframes sparkScatterReverse {
-  0% { transform: scale(1.5) translate(0, 0) rotate(0deg); opacity: 1; }
-  100% { transform: scale(0) translate(-15px, 20px) rotate(-90deg); opacity: 0; }
+@keyframes laserBandsDrift {
+  0% { background-position: 0 0, 0 0; }
+  100% { background-position: 160px 0, -120px 0; }
 }
-@keyframes laserPulse {
-  0%, 100% { opacity: 0.5; box-shadow: 0 0 4px rgba(255, 0, 0, 0.8), 0 0 8px rgba(255, 0, 0, 0.4); }
-  50% { opacity: 1; box-shadow: 0 0 8px rgba(255, 0, 0, 1), 0 0 20px rgba(255, 0, 0, 0.8); }
+@keyframes laserBandsPulse {
+  0%, 100% { opacity: 0.35; transform: translateY(-50%) scaleY(0.82); }
+  50% { opacity: 0.85; transform: translateY(-50%) scaleY(1.08); }
+}
+@keyframes laserParticlesDrift {
+  0% { background-position: 0 0, 10px 6px, 5px 2px; opacity: 0.28; }
+  50% { opacity: 0.6; }
+  100% { background-position: -42px 0, -24px 6px, -54px 2px; opacity: 0.32; }
 }
 .scan-laser {
-  position: absolute; left: 2%; right: 2%; height: 2px;
+  position: absolute; left: 2%; right: 2%; height: 3px;
   top: 50%; transform: translateY(-50%);
-  background: rgba(255, 0, 0, 0.95);
-  animation: laserPulse 1.5s ease-in-out infinite;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255, 42, 46, 0.92), #ff111a 48%, rgba(255, 42, 46, 0.92));
+  animation: laserLinePulse 1.4s ease-in-out infinite;
+  overflow: visible;
+}
+.scan-laser::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; top: 50%; height: 34px;
+  transform: translateY(-50%);
+  background:
+    linear-gradient(
+      to bottom,
+      transparent 0%,
+      rgba(255, 48, 48, 0.4) 36%,
+      rgba(255, 90, 90, 0.9) 50%,
+      rgba(255, 48, 48, 0.4) 64%,
+      transparent 100%
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 70, 70, 0) 0 7px,
+      rgba(255, 95, 95, 0.85) 7px 8px,
+      rgba(255, 70, 70, 0) 8px 13px
+    );
+  filter: blur(0.35px);
+  transform-origin: center;
+  animation: laserBandsDrift 2.2s linear infinite, laserBandsPulse 1.3s ease-in-out infinite;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+.scan-laser::after {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; top: 2px; height: 26px;
+  background:
+    radial-gradient(circle, rgba(255, 95, 95, 0.72) 0 1px, transparent 1.8px) 0 0 / 22px 15px repeat,
+    radial-gradient(circle, rgba(255, 40, 40, 0.55) 0 1.1px, transparent 2px) 11px 6px / 29px 17px repeat,
+    radial-gradient(circle, rgba(255, 145, 145, 0.36) 0 0.8px, transparent 1.6px) 5px 2px / 18px 13px repeat;
+  filter: blur(0.15px);
+  animation: laserParticlesDrift 2.4s linear infinite;
+  pointer-events: none;
 }
 .scan-laser-spark {
-  position: absolute; top: 50%; margin-top: -3px;
-  width: 6px; height: 6px; border-radius: 50%;
-  background: #ffffff;
-  box-shadow: 0 0 12px 3px #ffffff, 0 0 25px 8px #ff0000;
-  animation: laserSparkMove 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite alternate;
-}
-.scan-laser-spark::before, .scan-laser-spark::after {
-  content: ''; position: absolute;
-  width: 3px; height: 3px; background: #fff; border-radius: 50%;
-  box-shadow: 0 0 5px #ff0000, 0 0 10px #ff0000;
+  position: absolute; top: 50%;
+  width: 14px; height: 14px; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle at 40% 40%, #fff 0 26%, #ffd9dd 34%, #ff3b44 70%, rgba(255, 40, 45, 0.7) 100%);
+  box-shadow: 0 0 14px 4px rgba(255, 245, 245, 0.85), 0 0 28px 10px rgba(255, 40, 45, 0.75), 0 0 58px 20px rgba(255, 20, 30, 0.36);
+  animation: laserHeadSweep 1.35s cubic-bezier(0.45, 0, 0.2, 1) infinite alternate;
+  z-index: 2;
 }
 .scan-laser-spark::before {
-  left: -8px; top: -6px;
-  animation: sparkScatter 0.6s infinite ease-out;
+  content: '';
+  position: absolute; top: 50%; right: 100%;
+  width: 30px; height: 3px; transform: translateY(-50%);
+  background: linear-gradient(to left, rgba(255, 220, 220, 0.82), rgba(255, 55, 60, 0.4), rgba(255, 55, 60, 0));
+  filter: blur(0.6px);
 }
 .scan-laser-spark::after {
-  right: -8px; top: 6px;
-  animation: sparkScatterReverse 0.7s infinite alternate ease-out;
-  animation-delay: 0.15s;
+  content: '';
+  position: absolute; inset: -4px; border-radius: 50%;
+  border: 1px solid rgba(255, 220, 220, 0.5);
+  animation: laserLinePulse 1.2s ease-in-out infinite;
 }
 
 /* â”€â”€ HUD (top bar on camera) â”€â”€ */
