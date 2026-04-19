@@ -21,6 +21,18 @@ export default function DestinationCard({
   zoneConf,
   delhiveryOda,
 }) {
+  const pinDigits = String(query || '').replace(/\D/g, '');
+  const pinProgress = Math.min(pinDigits.length, 6);
+  const pinVerified = !!locInfo?.pincode && !pinError && !pinLoad;
+  const pinActive = isPin || pinLoad || pinVerified || !!pinError;
+  const inputTone = pinError
+    ? 'border-rose-300 bg-rose-50/30 text-rose-800'
+    : pinVerified
+      ? 'border-emerald-300 bg-emerald-50/20 text-emerald-800'
+      : pinLoad
+        ? 'border-blue-300 bg-blue-50/20 text-slate-900'
+        : 'border-slate-200';
+
   const zoneBadges = [
     ['TK', zone?.trackon],
     ['DL', zone ? `Z-${zone.delhivery}` : null],
@@ -57,11 +69,12 @@ export default function DestinationCard({
           {pinLoad ? <Loader className="w-4 h-4 text-orange-500 animate-spin" /> : <Search className="w-4 h-4 text-slate-300 transition-colors" />}
         </div>
         <input 
-          className="input pl-10 pr-9 py-3 text-sm font-semibold" 
-          placeholder="PIN or city" 
+          className={`input pl-10 pr-9 py-3 text-sm font-semibold ${inputTone}`}
+          placeholder={isPin ? '000000' : 'PIN or city'} 
           value={query} 
           onChange={(e) => handleQueryChange(e.target.value)} 
-          maxLength={50} 
+          maxLength={isPin ? 6 : 50}
+          inputMode={isPin ? 'numeric' : 'text'}
         />
         {query && (
           <button
@@ -74,10 +87,18 @@ export default function DestinationCard({
       </div>
 
       <div className="flex-1">
-        {isPin && query.length < 6 && (
+        {pinActive && (
           <div className="flex items-center gap-2 mb-3 px-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
-            <p className="text-xs text-slate-400">Waiting for PIN…</p>
+            <div className={`w-1.5 h-1.5 rounded-full ${pinError ? 'bg-rose-500' : pinVerified ? 'bg-emerald-500' : pinLoad ? 'bg-blue-500 animate-pulse' : 'bg-orange-500 animate-pulse'}`} />
+            <p className={`text-xs ${pinError ? 'text-rose-500' : pinVerified ? 'text-emerald-600' : 'text-slate-400'}`}>
+              {pinError
+                ? 'PIN validation failed'
+                : pinLoad
+                  ? 'Validating PIN…'
+                  : pinVerified
+                    ? `PIN ${locInfo.pincode} verified`
+                    : `PIN ${pinProgress}/6`}
+            </p>
           </div>
         )}
         

@@ -87,30 +87,53 @@ describe('auth.service', () => {
 
   // ── refreshAccessToken ───────────────────────────────────────────────────
   describe('refreshAccessToken', () => {
-    it('returns new access token from DB-stored refresh token', async () => {
+    it('returns new access and rotated refresh token from DB-stored refresh token', async () => {
       const futureDate = new Date();
       futureDate.setDate(futureDate.getDate() + 30);
-      mockPrisma.refreshToken.findUnique.mockResolvedValue({
+      mockPrisma._mockTx.refreshToken.findUnique.mockResolvedValue({
         token: 'validtoken', userId: 1, expiresAt: futureDate, revokedAt: null,
       });
-      mockPrisma.user.findUnique.mockResolvedValue({ id: 1, email: 'a@a.com', role: 'ADMIN', active: true });
+      mockPrisma._mockTx.user.findUnique.mockResolvedValue({ id: 1, email: 'a@a.com', role: 'ADMIN', active: true });
+      mockPrisma._mockTx.refreshToken.update.mockResolvedValue({});
+      mockPrisma._mockTx.refreshToken.create.mockResolvedValue({});
 
       const result = await authService.refreshAccessToken('validtoken');
       expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('refreshToken');
+      expect(mockPrisma._mockTx.refreshToken.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { token: 'validtoken' } }),
+      );
+      expect(mockPrisma._mockTx.refreshToken.create).toHaveBeenCalled();
     });
 
-    it('throws for revoked token', async () => {
-      mockPrisma.refreshToken.findUnique.mockResolvedValue({
+    it('throws for revoked token and revokes active token family', async () => {
+      mockPrisma._mockTx.refreshToken.findUnique.mockResolvedValue({
         token: 'revokedtoken', userId: 1, expiresAt: new Date('2099-01-01'), revokedAt: new Date(),
       });
+      mockPrisma._mockTx.refreshToken.updateMany.mockResolvedValue({ count: 2 });
       await expect(authService.refreshAccessToken('revokedtoken')).rejects.toThrow();
+      expect(mockPrisma._mockTx.refreshToken.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { userId: 1, revokedAt: null } }),
+      );
     });
 
     it('throws for expired DB token', async () => {
-      mockPrisma.refreshToken.findUnique.mockResolvedValue({
+      mockPrisma._mockTx.refreshToken.findUnique.mockResolvedValue({
         token: 'expiredtoken', userId: 1, expiresAt: new Date('2020-01-01'), revokedAt: null,
       });
       await expect(authService.refreshAccessToken('expiredtoken')).rejects.toThrow();
+    });
+
+    it('upgrades legacy JWT refresh to rotated DB token', async () => {
+      mockPrisma._mockTx.refreshToken.findUnique.mockResolvedValue(null);
+      vi.spyOn(jwt, 'verify').mockReturnValue({ id: 1 });
+      mockPrisma.user.findUnique.mockResolvedValue({ id: 1, email: 'legacy@x.com', role: 'ADMIN', active: true });
+      mockPrisma.refreshToken.create.mockResolvedValue({});
+
+      const result = await authService.refreshAccessToken('legacy-jwt-token');
+      expect(result).toHaveProperty('accessToken');
+      expect(result).toHaveProperty('refreshToken');
+      expect(mockPrisma.refreshToken.create).toHaveBeenCalled();
     });
   });
 

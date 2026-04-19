@@ -31,11 +31,16 @@ export default function ResultsPanel({
   fmtI,
   compact = false,
   intelligence,
+  getMarginWarning,
+  targetMargin,
 }) {
   if (!results.length) return null;
 
   const speedChamp = [...results].sort((a,b) => (a.level === 'premium' ? -1 : 1) - (b.level === 'premium' ? -1 : 1))[0];
   const costWinner = [...results].sort((a,b) => a.bk.total - b.bk.total)[0];
+  const expensiveCutoff = (costWinner?.bk?.total || 0) * 1.18;
+  const targetMarginNum = Number(targetMargin);
+  const hasTargetMargin = Number.isFinite(targetMarginNum) && targetMarginNum > 0;
 
   const groups = {};
   results.forEach(r => { (groups[r.group] ??= []).push(r); });
@@ -160,9 +165,23 @@ export default function ResultsPanel({
                   const isSpeedChamp = r.id === speedChamp?.id;
                   const isCostWinner = r.id === costWinner?.id;
                   const open = expanded === r.id;
+                  const isExpensive = !isBest && r.bk.total >= expensiveCutoff;
+                  const tier = isBest ? 'best' : (isExpensive ? 'expensive' : 'balanced');
+                  const tierMeta = tier === 'best'
+                    ? { icon: '🟢', label: 'Best', className: 'bg-emerald-500/10 text-emerald-700 border border-emerald-500/20' }
+                    : tier === 'expensive'
+                      ? { icon: '🔴', label: 'Expensive', className: 'bg-rose-500/10 text-rose-700 border border-rose-500/20' }
+                      : { icon: '🟡', label: 'Balanced', className: 'bg-amber-500/10 text-amber-700 border border-amber-500/20' };
+                  const marginWarning = typeof getMarginWarning === 'function' ? getMarginWarning(r.id, r.margin) : null;
+                  const belowTarget = hasTargetMargin && r.margin < targetMarginNum;
+                  const rowTone = tier === 'best'
+                    ? 'border-emerald-200/80 bg-emerald-50/40'
+                    : tier === 'expensive'
+                      ? 'border-rose-200/80 bg-rose-50/30'
+                      : 'border-amber-200/80 bg-amber-50/25';
 
                   return (
-                    <div key={r.id} className={`group ${compact ? 'rounded-xl border border-slate-200 bg-white' : 'card p-0 border-white/40 overflow-hidden'} ${isBest ? 'ring-2 ring-blue-500/20' : ''}`}>
+                    <div key={r.id} className={`group ${compact ? 'rounded-xl border border-slate-200 bg-white' : `card p-0 overflow-hidden ${rowTone}`} ${isBest ? 'ring-2 ring-blue-500/20' : ''}`}>
                       <button
                         onClick={() => setExpanded(open ? null : r.id)}
                         className={`w-full text-left ${compact ? 'px-4 py-3 gap-4' : 'px-8 py-6 gap-8'} flex items-center transition-all hover:bg-white dark:hover:bg-slate-800/20 ${open ? 'bg-white dark:bg-slate-800/40' : ''}`}
@@ -172,38 +191,51 @@ export default function ResultsPanel({
                         </div>
 
                         <div className="flex-1 min-w-0">
-                           <div className="flex items-center gap-3 mb-1">
+                            <div className="flex items-center gap-3 mb-1">
                               <span className="text-sm font-semibold text-slate-900 dark:text-white tracking-tight">{r.mode}</span>
                               <div className="flex gap-2">
+                                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide ${tierMeta.className}`}>
+                                  {tierMeta.icon} {tierMeta.label}
+                                </span>
                                 {isBest && <span className="badge-info px-2">Recommended</span>}
                                 {isSpeedChamp && !isBest && <span className="badge-warning px-2 flex items-center gap-1"><Clock size={10}/> Speed</span>}
                                 {isCostWinner && !isBest && <span className="badge-success px-2">Value</span>}
+                                {belowTarget && (
+                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide bg-rose-500/10 text-rose-700 border border-rose-500/20">
+                                    Margin below target
+                                  </span>
+                                )}
                               </div>
-                           </div>
-                           <div className="flex items-center gap-3">
-                              <span className={`text-[11px] ${r.level === 'premium' ? 'text-orange-500' : 'text-slate-500'}`}>
-                                 {r.level === 'premium' ? 'Priority' : 'Standard'}
+                            </div>
+                            <div className="flex items-center gap-3">
+                               <span className={`text-[11px] ${r.level === 'premium' ? 'text-orange-500' : 'text-slate-500'}`}>
+                                  {r.level === 'premium' ? 'Priority' : 'Standard'}
                               </span>
                               {r.bk.mcwApplied && (
                                 <span className="flex items-center gap-1.5 text-[11px] text-rose-500">
                                    <div className="w-1 h-1 rounded-full bg-rose-500 animate-pulse" /> Floor Active
                                 </span>
                               )}
-                              {intelligence?.laneTotals && (
-                                <span className="text-[11px] text-slate-400">
-                                  Lane risk: {(() => {
-                                    const lane = intelligence?.laneTotals;
-                                    if (!lane) return '—';
+                               {intelligence?.laneTotals && (
+                                 <span className="text-[11px] text-slate-400">
+                                   Lane risk: {(() => {
+                                     const lane = intelligence?.laneTotals;
+                                     if (!lane) return '—';
                                     const rto = lane.rtoRate ?? 0;
                                     const sla = lane.slaBreachRate ?? 0;
                                     const stuck = lane.stuckRate ?? 0;
                                     const risk = Math.max(rto, sla, stuck);
                                     return risk >= 0.2 ? 'High' : risk >= 0.1 ? 'Medium' : 'Low';
-                                  })()}
-                                </span>
-                              )}
-                           </div>
-                        </div>
+                                   })()}
+                                 </span>
+                               )}
+                               {marginWarning && (
+                                 <span className="text-[11px] text-rose-600">
+                                   Min margin rule: {marginWarning.minMarginPct}%
+                                 </span>
+                               )}
+                            </div>
+                         </div>
 
                         <div className={`hidden lg:grid tabular-nums shrink-0 ${compact ? 'grid-cols-3 gap-6' : 'grid-cols-4 gap-12'}`}>
                            <DataCell label="Full Landed" value={fmt(r.bk.total)} />

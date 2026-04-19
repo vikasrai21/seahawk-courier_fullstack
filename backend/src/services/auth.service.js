@@ -29,16 +29,20 @@ function generateRefreshToken() {
   return crypto.randomBytes(48).toString('hex');
 }
 
+function buildRefreshExpiry() {
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 30);
+  return expiresAt;
+}
+
 // Store refresh token — gracefully skips if table doesn't exist yet
 async function storeRefreshToken(userId, token, meta = {}) {
   try {
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
     await prisma.refreshToken.create({
       data: {
         token,
         userId,
-        expiresAt,
+        expiresAt: buildRefreshExpiry(),
         ip: meta.ip || null,
         userAgent: meta.userAgent || null,
       },
@@ -112,20 +116,52 @@ async function login(email, password, meta = {}) {
 
 // Refresh — tries DB first, falls back to JWT verification
 async function refreshAccessToken(token) {
+  const now = new Date();
+
   // Try DB-stored token first
   try {
-    const stored = await prisma.refreshToken.findUnique({ where: { token } });
-    if (stored) {
-      if (stored.revokedAt || stored.expiresAt < new Date()) {
+    const rotated = await prisma.$transaction(async (tx) => {
+      const stored = await tx.refreshToken.findUnique({ where: { token } });
+      if (!stored) return null;
+
+      if (stored.expiresAt < now) {
         throw new AppError('Invalid or expired refresh token.', 401);
       }
-      const user = await prisma.user.findUnique({
+
+      if (stored.revokedAt) {
+        // Reuse of a previously-rotated token indicates replay attempt.
+        await tx.refreshToken.updateMany({
+          where: { userId: stored.userId, revokedAt: null },
+          data: { revokedAt: now },
+        });
+        throw new AppError('Refresh token reuse detected. Please log in again.', 401);
+      }
+
+      const user = await tx.user.findUnique({
         where: { id: stored.userId },
         select: { id: true, email: true, role: true, active: true },
       });
       if (!user || !user.active) throw new AppError('User not found.', 401);
-      return { accessToken: signAccess(user) };
-    }
+
+      const nextRefreshToken = generateRefreshToken();
+      await tx.refreshToken.update({
+        where: { token },
+        data: { revokedAt: now },
+      });
+      await tx.refreshToken.create({
+        data: {
+          token: nextRefreshToken,
+          userId: stored.userId,
+          expiresAt: buildRefreshExpiry(),
+          ip: stored.ip || null,
+          userAgent: stored.userAgent || null,
+        },
+      });
+
+      return { accessToken: signAccess(user), refreshToken: nextRefreshToken };
+    });
+
+    if (rotated) return rotated;
   } catch (err) {
     if (err.isOperational) throw err;
     // Table doesn't exist — fall through to JWT
@@ -139,7 +175,9 @@ async function refreshAccessToken(token) {
       select: { id: true, email: true, role: true, active: true },
     });
     if (!user || !user.active) throw new AppError('User not found.', 401);
-    return { accessToken: signAccess(user) };
+    const nextRefreshToken = generateRefreshToken();
+    await storeRefreshToken(user.id, nextRefreshToken);
+    return { accessToken: signAccess(user), refreshToken: nextRefreshToken };
   } catch {
     throw new AppError('Invalid or expired refresh token.', 401);
   }

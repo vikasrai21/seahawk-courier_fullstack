@@ -66,7 +66,7 @@ It integrates with major Indian carriers (Delhivery, DTDC, Trackon, BlueDart, DH
 | Payments | Razorpay |
 | Notifications | WhatsApp (Meta Cloud API), SMTP email |
 | Monitoring | Sentry, custom metrics middleware |
-| Deployment | Docker, Railway, PM2 |
+| Deployment | Railway |
 | CI/CD | GitHub Actions |
 
 ---
@@ -99,8 +99,7 @@ seahawk/
 │       ├── services/              # Axios API client
 │       └── stores/                # Zustand state (dataStore, uiStore)
 ├── .github/workflows/ci.yml       # GitHub Actions CI/CD pipeline
-├── docker-compose.yml             # Local dev with Docker
-├── Dockerfile                     # Production container
+├── Dockerfile                     # Railway build container
 └── railway.toml                   # Railway deployment config
 ```
 
@@ -205,22 +204,9 @@ Open `http://localhost:5173`.
 
 ---
 
-## Running with Docker
-
-```bash
-# Copy and fill in your secrets
-cp backend/.env.example backend/.env
-
-docker-compose up -d
-```
-
-The compose file starts PostgreSQL and the app. Redis is required separately — add a Redis service or point `REDIS_URL` at a managed instance (Redis Cloud free tier works).
-
-Access at `http://localhost:3001`.
-
----
-
 ## Production deployment (Railway)
+
+Seahawk is now standardized on Railway for production hosting and database/runtime services.
 
 1. Push to GitHub
 2. Create a new Railway project → **Deploy from GitHub repo**

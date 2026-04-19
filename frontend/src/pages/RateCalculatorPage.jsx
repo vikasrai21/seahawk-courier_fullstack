@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Settings,
   Search,
@@ -32,6 +33,7 @@ import {
 } from '../features/rate-calculator/core';
 
 export default function RateCalculatorPage() {
+  const navigate = useNavigate();
   const [query,    setQuery]   = useState('');
   const [zone,     setZone]    = useState(null);
   const [locInfo,  setLocInfo] = useState(null);
@@ -68,10 +70,12 @@ export default function RateCalculatorPage() {
   const [quoteCourier, setQuoteCourier] = useState(null);
   const [savingQuote, setSavingQuote] = useState(false);
   const [quoteSaved, setQuoteSaved] = useState(null);
+  const [quickActionMsg, setQuickActionMsg] = useState('');
   const [zoneConf, setZoneConf] = useState(null);
   const [marginRules, setMarginRules] = useState([]);
   const [laneIntel, setLaneIntel] = useState(null);
   const [laneIntelLoading, setLaneIntelLoading] = useState(false);
+  const actionMsgTimerRef = useRef(null);
 
   useEffect(() => { fetchClients().catch(() => {}); }, [fetchClients]);
   useEffect(()=>{ api.get('/rates/margin-rules').then(r=>setMarginRules((r.data?.data||[]).filter(mr=>mr.active))).catch(()=>{}); },[]);
@@ -108,9 +112,12 @@ export default function RateCalculatorPage() {
   },[query,isPin,zone]);
 
   const handleQueryChange=v=>{
-    setQuery(v);setZone(null);setLocInfo(null);setPinErr('');setZoneConf(null);
+    const raw = String(v || '');
+    const hasLetters = /[a-z]/i.test(raw);
+    const normalized = hasLetters ? raw.slice(0, 50) : raw.replace(/\D/g, '').slice(0, 6);
+    setQuery(normalized);setZone(null);setLocInfo(null);setPinErr('');setZoneConf(null);
     setCustomPrice('');setEditPrice(false);setExpanded(null);
-    if(/^\d{6}$/.test(v.trim()))lookupPin(v.trim());
+    if(/^\d{6}$/.test(normalized))lookupPin(normalized);
   };
   const selectCity=c=>{
     setQuery(c.label);
@@ -230,6 +237,17 @@ export default function RateCalculatorPage() {
     return margin < rule.minMarginPct ? rule : null;
   }, [marginRules, zone, shipType]);
 
+  const flashQuickAction = useCallback((message) => {
+    if (!message) return;
+    setQuickActionMsg(message);
+    if (actionMsgTimerRef.current) clearTimeout(actionMsgTimerRef.current);
+    actionMsgTimerRef.current = setTimeout(() => setQuickActionMsg(''), 3500);
+  }, []);
+
+  useEffect(() => () => {
+    if (actionMsgTimerRef.current) clearTimeout(actionMsgTimerRef.current);
+  }, []);
+
   const handleSaveQuote = async () => {
     const c = quoteCourier || results[0];
     if (!c) return;
@@ -237,8 +255,13 @@ export default function RateCalculatorPage() {
     try {
       const payload = { clientCode: selClient?.code || null, destination: locInfo?.label || query, pincode: locInfo?.pincode || null, state: zone?.seahawkZone || '', district: '', shipType, weight: chargeWt, courier: c.label, courierMode: c.mode, costTotal: c.bk.total, sellTotal: c.sell, profit: c.profit, margin: c.margin, notes: quoteNote || null, status: 'QUOTED', };
       const res = await api.post('/quotes', payload);
-      setQuoteSaved({ quoteNo: res.data?.quoteNo || res.data?.data?.quoteNo || '' });
-    } catch (e) { console.error('Save quote failed', e); } finally { setSavingQuote(false); }
+      const quoteNo = res.data?.quoteNo || res.data?.data?.quoteNo || '';
+      setQuoteSaved({ quoteNo });
+      flashQuickAction(quoteNo ? `Quote ${quoteNo} saved.` : 'Quote saved.');
+    } catch (e) {
+      console.error('Save quote failed', e);
+      flashQuickAction('Save failed. Please retry.');
+    } finally { setSavingQuote(false); }
   };
 
   const handlePrint=()=>{
@@ -250,6 +273,57 @@ export default function RateCalculatorPage() {
 
   const best=results[0];
   const toggleHide=id=>{ setHiddenIds(prev=>{const n=new Set(prev);n.has(id)?n.delete(id):n.add(id);return n;}); };
+
+  const handleBookShipment = useCallback(() => {
+    const selected = quoteCourier || best;
+    if (!selected) {
+      flashQuickAction('Calculate a quote first.');
+      return;
+    }
+    const params = new URLSearchParams({
+      destination: locInfo?.label || query || '',
+      pincode: locInfo?.pincode || '',
+      weight: String(chargeWt || ''),
+      amount: String(rnd(selected.sell || 0)),
+      courier: selected.label || '',
+    });
+    navigate(`/app/entry?${params.toString()}`);
+  }, [quoteCourier, best, flashQuickAction, locInfo, query, chargeWt, navigate]);
+
+  const handleSendToClient = useCallback(async () => {
+    const selected = quoteCourier || best;
+    if (!selected) {
+      flashQuickAction('Calculate a quote first.');
+      return;
+    }
+    const shareText = [
+      'Seahawk Quote',
+      `Destination: ${locInfo?.label || query || '—'}`,
+      `Courier: ${selected.label} (${selected.mode})`,
+      `Chargeable Weight: ${chargeWt.toFixed(2)} kg`,
+      `Landed Cost: ${fmt(selected.bk.total)}`,
+      `Sell Price: ${fmt(selected.sell)}`,
+      `Margin: ${fmtP(selected.margin)}`,
+      `Profit: ${fmt(selected.profit)}`,
+    ].join('\n');
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'Seahawk Rate Quote', text: shareText });
+        flashQuickAction('Quote shared.');
+        return;
+      }
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareText);
+        flashQuickAction('Quote copied. Paste and send to client.');
+        return;
+      }
+      flashQuickAction('Share is not supported on this browser.');
+    } catch (err) {
+      if (err?.name !== 'AbortError') flashQuickAction('Could not share quote.');
+    }
+  }, [quoteCourier, best, flashQuickAction, locInfo, query, chargeWt]);
+
   const intelligence = useMemo(() => {
     const notes = [];
     let score = 0;
@@ -399,7 +473,31 @@ export default function RateCalculatorPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
          <div className="lg:col-span-12 space-y-6">
             {zone && chargeWt > 0 && (
-              <SellingPriceBanner effectiveSell={effectiveSell} bannerColor={customPrice?'bg-amber-600':activeContract?'bg-blue-900':'bg-slate-900'} customPrice={customPrice} activeContract={activeContract} svcLevel={svcLevel} zone={zone} chargeWt={chargeWt} shipType={shipType} proposalSell={(z,w,s,l) => proposalSell(z,w,s,l, results[0]?.bk?.total || 0)} fmt={fmt} fmtP={fmtP} editPrice={editPrice} setEditPrice={setEditPrice} setCustomPrice={setCustomPrice} sortMode={sortMode} setSortMode={setSortMode} />
+              <div className={tab === 'calc' ? 'sticky top-3 z-20' : ''}>
+                <SellingPriceBanner
+                  effectiveSell={effectiveSell}
+                  bannerColor={customPrice?'bg-amber-600':activeContract?'bg-blue-900':'bg-slate-900'}
+                  customPrice={customPrice}
+                  activeContract={activeContract}
+                  svcLevel={svcLevel}
+                  zone={zone}
+                  chargeWt={chargeWt}
+                  shipType={shipType}
+                  proposalSell={(z,w,s,l) => proposalSell(z,w,s,l, results[0]?.bk?.total || 0)}
+                  fmt={fmt}
+                  fmtP={fmtP}
+                  editPrice={editPrice}
+                  setEditPrice={setEditPrice}
+                  setCustomPrice={setCustomPrice}
+                  sortMode={sortMode}
+                  setSortMode={setSortMode}
+                  onBookShipment={handleBookShipment}
+                  onSaveQuote={handleSaveQuote}
+                  onSendToClient={handleSendToClient}
+                  savingQuote={savingQuote}
+                  quickActionMsg={quickActionMsg}
+                />
+              </div>
             )}
             
             {results.length > 0 ? (

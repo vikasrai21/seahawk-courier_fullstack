@@ -29,7 +29,10 @@ const refresh = asyncHandler(async (req, res) => {
   const token = req.cookies?.refreshToken;
   if (!token) return R.unauthorized(res, 'No refresh token.');
   const result = await authService.refreshAccessToken(token);
-  R.ok(res, result, 'Token refreshed');
+  if (result.refreshToken) {
+    res.cookie('refreshToken', result.refreshToken, refreshCookieOpts);
+  }
+  R.ok(res, { accessToken: result.accessToken }, 'Token refreshed');
 });
 
 const logout = asyncHandler(async (req, res) => {

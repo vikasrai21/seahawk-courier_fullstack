@@ -115,19 +115,29 @@ async function creditShipmentRefund({ clientCode, awb, amount, reason }, db = pr
 async function debit({ clientCode, amount, description, reference }) {
   const safeAmount = parseAmount(amount);
   return prisma.$transaction(async (tx) => {
-    const client = await tx.client.findUnique({
-      where:  { code: clientCode },
-      select: { walletBalance: true },
+    const debitResult = await tx.client.updateMany({
+      where: {
+        code: clientCode,
+        walletBalance: { gte: safeAmount },
+      },
+      data: { walletBalance: { decrement: safeAmount } },
     });
-    if (!client) throw new Error(`Client not found: ${clientCode}`);
-    if (client.walletBalance < safeAmount) {
+
+    if (debitResult.count === 0) {
+      const client = await tx.client.findUnique({
+        where: { code: clientCode },
+        select: { walletBalance: true },
+      });
+      if (!client) throw new Error(`Client not found: ${clientCode}`);
       throw new Error(`Insufficient wallet balance (available: ₹${client.walletBalance.toFixed(2)}, required: ₹${safeAmount.toFixed(2)})`);
     }
-    const updated = await tx.client.update({
+
+    const updated = await tx.client.findUnique({
       where: { code: clientCode },
-      data:  { walletBalance: { decrement: safeAmount } },
       select: { code: true, company: true, walletBalance: true },
     });
+    if (!updated) throw new Error(`Client not found: ${clientCode}`);
+
     const txn = await tx.walletTransaction.create({
       data: {
         clientCode,

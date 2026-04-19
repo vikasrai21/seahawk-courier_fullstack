@@ -1,5 +1,5 @@
 import React from 'react';
-import { Edit3, Sparkles, Target, TrendingUp, DollarSign, X } from 'lucide-react';
+import { Edit3, Sparkles, Target, TrendingUp, Loader, Send, Save, Rocket, X } from 'lucide-react';
 
 export default function SellingPriceBanner({
   effectiveSell,
@@ -18,6 +18,11 @@ export default function SellingPriceBanner({
   setCustomPrice,
   sortMode,
   setSortMode,
+  onBookShipment,
+  onSaveQuote,
+  onSendToClient,
+  savingQuote,
+  quickActionMsg,
 }) {
   if (!effectiveSell) return null;
 
@@ -28,10 +33,10 @@ export default function SellingPriceBanner({
        
        <div className="relative z-10 px-8 py-6 flex flex-wrap items-center justify-between gap-8 bg-white dark:bg-slate-950/80 backdrop-blur-3xl rounded-[30px]">
           <div className="flex-1 min-w-[300px]">
-            <div className="flex items-center gap-4 mb-3">
-              <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-sm border ${
-                customPrice 
-                  ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' 
+              <div className="flex items-center gap-4 mb-3">
+                <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-sm border ${
+                  customPrice 
+                    ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' 
                   : activeContract 
                     ? 'bg-blue-500/10 text-blue-600 border-blue-500/20' 
                     : 'bg-slate-900 text-white border-slate-800'
@@ -54,8 +59,8 @@ export default function SellingPriceBanner({
                     <X size={14} />
                   </button>
                 )}
+                </div>
               </div>
-            </div>
 
             {editPrice ? (
               <div className="flex items-center gap-4 mt-2 reveal">
@@ -70,11 +75,14 @@ export default function SellingPriceBanner({
               </div>
             ) : (
               <div className="reveal">
+                <p className="text-[11px] font-black uppercase tracking-[0.25em] text-blue-600 mb-2">
+                  Final Answer
+                </p>
                 <div className="flex items-baseline gap-2">
-                   <h2 className="text-5xl font-black tracking-tighter text-slate-900 dark:text-white tabular-nums leading-none">
+                   <h2 className="text-6xl lg:text-7xl font-black tracking-tighter text-slate-950 dark:text-white tabular-nums leading-none">
                       {fmt(effectiveSell.total)}
                    </h2>
-                   <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Global Sell Target</span>
+                   <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">Global Sell Target</span>
                 </div>
                 
                 {!customPrice && !activeContract && svcLevel === 'all' && zone && chargeWt > 0 && shipType !== 'air' && (() => {
@@ -96,6 +104,34 @@ export default function SellingPriceBanner({
                 })()}
               </div>
             )}
+
+            <div className="mt-5 flex flex-wrap items-center gap-3">
+              <button
+                onClick={onBookShipment}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-black uppercase tracking-wider hover:bg-black transition-all"
+              >
+                <Rocket size={14} />
+                Book Shipment
+              </button>
+              <button
+                onClick={onSaveQuote}
+                disabled={savingQuote}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-black uppercase tracking-wider hover:bg-emerald-700 transition-all disabled:opacity-60"
+              >
+                {savingQuote ? <Loader size={14} className="animate-spin" /> : <Save size={14} />}
+                Save Quote
+              </button>
+              <button
+                onClick={onSendToClient}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-300 text-slate-700 text-xs font-black uppercase tracking-wider hover:bg-slate-100 transition-all"
+              >
+                <Send size={14} />
+                Send to Client
+              </button>
+              {quickActionMsg ? (
+                <span className="text-xs text-slate-500 ml-1">{quickActionMsg}</span>
+              ) : null}
+            </div>
 
             {effectiveSell.fsc > 0 && (
               <div className="flex items-center gap-4 mt-4 opacity-60">

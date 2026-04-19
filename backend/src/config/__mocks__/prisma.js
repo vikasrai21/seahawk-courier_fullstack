@@ -3,8 +3,10 @@
 
 const mockTx = {
   shipment: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn(), updateMany: vi.fn() },
-  client: { update: vi.fn(), findUnique: vi.fn(), upsert: vi.fn() },
+  client: { update: vi.fn(), updateMany: vi.fn(), findUnique: vi.fn(), upsert: vi.fn() },
   walletTransaction: { create: vi.fn(), findFirst: vi.fn() },
+  refreshToken: { create: vi.fn(), findUnique: vi.fn(), update: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
+  user: { findUnique: vi.fn() },
 };
 
 const mockPrisma = {

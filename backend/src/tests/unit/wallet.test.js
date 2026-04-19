@@ -71,8 +71,8 @@ describe('wallet.service', () => {
   // ── debit ────────────────────────────────────────────────────────────
   describe('debit', () => {
     it('decrements balance and creates transaction', async () => {
-      mockTx.client.findUnique = vi.fn().mockResolvedValue({ walletBalance: 500 });
-      mockTx.client.update = vi.fn().mockResolvedValue({ code: 'T', company: 'T', walletBalance: 400 });
+      mockTx.client.updateMany = vi.fn().mockResolvedValue({ count: 1 });
+      mockTx.client.findUnique = vi.fn().mockResolvedValue({ code: 'T', company: 'T', walletBalance: 400 });
       mockTx.walletTransaction.create = vi.fn().mockResolvedValue({ id: 2, type: 'DEBIT', amount: 100, status: 'SUCCESS' });
       mockPrisma.$transaction.mockImplementation((fn) => fn(mockTx));
 
@@ -82,12 +82,14 @@ describe('wallet.service', () => {
     });
 
     it('throws on insufficient balance', async () => {
+      mockTx.client.updateMany = vi.fn().mockResolvedValue({ count: 0 });
       mockTx.client.findUnique = vi.fn().mockResolvedValue({ walletBalance: 10 });
       mockPrisma.$transaction.mockImplementation((fn) => fn(mockTx));
       await expect(walletService.debit({ clientCode: 'T', amount: 500 })).rejects.toThrow('Insufficient wallet balance');
     });
 
     it('throws when client not found during debit', async () => {
+      mockTx.client.updateMany = vi.fn().mockResolvedValue({ count: 0 });
       mockTx.client.findUnique = vi.fn().mockResolvedValue(null);
       mockPrisma.$transaction.mockImplementation((fn) => fn(mockTx));
       await expect(walletService.debit({ clientCode: 'BAD', amount: 10 })).rejects.toThrow('Client not found');
