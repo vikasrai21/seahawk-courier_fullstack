@@ -43,6 +43,32 @@ const DEVICE_PROFILES = {
   phone: 'phone-camera',
   rugged: 'rugged-scanner',
 };
+const REVIEW_COURIERS = ['Trackon', 'DTDC', 'Delhivery', 'BlueDart'];
+
+const normalizeReviewCourier = (value) => {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  const upper = raw.toUpperCase();
+  if (upper.includes('TRACKON') || upper.includes('PRIME')) return 'Trackon';
+  if (upper.includes('DTDC')) return 'DTDC';
+  if (upper.includes('DELHIVERY')) return 'Delhivery';
+  if (upper.includes('BLUE')) return 'BlueDart';
+  return raw;
+};
+
+const formatDisplayDate = (isoDate) => {
+  const raw = String(isoDate || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  try {
+    return new Date(`${raw}T00:00:00`).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  } catch {
+    return raw;
+  }
+};
 
 
 const STEPS = {
@@ -400,6 +426,90 @@ const css = `
 .source-ai { background: ${theme.primaryLight}; color: ${theme.primary}; }
 .source-history { background: ${theme.warningLight}; color: ${theme.warning}; }
 .source-pincode { background: ${theme.successLight}; color: ${theme.success}; }
+
+.review-header {
+  background: linear-gradient(135deg, #0F172A, #1E293B);
+  color: #F8FAFC;
+  border-bottom: 1px solid #334155;
+  padding: 14px 20px 12px;
+}
+.review-header-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.review-title {
+  font-size: 0.65rem;
+  color: #94A3B8;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.review-awb {
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: #F8FAFC;
+  margin-top: 2px;
+}
+.review-meta-row {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.review-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+.review-chip-courier {
+  border: 1px solid #6366F1;
+  background: rgba(99,102,241,0.22);
+  color: #E0E7FF;
+  cursor: pointer;
+}
+.review-chip-date {
+  border: 1px solid #475569;
+  background: rgba(30,41,59,0.6);
+  color: #CBD5E1;
+}
+.review-confidence {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+.review-confidence.high { background: rgba(5,150,105,0.22); color: #6EE7B7; border: 1px solid #059669; }
+.review-confidence.med { background: rgba(217,119,6,0.22); color: #FCD34D; border: 1px solid #D97706; }
+.review-confidence.low { background: rgba(220,38,38,0.22); color: #FCA5A5; border: 1px solid #DC2626; }
+
+.suggest-chip {
+  font-size: 0.76rem;
+  padding: 8px 12px;
+  min-height: 34px;
+  border-radius: 10px;
+  border: 1px solid ${theme.border};
+  background: ${theme.surface};
+  color: ${theme.text};
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 600;
+  touch-action: manipulation;
+}
+.suggest-chip.active {
+  background: ${theme.primaryLight};
+  color: ${theme.primary};
+  border-color: rgba(79,70,229,0.3);
+}
 
 /* ——— Shimmer skeleton ——— */
 @keyframes shimmer {
@@ -922,6 +1032,7 @@ export default function MobileScannerPage({ standalone = false }) {
         awb: payload.awb,
         courier: 'AUTO',
         captureOnly: true,
+        sessionContext: payload.sessionContext || {},
       });
       return;
     }
@@ -1074,7 +1185,8 @@ export default function MobileScannerPage({ standalone = false }) {
       weight: data.weight || 0,
       amount: data.amount || 0,
       orderNo: data.orderNo || '',
-      courier: data.courier || '',
+      courier: normalizeReviewCourier(data.courier || ''),
+      date: data.date || sessionDate || new Date().toISOString().slice(0, 10),
     });
     setProcessingFields({});
 
@@ -1099,7 +1211,7 @@ export default function MobileScannerPage({ standalone = false }) {
     setLastSuccess(item);
     addToQueue(item);
     goStep(STEPS.SUCCESS);
-  }, [addToQueue, goStep, voiceEnabled]);
+  }, [addToQueue, goStep, voiceEnabled, sessionDate]);
 
   useEffect(() => {
     handleLookupNeedsPhotoRef.current = handleLookupNeedsPhoto;
@@ -1214,7 +1326,7 @@ export default function MobileScannerPage({ standalone = false }) {
       const activeReviewData = reviewDataRef.current || {};
       const activeReviewForm = reviewFormRef.current || {};
       if (success) {
-        playSuccessBeep();
+        playHardwareBeep();
         pulseHaptic('success');
         setFlash('success');
         const item = {
@@ -1700,7 +1812,12 @@ export default function MobileScannerPage({ standalone = false }) {
       }
 
       try {
-        const res = await api.post('/shipments/scan', { awb: cleanAwb, courier: 'AUTO', captureOnly: true });
+        const res = await api.post('/shipments/scan', {
+          awb: cleanAwb,
+          courier: 'AUTO',
+          captureOnly: true,
+          sessionContext: buildSessionContextPayload(),
+        });
         const shipment = res?.data?.shipment || {};
         const item = {
           awb: shipment.awb || cleanAwb,
@@ -1915,6 +2032,7 @@ export default function MobileScannerPage({ standalone = false }) {
     if (!reviewData) return;
     goStep(STEPS.APPROVING);
     let approvalAccepted = !isStandalone;
+    const approvalDate = reviewForm.date || sessionDate || new Date().toISOString().slice(0, 10);
     if (isE2eMock) {
       setTimeout(() => {
         const item = {
@@ -1954,6 +2072,7 @@ export default function MobileScannerPage({ standalone = false }) {
       amount: parseFloat(reviewForm.amount) || 0,
       orderNo: reviewForm.orderNo || '',
       courier: reviewForm.courier || '',
+      date: approvalDate,
     };
 
     if (isStandalone) {
@@ -1967,7 +2086,7 @@ export default function MobileScannerPage({ standalone = false }) {
           await api.post('/shipments', { awb: reviewData.awb || lockedAwb, ...fields });
         }
 
-        playSuccessBeep();
+        playHardwareBeep();
         pulseHaptic('success');
         setFlash('success');
         const item = {
@@ -2035,7 +2154,7 @@ export default function MobileScannerPage({ standalone = false }) {
         };
       });
     }
-  }, [socket, reviewData, reviewForm, lockedAwb, pin, goStep, addToQueue, isE2eMock, deviceProfile, isStandalone]);
+  }, [socket, reviewData, reviewForm, lockedAwb, pin, goStep, addToQueue, isE2eMock, deviceProfile, isStandalone, sessionDate]);
 
   // ══════════════════════════════════════════════════════════════════════════════════
   // RESET / NEXT SCAN
@@ -2123,6 +2242,31 @@ export default function MobileScannerPage({ standalone = false }) {
       weight: { confidence: ocrData?.weightConfidence || 0, source: ocrData?.weightSource || null },
     };
   }, [reviewData]);
+
+  const cycleReviewCourier = useCallback(() => {
+    setReviewForm((prev) => {
+      const current = normalizeReviewCourier(prev.courier || reviewData?.courier || '');
+      const currentIndex = REVIEW_COURIERS.findIndex((name) => name.toUpperCase() === current.toUpperCase());
+      const next = REVIEW_COURIERS[(currentIndex + 1 + REVIEW_COURIERS.length) % REVIEW_COURIERS.length];
+      return { ...prev, courier: next };
+    });
+  }, [reviewData]);
+
+  const reviewConfidence = useMemo(() => {
+    const scores = Object.values(fieldConfidence)
+      .map((entry) => Number(entry?.confidence || 0))
+      .filter((value) => value > 0);
+    const score = scores.length
+      ? scores.reduce((sum, value) => sum + value, 0) / scores.length
+      : 0;
+    const level = confLevel(score);
+    const label = level === 'high' ? 'High Confidence' : (level === 'med' ? 'Medium Confidence' : 'Low Confidence');
+    return { score, level, label };
+  }, [fieldConfidence]);
+
+  const reviewCourier = normalizeReviewCourier(reviewForm.courier || reviewData?.courier || reviewData?.ocrExtracted?.courier || '');
+  const reviewDateValue = reviewForm.date || reviewData?.date || sessionDate || '';
+  const reviewDateLabel = useMemo(() => formatDisplayDate(reviewDateValue), [reviewDateValue]);
 
   const totalWeight = sessionCtx.scannedItems.reduce((sum, item) => sum + (item.weight || 0), 0);
 
@@ -2813,14 +2957,35 @@ export default function MobileScannerPage({ standalone = false }) {
         {/* â•â•â• REVIEWING â•â•â• */}
         <div className={stepClass(STEPS.REVIEWING)}>
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${theme.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <div style={{ fontSize: '0.65rem', color: theme.muted, fontWeight: 600 }}>REVIEW EXTRACTION</div>
-                <div className="mono" style={{ fontSize: '0.95rem', fontWeight: 700 }}>{reviewData?.awb || lockedAwb}</div>
+            <div className="review-header">
+              <div className="review-header-top">
+                <div>
+                  <div className="review-title">REVIEW EXTRACTION</div>
+                  <div className="mono review-awb">{reviewData?.awb || lockedAwb}</div>
+                </div>
+                {intelligence?.learnedFieldCount > 0 && (
+                  <div className="source-badge source-learned">AI {intelligence.learnedFieldCount} auto-corrected</div>
+                )}
               </div>
-              {intelligence?.learnedFieldCount > 0 && (
-                <div className="source-badge source-learned">AI {intelligence.learnedFieldCount} auto-corrected</div>
-              )}
+              <div className="review-meta-row">
+                <span className={`review-confidence ${reviewConfidence.level}`}>
+                  <Shield size={13} />
+                  {reviewConfidence.label} ({Math.round(reviewConfidence.score * 100)}%)
+                </span>
+                <button
+                  type="button"
+                  className="review-chip review-chip-courier"
+                  onClick={cycleReviewCourier}
+                  title="Tap to change courier"
+                >
+                  <Package size={13} />
+                  {reviewCourier || 'Trackon'}
+                </button>
+                <span className="review-chip review-chip-date">
+                  <CalendarDays size={13} />
+                  {reviewDateLabel || 'No date'}
+                </span>
+              </div>
             </div>
             <div className="scroll-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {/* Client */}
@@ -2835,7 +3000,12 @@ export default function MobileScannerPage({ standalone = false }) {
                   {intelligence?.clientMatches?.length > 0 && intelligence.clientNeedsConfirmation && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                       {intelligence.clientMatches.slice(0, 3).map(m => (
-                        <button key={m.code} onClick={() => setReviewForm(f => ({ ...f, clientCode: m.code }))} style={{ fontSize: '0.65rem', padding: '3px 8px', borderRadius: 6, border: `1px solid ${theme.border}`, background: reviewForm.clientCode === m.code ? theme.primaryLight : theme.surface, color: theme.text, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+                        <button
+                          key={m.code}
+                          type="button"
+                          className={`suggest-chip ${reviewForm.clientCode === m.code ? 'active' : ''}`}
+                          onClick={() => setReviewForm(f => ({ ...f, clientCode: m.code }))}
+                        >
                           {m.code} ({Math.round(m.score * 100)}%)
                         </button>
                       ))}

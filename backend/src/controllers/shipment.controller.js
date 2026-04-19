@@ -124,6 +124,7 @@ async function maybeLinkDraftToScan(shipment, ocrHints, clientCode, effectiveAwb
 const scanAwb = asyncHandler(async (req, res) => {
   let ocrHints = null;
   const scannerFlow = require('../services/scannerFlow.service');
+  const sessionDate = (req.body.sessionContext?.sessionDate || '').trim();
   const lookup = req.body.awb
     ? await scannerFlow.resolveLookupPrefill(req.body.awb, req.body.courier || '')
     : { hints: null };
@@ -201,6 +202,7 @@ const scanAwb = asyncHandler(async (req, res) => {
     source: 'scanner',
     ocrHints,
     sessionContext: req.body.sessionContext || {},
+    overrideDate: sessionDate || null,
   });
   await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'SCAN_AWB', entity: 'SHIPMENT', entityId: result.shipment?.id, newValue: result, ip: req.ip });
   R.ok(res, result, 'AWB scanned and updated successfully');

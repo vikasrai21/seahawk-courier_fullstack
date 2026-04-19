@@ -23,12 +23,18 @@ const shipmentSchema = z.object({
 
 const updateShipmentSchema = shipmentSchema.partial();
 const statusUpdateSchema   = z.object({ status: z.enum(STATUSES) });
+const sessionContextSchema = z.object({
+  sessionDate: z.string().regex(dateRegex).optional(),
+  dominantClient: z.string().trim().min(1).optional(),
+  dominantClientCount: z.coerce.number().int().min(0).optional(),
+}).passthrough();
 const scanAwbSchema        = z.object({
   awb: z.string().min(1, 'AWB is required').trim(),
   courier: z.enum(['Delhivery','Trackon','DTDC','AUTO']).default('AUTO'),
   captureOnly: z.coerce.boolean().optional().default(false),
   imageBase64: z.string().optional(),
   focusImageBase64: z.string().optional(),
+  sessionContext: sessionContextSchema.optional(),
 });
 const scanAwbBulkSchema    = z.object({ 
   awbs: z.array(z.string().trim().min(1)).min(1, 'At least one AWB is required').max(200, 'Max 200 AWBs per request'),
