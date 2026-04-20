@@ -1,4 +1,12 @@
-import ExcelJS from 'exceljs';
+let excelJsLoader = null;
+
+async function loadExcelJs() {
+  if (!excelJsLoader) {
+    excelJsLoader = import('exceljs');
+  }
+  const mod = await excelJsLoader;
+  return mod.default || mod;
+}
 
 export function getSheetAsJson(wb, sheetIndex = 0) {
   const sheetNames = wb.worksheets.map(s => s.name);
@@ -41,6 +49,7 @@ export function getSheetAsJson(wb, sheetIndex = 0) {
 }
 
 export async function readExcelAsJson(arrayBuffer, sheetIndex = 0) {
+  const ExcelJS = await loadExcelJs();
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(arrayBuffer);
   const data = getSheetAsJson(wb, sheetIndex);
@@ -48,6 +57,7 @@ export async function readExcelAsJson(arrayBuffer, sheetIndex = 0) {
 }
 
 export async function advancedExportToExcel(config = {}, fileName = 'report.xlsx') {
+  const ExcelJS = await loadExcelJs();
   const wb = new ExcelJS.Workbook();
   
   const { sheets = [] } = config;
@@ -83,7 +93,7 @@ export async function advancedExportToExcel(config = {}, fileName = 'report.xlsx
 }
 
 export function exportJsonToExcel(data, fileName = 'export.xlsx', sheetName = 'Sheet1') {
-  advancedExportToExcel({
+  return advancedExportToExcel({
     sheets: [{
       name: sheetName,
       mode: 'json',

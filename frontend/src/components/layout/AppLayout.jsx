@@ -5,12 +5,12 @@ import { useSocket } from '../../context/SocketContext';
 import '../../styles/theme.css';
 
 import {
-  LayoutDashboard, PlusCircle, FileUp, Package, Calendar,
+  LayoutDashboard, PlusCircle, FileUp, Calendar,
   BarChart2, Users, Clock, Search, RefreshCw, ShieldAlert,
   LogOut, UserCircle, Menu, X, ChevronRight, FileText,
   Receipt, ScrollText, Calculator, Activity, Layers,
   CreditCard, GitCompare, Shield, Settings2, MessageCircle,
-  Sun, Moon, ScanLine, Bell, RotateCcw
+  Sun, Moon, ScanLine, Bell, RotateCcw, Bot, Send
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { usePWA } from '../../hooks/usePWA';
@@ -37,7 +37,8 @@ const navGroups = [
     items: [
       { to: '/app/',          label: 'Dashboard',           icon: LayoutDashboard },
       { to: '/app/ops',       label: 'Operations',          icon: Activity, badge: 'CEO' },
-      { to: '/app/analytics', label: 'Analytics',           icon: BarChart2, roles: ['ADMIN','OPS_MANAGER'] },
+      { to: '/app/agent',     label: 'HawkAI Agent',        icon: Bot, badge: 'NEW', roles: ['OWNER'] },
+      { to: '/app/analytics', label: 'Analytics',           icon: BarChart2, roles: ['OWNER'] },
       { to: '/app/entry',     label: 'New Entry',           icon: PlusCircle, accent: true },
       { to: '/app/import',    label: 'Import',              icon: FileUp, isSecondary: true },
     ],
@@ -53,6 +54,7 @@ const navGroups = [
       { to: '/app/ndr',       label: 'NDR Management',      icon: ShieldAlert, isSecondary: true },
       { to: '/app/pickups',   label: 'Pickup Scheduler',    icon: Calendar, isSecondary: true },
       { to: '/app/returns',   label: 'Returns',              icon: RotateCcw, badge: 'NEW', roles: ['ADMIN','OPS_MANAGER'] },
+      { to: '/app/notifications', label: 'Notifications', icon: Send, isSecondary: true },
       { to: '/app/daily',     label: 'Daily Sheet',         icon: Calendar, isSecondary: true },
       { to: '/app/monthly',   label: 'Monthly Report',      icon: BarChart2, isSecondary: true },
     ],
@@ -62,10 +64,10 @@ const navGroups = [
     items: [
       { to: '/app/clients',        label: 'Clients',          icon: Users },
       { to: '/app/contracts',      label: 'Contracts',        icon: ScrollText, isSecondary: true },
-      { to: '/app/invoices',       label: 'Invoices',         icon: Receipt },
+      { to: '/app/invoices',       label: 'Invoices',         icon: Receipt, roles: ['OWNER'] },
       { to: '/app/support',        label: 'Support Tickets',  icon: MessageCircle, roles: ['ADMIN','OPS_MANAGER','STAFF'], isSecondary: true },
-      { to: '/app/wallet',         label: 'Wallet',           icon: CreditCard, roles: ['ADMIN','OPS_MANAGER'] },
-      { to: '/app/reconciliation', label: 'Reconciliation',   icon: Shield, isSecondary: true },
+      { to: '/app/wallet',         label: 'Wallet',           icon: CreditCard, roles: ['OWNER'] },
+      { to: '/app/reconciliation', label: 'Reconciliation',   icon: Shield, roles: ['OWNER'], isSecondary: true },
     ],
   },
   {

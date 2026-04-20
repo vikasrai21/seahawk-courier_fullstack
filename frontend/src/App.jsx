@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -36,11 +36,11 @@ const ServicesPage = lazy(() => import('./pages/public/ServicesPage'));
 const ContactPage = lazy(() => import('./pages/public/ContactPage'));
 const BookPage = lazy(() => import('./pages/public/BookPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
+const ClientLoginPage = lazy(() => import('./pages/client/ClientLoginPage'));
 
 const DashboardPage = lazy(() => import('./pages/DashboardPage'));
 const NewEntryPage = lazy(() => import('./pages/NewEntryPage'));
 const ImportPage = lazy(() => import('./pages/ImportPage'));
-const AllShipmentsPage = lazy(() => import('./pages/AllShipmentsPage'));
 const DailySheetPage = lazy(() => import('./pages/DailySheetPage'));
 const MonthlyReportPage = lazy(() => import('./pages/MonthlyReportPage'));
 const ClientsPage = lazy(() => import('./pages/ClientsPage'));
@@ -72,6 +72,8 @@ const SupportTicketsPage = lazy(() => import('./pages/SupportTicketsPage'));
 const OwnerAuditPage = lazy(() => import('./pages/OwnerAuditPage'));
 const MobileScannerPage = lazy(() => import('./pages/MobileScannerPage'));
 const ReturnsManagementPage = lazy(() => import('./pages/ReturnsManagementPage'));
+const OwnerAgentPage = lazy(() => import('./pages/OwnerAgentPage'));
+const NotificationCenterPage = lazy(() => import('./pages/NotificationCenterPage'));
 
 function AuthLoadingScreen() {
   return (
@@ -124,7 +126,7 @@ function StaffRoute({ children }) {
 
 function ClientRoute({ children }) {
   const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/portal/login" replace />;
   if (user.role !== 'CLIENT') return <Navigate to="/app" replace />;
   return children;
 }
@@ -163,6 +165,7 @@ function AppRoutes() {
             <Route path="/track" element={<PublicTrackPage />} />
             <Route path="/track/:awb" element={<PublicTrackPage />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/portal/login" element={<ClientLoginPage />} />
             <Route path="/mobile-scanner" element={<MobileScannerPage />} />
             <Route path="/mobile-scanner/:pin" element={<MobileScannerPage />} />
             <Route path="/scan-mobile" element={<StaffRoute><MobileScannerPage standalone /></StaffRoute>} />
@@ -210,9 +213,9 @@ function AppRoutes() {
                       <Route path="/bookings" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}><BookingsPage /></PrivateRoute>} />
                       <Route path="/clients" element={withToast(ClientsPage)} />
                       <Route path="/contracts" element={withToast(ContractsPage)} />
-                      <Route path="/invoices" element={withToast(InvoicesPage)} />
+                      <Route path="/invoices" element={<PrivateRoute ownerOnly>{withToast(InvoicesPage)}</PrivateRoute>} />
                       <Route path="/support" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(SupportTicketsPage)}</PrivateRoute>} />
-                      <Route path="/reconciliation" element={withToast(ReconciliationPage)} />
+                      <Route path="/reconciliation" element={<PrivateRoute ownerOnly>{withToast(ReconciliationPage)}</PrivateRoute>} />
                       <Route path="/rates" element={<ErrorBoundary><RateCalculatorPage /></ErrorBoundary>} />
                       <Route path="/audit" element={<PrivateRoute ownerOnly>{withToast(OwnerAuditPage)}</PrivateRoute>} />
                       <Route path="/billing-verify" element={<Navigate to="/app/audit" replace />} />
@@ -225,8 +228,10 @@ function AppRoutes() {
                       <Route path="/change-password" element={<ChangePasswordPage />} />
                       <Route path="/profile" element={withToast(ProfilePage)} />
                       <Route path="/shipments" element={withToast(ShipmentDashboardPage)} />
-                      <Route path="/wallet" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}>{withToast(WalletPage)}</PrivateRoute>} />
-                      <Route path="/analytics" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}>{withToast(AnalyticsPage)}</PrivateRoute>} />
+                      <Route path="/wallet" element={<PrivateRoute ownerOnly>{withToast(WalletPage)}</PrivateRoute>} />
+                      <Route path="/analytics" element={<PrivateRoute ownerOnly>{withToast(AnalyticsPage)}</PrivateRoute>} />
+                      <Route path="/agent" element={<PrivateRoute ownerOnly>{withToast(OwnerAgentPage)}</PrivateRoute>} />
+                      <Route path="/notifications" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(NotificationCenterPage)}</PrivateRoute>} />
                       <Route path="/ndr" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(NDRPage)}</PrivateRoute>} />
                       <Route path="/pickups" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(PickupSchedulerPage)}</PrivateRoute>} />
                       <Route path="/users" element={<PrivateRoute roles={['ADMIN']} allowOwner>{withToast(UsersPage)}</PrivateRoute>} />

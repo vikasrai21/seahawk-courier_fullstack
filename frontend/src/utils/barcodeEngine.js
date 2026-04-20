@@ -31,7 +31,6 @@ const NATIVE_FORMATS = [
 const SCAN_INTERVAL_MS = 55;        // ~18fps decode rate (balanced perf/battery)
 const CONTRAST_FACTOR = 1.65;       // Boost factor for thermal-print labels
 const CROP_MAX_WIDTH = 640;         // Max width for decode canvas (speed vs accuracy)
-const WASM_WARMUP_TIMEOUT_MS = 8000;
 
 // ── Canvas preprocessing: makes ITF bars pop on thermal paper ──────────────
 function preprocessForBarcode(canvas) {
@@ -268,7 +267,10 @@ async function createLegacyZxingDecoder() {
           const result = reader.decodeBitmap_(binaryBitmap);
           if (result && result.getText()) {
             let format = 'unknown';
-            try { format = String(result.getBarcodeFormat?.() || 'unknown'); } catch {}
+            const barcodeFormat = result.getBarcodeFormat?.();
+            if (barcodeFormat != null) {
+              format = String(barcodeFormat);
+            }
             return [{ rawValue: result.getText(), format }];
           }
         } catch {

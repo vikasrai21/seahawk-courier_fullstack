@@ -56,12 +56,6 @@ function getZoneColor(score) {
   return '#10b981';
 }
 
-function getZoneGlow(score) {
-  if (score >= 70) return 'drop-shadow(0 0 8px rgba(239,68,68,0.6))';
-  if (score >= 45) return 'drop-shadow(0 0 6px rgba(245,158,11,0.5))';
-  return 'drop-shadow(0 0 6px rgba(16,185,129,0.45))';
-}
-
 function zonePosition(key, index) {
   const normalized = String(key || '').toLowerCase();
   const match = Object.entries(CITY_POSITIONS).find(([city]) => normalized.includes(city));

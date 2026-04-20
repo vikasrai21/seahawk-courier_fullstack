@@ -32,21 +32,14 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        // Manual chunk splitting — keeps bundles small
-        manualChunks: {
-          // Vendor libs — cached separately by browser
-          'vendor-react':    ['react', 'react-dom', 'react-router-dom'],
-          'vendor-charts':   ['recharts'],
-          'vendor-icons':    ['lucide-react'],
-          'vendor-helmet':   ['react-helmet-async'],
-          // Heavy app pages — each in its own chunk
-          'page-rate-calc':  ['./src/pages/RateCalculatorPage.jsx'],
-          'page-bulk':       ['./src/pages/BulkComparePage.jsx'],
-          'page-import':     ['./src/pages/ImportPage.jsx'],
-          'vendor-excel':    ['exceljs'],
-          'page-whatsapp':   ['./src/pages/WhatsAppPage.jsx'],
-          'page-reconcile':  ['./src/pages/ReconciliationPage.jsx'],
-          'page-landing':    ['./src/pages/public/LandingPage.jsx'],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          if (id.includes('react') || id.includes('scheduler')) return 'vendor-react';
+          if (id.includes('recharts')) return 'vendor-charts';
+          if (id.includes('lucide-react')) return 'vendor-icons';
+          if (id.includes('react-helmet-async')) return 'vendor-helmet';
+          if (id.includes('exceljs')) return 'vendor-excel';
+          return undefined;
         },
       },
     },

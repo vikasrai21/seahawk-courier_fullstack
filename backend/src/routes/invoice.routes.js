@@ -1,7 +1,7 @@
 'use strict';
 const router = require('express').Router();
 const ctrl   = require('../controllers/invoice.controller');
-const { protect, adminOnly, requireRole, staffOnly } = require('../middleware/auth.middleware');
+const { protect, adminOnly, requireRole, staffOnly, ownerOnly } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validate.middleware');
 const { invoiceSchema } = require('../validators/shipment.validator');
 const prisma  = require('../config/prisma');
@@ -13,13 +13,13 @@ const logger  = require('../utils/logger');
 router.use(protect);
 
 // Standard CRUD
-router.get('/',             staffOnly, ctrl.getAll);
-router.get('/:id',          staffOnly, ctrl.getOne);
-router.post('/',            staffOnly, validate(invoiceSchema), ctrl.create);
-router.patch('/:id/status', staffOnly, ctrl.setStatus);
-router.delete('/:id',       adminOnly, ctrl.remove);
-router.get('/:id/export.csv', staffOnly, ctrl.exportCsv);
-router.get('/:id/export.xls', staffOnly, ctrl.exportExcel);
+router.get('/',             ownerOnly, ctrl.getAll);
+router.get('/:id',          ownerOnly, ctrl.getOne);
+router.post('/',            ownerOnly, validate(invoiceSchema), ctrl.create);
+router.patch('/:id/status', ownerOnly, ctrl.setStatus);
+router.delete('/:id',       ownerOnly, ctrl.remove);
+router.get('/:id/export.csv', ownerOnly, ctrl.exportCsv);
+router.get('/:id/export.xls', ownerOnly, ctrl.exportExcel);
 
 // ── PDF download ──────────────────────────────────────────────────────────
 router.get('/:id/pdf', async (req, res) => {

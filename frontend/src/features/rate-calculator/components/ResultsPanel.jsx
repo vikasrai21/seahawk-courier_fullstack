@@ -26,9 +26,8 @@ const THEME = {
 
 export default function ResultsPanel({
   best, sortMode, fmt, fmtP, results,
-  odaOn, expanded, setExpanded,
+  expanded, setExpanded,
   pColor, setQuoteCourier, showAll, setShowAll,
-  fmtI,
   compact = false,
   intelligence,
   getMarginWarning,

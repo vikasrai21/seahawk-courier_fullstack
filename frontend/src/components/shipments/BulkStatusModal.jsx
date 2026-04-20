@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, AlertCircle, RefreshCw, X, ArrowRight, ShieldCheck, Zap } from 'lucide-react';
+import { CheckCircle2, AlertCircle, RefreshCw, ShieldCheck, Zap } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { formatStatusLabel } from '../ui/StatusBadge';
 import api from '../../services/api';

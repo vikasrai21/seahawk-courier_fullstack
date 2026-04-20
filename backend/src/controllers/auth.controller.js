@@ -13,14 +13,26 @@ const refreshCookieOpts = {
   path: '/api/auth/refresh',
 };
 
+const refreshSessionCookieOpts = {
+  ...refreshCookieOpts,
+  maxAge: undefined,
+};
+
+const refreshPersistCookieOpts = {
+  httpOnly: true,
+  secure: config.cookie.secure,
+  sameSite: config.cookie.sameSite,
+  maxAge: config.cookie.maxAge,
+  path: '/api/auth/refresh',
+};
+
 const login = asyncHandler(async (req, res) => {
   const { email, password, rememberMe = true } = req.body;
   const meta = { ip: req.ip, userAgent: req.headers['user-agent'] };
   const { accessToken, refreshToken, user } = await authService.login(email, password, meta);
-  const cookieOpts = rememberMe
-    ? refreshCookieOpts
-    : { ...refreshCookieOpts, maxAge: undefined };
+  const cookieOpts = rememberMe ? refreshCookieOpts : refreshSessionCookieOpts;
   res.cookie('refreshToken', refreshToken, cookieOpts);
+  res.cookie('refreshPersist', rememberMe ? '1' : '0', refreshPersistCookieOpts);
   await auditLog({ userId: user.id, userEmail: user.email, action: 'LOGIN', entity: 'AUTH', ip: req.ip });
   R.ok(res, { accessToken, user }, 'Login successful');
 });
@@ -30,7 +42,8 @@ const refresh = asyncHandler(async (req, res) => {
   if (!token) return R.unauthorized(res, 'No refresh token.');
   const result = await authService.refreshAccessToken(token);
   if (result.refreshToken) {
-    res.cookie('refreshToken', result.refreshToken, refreshCookieOpts);
+    const cookieOpts = req.cookies?.refreshPersist === '1' ? refreshCookieOpts : refreshSessionCookieOpts;
+    res.cookie('refreshToken', result.refreshToken, cookieOpts);
   }
   R.ok(res, { accessToken: result.accessToken }, 'Token refreshed');
 });
@@ -39,6 +52,7 @@ const logout = asyncHandler(async (req, res) => {
   const token = req.cookies?.refreshToken;
   await authService.revokeRefreshToken(token);
   res.clearCookie('refreshToken', { path: '/api/auth/refresh' });
+  res.clearCookie('refreshPersist', { path: '/api/auth/refresh' });
   if (req.user) {
     await auditLog({ userId: req.user.id, userEmail: req.user.email, action: 'LOGOUT', entity: 'AUTH', ip: req.ip });
   }
@@ -87,6 +101,7 @@ const changePassword = asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = req.body;
   await authService.changePassword(req.user.id, currentPassword, newPassword);
   res.clearCookie('refreshToken', { path: '/api/auth/refresh' });
+  res.clearCookie('refreshPersist', { path: '/api/auth/refresh' });
   await auditLog({ userId: req.user.id, userEmail: req.user.email, action: 'CHANGE_PASSWORD', entity: 'USER', entityId: req.user.id, ip: req.ip });
   R.ok(res, null, 'Password changed. Please log in again.');
 });

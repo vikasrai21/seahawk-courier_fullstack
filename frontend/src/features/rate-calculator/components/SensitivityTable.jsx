@@ -1,5 +1,5 @@
 import React from 'react';
-import { Target, Activity, Zap, Layers } from 'lucide-react';
+import { Activity, Zap } from 'lucide-react';
 
 export default function SensitivityTable({
   locInfo,

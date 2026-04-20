@@ -1,6 +1,6 @@
 // DailySheetPage.jsx — High-Density UI Polish
 import { useState, useEffect } from 'react';
-import { Printer, MessageCircle, ChevronDown, Truck, Info, AlertCircle } from 'lucide-react';
+import { Printer, MessageCircle, ChevronDown, Truck, AlertCircle } from 'lucide-react';
 import api from '../services/api';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { PageLoader, EmptyState } from '../components/ui/Loading';

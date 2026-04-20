@@ -1,16 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
 import { readExcelAsJson, exportJsonToExcel } from '../utils/excel';
 import { 
-  AlertTriangle, CircleCheck, CircleX, Download, ExternalLink, 
-  FileSpreadsheet, Filter, Info, ListTodo, SearchCheck, 
+  FileSpreadsheet, Info, ListTodo, SearchCheck, 
   ShieldCheck, Upload, Wrench, Brain, History, LayoutDashboard, 
-  FileText, CheckCircle2, Clock, ChevronRight, MoreHorizontal, 
+  FileText, CheckCircle2, Clock,
   ArrowRight, Table, BarChart3, AlertCircle, Mail, X 
 } from 'lucide-react';
 import { Spinner } from '../components/ui/Loading';
 import api from '../services/api';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 const DisputeModal = ({ isOpen, onClose, selectedAwbs, results, invoiceNo, courier, toast }) => {
   if (!isOpen) return null;
@@ -100,12 +98,6 @@ const fmtMoney = (value) => {
   return `₹${amount.toFixed(2)}`;
 };
 
-const fmtDiff = (value) => {
-  const amount = Number(value);
-  if (!Number.isFinite(amount)) return '—';
-  return `${amount > 0 ? '+' : ''}${amount.toFixed(2)}`;
-};
-
 function looksLikeAwb(value) {
   const text = String(value || '').trim().toUpperCase();
   return /^[A-Z0-9-]{8,20}$/.test(text) && /\d{5,}/.test(text);
@@ -148,18 +140,6 @@ function serializeRows(rows) {
     row.weight,
     row.amount,
   ].join(',')).join('\n');
-}
-
-function downloadBlob(filename, content, type) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
 }
 
 function discoverShipmentGrid(grid) {
@@ -277,14 +257,6 @@ function normalizeLine(line) {
   return null;
 }
 
-const toneClass = (tone) => {
-  if (tone === 'rose') return 'border-rose-100 bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/20';
-  if (tone === 'amber') return 'border-amber-100 bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20';
-  if (tone === 'emerald') return 'border-emerald-100 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20';
-  if (tone === 'blue') return 'border-blue-100 bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20';
-  return 'border-slate-200 bg-slate-50 text-slate-700 dark:bg-slate-800/50 dark:text-slate-400 dark:border-slate-700';
-};
-
 const Card = ({ children, className = '', title, subtitle, icon: Icon, actions }) => (
   <div className={`card ${className}`}>
     {(title || Icon || actions) && (
@@ -397,7 +369,7 @@ const PhaseIdle = ({ onUpload, fileRef, pendingAudits = [], overview = {} }) => 
         actions={<Badge tone={pendingAudits.length > 0 ? 'amber' : 'slate'}>{pendingAudits.length} awaiting</Badge>}
       >
         <div className="space-y-3">
-          {pendingAudits.length > 0 ? pendingAudits.map((audit, i) => (
+          {pendingAudits.length > 0 ? pendingAudits.map((audit) => (
             <div 
               key={audit.id} 
               onClick={() => onUpload && onUpload(audit.id)}
@@ -471,7 +443,7 @@ const PhaseIdle = ({ onUpload, fileRef, pendingAudits = [], overview = {} }) => 
   </div>
 );
 const PhaseMapping = ({ 
-  billFile, discovery, startRow, setStartRow, defaultService, setDefaultService, 
+  billFile, startRow, setStartRow, defaultService, setDefaultService, 
   manualMap, setManualMap, previewRows, finalizeMapping, rowForOptions, onBack 
 }) => (
   <div className="space-y-6 reveal">
@@ -645,8 +617,8 @@ const PhaseMapping = ({
 const PhaseResults = ({ 
   results, summary, issueBreakdown, filteredResults, activeFilter, setActiveFilter,
   activeIssueFilter, setActiveIssueFilter, selectedAwbs, toggleAwb, selectAllOvercharged,
-  searchQuery, setSearchQuery, sortBy, setSortBy, selectedRowKey, setSelectedRowKey,
-  selectedRow, markSelectedVerified, exportAuditResults, onBack,
+  searchQuery, setSearchQuery, selectedRowKey, setSelectedRowKey,
+  markSelectedVerified, exportAuditResults, onBack,
   generatingAI, generateAIInsight, aiInsight
 }) => {
   const chartData = [
@@ -908,7 +880,7 @@ export default function OwnerAuditPage({ toast }) {
   const fileRef = useRef(null);
   const [pendingAudits, setPendingAudits] = useState([]);
   const [dashboardSummary, setDashboardSummary] = useState(null);
-  const [loadingDashboard, setLoadingDashboard] = useState(true);
+  const [, setLoadingDashboard] = useState(true);
   const [showDisputeModal, setShowDisputeModal] = useState(false);
 
   const fetchDashboardData = useCallback(async () => {
@@ -984,7 +956,6 @@ export default function OwnerAuditPage({ toast }) {
         pincode: ''
       }));
       setPreviewRows(rows.slice(0, 5));
-      setPhase('mapping');
     } catch (err) {
       toast?.('Failed to load audit record', 'error');
     } finally {
@@ -1016,7 +987,6 @@ export default function OwnerAuditPage({ toast }) {
       await api.post(`/courier-invoices/${billFile.id}/save`, payload);
       toast?.(status === 'DISPUTED' ? 'Marked as Disputed' : 'Audit results saved to ledger', 'success');
       fetchDashboardData(); // Refresh overview
-      setPhase('idle');
       setBillFile(null);
       setResults([]);
       setShowDisputeModal(false);
@@ -1031,16 +1001,15 @@ export default function OwnerAuditPage({ toast }) {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState([]);
   const [summary, setSummary] = useState(null);
-  const [error, setError] = useState('');
+  const [, setError] = useState('');
   const [gridData, setGridData] = useState([]);
   const [billFile, setBillFile] = useState(null);
   const [startRow, setStartRow] = useState(1);
   const [manualMap, setManualMap] = useState({});
   const [previewRows, setPreviewRows] = useState([]);
   const [defaultService, setDefaultService] = useState('AIR');
-  const [discovery, setDiscovery] = useState(null);
+  const [, setDiscovery] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('highestLoss');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRowKey, setSelectedRowKey] = useState(null);
   const [selectedAwbs, setSelectedAwbs] = useState(new Set());
@@ -1242,7 +1211,6 @@ export default function OwnerAuditPage({ toast }) {
         ) : results.length === 0 ? (
           <PhaseMapping 
             billFile={billFile}
-            discovery={discovery}
             startRow={startRow}
             setStartRow={setStartRow}
             defaultService={defaultService}
@@ -1269,11 +1237,8 @@ export default function OwnerAuditPage({ toast }) {
             selectAllOvercharged={selectAllOvercharged}
             searchQuery={searchQuery}
             setSearchQuery={setSearchQuery}
-            sortBy={sortBy}
-            setSortBy={setSortBy}
             selectedRowKey={selectedRowKey}
             setSelectedRowKey={setSelectedRowKey}
-            selectedRow={filteredResults.find(r => r._rowKey === selectedRowKey)}
             markSelectedVerified={handleSaveAudit}
             exportAuditResults={exportAuditResults}
             onBack={() => { setResults([]); setBillFile(null); }}

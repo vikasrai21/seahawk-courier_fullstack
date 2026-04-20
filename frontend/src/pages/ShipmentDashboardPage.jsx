@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Search, Filter, X, Download, RefreshCw, ChevronLeft, ChevronRight,
+  Search, Filter, Download, RefreshCw, ChevronLeft, ChevronRight,
   Eye, Edit2, Trash2, Plus, Package, TrendingUp, CheckCircle2,
-  ExternalLink, Clock, Monitor, Zap, Activity
+  Monitor, Zap, Activity
 } from 'lucide-react';
 import api from '../services/api';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -20,16 +20,6 @@ const fmtWt   = n => `${Number(n||0).toFixed(3)} kg`;
 
 const COURIERS = ['Delhivery','DTDC','Trackon','BlueDart','FedEx','DHL','Other'];
 const STATUSES = ['Booked','InTransit','OutForDelivery','Delivered','Delayed','RTO','Cancelled'];
-const PAGE_SIZES = [25, 50, 100];
-
-const TRACKING_LINKS = {
-  Delhivery: a => `https://www.delhivery.com/track/package/${a}`,
-  DTDC:      a => `https://www.dtdc.in/tracking/tracking.asp?TrkType=awb&strCNNo=${a}`,
-  Trackon:   a => `https://www.trackoncourier.com/tracking?trackingId=${a}`,
-  BlueDart:  a => `https://www.bluedart.com/tracking?trackFor=0&track=awb&trackNo=${a}`,
-  FedEx:     a => `https://www.fedex.com/fedextrack/?trknbr=${a}`,
-  DHL:       a => `https://www.dhl.com/en/express/tracking.html?AWB=${a}`,
-};
 
 export default function ShipmentDashboardPage({ toast }) {
   const { isAdmin, hasRole } = useAuth();
@@ -38,7 +28,7 @@ export default function ShipmentDashboardPage({ toast }) {
   const [total,      setTotal]      = useState(0);
   const [stats,      setStats]      = useState(null);
   const [page,       setPage]       = useState(1);
-  const [pageSize,   setPageSize]   = useState(25);
+  const pageSize = 25;
   const [filters,    setFilters]    = useState({
     search: '', courier: '', status: '', clientCode: '', dateFrom: '', dateTo: '',
   });
@@ -87,7 +77,6 @@ export default function ShipmentDashboardPage({ toast }) {
   useEffect(() => { fetchClients({ limit: 200 }).catch(() => {}); }, [fetchClients]);
 
   const setFilter = (k, v) => { setFilters(f => ({ ...f, [k]: v })); setPage(1); };
-  const clearFilters = () => { setFilters({ search:'',courier:'',status:'',clientCode:'',dateFrom:'',dateTo:'' }); setPage(1); };
   const hasFilters = Object.values(filters).some(Boolean);
   const pages = Math.max(1, Math.ceil(total / pageSize));
 

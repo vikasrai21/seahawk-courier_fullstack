@@ -5,6 +5,32 @@ const { detectCourier } = require('../utils/awbDetect');
 
 const PREFILL_TIMEOUT_MS = 5000;
 
+function normalizeDestinationCandidate(value) {
+  const cleaned = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned) return '';
+  if (cleaned.length < 2) return '';
+  return cleaned.toUpperCase();
+}
+
+function extractTrackingDestination(trackData) {
+  if (!trackData) return '';
+  const candidates = [
+    trackData.destination,
+    trackData.destinationCity,
+    trackData.destCity,
+    trackData.toCity,
+    trackData.deliveryCity,
+    trackData.receiverCity,
+  ];
+  for (const candidate of candidates) {
+    const normalized = normalizeDestinationCandidate(candidate);
+    if (normalized) return normalized;
+  }
+  return '';
+}
+
 /**
  * Attempt to pre-fill shipment fields by querying courier APIs.
  *
@@ -96,21 +122,12 @@ async function prefillFromApi(awb, courierHint) {
       if (detailsData.trackingStatus) result.trackingStatus = detailsData.trackingStatus;
     }
 
-    // ── All couriers: extract destination city from tracking events ─────
+    // Track-event "current location" is not destination. Use only explicit destination
+    // fields from the tracking payload.
     if (!result.destination && trackData) {
-      const events = trackData.events || [];
-      // The destination is typically the LAST event's location in the tracking
-      // chain, or the first event if there's only one (the booking location).
-      // For in-transit parcels, the most recent scan location is a good proxy.
-      if (events.length > 0) {
-        // Try to find the latest non-empty location
-        for (const event of events) {
-          const loc = String(event.location || '').trim();
-          if (loc && loc.length > 1) {
-            result.destination = loc.toUpperCase();
-            break; // Most recent event first (already sorted desc)
-          }
-        }
+      const trackingDestination = extractTrackingDestination(trackData);
+      if (trackingDestination) {
+        result.destination = trackingDestination;
       }
     }
 

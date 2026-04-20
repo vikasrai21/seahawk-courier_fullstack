@@ -8,17 +8,13 @@ import {
   Award, 
   LayoutGrid, 
   List, 
-  BarChart3, 
   PieChart as PieIcon,
   Zap,
-  Target,
-  ArrowRight
+  Target
 } from 'lucide-react';
 import { 
   BarChart, 
   Bar, 
-  LineChart, 
-  Line, 
   XAxis, 
   YAxis, 
   CartesianGrid, 
@@ -34,7 +30,6 @@ import {
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import KPI from '../components/dashboard/KPI';
-import DashboardAlerts from '../components/dashboard/DashboardAlerts';
 import CarrierMatchmaker from '../components/analytics/CarrierMatchmaker';
 import { PageHeader } from '../components/ui/PageHeader';
 import { CourierBadge } from '../components/ui/CourierBadge';

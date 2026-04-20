@@ -1,10 +1,10 @@
 // src/routes/reconciliation.routes.js
 const router = require('express').Router();
-const { protect, staffOnly } = require('../middleware/auth.middleware');
+const { protect, ownerOnly } = require('../middleware/auth.middleware');
 const S = require('../services/reconciliation.service');
 const R = require('../utils/response');
 
-router.use(protect, staffOnly);
+router.use(protect, ownerOnly);
 
 router.get('/',           async (req, res, next) => { try { const r = await S.listCourierInvoices(req.query); R.paginated(res, r.data, r.total, r.page, r.limit); } catch(e){next(e);} });
 router.get('/stats',      async (req, res, next) => { try { R.ok(res, await S.getReconciliationStats()); } catch(e){next(e);} });

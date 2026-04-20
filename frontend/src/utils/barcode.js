@@ -16,19 +16,19 @@ const SCORE_WEIGHT = {
 };
 
 const COURIER_RULES = {
-  trackon: [/^1\d{11,12}$/, /^2\d{10,12}$/, /^\d{12,13}$/],
+  trackon: [/^(?:100|200|500)\d{8,10}$/],
   dtdc: [/^[A-Z]{1,2}\d{8,11}$/, /^\d{9,12}$/],
   delhivery: [/^\d{12,15}$/],
   bluedart: [/^\d{9,12}$/, /^[A-Z0-9]{10,14}$/],
   default: [/^\d{10,14}$/, /^[A-Z]{1,2}\d{8,11}$/],
 };
 
-// Trackon AWB prefixes — these should NEVER be mistaken for phone numbers
+// Trackon AWB prefixes — these should NEVER be mistaken for phone numbers.
+// Keep these strict to avoid promoting random numeric strings.
 const TRACKON_PREFIXES = [
-  /^1004\d{7,9}$/,   // 100454974120 format (12-13 digits)
-  /^2000\d{6,8}$/,   // 20006228088 format  (11-12 digits)
-  /^1\d{11}$/,        // Generic 12-digit starting with 1
-  /^2\d{10,11}$/,     // Generic 11-12 digit starting with 2
+  /^100\d{9,10}$/, // 12-13 digits
+  /^200\d{8,10}$/, // 11-13 digits
+  /^500\d{8,10}$/, // 11-13 digits
 ];
 
 function courierKey(value = '') {

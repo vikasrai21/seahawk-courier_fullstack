@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Zap, TrendingUp, Loader2, ChevronRight, Star, IndianRupee, AlertTriangle } from 'lucide-react';
+import { Zap, Loader2, ChevronRight, Star, AlertTriangle } from 'lucide-react';
 import api from '../../services/api';
 
 const fmt = n => `₹${Number(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;

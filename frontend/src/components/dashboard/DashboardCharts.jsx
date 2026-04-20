@@ -24,17 +24,7 @@ function CustomTooltip({ active, payload, label, prefix = '', suffix = '' }) {
 }
 
 function ChartShell({ title, icon: Icon, insight, tone = 'default', children }) {
-  const toneMap = {
-    orange: 'from-orange-50/80 to-transparent border-orange-200/50 dark:from-orange-900/20 dark:border-orange-500/20 shadow-orange-500/5',
-    blue:   'from-blue-50/80 to-transparent border-blue-200/50 dark:from-blue-900/20 dark:border-blue-500/20 shadow-blue-500/5',
-    purple: 'from-purple-50/80 to-transparent border-purple-200/50 dark:from-purple-900/20 dark:border-purple-500/20 shadow-purple-500/5',
-    green:  'from-emerald-50/80 to-transparent border-emerald-200/50 dark:from-emerald-900/20 dark:border-emerald-500/20 shadow-emerald-500/5',
-    red:    'from-rose-50/80 to-transparent border-rose-200/50 dark:from-rose-900/20 dark:border-rose-500/20 shadow-rose-500/5',
-    default: 'from-slate-50 to-transparent border-slate-200 dark:from-slate-900/40 dark:border-slate-800 shadow-slate-500/5'
-  };
-
   const iconColors = { orange: 'text-orange-500', blue: 'text-blue-500', purple: 'text-purple-500', green: 'text-emerald-500', red: 'text-rose-500', default: 'text-slate-500' };
-  const currentTone = toneMap[tone] || toneMap.default;
 
   return (
     <div className={`group relative overflow-hidden rounded-[24px] border border-slate-200/80 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.04)]`}>

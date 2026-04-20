@@ -1,22 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   Package, 
   Search, 
   MapPin, 
   ChevronRight, 
-  ArrowLeft, 
-  LayoutGrid, 
   Activity,
-  History,
   Zap
 } from 'lucide-react';
 import api from '../../services/api';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { PageLoader } from '../../components/ui/Loading';
-import { EmptyState } from '../../components/ui/EmptyState';
 import { useDebounce } from '../../hooks/useDebounce';
-import { PageHeader } from '../../components/ui/PageHeader';
 import TimelineModal from '../../components/shipments/TimelineModal';
 
 export default function ClientShipmentsPage({ toast }) {

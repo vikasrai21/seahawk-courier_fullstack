@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Clock, MapPin, Box, Truck, User, Calendar, ShieldCheck } from 'lucide-react';
+import { Clock, MapPin, Box, Truck, User, ShieldCheck } from 'lucide-react';
 import { Modal } from '../ui/Modal';
-import { StatusBadge, normalizeStatus, formatStatusLabel } from '../ui/StatusBadge';
+import { normalizeStatus, formatStatusLabel } from '../ui/StatusBadge';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 

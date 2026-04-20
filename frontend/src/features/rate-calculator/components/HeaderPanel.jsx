@@ -1,4 +1,4 @@
-import { Settings, Clock, Sparkles, Sliders, Globe, Zap, X } from 'lucide-react';
+import { Clock, Sliders, Globe, Zap, X } from 'lucide-react';
 
 export default function HeaderPanel({
   showSettings,

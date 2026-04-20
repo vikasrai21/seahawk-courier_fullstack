@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { PageHeader } from '../components/ui/PageHeader';
-import { LayoutDashboard, RefreshCw, PlusCircle, FileUp, ScanLine, Receipt, Calendar, Calculator, Zap, ArrowRight } from 'lucide-react';
+import { LayoutDashboard, RefreshCw, PlusCircle, FileUp, ScanLine, Receipt, Calendar, Calculator, Zap } from 'lucide-react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';

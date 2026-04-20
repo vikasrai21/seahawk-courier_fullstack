@@ -8,7 +8,6 @@ export default function WeightCard({
   dims,
   setDims,
   chargeWt,
-  volWt,
   targetMargin,
   setTargetMargin,
   results,

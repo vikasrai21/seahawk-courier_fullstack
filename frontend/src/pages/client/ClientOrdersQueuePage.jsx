@@ -1,6 +1,5 @@
 // src/pages/client/ClientOrdersQueuePage.jsx
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 

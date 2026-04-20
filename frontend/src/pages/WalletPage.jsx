@@ -1,14 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
-  CreditCard, 
   RefreshCw, 
-  ArrowUpCircle, 
-  ArrowDownCircle, 
   Plus, 
   Search, 
   TrendingUp, 
   Wallet, 
-  CheckCircle2, 
   AlertCircle,
   PiggyBank,
   ShieldCheck,

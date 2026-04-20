@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import api from '../../services/api';
 
 export default function ClientDeveloperHubPage({ toast }) {
@@ -48,7 +47,7 @@ export default function ClientDeveloperHubPage({ toast }) {
     setLoading(true);
     try {
       const res = await api.get('/portal/developer/keys');
-      setKeys(res.data?.data || []);
+      setKeys(res.data || []);
     } catch (err) {
       toast?.(err.message || 'Failed to load developer keys', 'error');
     } finally {
@@ -107,7 +106,7 @@ export default function ClientDeveloperHubPage({ toast }) {
         mode,
         scopes,
       });
-      const token = res.data?.data?.token || '';
+      const token = res.data?.token || '';
       if (token) {
         setCreatedToken(token);
         toast?.('API key created. Copy it now; it will not be shown again.', 'success');

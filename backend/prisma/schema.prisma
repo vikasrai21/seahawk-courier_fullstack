@@ -607,3 +607,39 @@ model ReturnRequest {
   @@index([originalAwb])
   @@map("return_requests")
 }
+
+model AgentMemory {
+  id          Int      @id @default(autoincrement())
+  category    String   // courier_preference, ndr_pattern, billing_pattern, client_preference, rate_decision
+  contextKey  String   @map("context_key")  // e.g. "destination:MUMBAI", "client:ABC", "courier:DTDC"
+  decision    String   // The owner's decision/action taken
+  metadata    Json?    // Additional context data
+  frequency   Int      @default(1)
+  lastUsedAt  DateTime @default(now()) @map("last_used_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([category, contextKey, decision])
+  @@index([category])
+  @@index([frequency])
+  @@map("agent_memories")
+}
+
+model AgentActionLog {
+  id            Int       @id @default(autoincrement())
+  actionType    String    @map("action_type")
+  params        Json
+  result        Json?
+  status        String    @default("PENDING")  // PENDING, EXECUTING, DONE, FAILED
+  executedBy    String    @default("AGENT") @map("executed_by")  // AGENT or OWNER
+  confidence    Float     @default(0)
+  ownerApproved Boolean   @default(false) @map("owner_approved")
+  errorMessage  String?   @map("error_message")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  completedAt   DateTime? @map("completed_at")
+
+  @@index([actionType])
+  @@index([status])
+  @@index([createdAt])
+  @@map("agent_action_logs")
+}

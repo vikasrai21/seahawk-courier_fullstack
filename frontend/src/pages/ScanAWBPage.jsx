@@ -24,7 +24,6 @@ import {
   Radar,
   Smartphone,
   Wifi,
-  WifiOff,
   QrCode,
   Save,
   Edit,
@@ -40,6 +39,11 @@ import { normalizeBarcodeCandidate } from '../utils/barcode.js';
 import { createBarcodeScanner } from '../utils/barcodeEngine.js';
 import { StatusBadge } from '../components/ui/StatusBadge';
 import { generateQRCodeDataURL } from '../utils/qrcode';
+
+const DESKTOP_STICKY_CLIENT_KEY = 'scan_awb_sticky_client_code';
+const DESKTOP_MOBILE_PIN_KEY = 'scan_awb_mobile_pin';
+
+const normalizeClientCode = (value) => String(value || '').trim().toUpperCase();
 
 const playSuccess = () => {
   try {
@@ -158,56 +162,6 @@ const buildIntakeRow = (shipment = {}, meta = {}, awbValue = '') => {
   };
 };
 
-const normalizeCompareValue = (value, fallback = 'Not captured') => {
-  if (value === null || value === undefined || value === '') return fallback;
-  return String(value);
-};
-
-const reviewDiffFields = (reviewScan, reviewForm) => {
-  if (!reviewScan) return [];
-
-  const suggestedClientCode = reviewScan.meta?.clientSuggestion?.suggestedClientCode || reviewScan.shipment?.clientCode || '';
-  const suggestedClientName = reviewScan.meta?.clientSuggestion?.suggestedClientName || reviewScan.shipment?.client?.company || '';
-
-  return [
-    {
-      key: 'client',
-      label: 'Client',
-      scanned: suggestedClientName ? `${suggestedClientCode || 'MISC'} - ${suggestedClientName}` : (suggestedClientCode || 'MISC'),
-      final: reviewForm.clientCode || 'MISC',
-    },
-    {
-      key: 'consignee',
-      label: 'Consignee',
-      scanned: normalizeCompareValue(reviewScan.shipment?.consignee),
-      final: normalizeCompareValue(reviewForm.consignee),
-    },
-    {
-      key: 'destination',
-      label: 'Destination',
-      scanned: normalizeCompareValue(reviewScan.shipment?.destination),
-      final: normalizeCompareValue(reviewForm.destination),
-    },
-    {
-      key: 'weight',
-      label: 'Weight',
-      scanned: reviewScan.shipment?.weight ? `${reviewScan.shipment.weight} kg` : 'Not captured',
-      final: reviewForm.weight ? `${reviewForm.weight} kg` : 'Not set',
-    },
-    {
-      key: 'amount',
-      label: 'Declared Value',
-      scanned: reviewScan.shipment?.amount ? `₹${reviewScan.shipment.amount}` : 'Not captured',
-      final: reviewForm.amount ? `₹${reviewForm.amount}` : 'Not set',
-    },
-  ].map((field) => ({
-    ...field,
-    changed: field.scanned.trim().toUpperCase() !== field.final.trim().toUpperCase(),
-  }));
-};
-
-
-
 export default function ScanAWBPage({ toast }) {
   const navigate = useNavigate();
   const { isAdmin, hasRole } = useAuth();
@@ -221,8 +175,7 @@ export default function ScanAWBPage({ toast }) {
   const [cameraError, setCameraError] = useState('');
   const [scannerStage, setScannerStage] = useState('idle'); // idle | barcode | document | processing
   const [recentScans, setRecentScans] = useState([]);
-  const [capturedShipment, setCapturedShipment] = useState(null);
-  const [capturedMeta, setCapturedMeta] = useState(null);
+  const [, setCapturedShipment] = useState(null);
   const [lastFeedback, setLastFeedback] = useState(null);
   const [continuousScan, setContinuousScan] = useState(true);
   const [smartAssist, setSmartAssist] = useState(true);
@@ -231,14 +184,35 @@ export default function ScanAWBPage({ toast }) {
   const [spreadsheetName, setSpreadsheetName] = useState('');
   // ── Mobile Bridge State ──────────────────────────────────────────────
   const [showMobileModal, setShowMobileModal] = useState(false);
-  const [mobilePIN, setMobilePIN] = useState('');
-  const [mobileStatus, setMobileStatus] = useState('idle'); // idle | waiting | connected | disconnected
+  const [mobilePIN, setMobilePIN] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      return String(localStorage.getItem(DESKTOP_MOBILE_PIN_KEY) || '').trim();
+    } catch {
+      return '';
+    }
+  });
+  const [mobileStatus, setMobileStatus] = useState(() => {
+    if (typeof window === 'undefined') return 'idle';
+    try {
+      return localStorage.getItem(DESKTOP_MOBILE_PIN_KEY) ? 'waiting' : 'idle';
+    } catch {
+      return 'idle';
+    }
+  }); // idle | waiting | connected | disconnected
   const [mobileScanCount, setMobileScanCount] = useState(0);
-  const [mobileSessionStartedAt, setMobileSessionStartedAt] = useState(null);
   const [mobileQRData, setMobileQRData] = useState('');
   const { socket, connected: socketConnected } = useSocket();
   const [reviewQueue, setReviewQueue] = useState([]);
   const [reviewForm, setReviewForm] = useState({ clientCode: '', consignee: '', destination: '', pincode: '', weight: 0, amount: 0, orderNo: '' });
+  const [stickyClientCode, setStickyClientCode] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      return normalizeClientCode(localStorage.getItem(DESKTOP_STICKY_CLIENT_KEY) || '');
+    } catch {
+      return '';
+    }
+  });
   const [savingReview, setSavingReview] = useState(false);
   const [approvedRows, setApprovedRows] = useState([]);
   const inputRef = useRef(null);
@@ -254,15 +228,41 @@ export default function ScanAWBPage({ toast }) {
     inputRef.current?.focus();
   }, []);
 
+  useEffect(() => {
+    try {
+      if (stickyClientCode) localStorage.setItem(DESKTOP_STICKY_CLIENT_KEY, stickyClientCode);
+      else localStorage.removeItem(DESKTOP_STICKY_CLIENT_KEY);
+    } catch {
+      // non-critical local persistence
+    }
+  }, [stickyClientCode]);
+
+  useEffect(() => {
+    try {
+      if (mobilePIN) localStorage.setItem(DESKTOP_MOBILE_PIN_KEY, mobilePIN);
+      else localStorage.removeItem(DESKTOP_MOBILE_PIN_KEY);
+    } catch {
+      // non-critical local persistence
+    }
+  }, [mobilePIN]);
+
+  useEffect(() => {
+    if (!mobilePIN) {
+      setMobileQRData('');
+      return;
+    }
+    try {
+      const baseUrl = window.location.origin;
+      const scannerUrl = `${baseUrl}/mobile-scanner/${mobilePIN}`;
+      setMobileQRData(generateQRCodeDataURL(scannerUrl, 280));
+    } catch {
+      setMobileQRData('');
+    }
+  }, [mobilePIN]);
+
   const reviewScan = reviewQueue[0] || null;
   const pendingReviewCount = reviewQueue.length;
-  const reviewComparison = reviewDiffFields(reviewScan, reviewForm);
   const mobileSessionActive = mobileStatus === 'connected';
-
-  const notifyMobileReadyForNext = useCallback(() => {
-    if (!socket || mobileStatus !== 'connected' || !mobilePIN) return;
-    socket.emit('scanner:ready-for-next', { pin: mobilePIN });
-  }, [socket, mobileStatus, mobilePIN]);
 
   useEffect(() => {
     if (!reviewScan) {
@@ -270,9 +270,10 @@ export default function ScanAWBPage({ toast }) {
       return;
     }
 
-    const suggestedCode = reviewScan.meta?.clientSuggestion?.suggestedClientCode || reviewScan.shipment?.clientCode || 'MISC';
+    const suggestedCode = normalizeClientCode(reviewScan.meta?.clientSuggestion?.suggestedClientCode || reviewScan.shipment?.clientCode || 'MISC');
+    const effectiveClientCode = normalizeClientCode(stickyClientCode || suggestedCode || 'MISC');
     setReviewForm({
-      clientCode: suggestedCode,
+      clientCode: effectiveClientCode,
       consignee: reviewScan.shipment?.consignee || '',
       destination: reviewScan.shipment?.destination || '',
       pincode: reviewScan.shipment?.pincode || reviewScan.meta?.ocrExtracted?.pincode || '',
@@ -280,7 +281,7 @@ export default function ScanAWBPage({ toast }) {
       amount: reviewScan.shipment?.amount || 0,
       orderNo: extractOrderNo(reviewScan.shipment, reviewScan.meta),
     });
-  }, [reviewScan]);
+  }, [reviewScan, stickyClientCode]);
 
   const triggerFeedback = (type) => {
     setLastFeedback(type);
@@ -363,7 +364,13 @@ export default function ScanAWBPage({ toast }) {
   };
 
   const buildApprovalPayload = (fields = {}, fallbackScan = null) => ({
-    clientCode: String(fields.clientCode || fallbackScan?.meta?.clientSuggestion?.suggestedClientCode || fallbackScan?.shipment?.clientCode || 'MISC').trim().toUpperCase(),
+    clientCode: normalizeClientCode(
+      fields.clientCode
+      || stickyClientCode
+      || fallbackScan?.meta?.clientSuggestion?.suggestedClientCode
+      || fallbackScan?.shipment?.clientCode
+      || 'MISC'
+    ),
     consignee: String(fields.consignee || fallbackScan?.shipment?.consignee || '').trim().toUpperCase(),
     destination: String(fields.destination || fallbackScan?.shipment?.destination || '').trim().toUpperCase(),
     pincode: String(fields.pincode || fallbackScan?.shipment?.pincode || fallbackScan?.meta?.ocrExtracted?.pincode || '').trim(),
@@ -405,25 +412,16 @@ export default function ScanAWBPage({ toast }) {
       toast?.('WebSocket not connected. Please refresh.', 'error');
       return;
     }
-    if (mobilePIN && mobileStatus !== 'idle') {
+    if (mobilePIN && (mobileStatus === 'connected' || mobileStatus === 'waiting')) {
       setShowMobileModal(true);
       return;
     }
     socket.emit('scanner:create-session', (response) => {
       if (response?.success) {
-        const pin = response.pin;
+        const pin = String(response.pin || '').trim();
         setMobilePIN(pin);
-        setMobileStatus('waiting');
-        setMobileScanCount(0);
-        setMobileSessionStartedAt(Date.now());
-        // Generate QR code with mobile scanner URL
-        const baseUrl = window.location.origin;
-        const scannerUrl = `${baseUrl}/mobile-scanner/${pin}`;
-        try {
-          setMobileQRData(generateQRCodeDataURL(scannerUrl, 280));
-        } catch {
-          setMobileQRData('');
-        }
+        setMobileStatus(response.phoneConnected ? 'connected' : 'waiting');
+        setMobileScanCount(Number(response.scanCount || 0));
         setShowMobileModal(true);
       } else {
         toast?.('Could not create scan session', 'error');
@@ -435,20 +433,40 @@ export default function ScanAWBPage({ toast }) {
     setShowMobileModal(false);
   }, []);
 
+  useEffect(() => {
+    if (!socket || !socketConnected) return;
+    if (!mobilePIN) return;
+
+    socket.emit('scanner:resume-session', { pin: mobilePIN }, (response) => {
+      if (response?.success) {
+        const resumedPin = String(response.pin || mobilePIN).trim();
+        setMobilePIN(resumedPin);
+        setMobileStatus(response.phoneConnected ? 'connected' : 'waiting');
+        setMobileScanCount(Number(response.scanCount || 0));
+        return;
+      }
+
+      setMobileStatus('idle');
+      setMobilePIN('');
+      setMobileScanCount(0);
+      setMobileQRData('');
+    });
+  }, [socket, socketConnected, mobilePIN]);
+
   const endMobileSession = useCallback(() => {
-    socket?.emit('scanner:end-session');
+    socket?.emit('scanner:end-session', { pin: mobilePIN, reason: 'Desktop ended the session' });
     setMobileStatus('idle');
     setMobilePIN('');
+    setMobileScanCount(0);
     setMobileQRData('');
-    setMobileSessionStartedAt(null);
     setShowMobileModal(false);
-  }, [socket]);
+  }, [socket, mobilePIN]);
 
   // Listen for mobile bridge socket events
   useEffect(() => {
     if (!socket) return;
 
-    const onPhoneConnected = ({ pin }) => {
+    const onPhoneConnected = ({ pin: _pin }) => {
       setMobileStatus((prev) => {
         if (prev !== 'connected') {
           playSuccess();
@@ -460,7 +478,7 @@ export default function ScanAWBPage({ toast }) {
       setShowMobileModal(false);
     };
 
-    const onPhoneDisconnected = ({ totalScans }) => {
+    const onPhoneDisconnected = ({ totalScans: _totalScans }) => {
       setMobileStatus('disconnected');
       // Intentionally suppressed toast: Socket flutters during large image uploads
       // result in brief disconnects. We don't want to spam the user.
@@ -470,8 +488,8 @@ export default function ScanAWBPage({ toast }) {
     const onSessionEnded = ({ reason, totalScans }) => {
       setMobileStatus('idle');
       setMobilePIN('');
+      setMobileScanCount(0);
       setMobileQRData('');
-      setMobileSessionStartedAt(null);
       setShowMobileModal(false);
       toast?.(reason || `Scanner session ended. ${totalScans || 0} scans completed.`, 'warning');
     };
@@ -487,12 +505,15 @@ export default function ScanAWBPage({ toast }) {
 
       try {
         const { shipment, normalized } = await updateShipmentFromApproval(approval, queuedScan);
+        const approvedClientCode = normalizeClientCode(normalized.clientCode || shipment?.clientCode || '');
+        if (approvedClientCode) {
+          setStickyClientCode(approvedClientCode === 'MISC' ? '' : approvedClientCode);
+        }
         playSuccess();
         toast?.(`Approved on mobile: ${shipment.awb}`, 'success');
         addRecentScan(buildScanEntry(shipment.awb, shipment.courier, shipment, queuedScan?.meta || {}));
         const intakeRow = addApprovedRow(shipment, queuedScan?.meta || {}, shipment.awb);
         setCapturedShipment(shipment);
-        setCapturedMeta(queuedScan?.meta || null);
         setReviewQueue((prev) => prev.filter((item) => item.shipment?.id !== shipment.id && item.awb !== shipment.awb));
         socket.emit('scanner:approval-result', {
           pin: mobilePIN,
@@ -597,6 +618,9 @@ export default function ScanAWBPage({ toast }) {
         awb: currentAwb,
         courier,
         captureOnly: true,
+        sessionContext: {
+          stickyClientCode: stickyClientCode || undefined,
+        },
         ...(smartAssist && imageBase64 ? { imageBase64 } : {}),
         ...(smartAssist && focusImageBase64 ? { focusImageBase64 } : {}),
       });
@@ -607,14 +631,19 @@ export default function ScanAWBPage({ toast }) {
       vibrate([35, 20, 60]);
       triggerFeedback('success');
       setCapturedShipment(shipment);
-      setCapturedMeta(meta);
 
       if (scanMode === 'single' || imageBase64) {
         queueReviewScan({ awb: currentAwb, courier, shipment, meta });
         toast?.(`Captured ${currentAwb} - queued for review`, 'info');
         if (imageBase64 && mobileStatus === 'connected') {
+          const preferredClientCode = normalizeClientCode(
+            stickyClientCode
+            || meta?.clientSuggestion?.suggestedClientCode
+            || shipment?.clientCode
+            || ''
+          );
           const mobileDraft = buildApprovalPayload({
-            clientCode: meta?.clientSuggestion?.suggestedClientCode || shipment?.clientCode || '',
+            clientCode: preferredClientCode,
             consignee: shipment?.consignee || '',
             destination: shipment?.destination || '',
             pincode: shipment?.pincode || meta?.ocrExtracted?.pincode || '',
@@ -684,6 +713,10 @@ export default function ScanAWBPage({ toast }) {
       
       const updatedShipment = payload.data;
       if (updatedShipment) {
+        const approvedClientCode = normalizeClientCode(reviewForm.clientCode || updatedShipment.clientCode || '');
+        if (approvedClientCode) {
+          setStickyClientCode(approvedClientCode === 'MISC' ? '' : approvedClientCode);
+        }
         playSuccess();
         vibrate([35, 20, 60]);
         toast?.(`Verified & Saved: ${reviewScan.awb}`, 'success');
@@ -916,7 +949,6 @@ export default function ScanAWBPage({ toast }) {
 
       if (successes[0]?.data) {
         setCapturedShipment(successes[0].data);
-        setCapturedMeta(successes[0].meta || null);
       }
 
       if (successes.length) {
@@ -1005,46 +1037,6 @@ export default function ScanAWBPage({ toast }) {
     }
 
     exportJsonToExcel(failed, `scan-errors-${new Date().toISOString().slice(0, 10)}.xlsx`, 'SCAN_ERRORS');
-  };
-
-  const assignClient = async (clientCode) => {
-    if (!capturedShipment?.id || !clientCode) return;
-    try {
-      const payload = await api.put(`/shipments/${capturedShipment.id}`, { clientCode });
-      const updated = payload?.data || null;
-      if (!updated) return;
-      setCapturedShipment(updated);
-      setCapturedMeta((prev) => ({
-        ...(prev || {}),
-        clientSuggestion: {
-          ...(prev?.clientSuggestion || {}),
-          suggestedClientCode: clientCode,
-          suggestedClientName: updated?.client?.company || prev?.clientSuggestion?.suggestedClientName || clientCode,
-          needsConfirmation: false,
-          autoAssigned: true,
-        },
-      }));
-      setRecentScans((prev) => prev.map((scan) => {
-        if (scan.awb !== updated.awb) return scan;
-        return {
-          ...scan,
-          data: { ...(scan.data || {}), ...updated },
-          meta: {
-            ...(scan.meta || {}),
-            clientSuggestion: {
-              ...(scan.meta?.clientSuggestion || {}),
-              suggestedClientCode: clientCode,
-              suggestedClientName: updated?.client?.company || clientCode,
-              needsConfirmation: false,
-              autoAssigned: true,
-            },
-          },
-        };
-      }));
-      toast?.(`Client mapped: ${clientCode}`, 'success');
-    } catch (err) {
-      toast?.(err.message || 'Could not assign client', 'error');
-    }
   };
 
   const successfulCaptures = recentScans.filter((scan) => scan.status === 'success').length;
@@ -1287,6 +1279,11 @@ export default function ScanAWBPage({ toast }) {
                             <Edit size={14} /> Manual Entry
                           </button>
                         </div>
+                        {stickyClientCode && (
+                          <div className="mt-3 inline-flex items-center gap-2 rounded-2xl bg-violet-500/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-violet-600">
+                            <Brain size={12} /> Sticky client {stickyClientCode}
+                          </div>
+                        )}
                         {mobileSessionActive && (
                           <div className={`mt-4 rounded-2xl border px-4 py-3 ${reviewScan ? 'border-amber-200 bg-amber-50 text-amber-700' : 'border-blue-200 bg-blue-50 text-blue-700'}`}>
                             <div className="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-[0.28em]">
@@ -1527,6 +1524,31 @@ export default function ScanAWBPage({ toast }) {
                         disabled={savingReview}
                         placeholder="e.g. MISC"
                       />
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <div className="text-[10px] font-bold text-slate-500">
+                          {stickyClientCode ? `Sticky client: ${stickyClientCode}` : 'Sticky client off'}
+                        </div>
+                        {stickyClientCode ? (
+                          <button
+                            type="button"
+                            onClick={() => setStickyClientCode('')}
+                            className="text-[10px] px-2 py-1 rounded-lg font-bold border bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                          >
+                            Clear sticky
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextCode = normalizeClientCode(reviewForm.clientCode || '');
+                              if (nextCode && nextCode !== 'MISC') setStickyClientCode(nextCode);
+                            }}
+                            className="text-[10px] px-2 py-1 rounded-lg font-bold border bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                          >
+                            Keep this client
+                          </button>
+                        )}
+                      </div>
                       {intelligence?.clientMatches?.length > 0 && intelligence.clientNeedsConfirmation && (
                         <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-slate-200">
                           {intelligence.clientMatches.slice(0, 3).map(m => (

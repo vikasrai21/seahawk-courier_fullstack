@@ -3,20 +3,28 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import api from '../services/api';
 import { cropRectForCoverVideo } from '../utils/videoCoverCrop.js';
-import { normalizeBarcodeCandidate, rankBarcodeCandidates } from '../utils/barcode.js';
+import { normalizeBarcodeCandidate } from '../utils/barcode.js';
 import { analyzeCaptureQuality, describeCaptureIssues } from '../utils/scannerQuality.js';
 import { evaluateBarcodeStability, nextBarcodeFallbackState } from '../utils/scannerStateMachine.js';
 import { createBarcodeScanner } from '../utils/barcodeEngine.js';
 import {
-  Camera, Check, AlertCircle, RotateCcw, Send, ChevronRight, Volume2, VolumeX,
+  Camera, Check, AlertCircle, RotateCcw, Send, Volume2, VolumeX,
   Wifi, WifiOff, Zap, Package, ScanLine, Shield, RefreshCw, X, Brain,
-  BarChart3, History, Clock, CheckCircle2, List, ArrowLeft, Trash2, CloudUpload,
+  Clock, CheckCircle2, List, ArrowLeft, Trash2, CloudUpload,
   CalendarDays
 } from 'lucide-react';
 
 // â”€â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-const SOCKET_URL = import.meta.env.VITE_API_URL || window.location.origin;
-const SCANBOT_LICENSE = import.meta.env.VITE_SCANBOT_LICENSE_KEY || '';
+function resolveSocketUrl() {
+  const apiUrl = import.meta.env.VITE_API_URL;
+  if (!apiUrl || apiUrl.startsWith('/')) {
+    return window.location.origin;
+  }
+
+  return apiUrl.replace(/\/api\/?$/, '');
+}
+
+const SOCKET_URL = resolveSocketUrl();
 // Barcode strip: wide landscape rectangle â€” Trackon/DTDC barcodes are horizontal
 const BARCODE_SCAN_REGION = { w: '90vw', h: '18vw' };  // aspect ~5:1, always landscape
 // Document capture: tall portrait rectangle matching a real AWB slip shape
@@ -26,14 +34,15 @@ const FAST_AUTO_NEXT_DELAY = 900;
 const FAST_SCAN_TIMEOUT_MS = 10000;
 const LOOKUP_DECISION_TIMEOUT_MS = 12000;
 const OFFLINE_QUEUE_KEY_PREFIX = 'mobile_scanner_offline_queue';
+const SESSION_STATE_KEY_PREFIX = 'mobile_scanner_session_state';
+const STICKY_CLIENT_KEY_PREFIX = 'mobile_scanner_sticky_client';
 const WORKFLOW_MODE_KEY = 'mobile_scanner_workflow_mode';
 const DEVICE_PROFILE_KEY = 'mobile_scanner_device_profile';
-const LOCK_TO_CAPTURE_DELAY = 80; // fast transition after barcode lock
+const HEARTBEAT_INTERVAL_MS = 20000;
 const BARCODE_STABILITY_WINDOW_MS = 500;
 const BARCODE_STABILITY_HITS = 1;
 const BARCODE_FAIL_THRESHOLD = 100;
 const BARCODE_REFRAME_ATTEMPTS = 2;
-const BARCODE_POLL_INTERVAL_MS = 45;
 const DOC_STABLE_MIN_TICKS = 2;
 const DOC_CAPTURE_MIN_INTERVAL_MS = 500;
 const CAPTURE_MAX_WIDTH = 960;
@@ -56,6 +65,8 @@ const normalizeReviewCourier = (value) => {
   if (upper.includes('BLUE')) return 'BlueDart';
   return raw;
 };
+
+const normalizeClientCode = (value) => String(value || '').trim().toUpperCase();
 
 const formatDisplayDate = (isoDate) => {
   const raw = String(isoDate || '').trim();
@@ -96,8 +107,19 @@ const STEPS = {
 };
 
 // â”€â”€â”€ Audio/Haptics â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function logNonCriticalScannerError(scope, err) {
+  const message = err instanceof Error ? err.message : String(err || 'unknown error');
+  if (import.meta.env.DEV) {
+    console.debug(`[MobileScanner] ${scope}: ${message}`);
+  }
+}
+
 const vibrate = (pattern) => {
-  try { navigator?.vibrate?.(pattern); } catch {}
+  try {
+    navigator?.vibrate?.(pattern);
+  } catch (err) {
+    logNonCriticalScannerError('vibrate', err);
+  }
 };
 
 const HAPTIC_PATTERN = {
@@ -128,7 +150,9 @@ const playTone = (freq, duration, type = 'sine') => {
     gain.connect(ctx.destination);
     osc.start();
     osc.stop(ctx.currentTime + duration);
-  } catch {}
+  } catch (err) {
+    logNonCriticalScannerError('playTone', err);
+  }
 };
 
 const playSuccessBeep = () => { playTone(880, 0.12); setTimeout(() => playTone(1100, 0.10), 130); };
@@ -146,7 +170,9 @@ const speak = (text) => {
     const u = new SpeechSynthesisUtterance(text);
     u.rate = 1.2; u.pitch = 1.0; u.lang = 'en-IN';
     window.speechSynthesis.speak(u);
-  } catch {}
+  } catch (err) {
+    logNonCriticalScannerError('speak', err);
+  }
 };
 
 const isProbablySecureContextForCamera = () => {
@@ -831,6 +857,14 @@ export default function MobileScannerPage({ standalone = false }) {
   const navigate = useNavigate();
   const isStandalone = Boolean(standalone);
   const offlineQueueKey = `${OFFLINE_QUEUE_KEY_PREFIX}:${isStandalone ? 'direct' : (pin || 'unknown')}`;
+  const sessionStateKey = useMemo(
+    () => `${SESSION_STATE_KEY_PREFIX}:${isStandalone ? 'direct' : (pin || 'unknown')}`,
+    [isStandalone, pin]
+  );
+  const stickyClientStorageKey = useMemo(
+    () => `${STICKY_CLIENT_KEY_PREFIX}:${isStandalone ? 'direct' : (pin || 'unknown')}`,
+    [isStandalone, pin]
+  );
   const TODAY_KEY = useMemo(() => `mobile_scanner_daily_count:${new Date().toISOString().slice(0, 10)}`, []);
   const mockBarcodeRaw = useMemo(() => {
     try {
@@ -861,7 +895,7 @@ export default function MobileScannerPage({ standalone = false }) {
   // ——— Scan data ———
   const [lockedAwb, setLockedAwb] = useState('');
   const [capturedImage, setCapturedImage] = useState(null);
-  const [processingFields, setProcessingFields] = useState({});
+  const [, setProcessingFields] = useState({});
   const [reviewData, setReviewData] = useState(null);
   const [reviewForm, setReviewForm] = useState({});
   const [lastSuccess, setLastSuccess] = useState(null);
@@ -891,7 +925,9 @@ export default function MobileScannerPage({ standalone = false }) {
     try {
       const saved = localStorage.getItem(WORKFLOW_MODE_KEY);
       if (saved === 'fast' || saved === 'ocr') return saved;
-    } catch {}
+    } catch (err) {
+      logNonCriticalScannerError('read workflow mode', err);
+    }
     return isE2eMock ? 'ocr' : 'fast';
   });
   const [deviceProfile, setDeviceProfile] = useState(() => {
@@ -899,7 +935,9 @@ export default function MobileScannerPage({ standalone = false }) {
     try {
       const saved = localStorage.getItem(DEVICE_PROFILE_KEY);
       if (saved === DEVICE_PROFILES.phone || saved === DEVICE_PROFILES.rugged) return saved;
-    } catch {}
+    } catch (err) {
+      logNonCriticalScannerError('read device profile', err);
+    }
     return DEVICE_PROFILES.phone;
   });
   // Counts consecutive frames where no barcode was found. Reset to 0 on any
@@ -908,14 +946,50 @@ export default function MobileScannerPage({ standalone = false }) {
   const barcodeFailCountRef = useRef(0);
 
   // ——— Session context ———
-  const [sessionCtx, setSessionCtx] = useState({
-    scannedAwbs: new Set(),
-    clientFreq: {},
-    scanNumber: 0,
-    dominantClient: null,
-    dominantClientCount: 0,
-    startedAt: Date.now(),
-    scannedItems: [],
+  const [sessionCtx, setSessionCtx] = useState(() => {
+    const base = {
+      scannedAwbs: new Set(),
+      clientFreq: {},
+      scanNumber: 0,
+      dominantClient: null,
+      dominantClientCount: 0,
+      startedAt: Date.now(),
+      scannedItems: [],
+    };
+    if (typeof window === 'undefined') return base;
+    try {
+      const raw = localStorage.getItem(sessionStateKey);
+      if (!raw) return base;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return base;
+      const scannedAwbs = new Set(
+        Array.isArray(parsed.scannedAwbs)
+          ? parsed.scannedAwbs.map((awb) => normalizeClientCode(awb)).filter(Boolean)
+          : []
+      );
+      return {
+        ...base,
+        clientFreq: parsed.clientFreq && typeof parsed.clientFreq === 'object' ? parsed.clientFreq : {},
+        scanNumber: Number.isFinite(Number(parsed.scanNumber)) ? Number(parsed.scanNumber) : 0,
+        dominantClient: normalizeClientCode(parsed.dominantClient || '') || null,
+        dominantClientCount: Number.isFinite(Number(parsed.dominantClientCount)) ? Number(parsed.dominantClientCount) : 0,
+        startedAt: Number.isFinite(Number(parsed.startedAt)) ? Number(parsed.startedAt) : base.startedAt,
+        scannedItems: Array.isArray(parsed.scannedItems) ? parsed.scannedItems : [],
+        scannedAwbs,
+      };
+    } catch (err) {
+      logNonCriticalScannerError('hydrate session state', err);
+      return base;
+    }
+  });
+  const [stickyClientCode, setStickyClientCode] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    try {
+      return normalizeClientCode(localStorage.getItem(stickyClientStorageKey) || '');
+    } catch (err) {
+      logNonCriticalScannerError('read sticky client', err);
+      return '';
+    }
   });
 
   // ——— Settings ———
@@ -929,7 +1003,9 @@ export default function MobileScannerPage({ standalone = false }) {
     try {
       const saved = localStorage.getItem('seahawk_scanner_session_date');
       if (saved && ISO_DATE_REGEX.test(saved)) return saved;
-    } catch {}
+    } catch (err) {
+      logNonCriticalScannerError('read session date', err);
+    }
     return new Date().toISOString().slice(0, 10);
   });
 
@@ -1086,6 +1162,38 @@ export default function MobileScannerPage({ standalone = false }) {
     return () => clearInterval(t);
   }, [sessionCtx.startedAt]);
 
+  useEffect(() => {
+    scannedAwbsRef.current = sessionCtx.scannedAwbs instanceof Set ? sessionCtx.scannedAwbs : new Set();
+  }, [sessionCtx.scannedAwbs]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(sessionStateKey, JSON.stringify({
+        scanNumber: Number(sessionCtx.scanNumber || 0),
+        clientFreq: sessionCtx.clientFreq || {},
+        dominantClient: sessionCtx.dominantClient || null,
+        dominantClientCount: Number(sessionCtx.dominantClientCount || 0),
+        startedAt: Number(sessionCtx.startedAt || Date.now()),
+        scannedItems: Array.isArray(sessionCtx.scannedItems) ? sessionCtx.scannedItems : [],
+        scannedAwbs: Array.from(sessionCtx.scannedAwbs || []),
+      }));
+    } catch (err) {
+      logNonCriticalScannerError('persist session state', err);
+    }
+  }, [sessionCtx, sessionStateKey]);
+
+  useEffect(() => {
+    try {
+      if (stickyClientCode) {
+        localStorage.setItem(stickyClientStorageKey, stickyClientCode);
+      } else {
+        localStorage.removeItem(stickyClientStorageKey);
+      }
+    } catch (err) {
+      logNonCriticalScannerError('persist sticky client', err);
+    }
+  }, [stickyClientCode, stickyClientStorageKey]);
+
   const saveOfflineQueue = useCallback((nextQueue) => {
     setOfflineQueue(nextQueue);
     try {
@@ -1094,7 +1202,9 @@ export default function MobileScannerPage({ standalone = false }) {
       } else {
         localStorage.removeItem(offlineQueueKey);
       }
-    } catch {}
+    } catch (err) {
+      logNonCriticalScannerError('persist offline queue', err);
+    }
   }, [offlineQueueKey]);
 
   const enqueueOfflineScan = useCallback((payload) => {
@@ -1173,7 +1283,11 @@ export default function MobileScannerPage({ standalone = false }) {
         scannedItems: [nextItem, ...prev.scannedItems],
       };
       // Persist daily count to localStorage
-      try { localStorage.setItem(TODAY_KEY, String(next.scanNumber)); } catch {}
+      try {
+        localStorage.setItem(TODAY_KEY, String(next.scanNumber));
+      } catch (err) {
+        logNonCriticalScannerError('persist daily count', err);
+      }
       return next;
     });
   }, [TODAY_KEY, sessionDate]);
@@ -1308,6 +1422,11 @@ export default function MobileScannerPage({ standalone = false }) {
 
   const terminateSession = useCallback(() => {
     if (!window.confirm(isStandalone ? 'Exit this scanner session on the phone?' : 'End this mobile scanner session on the phone?')) return;
+    try {
+      localStorage.removeItem(sessionStateKey);
+    } catch (err) {
+      logNonCriticalScannerError('clear session state on terminate', err);
+    }
     if (isStandalone) {
       navigate('/app/scan');
       return;
@@ -1317,7 +1436,7 @@ export default function MobileScannerPage({ standalone = false }) {
     } else {
       navigate('/');
     }
-  }, [socket, navigate, isStandalone]);
+  }, [socket, navigate, isStandalone, sessionStateKey]);
 
   const saveAndUpload = useCallback(() => {
     if (offlineQueue.length > 0) {
@@ -1340,9 +1459,11 @@ export default function MobileScannerPage({ standalone = false }) {
 
   const applyProcessedScanResult = useCallback((data) => {
     if (!data) return;
+    const suggestedClientCode = normalizeClientCode(data.clientCode || '');
+    const effectiveClientCode = normalizeClientCode(stickyClientCode || suggestedClientCode);
     setReviewData(data);
     setReviewForm({
-      clientCode: data.clientCode || '',
+      clientCode: effectiveClientCode,
       consignee: data.consignee || '',
       destination: data.destination || '',
       pincode: data.pincode || '',
@@ -1366,7 +1487,7 @@ export default function MobileScannerPage({ standalone = false }) {
     if (voiceEnabled) speak(`Auto approved. ${data.clientName || ''}. ${data.destination || ''}.`);
     const item = {
       awb: data.awb,
-      clientCode: data.clientCode,
+      clientCode: effectiveClientCode || data.clientCode,
       clientName: data.clientName,
       destination: data.destination || '',
       weight: data.weight || 0,
@@ -1377,7 +1498,7 @@ export default function MobileScannerPage({ standalone = false }) {
     setLastSuccess(item);
     addToQueue(item);
     goStep(STEPS.SUCCESS);
-  }, [addToQueue, goStep, voiceEnabled, sessionDate]);
+  }, [addToQueue, goStep, voiceEnabled, sessionDate, stickyClientCode]);
 
   useEffect(() => {
     handleLookupNeedsPhotoRef.current = handleLookupNeedsPhoto;
@@ -1438,7 +1559,16 @@ export default function MobileScannerPage({ standalone = false }) {
     s.on('scanner:session-ended', ({ reason }) => {
       setConnStatus('disconnected');
       setErrorMsg(reason || 'Session ended by desktop.');
+      try {
+        localStorage.removeItem(sessionStateKey);
+      } catch (err) {
+        logNonCriticalScannerError('clear session state on end', err);
+      }
       navigate('/');
+    });
+    s.on('scanner:desktop-disconnected', ({ message }) => {
+      setConnStatus('paired');
+      setErrorMsg(message || 'Desktop disconnected. Keep scanning; approvals will resume when desktop reconnects.');
     });
     s.on('disconnect', () => setConnStatus('disconnected'));
     s.on('reconnect', () => {
@@ -1495,6 +1625,23 @@ export default function MobileScannerPage({ standalone = false }) {
         playHardwareBeep();
         pulseHaptic('success');
         setFlash('success');
+        const approvedClientCode = normalizeClientCode(activeReviewForm.clientCode || '');
+        if (approvedClientCode) {
+          setStickyClientCode(approvedClientCode === 'MISC' ? '' : approvedClientCode);
+        }
+        if (approvedClientCode && approvedClientCode !== 'MISC') {
+          setSessionCtx((prev) => {
+            const freq = { ...prev.clientFreq };
+            freq[approvedClientCode] = (freq[approvedClientCode] || 0) + 1;
+            const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
+            return {
+              ...prev,
+              clientFreq: freq,
+              dominantClient: sorted[0]?.[1] >= 2 ? sorted[0][0] : null,
+              dominantClientCount: sorted[0]?.[1] || 0,
+            };
+          });
+        }
         const item = {
           awb: activeReviewData?.awb || awb,
           clientCode: activeReviewForm.clientCode,
@@ -1520,7 +1667,19 @@ export default function MobileScannerPage({ standalone = false }) {
 
     setSocket(s);
     return () => { s.disconnect(); };
-  }, [pin, goStep, navigate, isE2eMock, isStandalone]);
+  }, [pin, goStep, navigate, isE2eMock, isStandalone, sessionStateKey]);
+
+  useEffect(() => {
+    if (isE2eMock || isStandalone) return undefined;
+    if (!socket || connStatus !== 'paired' || !socket.connected) return undefined;
+
+    const sendHeartbeat = () => {
+      socket.emit('scanner:heartbeat', {}, () => {});
+    };
+    sendHeartbeat();
+    const timer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [socket, connStatus, isE2eMock, isStandalone]);
 
   useEffect(() => {
     try {
@@ -1530,19 +1689,25 @@ export default function MobileScannerPage({ standalone = false }) {
       if (Array.isArray(parsed) && parsed.length) {
         setOfflineQueue(parsed);
       }
-    } catch {}
+    } catch (err) {
+      logNonCriticalScannerError('hydrate offline queue', err);
+    }
   }, [offlineQueueKey]);
 
   useEffect(() => {
     try {
       localStorage.setItem(WORKFLOW_MODE_KEY, scanWorkflowMode);
-    } catch {}
+    } catch (err) {
+      logNonCriticalScannerError('persist workflow mode', err);
+    }
   }, [scanWorkflowMode]);
 
   useEffect(() => {
     try {
       localStorage.setItem(DEVICE_PROFILE_KEY, deviceProfile);
-    } catch {}
+    } catch (err) {
+      logNonCriticalScannerError('persist device profile', err);
+    }
   }, [deviceProfile]);
 
   useEffect(() => {
@@ -1567,18 +1732,26 @@ export default function MobileScannerPage({ standalone = false }) {
         try {
           const sdk = scanbotRef.current;
           if (sdk?.barcodeScanner) await sdk.barcodeScanner.dispose();
-        } catch {}
+        } catch (err) {
+          logNonCriticalScannerError('dispose scanbot camera scanner', err);
+        }
         scanbotRef.current = null;
       }
       if (scannerRef.current) {
-        try { await scannerRef.current.reset(); } catch {}
+        try {
+          await scannerRef.current.reset();
+        } catch (err) {
+          logNonCriticalScannerError('reset camera scanner', err);
+        }
         scannerRef.current = null;
       }
       if (videoRef.current?.srcObject) {
         videoRef.current.srcObject.getTracks().forEach(t => t.stop());
         videoRef.current.srcObject = null;
       }
-    } catch {}
+    } catch (err) {
+      logNonCriticalScannerError('stopCamera', err);
+    }
   }, []);
 
   const stopBarcodeScanner = useCallback(async () => {
@@ -1587,7 +1760,11 @@ export default function MobileScannerPage({ standalone = false }) {
       // Stop WASM barcode engine
       if (barcodeEngineRef.current) { barcodeEngineRef.current.stop(); }
       if (scanbotRef.current) {
-        try { await scanbotRef.current.barcodeScanner.dispose(); } catch {}
+        try {
+          await scanbotRef.current.barcodeScanner.dispose();
+        } catch (err) {
+          logNonCriticalScannerError('dispose barcode scanner', err);
+        }
         scanbotRef.current = null;
       }
       if (scannerRef.current) {
@@ -1597,10 +1774,14 @@ export default function MobileScannerPage({ standalone = false }) {
           } else {
             await scannerRef.current.reset();
           }
-        } catch {}
+        } catch (err) {
+          logNonCriticalScannerError('reset barcode scanner', err);
+        }
         scannerRef.current = null;
       }
-    } catch {}
+    } catch (err) {
+      logNonCriticalScannerError('stopBarcodeScanner', err);
+    }
   }, []);
 
   const startBarcodeScanner = useCallback(async () => {
@@ -1915,6 +2096,7 @@ export default function MobileScannerPage({ standalone = false }) {
     recentClient: sessionCtx.dominantClient,
     dominantClient: sessionCtx.dominantClient,
     dominantClientCount: sessionCtx.dominantClientCount,
+    stickyClientCode: stickyClientCode || undefined,
     sessionDurationMin: Math.round((Date.now() - sessionCtx.startedAt) / 60000),
     sessionDate,
     scanWorkflowMode,
@@ -1935,7 +2117,7 @@ export default function MobileScannerPage({ standalone = false }) {
     lockTimeMs: Number.isFinite(Number(lockTelemetryRef.current?.lockTimeMs)) ? Number(lockTelemetryRef.current.lockTimeMs) : null,
     lockCandidateCount: Number.isFinite(Number(lockTelemetryRef.current?.candidateCount)) ? Number(lockTelemetryRef.current.candidateCount) : 1,
     lockAlternatives: Array.isArray(lockTelemetryRef.current?.alternatives) ? lockTelemetryRef.current.alternatives.slice(0, 3) : [],
-  }), [sessionCtx, sessionDate, scanWorkflowMode, scanMode, deviceProfile, captureQuality, captureMeta]);
+  }), [sessionCtx, sessionDate, scanWorkflowMode, scanMode, deviceProfile, captureQuality, captureMeta, stickyClientCode]);
 
   const submitFastBarcode = useCallback(async (awb) => {
     const cleanAwb = String(awb || '').trim().toUpperCase();
@@ -2203,7 +2385,7 @@ export default function MobileScannerPage({ standalone = false }) {
   const submitApproval = useCallback(async () => {
     if (!reviewData) return;
     goStep(STEPS.APPROVING);
-    let approvalAccepted = !isStandalone;
+    let approvalAccepted = false;
     const approvalDate = reviewForm.date || sessionDate || new Date().toISOString().slice(0, 10);
     if (isE2eMock) {
       setTimeout(() => {
@@ -2319,11 +2501,16 @@ export default function MobileScannerPage({ standalone = false }) {
       });
     }
 
+    const approvedClientCode = normalizeClientCode(reviewForm.clientCode || '');
+    if (approvalAccepted && approvedClientCode) {
+      setStickyClientCode(approvedClientCode === 'MISC' ? '' : approvedClientCode);
+    }
+
     // Update session client frequency
-    if (approvalAccepted && reviewForm.clientCode && reviewForm.clientCode !== 'MISC') {
+    if (approvalAccepted && approvedClientCode && approvedClientCode !== 'MISC') {
       setSessionCtx(prev => {
         const freq = { ...prev.clientFreq };
-        freq[reviewForm.clientCode] = (freq[reviewForm.clientCode] || 0) + 1;
+        freq[approvedClientCode] = (freq[approvedClientCode] || 0) + 1;
         const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]);
         return {
           ...prev,
@@ -2400,7 +2587,6 @@ export default function MobileScannerPage({ standalone = false }) {
   // RENDER
   // ══════════════════════════════════════════════════════════════════════════════════
 
-  const isStepActive = (s) => step === s;
   const stepClass = (s) => `msp-step ${step === s ? 'active' : ''}`;
   const successAutoDelayMs = scanWorkflowMode === 'fast' ? FAST_AUTO_NEXT_DELAY : AUTO_NEXT_DELAY;
   const successAutoSeconds = Math.max(1, Math.round(successAutoDelayMs / 1000));
@@ -2663,7 +2849,11 @@ export default function MobileScannerPage({ standalone = false }) {
                     const val = e.target.value;
                     if (val && ISO_DATE_REGEX.test(val)) {
                       setSessionDate(val);
-                      try { localStorage.setItem('seahawk_scanner_session_date', val); } catch {}
+                      try {
+                        localStorage.setItem('seahawk_scanner_session_date', val);
+                      } catch (err) {
+                        logNonCriticalScannerError('persist session date', err);
+                      }
                       pulseHaptic('light');
                     }
                   }}
@@ -3226,6 +3416,31 @@ export default function MobileScannerPage({ standalone = false }) {
                     {fieldConfidence.clientCode?.source && (() => { const s = sourceLabel(fieldConfidence.clientCode.source); return s ? <span className={s.className}>{s.icon} {s.text}</span> : null; })()}
                   </div>
                   <input className="field-input" value={reviewForm.clientCode || ''} onChange={e => setReviewForm(f => ({ ...f, clientCode: e.target.value.toUpperCase() }))} placeholder="Client code" />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, gap: 8 }}>
+                    <div style={{ fontSize: '0.62rem', color: '#64748B' }}>
+                      {stickyClientCode ? `Sticky for next scans: ${stickyClientCode}` : 'Sticky client is off'}
+                    </div>
+                    {stickyClientCode ? (
+                      <button
+                        type="button"
+                        className="suggest-chip"
+                        onClick={() => setStickyClientCode('')}
+                      >
+                        Clear sticky
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="suggest-chip"
+                        onClick={() => {
+                          const nextCode = normalizeClientCode(reviewForm.clientCode || '');
+                          if (nextCode && nextCode !== 'MISC') setStickyClientCode(nextCode);
+                        }}
+                      >
+                        Keep this client
+                      </button>
+                    )}
+                  </div>
                   {intelligence?.clientMatches?.length > 0 && intelligence.clientNeedsConfirmation && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
                       {intelligence.clientMatches.slice(0, 3).map(m => (

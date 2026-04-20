@@ -42,7 +42,9 @@ export function AuthProvider({ children }) {
     const handler = () => {
       clearSession();
       setUser(null);
-      window.location.replace('/login');
+      const currentPath = window.location.pathname || '/';
+      const nextPath = currentPath.startsWith('/portal') ? '/portal/login' : '/login';
+      window.location.replace(nextPath);
     };
     setUnauthorizedHandler(handler);
     return () => setUnauthorizedHandler(null);

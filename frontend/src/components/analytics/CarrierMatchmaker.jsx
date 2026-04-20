@@ -3,7 +3,6 @@ import {
   Zap, 
   ShieldCheck, 
   ArrowRight,
-  TrendingUp,
   Crown
 } from 'lucide-react';
 

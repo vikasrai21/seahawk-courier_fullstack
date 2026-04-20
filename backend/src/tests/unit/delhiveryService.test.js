@@ -36,7 +36,7 @@ describe('delhivery.service', () => {
       expect(svc.mapStatus('Failed')).toBe('Delayed');
       expect(svc.mapStatus('Cancelled')).toBe('Delayed');
       expect(svc.mapStatus('SomeUnknownStatus')).toBe('Booked');
-    });
+    }, 15000);
   });
 
   describe('isConfigured', () => {

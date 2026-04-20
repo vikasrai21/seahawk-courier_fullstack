@@ -105,7 +105,7 @@ export default function PulseFeed({ data, isOwner }) {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {insights.map((item, idx) => (
+        {insights.map((item) => (
           <div 
             key={item.id} 
             className={`flex flex-col gap-3 p-5 rounded-[24px] border transition-all duration-500 hover:-translate-y-1 hover:shadow-xl ${

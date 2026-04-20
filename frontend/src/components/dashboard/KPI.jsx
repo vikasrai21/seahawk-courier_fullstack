@@ -1,6 +1,6 @@
 import { ArrowUp, ArrowDown } from 'lucide-react';
 
-export default function KPI({ label, value, sub, icon: Icon, accent, trend, dark }) {
+export default function KPI({ label, value, sub, icon: Icon, accent, trend }) {
   const up = trend >= 0;
   
   return (

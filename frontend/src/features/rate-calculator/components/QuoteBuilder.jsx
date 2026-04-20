@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle, FileText, Loader, Printer, X, ClipboardCheck, ArrowUpRight, Save, Clock, Target, AlertTriangle } from 'lucide-react';
+import { CheckCircle, FileText, Loader, Printer, X, ClipboardCheck, ArrowUpRight, Save, Target, AlertTriangle, Activity } from 'lucide-react';
 
 export default function QuoteBuilder({
   results,
@@ -17,9 +17,7 @@ export default function QuoteBuilder({
   setQuoteSaved,
   locInfo,
   query,
-  selClient,
   chargeWt,
-  pColor,
 }) {
   if (!results.length) return null;
 

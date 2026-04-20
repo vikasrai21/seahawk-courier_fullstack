@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { X, Maximize2, Minimize2, Send, Loader2, ChevronDown, Wallet, ShieldAlert, Package, Copy, Check } from 'lucide-react';
+import { Maximize2, Minimize2, Send, ChevronDown, Wallet, ShieldAlert, Package, Copy, Check } from 'lucide-react';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';

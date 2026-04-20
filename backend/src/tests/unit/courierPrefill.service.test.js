@@ -65,6 +65,7 @@ describe('courierPrefill.service', () => {
         json: async () => ({
           summaryTrack: {
             CURRENT_STATUS: 'In Transit',
+            DESTINATION: 'Ludhiana',
           },
           lstDetails: [
             { CURRENT_CITY: 'Bathinda', CURRENT_STATUS: 'Arrived', TRACKING_CODE: 'ARV', EVENTDATE: '19/04/2026', EVENTTIME: '10:30:00' },
@@ -80,7 +81,7 @@ describe('courierPrefill.service', () => {
       source: 'courier_api',
       courier: 'Trackon',
       lookupType: 'tracking',
-      destination: 'BATHINDA',
+      destination: 'LUDHIANA',
       trackingStatus: 'In Transit',
     });
   });
@@ -104,6 +105,7 @@ describe('courierPrefill.service', () => {
         json: async () => ({
           summaryTrack: {
             CURRENT_STATUS: 'In Transit',
+            DESTINATION: 'Chandigarh',
           },
           lstDetails: [
             { CURRENT_CITY: 'Chandigarh', CURRENT_STATUS: 'Arrived', TRACKING_CODE: 'ARV', EVENTDATE: '19/04/2026', EVENTTIME: '10:30:00' },
@@ -121,6 +123,38 @@ describe('courierPrefill.service', () => {
       destination: 'CHANDIGARH',
       trackingStatus: 'In Transit',
     });
+  });
+
+  it('does not treat current tracking location as destination city', async () => {
+    process.env.TRACKON_APP_KEY = 'test-app';
+    process.env.TRACKON_USER_ID = 'test-user';
+    process.env.TRACKON_PASSWORD = 'test-pass';
+    const fetchSpy = vi.spyOn(global, 'fetch')
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          summaryTrack: {
+            CURRENT_STATUS: 'In Transit',
+          },
+          lstDetails: [],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          summaryTrack: {
+            CURRENT_STATUS: 'In Transit',
+          },
+          lstDetails: [
+            { CURRENT_CITY: 'Bathinda', CURRENT_STATUS: 'Arrived', TRACKING_CODE: 'ARV', EVENTDATE: '19/04/2026', EVENTTIME: '10:30:00' },
+          ],
+        }),
+      });
+
+    const result = await prefillFromApi('500602752638', 'Trackon');
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(result).toBeNull();
   });
 
   it('records shipment-details lookup metadata when merging API prefill', () => {

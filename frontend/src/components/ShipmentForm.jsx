@@ -15,7 +15,7 @@ export default function ShipmentForm({ initial = {}, onSave, onCancel, loading }
   const [clients, setClients] = useState([]);
 
   useEffect(() => {
-    api.get('/auth/users?role=CLIENT').then((r) => {
+    api.get('/auth/users?role=CLIENT').then(() => {
        // Assuming clients are users with role CLIENT or we fetch from /clients
        api.get('/clients').then(r2 => setClients(r2.data || [])).catch(() => {});
     }).catch(() => {});

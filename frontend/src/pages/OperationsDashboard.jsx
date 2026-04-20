@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   TrendingUp, Package, IndianRupee, Truck, Users,
-  AlertTriangle, CheckCircle, CheckCircle2, ShieldAlert, Activity, Globe,
+  CheckCircle, CheckCircle2, ShieldAlert, Activity,
   RefreshCw, Zap, Shield, Calculator
 } from 'lucide-react';
 import api from '../services/api';

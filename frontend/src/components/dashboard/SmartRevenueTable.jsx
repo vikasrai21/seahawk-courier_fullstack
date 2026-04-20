@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Search, ChevronLeft, ChevronRight, Zap, TrendingUp, MapPin, Package, ArrowUpRight,
-  ArrowDownRight, IndianRupee, Filter, BarChart3, Truck, AlertTriangle, ChevronsLeft,
+  ArrowDownRight, IndianRupee, Filter, Truck, AlertTriangle, ChevronsLeft,
   ChevronsRight, Sparkles
 } from 'lucide-react';
 import api from '../../services/api';

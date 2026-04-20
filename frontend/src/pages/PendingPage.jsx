@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { 
   Clock3, 
-  Search, 
-  Filter, 
   X, 
   CheckSquare, 
   Square, 
@@ -11,11 +9,9 @@ import {
   ChevronRight,
   TrendingUp,
   LayoutGrid,
-  Zap,
-  Box
+  Zap
 } from 'lucide-react';
 import api from '../services/api';
-import { StatusBadge, STATUSES } from '../components/ui/StatusBadge';
 import { SkeletonTable, EmptyState } from '../components/ui/Loading';
 import { PageHeader } from '../components/ui/PageHeader';
 import { CourierBadge } from '../components/ui/CourierBadge';
@@ -24,7 +20,6 @@ import TimelineModal from '../components/shipments/TimelineModal';
 import BulkStatusModal from '../components/shipments/BulkStatusModal';
 
 const PENDING_STATUSES = ['Booked', 'PickedUp', 'InTransit', 'OutForDelivery', 'Delayed', 'RTO'];
-const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 // Helper to calculate "Staleness" (hours since date)
 const getStaleness = (dateStr) => {

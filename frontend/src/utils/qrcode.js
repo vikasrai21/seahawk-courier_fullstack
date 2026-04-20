@@ -10,8 +10,6 @@
 
 // ── QR Code encoding tables ──────────────────────────────────────────────────
 
-const EC_LEVEL_L = 1;
-
 // Galois Field GF(256) tables
 const GF_EXP = new Uint8Array(512);
 const GF_LOG = new Uint8Array(256);

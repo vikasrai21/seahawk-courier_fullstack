@@ -176,6 +176,7 @@ app.use('/api/courier-invoices', require('./routes/courier-invoice.routes'));
 app.use('/api/docs',           require('./routes/docs.routes'));
 app.use('/api/pincodes',      require('./routes/pincode.routes'));
 app.use('/api/returns',        require('./routes/return.routes'));
+app.use('/api/notifications',  require('./routes/notification.routes'));
 
 // ── Catch-all for API Routes ─────────────────────────────────────────────
 app.all('/api/*', (req, res) => {

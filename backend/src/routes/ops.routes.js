@@ -16,8 +16,76 @@ const { auditLog } = require('../utils/audit');
 const logger = require('../utils/logger');
 const { bulkStatusSchema } = require('../validators/ops.validator');
 const adminAssistant = require('../services/adminAssistant.service');
+const ownerAgent = require('../services/ownerAgent.service');
 
 router.use(protect);
+
+// ── Owner-Only Agent Routes (HawkAI) ─────────────────────────────────────
+function ownerOnlyMiddleware(req, res, next) {
+  if (!req.user) return R.unauthorized(res);
+  if (!req.user.isOwner) return R.forbidden(res, 'Owner access required for HawkAI Agent.');
+  next();
+}
+
+// POST /api/ops/agent/chat — HawkAI enterprise agent chat
+router.post('/agent/chat', ownerOnlyMiddleware, async (req, res) => {
+  try {
+    const { message, history = [] } = req.body;
+    if (!message?.trim()) return R.error(res, 'message is required', 400);
+    if (message.length > 2000) return R.error(res, 'message too long', 400);
+    const result = await ownerAgent.chat({ message: message.trim(), history });
+    R.ok(res, result);
+  } catch (err) {
+    logger.error(`[HawkAI] Chat error: ${err.message}`);
+    R.error(res, 'Agent error', 500);
+  }
+});
+
+// POST /api/ops/agent/execute — execute a confirmed agent action
+router.post('/agent/execute', ownerOnlyMiddleware, async (req, res) => {
+  try {
+    const { action, params } = req.body;
+    if (!action) return R.error(res, 'action is required', 400);
+    const result = await ownerAgent.executeConfirmedAction(action, params || {});
+    R.ok(res, result);
+  } catch (err) {
+    logger.error(`[HawkAI] Execute error: ${err.message}`);
+    R.error(res, 'Action execution error', 500);
+  }
+});
+
+// GET /api/ops/agent/memory — view agent's learned patterns
+router.get('/agent/memory', ownerOnlyMiddleware, async (req, res) => {
+  try {
+    const summary = await ownerAgent.getMemorySummary();
+    R.ok(res, summary);
+  } catch (err) {
+    R.error(res, err.message);
+  }
+});
+
+// GET /api/ops/agent/history — view action history
+router.get('/agent/history', ownerOnlyMiddleware, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 30;
+    const history = await ownerAgent.getActionHistory(limit);
+    R.ok(res, history);
+  } catch (err) {
+    R.error(res, err.message);
+  }
+});
+
+// POST /api/ops/agent/teach — manually teach agent a pattern
+router.post('/agent/teach', ownerOnlyMiddleware, async (req, res) => {
+  try {
+    const { category, contextKey, decision, metadata } = req.body;
+    if (!category || !contextKey || !decision) return R.error(res, 'category, contextKey, and decision are required', 400);
+    const result = await ownerAgent.teach({ category, contextKey, decision, metadata });
+    R.ok(res, result);
+  } catch (err) {
+    R.error(res, err.message);
+  }
+});
 
 function allowOpsAssistant(req, res, next) {
   if (!req.user) return R.unauthorized(res);

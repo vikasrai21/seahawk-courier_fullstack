@@ -59,6 +59,59 @@ function normalizeRawText(text) {
     .trim();
 }
 
+function sanitizeFieldValue(value = '') {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .replace(/^[^A-Z0-9]+/i, '')
+    .replace(/[^A-Z0-9]+$/i, '')
+    .trim();
+}
+
+function stripTrailingContactNoise(value = '') {
+  return String(value || '')
+    .replace(/\b(?:pin(?:\s*code)?|zip)\b.*$/i, '')
+    .replace(/\b(?:mob(?:ile)?|ph(?:one)?|tel)\b.*$/i, '')
+    .replace(/\b[6-9]\d{9}\b.*$/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function extractLabeledValue(rawText, labelPatterns = [], options = {}) {
+  const lines = String(rawText || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    for (const pattern of labelPatterns) {
+      const match = line.match(pattern);
+      if (!match) continue;
+
+      let candidate = sanitizeFieldValue(match[1] || '');
+      if (!candidate && i + 1 < lines.length) {
+        candidate = sanitizeFieldValue(lines[i + 1]);
+      }
+      if (!candidate) continue;
+
+      candidate = stripTrailingContactNoise(candidate);
+      if (!candidate) continue;
+
+      const upper = candidate.toUpperCase();
+      const minLength = Number(options.minLength || 2);
+      if (candidate.length < minLength) continue;
+
+      if (Array.isArray(options.rejectTokens) && options.rejectTokens.some((token) => upper.includes(token))) {
+        continue;
+      }
+
+      return options.uppercase ? upper : candidate;
+    }
+  }
+
+  return '';
+}
+
 function asNumber(value) {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
@@ -310,6 +363,19 @@ function enhanceParsedDetails(parsed = {}, knownAwb = '') {
     );
   }
 
+  if (!next.consignee) {
+    const consignee = extractLabeledValue(rawText, [
+      /^(?:consignee(?:\s*name)?|receiver(?:\s*name)?|ship\s*to|deliver\s*to)\s*[:-]?\s*(.*)$/i,
+      /^to\s*[:-]?\s*(.*)$/i,
+    ], {
+      minLength: 3,
+      rejectTokens: ['PIN CODE', 'TRACKON', 'DTDC', 'DELHIVERY', 'WEIGHT', 'INVOICE', 'AWB'],
+    });
+    if (consignee) {
+      next.consignee = consignee.toUpperCase();
+    }
+  }
+
   if (!next.amount) {
     const amount = firstMatch(rawText, /(?:rs\.?|rupees|cod|amount|value)\s*[:-]?\s*(\d{2,5}(?:\.\d{1,2})?)/i, 1);
     if (amount) {
@@ -325,32 +391,47 @@ function enhanceParsedDetails(parsed = {}, knownAwb = '') {
     }
   }
 
+  const destinationNoiseTokens = [
+    'PIN CODE',
+    'TRACKON',
+    'CONSIGNEE',
+    'CONSIGNOR',
+    'BOOKING',
+    'READ TERMS',
+    'VISIT',
+    'WEIGHT',
+    'VALUE',
+    'PCS',
+    'VOL',
+    'ACTUAL',
+    'CHGD',
+    'RESTRICTION',
+    'DELIVERY LOCATION',
+    'CURRENT LOCATION',
+    'PHONE',
+  ];
+
+  if (!next.destination) {
+    const labeledDestination = extractLabeledValue(rawText, [
+      /^(?:destination|destn|dest(?:ination)?\s*city|to\s*city|delivery\s*city|city)\s*[:-]?\s*(.*)$/i,
+      /^station\s*[:-]?\s*(.*)$/i,
+    ], {
+      minLength: 2,
+      uppercase: true,
+      rejectTokens: destinationNoiseTokens,
+    });
+    if (labeledDestination) {
+      next.destination = labeledDestination;
+    }
+  }
+
   if (!next.destination) {
     const cityPin = rawText.match(/([A-Za-z][A-Za-z\s]{2,40})[-,\s]+(\d{6})\b/);
     if (cityPin) {
       const city = String(cityPin[1] || '').replace(/[^A-Za-z ]+/g, ' ').replace(/\s+/g, ' ').trim();
       const cityUpper = city.toUpperCase();
-      const blacklisted = [
-        'PIN CODE',
-        'TRACKON',
-        'CONSIGNEE',
-        'CONSIGNOR',
-        'BOOKING',
-        'READ TERMS',
-        'VISIT',
-        'WEIGHT',
-        'VALUE',
-        'PCS',
-        'VOL',
-        'ACTUAL',
-        'CHGD',
-        'RESTRICTION',
-        'DELIVERY',
-        'LOCATION',
-        'PHONE',
-      ];
-      if (city && !blacklisted.some((token) => cityUpper.includes(token))) {
-        next.destination = city;
+      if (city && !destinationNoiseTokens.some((token) => cityUpper.includes(token))) {
+        next.destination = cityUpper;
       }
       if (!next.pincode) next.pincode = cityPin[2];
     }

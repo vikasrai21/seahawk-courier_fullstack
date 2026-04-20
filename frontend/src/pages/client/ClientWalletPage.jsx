@@ -1,22 +1,15 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { 
-  PiggyBank, 
-  CreditCard, 
   Zap, 
-  ArrowUpCircle, 
-  ArrowDownCircle, 
-  Receipt, 
   TrendingUp,
   History,
   ArrowLeft,
-  ChevronRight,
   ShieldCheck,
   FileDown
 } from 'lucide-react';
 import api from '../../services/api';
 import { PageLoader } from '../../components/ui/Loading';
-import { EmptyState } from '../../components/ui/EmptyState';
 import TransactionList from '../../components/wallet/TransactionList';
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
@@ -121,15 +114,6 @@ export default function ClientWalletPage({ toast }) {
       toast?.(e.message || 'Payment engine error', 'error');
     } finally {
       setToppingUp(false);
-    }
-  };
-
-  const downloadReceipt = async (txn) => {
-    try {
-      const blob = await api.get(`/portal/wallet/transactions/${txn.id}/receipt`, { responseType: 'blob' });
-      triggerBlobDownload(blob, `receipt-${txn.id}.pdf`);
-    } catch (e) {
-      toast?.(e.message || 'Receipt fetch error', 'error');
     }
   };
 

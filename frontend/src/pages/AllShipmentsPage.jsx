@@ -2,13 +2,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Search, 
-  Filter, 
   Edit2, 
   Trash2, 
   X, 
   CheckSquare, 
   Square, 
-  ChevronDown, 
   RefreshCw, 
   Clock, 
   Scan, 
@@ -17,7 +15,6 @@ import {
   FileText, 
   LayoutGrid, 
   List,
-  MoreVertical,
   ArrowRight
 } from 'lucide-react';
 import api from '../services/api';
@@ -59,7 +56,6 @@ function BarcodeScanner({ onScan, scanning, lastScanned }) {
   const initCamera = useCallback(async () => {
     if (cameraActive) return;
     try {
-      setShowCamera(true);
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'environment',
@@ -120,7 +116,6 @@ function BarcodeScanner({ onScan, scanning, lastScanned }) {
 
   const stopCamera = useCallback(() => {
     setCameraActive(false);
-    setShowCamera(false);
     if (videoRef.current?.srcObject) {
       videoRef.current.srcObject.getTracks().forEach((t) => t.stop());
       videoRef.current.srcObject = null;

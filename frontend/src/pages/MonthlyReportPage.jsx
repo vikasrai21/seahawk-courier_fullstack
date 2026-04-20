@@ -2,18 +2,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { 
   Printer, 
   MessageCircle, 
-  ChevronDown, 
   BarChart3, 
   TrendingUp, 
-  Users, 
   Package, 
-  Calendar,
-  Filter,
   Download,
-  Share2,
   Table as TableIcon,
   PieChart as PieIcon,
-  ArrowRight,
   Box
 } from 'lucide-react';
 import { 
@@ -24,8 +18,6 @@ import {
   YAxis, 
   CartesianGrid, 
   Tooltip, 
-  AreaChart, 
-  Area, 
   PieChart, 
   Pie, 
   Cell 
@@ -73,7 +65,7 @@ export default function MonthlyReportPage({ toast }) {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [rows,  setRows]  = useState([]);
   const [loading, setLoading] = useState(false);
-  const [clientFilter, setClientF] = useState('');
+  const [clientFilter] = useState('');
   const [showWA, setShowWA] = useState(false);
   const { data: clients } = useFetch('/clients');
 

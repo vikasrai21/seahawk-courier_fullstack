@@ -18,7 +18,6 @@ export default function DestinationCard({
   setOdaOn,
   odaAmt,
   setOdaAmt,
-  zoneConf,
   delhiveryOda,
 }) {
   const pinDigits = String(query || '').replace(/\D/g, '');

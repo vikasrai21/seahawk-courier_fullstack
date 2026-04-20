@@ -11,7 +11,6 @@ import {
   ChevronRight, 
   LayoutGrid, 
   Activity,
-  ShieldCheck,
   ArrowRight,
   TrendingUp,
   AlertTriangle,
@@ -23,7 +22,6 @@ import { Modal } from '../components/ui/Modal';
 import { EmptyState } from '../components/ui/EmptyState';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader } from '../components/ui/PageHeader';
-import { StatusBadge } from '../components/ui/StatusBadge';
 
 const STATUS_CONFIG = {
   PENDING:   { label: 'Pending',   color: 'bg-amber-500/10 text-amber-500 border-amber-500/20' },

@@ -8,7 +8,6 @@ export default function ClientCard({
   contractLoad,
   contracts,
   activeContract,
-  fmt,
   clientSearch,
   setShowClients,
   showClients,

@@ -13,19 +13,81 @@ const scannerQuality = require('../services/scannerQuality.service');
 let io = null;
 
 // ── Scanner Bridge: in-memory session store ─────────────────────────────────
-// Maps PIN → { desktopSocketId, userId, createdAt, phoneSocketId }
+// Maps PIN → {
+//   desktopSocketId, desktopConnected, desktopDisconnectedAt,
+//   phoneSocketId, phoneConnected,
+//   userId, userEmail,
+//   createdAt, lastActivityAt, scanCount
+// }
 const scanSessions = new Map();
-const SESSION_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+function readPositiveInt(value, fallback) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+const SESSION_IDLE_TTL_MS = readPositiveInt(process.env.SCANNER_SESSION_IDLE_MS, 6 * 60 * 60 * 1000); // 6h idle timeout
+const SESSION_RECONNECT_GRACE_MS = readPositiveInt(process.env.SCANNER_SESSION_RECONNECT_GRACE_MS, 20 * 60 * 1000); // 20m reconnect grace
 
 function generatePin() {
   return String(crypto.randomInt(100000, 999999));
 }
 
+function touchSession(session) {
+  if (!session) return;
+  session.lastActivityAt = Date.now();
+}
+
+function isSessionIdleExpired(session, now = Date.now()) {
+  const lastActivityAt = Number(session?.lastActivityAt || session?.createdAt || 0);
+  if (!lastActivityAt) return true;
+  return (now - lastActivityAt) > SESSION_IDLE_TTL_MS;
+}
+
+function emitSessionEnded(pin, session, reason, initiatedBy = 'system') {
+  const payload = {
+    pin,
+    reason: reason || 'Session ended',
+    initiatedBy,
+    totalScans: Number(session?.scanCount || 0),
+  };
+
+  if (!io) return;
+
+  if (session?.phoneSocketId) {
+    io.to(session.phoneSocketId).emit('scanner:session-ended', payload);
+  }
+  if (session?.desktopSocketId) {
+    io.to(session.desktopSocketId).emit('scanner:session-ended', payload);
+  }
+}
+
+function deleteSession(pin) {
+  scanSessions.delete(pin);
+}
+
+function endSession(pin, session, reason, initiatedBy = 'system') {
+  if (!session) return;
+  emitSessionEnded(pin, session, reason, initiatedBy);
+  deleteSession(pin);
+}
+
 function cleanupExpiredSessions() {
   const now = Date.now();
   for (const [pin, session] of scanSessions) {
-    if (now - session.createdAt > SESSION_TTL_MS) {
-      scanSessions.delete(pin);
+    const idleExpired = isSessionIdleExpired(session, now);
+    const noDesktop = !session.desktopConnected;
+    const noPhone = !session.phoneConnected;
+    const desktopGoneTooLong = noDesktop
+      && noPhone
+      && Number(session.desktopDisconnectedAt || 0) > 0
+      && (now - Number(session.desktopDisconnectedAt)) > SESSION_RECONNECT_GRACE_MS;
+
+    if (idleExpired || desktopGoneTooLong) {
+      const reason = idleExpired
+        ? 'Scanner session expired due to inactivity.'
+        : 'Scanner session expired after extended disconnection.';
+      endSession(pin, session, reason, 'system');
     }
   }
 }
@@ -145,23 +207,62 @@ async function initSocket(server) {
 
     // ── Scanner Bridge: Desktop events ──────────────────────────────────
 
-    // Desktop requests a new scan session
+    // Desktop requests a new scan session (or resumes existing one for this user)
     socket.on('scanner:create-session', (callback) => {
       cleanupExpiredSessions();
 
-      // Remove any existing session for this user
+      let existingPin = null;
+      let existingSession = null;
       for (const [pin, session] of scanSessions) {
-        if (session.desktopSocketId === socket.id) {
-          scanSessions.delete(pin);
+        if (session.userId !== user.id) continue;
+        if (!existingSession || Number(session.lastActivityAt || session.createdAt || 0) > Number(existingSession.lastActivityAt || existingSession.createdAt || 0)) {
+          existingPin = pin;
+          existingSession = session;
         }
       }
 
-      const pin = generatePin();
+      if (existingSession && existingPin) {
+        existingSession.desktopSocketId = socket.id;
+        existingSession.desktopConnected = true;
+        existingSession.desktopDisconnectedAt = null;
+        touchSession(existingSession);
+
+        logger.info(`Scanner session resumed: PIN ${existingPin} by ${user.email}`);
+
+        if (existingSession.phoneSocketId) {
+          io.to(socket.id).emit('scanner:phone-connected', {
+            pin: existingPin,
+            resumed: true,
+            message: 'Mobile phone is already connected.',
+          });
+        }
+
+        if (typeof callback === 'function') {
+          callback({
+            success: true,
+            pin: existingPin,
+            resumed: true,
+            phoneConnected: Boolean(existingSession.phoneConnected && existingSession.phoneSocketId),
+            scanCount: Number(existingSession.scanCount || 0),
+            expiresIn: SESSION_IDLE_TTL_MS,
+          });
+        }
+        return;
+      }
+
+      let pin = generatePin();
+      while (scanSessions.has(pin)) {
+        pin = generatePin();
+      }
+      const now = Date.now();
       scanSessions.set(pin, {
         desktopSocketId: socket.id,
+        desktopConnected: true,
+        desktopDisconnectedAt: null,
         userId: user.id,
         userEmail: user.email,
-        createdAt: Date.now(),
+        createdAt: now,
+        lastActivityAt: now,
         phoneSocketId: null,
         phoneConnected: false,
         scanCount: 0,
@@ -170,23 +271,83 @@ async function initSocket(server) {
       logger.info(`Scanner session created: PIN ${pin} by ${user.email}`);
 
       if (typeof callback === 'function') {
-        callback({ success: true, pin, expiresIn: SESSION_TTL_MS });
+        callback({
+          success: true,
+          pin,
+          resumed: false,
+          phoneConnected: false,
+          scanCount: 0,
+          expiresIn: SESSION_IDLE_TTL_MS,
+        });
+      }
+    });
+
+    socket.on('scanner:resume-session', ({ pin } = {}, callback) => {
+      cleanupExpiredSessions();
+      const requestedPin = String(pin || '').trim();
+      if (!requestedPin) {
+        if (typeof callback === 'function') callback({ success: false, message: 'PIN is required to resume a session.' });
+        return;
+      }
+
+      const session = scanSessions.get(requestedPin);
+      if (!session || session.userId !== user.id) {
+        if (typeof callback === 'function') callback({ success: false, message: 'Session not found.' });
+        return;
+      }
+
+      if (isSessionIdleExpired(session)) {
+        endSession(requestedPin, session, 'Scanner session expired due to inactivity.', 'system');
+        if (typeof callback === 'function') callback({ success: false, message: 'Session expired due to inactivity.' });
+        return;
+      }
+
+      session.desktopSocketId = socket.id;
+      session.desktopConnected = true;
+      session.desktopDisconnectedAt = null;
+      touchSession(session);
+
+      logger.info(`Scanner session reattached: PIN ${requestedPin} by ${user.email}`);
+
+      if (session.phoneSocketId) {
+        io.to(socket.id).emit('scanner:phone-connected', {
+          pin: requestedPin,
+          resumed: true,
+          message: 'Mobile phone is already connected.',
+        });
+      }
+
+      if (typeof callback === 'function') {
+        callback({
+          success: true,
+          pin: requestedPin,
+          resumed: true,
+          phoneConnected: Boolean(session.phoneConnected && session.phoneSocketId),
+          scanCount: Number(session.scanCount || 0),
+          expiresIn: SESSION_IDLE_TTL_MS,
+        });
       }
     });
 
     // Desktop ends the scan session
-    socket.on('scanner:end-session', () => {
+    socket.on('scanner:end-session', ({ pin: requestedPin, reason } = {}, callback) => {
+      const normalizedPin = String(requestedPin || '').trim();
+      const pinsToEnd = [];
       for (const [pin, session] of scanSessions) {
-        if (session.desktopSocketId === socket.id) {
-          // Notify phone if connected
-          if (session.phoneSocketId) {
-            io.to(session.phoneSocketId).emit('scanner:session-ended', {
-              reason: 'Desktop ended the session',
-            });
-          }
-          scanSessions.delete(pin);
-          logger.info(`Scanner session ended: PIN ${pin}`);
-        }
+        if (session.userId !== user.id) continue;
+        if (normalizedPin && pin !== normalizedPin) continue;
+        pinsToEnd.push(pin);
+      }
+
+      for (const pin of pinsToEnd) {
+        const session = scanSessions.get(pin);
+        if (!session) continue;
+        endSession(pin, session, reason || 'Desktop ended the session', 'desktop');
+        logger.info(`Scanner session ended by desktop: PIN ${pin}`);
+      }
+
+      if (typeof callback === 'function') {
+        callback({ success: pinsToEnd.length > 0, ended: pinsToEnd.length });
       }
     });
 
@@ -194,6 +355,7 @@ async function initSocket(server) {
     socket.on('scanner:scan-processed', ({ pin, awb, shipmentId, status, clientCode, clientName, consignee, destination, pincode, weight, amount, orderNo, reviewRequired, error }) => {
       const session = scanSessions.get(pin);
       if (!session || session.desktopSocketId !== socket.id) return;
+      touchSession(session);
       if (session.phoneSocketId) {
         io.to(session.phoneSocketId).emit('scanner:scan-processed', {
           awb,
@@ -216,6 +378,7 @@ async function initSocket(server) {
     socket.on('scanner:approval-result', ({ pin, shipmentId, awb, success, message }) => {
       const session = scanSessions.get(pin);
       if (!session || session.desktopSocketId !== socket.id || !session.phoneSocketId) return;
+      touchSession(session);
       io.to(session.phoneSocketId).emit('scanner:approval-result', {
         shipmentId,
         awb,
@@ -227,6 +390,7 @@ async function initSocket(server) {
     socket.on('scanner:intake-preview', ({ pin, intakeRow }) => {
       const session = scanSessions.get(pin);
       if (!session || session.desktopSocketId !== socket.id || !session.phoneSocketId) return;
+      touchSession(session);
       io.to(session.phoneSocketId).emit('scanner:intake-preview', { intakeRow });
     });
 
@@ -234,6 +398,7 @@ async function initSocket(server) {
     socket.on('scanner:ready-for-next', ({ pin }) => {
       const session = scanSessions.get(pin);
       if (!session || session.desktopSocketId !== socket.id || !session.phoneSocketId) return;
+      touchSession(session);
       io.to(session.phoneSocketId).emit('scanner:ready-for-next', {
         scanCount: session.scanCount,
         timestamp: new Date().toISOString(),
@@ -243,6 +408,11 @@ async function initSocket(server) {
     // Desktop relays correction diffs for the learning system
     socket.on('scanner:learn-corrections', async ({ pin, ocrFields, approvedFields, courier, deviceProfile }) => {
       try {
+        const session = pin ? scanSessions.get(pin) : null;
+        if (session && session.userId === user.id) {
+          touchSession(session);
+        }
+
         const correctionLearner = require('../services/correctionLearner.service');
         const saved = await correctionLearner.recordCorrections(ocrFields || {}, approvedFields || {});
         const changedFields = ['clientName', 'clientCode', 'consignee', 'destination']
@@ -267,12 +437,18 @@ async function initSocket(server) {
       logger.info(`Socket disconnected: ${user.email}`);
       for (const [pin, session] of scanSessions) {
         if (session.desktopSocketId === socket.id) {
+          session.desktopSocketId = null;
+          session.desktopConnected = false;
+          session.desktopDisconnectedAt = Date.now();
+          touchSession(session);
+
           if (session.phoneSocketId) {
-            io.to(session.phoneSocketId).emit('scanner:session-ended', {
-              reason: 'Desktop disconnected',
+            io.to(session.phoneSocketId).emit('scanner:desktop-disconnected', {
+              pin,
+              message: 'Desktop disconnected. Keep scanning on mobile; session will resume when desktop reconnects.',
+              reconnectGraceMs: SESSION_RECONNECT_GRACE_MS,
             });
           }
-          scanSessions.delete(pin);
         }
       }
     });
@@ -293,35 +469,49 @@ function handleMobileScannerConnection(socket) {
     return;
   }
 
-  if (Date.now() - session.createdAt > SESSION_TTL_MS) {
-    scanSessions.delete(pin);
+  if (isSessionIdleExpired(session)) {
+    endSession(pin, session, 'This session has expired. Please generate a new code.', 'system');
     socket.emit('scanner:error', { message: 'This session has expired. Please generate a new code.' });
     socket.disconnect(true);
     return;
   }
 
   // Pair the phone
+  const previousPhoneSocketId = session.phoneSocketId;
+  if (previousPhoneSocketId && previousPhoneSocketId !== socket.id) {
+    io.to(previousPhoneSocketId).emit('scanner:session-ended', {
+      pin,
+      reason: 'Scanner was reconnected from another device.',
+      initiatedBy: 'system',
+      totalScans: Number(session.scanCount || 0),
+    });
+  }
   session.phoneSocketId = socket.id;
   session.phoneConnected = true;
+  touchSession(session);
 
   logger.info(`Mobile scanner paired: PIN ${pin}, desktop user ${session.userEmail}`);
 
   // Notify desktop that phone connected
-  io.to(session.desktopSocketId).emit('scanner:phone-connected', {
-    pin,
-    message: 'Mobile phone connected! Start scanning barcodes.',
-  });
+  if (session.desktopSocketId) {
+    io.to(session.desktopSocketId).emit('scanner:phone-connected', {
+      pin,
+      message: 'Mobile phone connected! Start scanning barcodes.',
+    });
+  }
 
   // Confirm to phone
   socket.emit('scanner:paired', {
     message: 'Connected to desktop! Point your camera at a barcode.',
     userEmail: session.userEmail,
+    desktopConnected: Boolean(session.desktopConnected && session.desktopSocketId),
   });
 
   // Phone sends a scanned barcode — server handles OCR directly (no desktop tab required)
   socket.on('scanner:scan', async ({ awb, imageBase64, focusImageBase64, sessionContext, scanMode }) => {
     const currentSession = scanSessions.get(pin);
     if (!currentSession || currentSession.phoneSocketId !== socket.id) return;
+    touchSession(currentSession);
 
     const scanStartedAt = Date.now();
     const cleanAwb = String(awb || '').trim();
@@ -333,18 +523,21 @@ function handleMobileScannerConnection(socket) {
       : [];
 
     currentSession.scanCount++;
+    touchSession(currentSession);
     logger.info(`Remote scan #${currentSession.scanCount}: AWB ${cleanAwb} via PIN ${pin}`);
 
     // Also relay to desktop if it's open (for the ScanAWBPage live feed)
-    io.to(currentSession.desktopSocketId).emit('scanner:remote-scan', {
-      awb: cleanAwb,
-      imageBase64: imageBase64 || null,
-      focusImageBase64: focusImageBase64 || null,
-      scanMode: scanMode || null,
-      scanNumber: currentSession.scanCount,
-      timestamp: new Date().toISOString(),
-      sessionContext: sessionContext || {},
-    });
+    if (currentSession.desktopSocketId) {
+      io.to(currentSession.desktopSocketId).emit('scanner:remote-scan', {
+        awb: cleanAwb,
+        imageBase64: imageBase64 || null,
+        focusImageBase64: focusImageBase64 || null,
+        scanMode: scanMode || null,
+        scanNumber: currentSession.scanCount,
+        timestamp: new Date().toISOString(),
+        sessionContext: sessionContext || {},
+      });
+    }
 
     // --- SERVER-SIDE OCR PIPELINE (runs regardless of desktop tab state) ---
     if (!imageBase64 && !focusImageBase64) {
@@ -790,6 +983,17 @@ function handleMobileScannerConnection(socket) {
       if (typeof callback === 'function') callback({ success: false, message: 'Scanner session is no longer active.' });
       return;
     }
+    touchSession(currentSession);
+
+    if (!currentSession.desktopSocketId) {
+      if (typeof callback === 'function') {
+        callback({
+          success: false,
+          message: 'Desktop is disconnected. Reopen the desktop scanner to continue approvals.',
+        });
+      }
+      return;
+    }
 
     io.to(currentSession.desktopSocketId).emit('scanner:approval-submitted', {
       pin,
@@ -805,11 +1009,28 @@ function handleMobileScannerConnection(socket) {
   });
 
   // Phone sends a heartbeat
-  socket.on('scanner:heartbeat', () => {
+  socket.on('scanner:heartbeat', (_payload = {}, callback) => {
     const currentSession = scanSessions.get(pin);
-    if (currentSession) {
+    if (!currentSession || currentSession.phoneSocketId !== socket.id) {
+      if (typeof callback === 'function') {
+        callback({ success: false, message: 'Scanner session is no longer active.' });
+      }
+      return;
+    }
+
+    touchSession(currentSession);
+
+    if (currentSession.desktopSocketId) {
       io.to(currentSession.desktopSocketId).emit('scanner:phone-heartbeat', {
         scanCount: currentSession.scanCount,
+      });
+    }
+
+    if (typeof callback === 'function') {
+      callback({
+        success: true,
+        desktopConnected: Boolean(currentSession.desktopSocketId),
+        scanCount: Number(currentSession.scanCount || 0),
       });
     }
   });
@@ -818,21 +1039,7 @@ function handleMobileScannerConnection(socket) {
     const currentSession = scanSessions.get(pin);
     if (!currentSession || currentSession.phoneSocketId !== socket.id) return;
 
-    io.to(currentSession.desktopSocketId).emit('scanner:session-ended', {
-      pin,
-      reason: reason || 'Mobile ended the session',
-      initiatedBy: 'phone',
-      totalScans: currentSession.scanCount,
-    });
-
-    socket.emit('scanner:session-ended', {
-      pin,
-      reason: reason || 'Session ended',
-      initiatedBy: 'phone',
-      totalScans: currentSession.scanCount,
-    });
-
-    scanSessions.delete(pin);
+    endSession(pin, currentSession, reason || 'Mobile ended the session', 'phone');
     logger.info(`Mobile scanner ended session: PIN ${pin}, ${currentSession.scanCount} scans completed`);
     socket.disconnect(true);
   });
@@ -843,12 +1050,15 @@ function handleMobileScannerConnection(socket) {
     if (currentSession && currentSession.phoneSocketId === socket.id) {
       currentSession.phoneConnected = false;
       currentSession.phoneSocketId = null;
+      touchSession(currentSession);
 
-      io.to(currentSession.desktopSocketId).emit('scanner:phone-disconnected', {
-        pin,
-        message: 'Mobile phone disconnected. Scan the QR code again to reconnect.',
-        totalScans: currentSession.scanCount,
-      });
+      if (currentSession.desktopSocketId) {
+        io.to(currentSession.desktopSocketId).emit('scanner:phone-disconnected', {
+          pin,
+          message: 'Mobile phone disconnected. Scan the QR code again to reconnect.',
+          totalScans: currentSession.scanCount,
+        });
+      }
 
       logger.info(`Mobile scanner disconnected: PIN ${pin}, ${currentSession.scanCount} scans completed`);
     }

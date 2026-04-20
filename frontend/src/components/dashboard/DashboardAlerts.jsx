@@ -1,4 +1,4 @@
-import { AlertTriangle, BellRing, ChevronRight, Info, Zap, ShieldAlert } from 'lucide-react';
+import { BellRing, ChevronRight, Info, Zap, ShieldAlert } from 'lucide-react';
 
 function AlertCard({ icon: Icon, title, description, badge, tone = 'blue', onClick }) {
   const tones = {

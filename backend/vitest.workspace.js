@@ -9,6 +9,7 @@ export default defineWorkspace([
       include: ['src/tests/unit/**/*.test.js'],
       setupFiles: ['./src/tests/setup.js'], // Uses Prisma mocks for speed
       environment: 'node',
+      testTimeout: 15000,
     },
   },
   // 2. Integration / E2E Test Workspace

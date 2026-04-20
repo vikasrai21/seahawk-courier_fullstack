@@ -6,7 +6,7 @@ test.describe('Golden path (demo users)', () => {
   test('public home loads', async ({ page }) => {
     await page.goto('/');
     await expect(page).toHaveTitle(/Sea Hawk/i);
-    await expect(page.getByText(/Courier/i).first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: /India's Most Trusted/i })).toBeVisible();
   });
 
   test('health API returns success envelope', async ({ request }) => {
@@ -30,10 +30,10 @@ test.describe('Golden path (demo users)', () => {
 
   test('client login reaches /portal', async ({ page, context }) => {
     await context.clearCookies();
-    await page.goto('/login');
+    await page.goto('/portal/login');
     await page.locator('#email').fill('client.user@seahawk.com');
     await page.locator('#password').fill('Client@12345');
-    await page.getByRole('button', { name: /Launch Dashboard/i }).click();
+    await page.getByRole('button', { name: /Sign In to Client Portal/i }).click();
     await page.waitForURL(/\/portal/, { timeout: 30_000 });
   });
 });

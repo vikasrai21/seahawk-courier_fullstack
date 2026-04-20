@@ -42,9 +42,16 @@ function buildColumnMap(headers) {
   return { map, unmapped };
 }
 
+function excelSerialToIsoDate(serial) {
+  if (!Number.isFinite(serial)) return new Date().toISOString().split('T')[0];
+  const wholeDays = Math.floor(serial);
+  const utcMillis = Date.UTC(1899, 11, 30) + (wholeDays * 86400000);
+  return new Date(utcMillis).toISOString().split('T')[0];
+}
+
 function excelDateToString(val, ambiguousFormat = 'DMY') {
   if (typeof val === 'number') {
-    return new Date().toISOString().split('T')[0];
+    return excelSerialToIsoDate(val);
   }
   if (typeof val === 'string') {
     // DD/MM/YYYY or DD-MM-YYYY
@@ -189,7 +196,7 @@ export default function ImportPage({ toast }) {
     };
   }, [mappedRows]);
 
-  const parseSheet = useCallback((rawRows, idx) => {
+  const parseSheet = useCallback((rawRows) => {
     if (!rawRows.length) { setError('Sheet is empty.'); return; }
 
     const headers        = Object.keys(rawRows[0]);
@@ -215,7 +222,7 @@ export default function ImportPage({ toast }) {
         setSheets(sheetNames);
         setSheetIdx(0);
         setFile({ name: f.name });
-        parseSheet(rows, 0);
+        parseSheet(rows);
       } catch (err) {
         setError('Could not read file: ' + err.message);
       }
@@ -227,7 +234,7 @@ export default function ImportPage({ toast }) {
     setSheetIdx(idx);
     if (rawWb) {
       const { rows } = getSheetAsJson(rawWb, idx);
-      parseSheet(rows, idx);
+      parseSheet(rows);
     }
   };
 

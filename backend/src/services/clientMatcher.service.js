@@ -20,6 +20,7 @@ const SCORE = {
   HISTORY_SAME_CONSIGNEE:     24,
   HISTORY_SAME_DESTINATION:   16,
   HISTORY_COURIER_CLIENT:     15,  // Most frequent client for this courier recently
+  SESSION_STICKY:            140,  // Operator explicitly locked this client for batch scans
 };
 
 // ── Alias map: trained from March 2026 Excel + label images ─────────────────
@@ -357,6 +358,7 @@ async function suggestClientForShipment(shipment, ocrHints = null, sessionContex
   // ── Session dominant client signal ──────────────────────────────────────
   const sessionDominant = sessionContext?.dominantClient || null;
   const sessionDominantCount = Number(sessionContext?.dominantClientCount || 0);
+  const sessionSticky = normalize(sessionContext?.stickyClientCode || '');
 
   // ── Courier-client frequency ────────────────────────────────────────────
   const courierFreq = await getCourierClientFrequency(shipment?.courier);
@@ -402,6 +404,11 @@ async function suggestClientForShipment(shipment, ocrHints = null, sessionContex
     }
 
     // ── Session dominant client (operator scanning same client batch) ───
+    if (sessionSticky && sessionSticky === codeNorm) {
+      score += SCORE.SESSION_STICKY;
+      reasons.push('sticky client override');
+    }
+
     if (sessionDominant && sessionDominant === client.code && sessionDominantCount >= 3) {
       score += SCORE.SESSION_DOMINANT;
       reasons.push(`session dominant (${sessionDominantCount} scans)`);
@@ -508,7 +515,8 @@ async function suggestClientForShipment(shipment, ocrHints = null, sessionContex
   const hasAliasOrOidSignal = (aliasMatch && top?.code === aliasMatch.clientCode) ||
     (awbPrefixMatch && top?.code === awbPrefixMatch) ||
     (awbHistoryClient && top?.code === awbHistoryClient);
-  const shouldAutoAssign = hasAliasOrOidSignal || (confidence >= 88 && scoreGap >= 16);
+  const hasStickySignal = Boolean(sessionSticky && normalize(top?.code) === sessionSticky);
+  const shouldAutoAssign = hasStickySignal || hasAliasOrOidSignal || (confidence >= 88 && scoreGap >= 16);
   const hasStrongSignal = confidence >= 50;
   const needsConfirmation = !shouldAutoAssign && hasStrongSignal;
 

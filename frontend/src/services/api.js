@@ -131,10 +131,11 @@ api.interceptors.response.use(
         original.headers.Authorization = `Bearer ${newToken}`;
         return api(original);
       } catch {
-        processQueue(null, null);
+        const sessionError = { message: 'Session expired. Please log in again.', status: 401 };
+        processQueue(sessionError);
         tokenManager.clear();
         _logoutHandler?.();
-        return Promise.reject({ message: 'Session expired. Please log in again.', status: 401 });
+        return Promise.reject(sessionError);
       } finally {
         _refreshing = false;
       }

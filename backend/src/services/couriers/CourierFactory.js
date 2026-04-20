@@ -165,6 +165,16 @@ class DelhiveryProvider extends ICourierProvider {
 
   async trackShipment(awb) {
     const s = await this._getVerboseShipment(awb);
+    const shipTo = s?.Consignee || s?.consignee || {};
+    const destination = firstPresent(
+      shipTo.city,
+      shipTo.City,
+      s?.Destination,
+      s?.DestinationCity,
+      s?.destination_city,
+      s?.destination,
+      s?.city
+    );
     const events = (s.Scans || []).map(sc => ({
       status: sc.ScanDetail?.Scan || sc.ScanDetail?.Instructions || 'Update',
       location: sc.ScanDetail?.ScannedLocation || '',
@@ -174,6 +184,7 @@ class DelhiveryProvider extends ICourierProvider {
     return {
       status: this._mapStatus(firstPresent(s?.Status?.Status, s?.Status, s?.status)),
       expectedDelivery: s.ExpectedDeliveryDate || null,
+      destination: destination ? String(destination).toUpperCase() : null,
       events,
     };
   }
@@ -261,9 +272,11 @@ class DTDCProvider extends ICourierProvider {
     const dtdcTrackingSvc = require('../dtdc.service');
     const tracking = await dtdcTrackingSvc.getTracking(awb);
     if (!tracking) throw new Error(`AWB ${awb} not found on DTDC`);
+    const header = tracking.rawData?.trackHeader || {};
     return {
       status: tracking.status || 'Unknown',
       expectedDelivery: tracking.expectedDate || null,
+      destination: firstPresent(header?.strDestination, tracking?.destination),
       events: (tracking.events || []).map(e => ({
         status: e.status || '',
         location: e.location || '',
@@ -463,7 +476,7 @@ class TrackonProvider extends ICourierProvider {
       consignee: firstPresent(summary.CONSIGNEE_NAME, summary.CLIENT_NAME, summary.CONSIGNEE),
       phone: firstPresent(summary.MOBILE_NO, summary.CONSIGNEE_MOBILE, summary.PHONE),
       deliveryAddress: firstPresent(summary.ADDRESS, summary.ADDRESS_LINE1),
-      destination: firstPresent(summary.DESTINATION, summary.CITY, summary.CURRENT_CITY),
+      destination: firstPresent(summary.DESTINATION, summary.DELIVERY_CITY, summary.CITY),
       pincode: firstPresent(summary.PINCODE, summary.PIN_CODE),
       weight: normalizeWeightKg(firstPresent(summary.WEIGHT, summary.ACTUAL_WEIGHT)),
       trackingStatus: firstPresent(summary.CURRENT_STATUS, summary.STATUS),
@@ -489,6 +502,7 @@ class TrackonProvider extends ICourierProvider {
     const scans = Array.isArray(data?.lstDetails) ? data.lstDetails : [];
     return {
       status: summary.CURRENT_STATUS || 'Unknown',
+      destination: firstPresent(summary.DESTINATION, summary.DELIVERY_CITY, summary.CITY),
       events: scans.map(s => ({
         status: s.CURRENT_STATUS || '',
         location: s.CURRENT_CITY || '',

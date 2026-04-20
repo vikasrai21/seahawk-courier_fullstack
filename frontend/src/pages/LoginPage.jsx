@@ -82,7 +82,9 @@ export default function LoginPage() {
     try {
       const savedEmail = window.localStorage.getItem(REMEMBERED_LOGIN_EMAIL_KEY);
       if (savedEmail) setEmail(savedEmail);
-    } catch {}
+    } catch (err) {
+      console.debug('[LoginPage] Failed to read remembered email:', err);
+    }
   }, []);
 
   const handleSubmit = async (e) => {
@@ -93,7 +95,9 @@ export default function LoginPage() {
       try {
         if (rememberMe) window.localStorage.setItem(REMEMBERED_LOGIN_EMAIL_KEY, email.trim());
         else window.localStorage.removeItem(REMEMBERED_LOGIN_EMAIL_KEY);
-      } catch {}
+      } catch (err) {
+        console.debug('[LoginPage] Failed to persist remembered email:', err);
+      }
       if (user?.role === 'CLIENT') navigate('/portal', { replace: true });
       else navigate('/app', { replace: true });
     } catch (err) {
@@ -210,11 +214,14 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p style={{ textAlign: 'center', marginTop: 24 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginTop: 24, flexWrap: 'wrap' }}>
+            <Link to="/portal/login" style={{ color: '#e8580a', fontSize: 12, textDecoration: 'none', fontWeight: 700 }}>
+              Client portal login
+            </Link>
             <Link to="/" style={{ color: '#8a9ab0', fontSize: 12, textDecoration: 'none' }}>
               ← Back to website
             </Link>
-          </p>
+          </div>
         </div>
       </div>
 
