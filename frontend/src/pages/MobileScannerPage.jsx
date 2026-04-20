@@ -44,6 +44,7 @@ const DEVICE_PROFILES = {
   rugged: 'rugged-scanner',
 };
 const REVIEW_COURIERS = ['Trackon', 'DTDC', 'Delhivery', 'BlueDart'];
+const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 const normalizeReviewCourier = (value) => {
   const raw = String(value || '').trim();
@@ -58,7 +59,7 @@ const normalizeReviewCourier = (value) => {
 
 const formatDisplayDate = (isoDate) => {
   const raw = String(isoDate || '').trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  if (!ISO_DATE_REGEX.test(raw)) return raw;
   try {
     return new Date(`${raw}T00:00:00`).toLocaleDateString('en-IN', {
       day: '2-digit',
@@ -68,6 +69,14 @@ const formatDisplayDate = (isoDate) => {
   } catch {
     return raw;
   }
+};
+
+const normalizeQueueDate = (value, fallback = '') => {
+  const raw = String(value || '').trim();
+  if (ISO_DATE_REGEX.test(raw)) return raw;
+  const fb = String(fallback || '').trim();
+  if (ISO_DATE_REGEX.test(fb)) return fb;
+  return new Date().toISOString().slice(0, 10);
 };
 
 
@@ -750,11 +759,13 @@ const css = `
 .home-queue-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 @keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 .queue-item {
-  display: flex; align-items: center; gap: 12px;
+  display: flex; align-items: flex-start; gap: 12px;
   padding: 12px 20px; border-bottom: 1px solid #F1F5F9;
   animation: slideIn 0.3s ease-out;
 }
 .queue-item:active { background: #F8FAFC; }
+.queue-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.queue-main-top { display: flex; align-items: center; gap: 8px; }
 .queue-check {
   width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
   background: #ECFDF5; border: 1.5px solid #10B981;
@@ -764,7 +775,26 @@ const css = `
 .queue-meta { font-size: 0.64rem; color: #64748B; margin-top: 2px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .queue-client-tag { background: #EEF2FF; color: #4F46E5; padding: 1px 6px; border-radius: 4px; }
 .queue-offline-tag { background: #FFFBEB; color: #D97706; padding: 1px 6px; border-radius: 4px; }
+.queue-date-tag { background: #EFF6FF; color: #1D4ED8; padding: 1px 6px; border-radius: 4px; }
 .queue-weight { font-size: 0.72rem; font-weight: 700; color: #4F46E5; margin-left: auto; flex-shrink: 0; }
+.queue-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.queue-date-editor { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.queue-date-input {
+  height: 28px; border-radius: 8px; border: 1px solid #CBD5E1;
+  padding: 0 8px; font-size: 0.72rem; color: #0F172A; background: #FFFFFF;
+}
+.queue-action-btn {
+  height: 28px; border-radius: 8px; border: 1px solid #CBD5E1;
+  background: #FFFFFF; color: #334155; font-size: 0.68rem; font-weight: 700;
+  padding: 0 10px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+}
+.queue-action-btn.primary {
+  border-color: #4F46E5; background: #EEF2FF; color: #4338CA;
+}
+.queue-action-btn.danger {
+  border-color: #FECACA; background: #FEF2F2; color: #B91C1C;
+}
+.queue-action-btn:disabled { opacity: 0.55; cursor: default; }
 .queue-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 44px 20px; gap: 12px; }
 .queue-empty-text { font-size: 0.8rem; color: #94A3B8; font-weight: 500; text-align: center; line-height: 1.5; }
 `;
@@ -890,12 +920,15 @@ export default function MobileScannerPage({ standalone = false }) {
 
   // ——— Settings ———
   const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [editingQueueItemId, setEditingQueueItemId] = useState('');
+  const [editingQueueDate, setEditingQueueDate] = useState('');
+  const [queueActionBusyId, setQueueActionBusyId] = useState('');
 
   // ── Session date (for batch scanning across dates) ──
   const [sessionDate, setSessionDate] = useState(() => {
     try {
       const saved = localStorage.getItem('seahawk_scanner_session_date');
-      if (saved && /^\d{4}-\d{2}-\d{2}$/.test(saved)) return saved;
+      if (saved && ISO_DATE_REGEX.test(saved)) return saved;
     } catch {}
     return new Date().toISOString().slice(0, 10);
   });
@@ -1128,15 +1161,97 @@ export default function MobileScannerPage({ standalone = false }) {
   // ——— Step transition helper ———
   const addToQueue = useCallback((item) => {
     setSessionCtx((prev) => {
+      const nextItem = {
+        ...item,
+        awb: String(item?.awb || '').trim().toUpperCase(),
+        queueId: item?.queueId || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        date: normalizeQueueDate(item?.date, sessionDate),
+        time: item?.time || Date.now(),
+      };
       const next = {
         ...prev,
-        scannedItems: [{ ...item, time: Date.now() }, ...prev.scannedItems],
+        scannedItems: [nextItem, ...prev.scannedItems],
       };
       // Persist daily count to localStorage
       try { localStorage.setItem(TODAY_KEY, String(next.scanNumber)); } catch {}
       return next;
     });
-  }, [TODAY_KEY]);
+  }, [TODAY_KEY, sessionDate]);
+
+  const removeQueueItemById = useCallback((queueId, awbValue = '') => {
+    if (!queueId) return;
+    setSessionCtx((prev) => {
+      const nextItems = prev.scannedItems.filter((entry) => entry.queueId !== queueId);
+      const nextScannedAwbs = new Set(prev.scannedAwbs);
+      const normalizedAwb = String(awbValue || '').trim().toUpperCase();
+      if (normalizedAwb) nextScannedAwbs.delete(normalizedAwb);
+      scannedAwbsRef.current = nextScannedAwbs;
+      return {
+        ...prev,
+        scannedItems: nextItems,
+        scannedAwbs: nextScannedAwbs,
+      };
+    });
+    setEditingQueueItemId((current) => (current === queueId ? '' : current));
+  }, []);
+
+  const beginQueueDateEdit = useCallback((item) => {
+    if (!item?.queueId) return;
+    setEditingQueueItemId(item.queueId);
+    setEditingQueueDate(normalizeQueueDate(item.date, sessionDate));
+  }, [sessionDate]);
+
+  const cancelQueueDateEdit = useCallback(() => {
+    setEditingQueueItemId('');
+    setEditingQueueDate('');
+  }, []);
+
+  const saveQueueDateEdit = useCallback(async (item) => {
+    if (!item?.queueId) return;
+    const nextDate = String(editingQueueDate || '').trim();
+    if (!ISO_DATE_REGEX.test(nextDate)) {
+      window.alert('Please select a valid date.');
+      return;
+    }
+    setQueueActionBusyId(item.queueId);
+    try {
+      if (item.shipmentId) {
+        await api.put(`/shipments/${item.shipmentId}`, { date: nextDate });
+      }
+      setSessionCtx((prev) => ({
+        ...prev,
+        scannedItems: prev.scannedItems.map((entry) => (
+          entry.queueId === item.queueId ? { ...entry, date: nextDate } : entry
+        )),
+      }));
+      setEditingQueueItemId('');
+      setEditingQueueDate('');
+    } catch (err) {
+      window.alert(err?.message || 'Could not update consignment date.');
+    } finally {
+      setQueueActionBusyId('');
+    }
+  }, [editingQueueDate]);
+
+  const deleteQueueItem = useCallback(async (item) => {
+    if (!item?.queueId) return;
+    const awbLabel = String(item.awb || '').trim() || 'this consignment';
+    const confirmMessage = item.shipmentId
+      ? `Delete ${awbLabel}? This will remove it from accepted consignments and from the server.`
+      : `Remove ${awbLabel} from accepted consignments?`;
+    if (!window.confirm(confirmMessage)) return;
+    setQueueActionBusyId(item.queueId);
+    try {
+      if (item.shipmentId) {
+        await api.delete(`/shipments/${item.shipmentId}`);
+      }
+      removeQueueItemById(item.queueId, item.awb);
+    } catch (err) {
+      window.alert(err?.message || 'Could not delete consignment.');
+    } finally {
+      setQueueActionBusyId('');
+    }
+  }, [removeQueueItemById]);
 
   useEffect(() => {
     addToQueueRef.current = addToQueue;
@@ -1256,6 +1371,8 @@ export default function MobileScannerPage({ standalone = false }) {
       destination: data.destination || '',
       weight: data.weight || 0,
       autoApproved: true,
+      shipmentId: data.shipmentId || null,
+      date: normalizeQueueDate(data.date, sessionDate),
     };
     setLastSuccess(item);
     addToQueue(item);
@@ -1371,7 +1488,7 @@ export default function MobileScannerPage({ standalone = false }) {
     });
 
     // Desktop approved our mobile-submitted approval
-    s.on('scanner:approval-result', ({ success, message, awb }) => {
+    s.on('scanner:approval-result', ({ success, message, awb, shipmentId }) => {
       const activeReviewData = reviewDataRef.current || {};
       const activeReviewForm = reviewFormRef.current || {};
       if (success) {
@@ -1384,6 +1501,8 @@ export default function MobileScannerPage({ standalone = false }) {
           clientName: activeReviewData?.clientName || activeReviewForm.clientCode,
           destination: activeReviewForm.destination || '',
           weight: parseFloat(activeReviewForm.weight) || 0,
+          shipmentId: shipmentId || activeReviewData?.shipmentId || null,
+          date: normalizeQueueDate(activeReviewForm.date || activeReviewData?.date, ''),
         };
         setLastSuccess(item);
         addToQueueRef.current?.(item);
@@ -1832,6 +1951,7 @@ export default function MobileScannerPage({ standalone = false }) {
           clientName: 'Mock Client',
           destination: 'Delhi',
           weight: 1.25,
+          date: sessionDate,
         };
         setLastSuccess(item);
         addToQueue(item);
@@ -1853,7 +1973,7 @@ export default function MobileScannerPage({ standalone = false }) {
         enqueueOfflineScan(payload);
         playSuccessBeep();
         pulseHaptic('success');
-        const item = { awb: cleanAwb, clientCode: 'OFFLINE', clientName: 'Queued Offline', destination: '', weight: 0 };
+        const item = { awb: cleanAwb, clientCode: 'OFFLINE', clientName: 'Queued Offline', destination: '', weight: 0, date: sessionDate };
         setLastSuccess({ ...item, offlineQueued: true });
         addToQueue(item);
         goStep(STEPS.SUCCESS);
@@ -1874,6 +1994,8 @@ export default function MobileScannerPage({ standalone = false }) {
           clientName: shipment.client?.company || shipment.clientCode || 'Scanned',
           destination: shipment.destination || '',
           weight: shipment.weight || 0,
+          shipmentId: shipment.id || null,
+          date: normalizeQueueDate(shipment.date, sessionDate),
         };
         setLastSuccess(item);
         addToQueue(item);
@@ -1893,7 +2015,7 @@ export default function MobileScannerPage({ standalone = false }) {
       enqueueOfflineScan(payload);
       playSuccessBeep();
       pulseHaptic('success');
-      const item = { awb: cleanAwb, clientCode: 'OFFLINE', clientName: 'Queued Offline', destination: '', weight: 0 };
+      const item = { awb: cleanAwb, clientCode: 'OFFLINE', clientName: 'Queued Offline', destination: '', weight: 0, date: sessionDate };
       setLastSuccess({ ...item, offlineQueued: true });
       addToQueue(item);
       goStep(STEPS.SUCCESS);
@@ -1910,7 +2032,7 @@ export default function MobileScannerPage({ standalone = false }) {
         goStep(STEPS.ERROR);
       }
     }, FAST_SCAN_TIMEOUT_MS);
-  }, [socket, connStatus, goStep, isE2eMock, enqueueOfflineScan, addToQueue, buildSessionContextPayload, isStandalone]);
+  }, [socket, connStatus, goStep, isE2eMock, enqueueOfflineScan, addToQueue, buildSessionContextPayload, isStandalone, sessionDate]);
 
   useEffect(() => {
     submitFastBarcodeRef.current = submitFastBarcode;
@@ -1993,6 +2115,7 @@ export default function MobileScannerPage({ standalone = false }) {
           clientName: 'Mock Client',
           destination: 'Delhi',
           weight: 1.25,
+          date: sessionDate,
         };
         setLastSuccess(item);
         addToQueue(item);
@@ -2017,7 +2140,7 @@ export default function MobileScannerPage({ standalone = false }) {
         enqueueOfflineScan(payload);
         playSuccessBeep();
         pulseHaptic('success');
-        const item = { awb: lockedAwb || 'PENDING_OCR', clientCode: 'OFFLINE', clientName: 'Queued Offline', destination: '', weight: 0 };
+        const item = { awb: lockedAwb || 'PENDING_OCR', clientCode: 'OFFLINE', clientName: 'Queued Offline', destination: '', weight: 0, date: sessionDate };
         setLastSuccess({ ...item, offlineQueued: true });
         addToQueue(item);
         goStep(STEPS.SUCCESS);
@@ -2053,7 +2176,7 @@ export default function MobileScannerPage({ standalone = false }) {
       enqueueOfflineScan(payload);
       playSuccessBeep();
       pulseHaptic('success');
-      const item = { awb: lockedAwb || 'PENDING_OCR', clientCode: 'OFFLINE', clientName: 'Queued Offline', destination: '', weight: 0 };
+      const item = { awb: lockedAwb || 'PENDING_OCR', clientCode: 'OFFLINE', clientName: 'Queued Offline', destination: '', weight: 0, date: sessionDate };
       setLastSuccess({ ...item, offlineQueued: true });
       addToQueue(item);
       goStep(STEPS.SUCCESS);
@@ -2071,7 +2194,7 @@ export default function MobileScannerPage({ standalone = false }) {
         goStep(STEPS.ERROR);
       }
     }, 40000);
-  }, [socket, lockedAwb, capturedImage, goStep, connStatus, enqueueOfflineScan, addToQueue, isE2eMock, buildSessionContextPayload, isStandalone, applyProcessedScanResult, handleLookupNeedsPhoto]);
+  }, [socket, lockedAwb, capturedImage, goStep, connStatus, enqueueOfflineScan, addToQueue, isE2eMock, buildSessionContextPayload, isStandalone, applyProcessedScanResult, handleLookupNeedsPhoto, sessionDate]);
 
   // ══════════════════════════════════════════════════════════════════════════════════
   // APPROVAL
@@ -2090,6 +2213,8 @@ export default function MobileScannerPage({ standalone = false }) {
           clientName: reviewData.clientName || reviewForm.clientCode || 'Mock Client',
           destination: reviewForm.destination || '',
           weight: parseFloat(reviewForm.weight) || 0,
+          shipmentId: reviewData.shipmentId || null,
+          date: approvalDate,
         };
         setLastSuccess(item);
         addToQueue(item);
@@ -2129,21 +2254,26 @@ export default function MobileScannerPage({ standalone = false }) {
         if (reviewData.ocrExtracted || reviewData) {
           await api.post('/shipments/learn-corrections', { ocrFields, approvedFields });
         }
+        let savedShipment = null;
         if (reviewData.shipmentId) {
-          await api.put(`/shipments/${reviewData.shipmentId}`, fields);
+          const res = await api.put(`/shipments/${reviewData.shipmentId}`, fields);
+          savedShipment = res?.data || null;
         } else {
-          await api.post('/shipments', { awb: reviewData.awb || lockedAwb, ...fields });
+          const res = await api.post('/shipments', { awb: reviewData.awb || lockedAwb, ...fields });
+          savedShipment = res?.data || null;
         }
 
         playHardwareBeep();
         pulseHaptic('success');
         setFlash('success');
         const item = {
-          awb: reviewData?.awb || lockedAwb,
-          clientCode: reviewForm.clientCode,
-          clientName: reviewData?.clientName || reviewForm.clientCode,
-          destination: reviewForm.destination || '',
-          weight: parseFloat(reviewForm.weight) || 0,
+          awb: savedShipment?.awb || reviewData?.awb || lockedAwb,
+          clientCode: savedShipment?.clientCode || reviewForm.clientCode,
+          clientName: reviewData?.clientName || savedShipment?.client?.company || reviewForm.clientCode,
+          destination: savedShipment?.destination || reviewForm.destination || '',
+          weight: parseFloat(savedShipment?.weight ?? reviewForm.weight) || 0,
+          shipmentId: savedShipment?.id || reviewData?.shipmentId || null,
+          date: normalizeQueueDate(savedShipment?.date, approvalDate),
         };
         setLastSuccess(item);
         addToQueue(item);
@@ -2531,7 +2661,7 @@ export default function MobileScannerPage({ standalone = false }) {
                   max={new Date().toISOString().slice(0, 10)}
                   onChange={(e) => {
                     const val = e.target.value;
-                    if (val && /^\d{4}-\d{2}-\d{2}$/.test(val)) {
+                    if (val && ISO_DATE_REGEX.test(val)) {
                       setSessionDate(val);
                       try { localStorage.setItem('seahawk_scanner_session_date', val); } catch {}
                       pulseHaptic('light');
@@ -2716,20 +2846,70 @@ export default function MobileScannerPage({ standalone = false }) {
                   </div>
                 ) : (
                   sessionCtx.scannedItems.map((item, idx) => (
-                    <div key={`${item.awb}-${idx}`} className="queue-item">
+                    <div key={item.queueId || `${item.awb}-${idx}`} className="queue-item">
                       <div className="queue-check">
                         <Check size={13} color="#10B981" />
                       </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div className="queue-awb">{item.awb}</div>
+                      <div className="queue-main">
+                        <div className="queue-main-top">
+                          <div className="queue-awb">{item.awb}</div>
+                          {item.weight > 0 && <div className="queue-weight">{item.weight}kg</div>}
+                        </div>
                         <div className="queue-meta">
                           {item.clientCode === 'OFFLINE'
                             ? <span className="queue-offline-tag">Offline</span>
                             : item.clientCode && <span className="queue-client-tag">{item.clientCode}</span>}
                           {item.destination && <span>{item.destination}</span>}
+                          {item.date && <span className="queue-date-tag">{formatDisplayDate(item.date)}</span>}
                         </div>
+                        {editingQueueItemId === item.queueId ? (
+                          <div className="queue-date-editor">
+                            <input
+                              type="date"
+                              className="queue-date-input"
+                              value={editingQueueDate}
+                              max={new Date().toISOString().slice(0, 10)}
+                              onChange={(e) => setEditingQueueDate(e.target.value)}
+                              disabled={queueActionBusyId === item.queueId}
+                            />
+                            <button
+                              type="button"
+                              className="queue-action-btn primary"
+                              onClick={() => saveQueueDateEdit(item)}
+                              disabled={queueActionBusyId === item.queueId || !ISO_DATE_REGEX.test(editingQueueDate)}
+                            >
+                              {queueActionBusyId === item.queueId ? 'Saving...' : 'Save'}
+                            </button>
+                            <button
+                              type="button"
+                              className="queue-action-btn"
+                              onClick={cancelQueueDateEdit}
+                              disabled={queueActionBusyId === item.queueId}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="queue-actions">
+                            <button
+                              type="button"
+                              className="queue-action-btn"
+                              onClick={() => beginQueueDateEdit(item)}
+                              disabled={queueActionBusyId === item.queueId}
+                            >
+                              <CalendarDays size={12} /> Edit Date
+                            </button>
+                            <button
+                              type="button"
+                              className="queue-action-btn danger"
+                              onClick={() => deleteQueueItem(item)}
+                              disabled={queueActionBusyId === item.queueId}
+                            >
+                              <Trash2 size={12} /> {queueActionBusyId === item.queueId ? 'Deleting...' : 'Delete'}
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      {item.weight > 0 && <div className="queue-weight">{item.weight}kg</div>}
                     </div>
                   ))
                 )}

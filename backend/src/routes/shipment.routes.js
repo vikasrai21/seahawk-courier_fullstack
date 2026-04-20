@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const ctrl   = require('../controllers/shipment.controller');
-const { protect, adminOnly, ownerOnly, requireRole } = require('../middleware/auth.middleware');
+const { protect, ownerOnly, requireRole, requireOwnerOrRole } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validate.middleware');
 const { shipmentSchema, updateShipmentSchema, statusUpdateSchema, scanAwbSchema, importSchema, scanAwbBulkSchema } = require('../validators/shipment.validator');
 const config = require('../config');
@@ -26,6 +26,6 @@ router.post('/learn-corrections', requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), 
 router.put('/:id',            validate(updateShipmentSchema), ctrl.update);
 router.patch('/:id/status',   validate(statusUpdateSchema),   ctrl.patchStatus);
 router.get('/:id/transitions',                                 ctrl.getValidStatuses);
-router.delete('/:id',         adminOnly, ctrl.remove);  // ADMIN only
+router.delete('/:id',         requireOwnerOrRole('ADMIN'), ctrl.remove);
 
 module.exports = router;
