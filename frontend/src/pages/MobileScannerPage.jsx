@@ -33,6 +33,7 @@ const AUTO_NEXT_DELAY = 3500;
 const FAST_AUTO_NEXT_DELAY = 900;
 const FAST_SCAN_TIMEOUT_MS = 10000;
 const LOOKUP_DECISION_TIMEOUT_MS = 12000;
+const APPROVAL_RESULT_TIMEOUT_MS = 15000;
 const OFFLINE_QUEUE_KEY_PREFIX = 'mobile_scanner_offline_queue';
 const SESSION_STATE_KEY_PREFIX = 'mobile_scanner_session_state';
 const STICKY_CLIENT_KEY_PREFIX = 'mobile_scanner_sticky_client';
@@ -1019,6 +1020,7 @@ export default function MobileScannerPage({ standalone = false }) {
   const autoCaptureTriggeredRef = useRef(false);
   const currentStepRef = useRef(STEPS.IDLE);
   const lockToCaptureTimerRef = useRef(null);
+  const approvalResultTimerRef = useRef(null);
   const scannerStartedAtRef = useRef(0);
   // Stable ref to the latest handleBarcodeDetected callback.
   // startBarcodeScanner captures this ref (not the function directly) so the
@@ -1619,6 +1621,8 @@ export default function MobileScannerPage({ standalone = false }) {
 
     // Desktop approved our mobile-submitted approval
     s.on('scanner:approval-result', ({ success, message, awb, shipmentId }) => {
+      clearTimeout(approvalResultTimerRef.current);
+      approvalResultTimerRef.current = null;
       const activeReviewData = reviewDataRef.current || {};
       const activeReviewForm = reviewFormRef.current || {};
       if (success) {
@@ -1654,11 +1658,14 @@ export default function MobileScannerPage({ standalone = false }) {
         setLastSuccess(item);
         addToQueueRef.current?.(item);
         goStep(STEPS.SUCCESS);
-      } else {
-        playErrorBeep();
-        pulseHaptic('error');
-        setErrorMsg(message || 'Approval failed.');
+        return;
       }
+
+      if (currentStepRef.current !== STEPS.APPROVING) return;
+      playErrorBeep();
+      pulseHaptic('error');
+      setErrorMsg(message || 'Approval failed. Please review and try again.');
+      goStep(STEPS.REVIEWING);
     });
 
     s.on('scanner:ready-for-next', () => {
@@ -2493,12 +2500,23 @@ export default function MobileScannerPage({ standalone = false }) {
         if (response?.success) {
           // Wait for approval-result from desktop
         } else {
+          clearTimeout(approvalResultTimerRef.current);
+          approvalResultTimerRef.current = null;
           goStep(STEPS.REVIEWING);
           playErrorBeep();
           pulseHaptic('error');
           setErrorMsg(response?.message || 'Approval failed.');
         }
       });
+
+      clearTimeout(approvalResultTimerRef.current);
+      approvalResultTimerRef.current = setTimeout(() => {
+        if (currentStepRef.current !== STEPS.APPROVING) return;
+        playErrorBeep();
+        pulseHaptic('error');
+        setErrorMsg('Save confirmation timed out. Please tap Approve & Save again.');
+        goStep(STEPS.REVIEWING);
+      }, APPROVAL_RESULT_TIMEOUT_MS);
     }
 
     const approvedClientCode = normalizeClientCode(reviewForm.clientCode || '');
@@ -2529,6 +2547,8 @@ export default function MobileScannerPage({ standalone = false }) {
   const resetForNextScan = useCallback((nextStep = STEPS.IDLE) => {
     clearTimeout(autoNextTimer.current);
     clearTimeout(lockToCaptureTimerRef.current);
+    clearTimeout(approvalResultTimerRef.current);
+    approvalResultTimerRef.current = null;
     setLockedAwb('');
     setCapturedImage(null);
     setCaptureMeta({ kb: 0, width: 0, height: 0, quality: CAPTURE_JPEG_QUALITY });
@@ -2581,6 +2601,7 @@ export default function MobileScannerPage({ standalone = false }) {
     stopCamera();
     clearTimeout(autoNextTimer.current);
     clearTimeout(lockToCaptureTimerRef.current);
+    clearTimeout(approvalResultTimerRef.current);
   }, [stopCamera]);
 
   // ══════════════════════════════════════════════════════════════════════════════════
@@ -3533,8 +3554,34 @@ export default function MobileScannerPage({ standalone = false }) {
           </div>
         </div>
 
-        {/* â•â•â• APPROVING (transparent) â•â•â• */}
-        <div className={stepClass(STEPS.APPROVING)} />
+        {/* â•â•â• APPROVING â•â•â• */}
+        <div className={stepClass(STEPS.APPROVING)}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 16 }}>
+            <RefreshCw size={42} style={{ animation: 'spin 1s linear infinite', color: theme.primary }} />
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '1.05rem', fontWeight: 700, color: theme.text }}>
+                Saving approval...
+              </div>
+              <div className="mono" style={{ fontSize: '0.98rem', marginTop: 6, color: theme.muted }}>
+                {reviewData?.awb || lockedAwb || 'AWB'}
+              </div>
+              <div style={{ fontSize: '0.78rem', color: theme.muted, marginTop: 8 }}>
+                Waiting for desktop confirmation. If this takes too long, retry from review.
+              </div>
+            </div>
+            <button
+              className="btn btn-outline"
+              onClick={() => {
+                clearTimeout(approvalResultTimerRef.current);
+                approvalResultTimerRef.current = null;
+                setErrorMsg('Approval pending. Please tap Approve & Save again.');
+                goStep(STEPS.REVIEWING);
+              }}
+            >
+              Back to review
+            </button>
+          </div>
+        </div>
 
         {/* â•â•â• SUCCESS â•â•â• */}
         <div className={stepClass(STEPS.SUCCESS)}>
