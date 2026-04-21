@@ -33,6 +33,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { exportJsonToExcel, readExcelAsJson } from '../utils/excel';
 import api from '../services/api';
+import { refreshSession } from '../services/session';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { normalizeBarcodeCandidate } from '../utils/barcode.js';
@@ -408,11 +409,28 @@ export default function ScanAWBPage({ toast }) {
   };
 
   // ── Mobile Bridge: create session & listen for remote scans ──────────
-  const startMobileSession = useCallback(() => {
-    if (!socket || !socketConnected) {
+  const startMobileSession = useCallback(async () => {
+    if (!socket) {
+      toast?.('Scanner link is still loading. Please wait a moment and try again.', 'warning');
+      return;
+    }
+
+    if (!socketConnected) {
+      try {
+        await refreshSession();
+      } catch {
+        // Let the existing auth/session handlers own the redirect flow.
+      }
+
+      socket.connect();
+      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+    }
+
+    if (!socket.connected) {
       toast?.('WebSocket not connected. Please refresh.', 'error');
       return;
     }
+
     if (mobilePIN && (mobileStatus === 'connected' || mobileStatus === 'waiting')) {
       setShowMobileModal(true);
       return;

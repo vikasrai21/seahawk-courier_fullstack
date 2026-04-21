@@ -45,6 +45,7 @@ export default function ClientInvoicesPage({ toast }) {
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState(null);
   const [viewing, setViewing] = useState(null);
+  const [loadingDetailId, setLoadingDetailId] = useState(null);
   const [ledgerMonth, setLedgerMonth] = useState(new Date().toISOString().slice(0, 7));
   const [ledgerFormat, setLedgerFormat] = useState('csv');
 
@@ -105,6 +106,18 @@ export default function ClientInvoicesPage({ toast }) {
       toast?.('Monthly ledger downloaded', 'success');
     } catch (e) {
       toast?.(e.message || 'Failed to export monthly ledger', 'error');
+    }
+  };
+
+  const openInvoice = async (invoice) => {
+    setLoadingDetailId(invoice.id);
+    try {
+      const res = await api.get(`/portal/invoices/${invoice.id}`);
+      setViewing(res.data || null);
+    } catch (e) {
+      toast?.(e.message || 'Failed to load invoice details', 'error');
+    } finally {
+      setLoadingDetailId(null);
     }
   };
 
@@ -215,7 +228,7 @@ export default function ClientInvoicesPage({ toast }) {
                       </td>
                       <td className="px-4 py-4">
                         <div className="flex flex-wrap items-center gap-2">
-                          <button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg" onClick={() => setViewing(inv)}>
+                          <button className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg disabled:opacity-50" onClick={() => openInvoice(inv)} disabled={loadingDetailId === inv.id}>
                             <Eye className="w-4 h-4" />
                           </button>
                           <button

@@ -395,10 +395,17 @@ async function updateBranding(req, res) {
   const clientCode = await resolveClientCode(req, req.body);
   if (!clientCode) return R.notFound(res, 'Client profile not found.');
   const payload = sanitizeBrandPayload(req.body || {});
+  const existing = await prisma.client.findUnique({
+    where: { code: clientCode },
+    select: { brandSettings: true },
+  });
+  const current = existing?.brandSettings && typeof existing.brandSettings === 'object'
+    ? existing.brandSettings
+    : {};
 
   await prisma.client.update({
     where: { code: clientCode },
-    data: { brandSettings: payload },
+    data: { brandSettings: { ...current, ...payload } },
   });
 
   await prisma.auditLog.create({

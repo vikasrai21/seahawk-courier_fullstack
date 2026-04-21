@@ -17,6 +17,40 @@ async function list(req, res) {
   R.ok(res, { invoices });
 }
 
+async function detail(req, res) {
+  const clientCode = await resolveClientCode(req);
+  if (!clientCode) return R.notFound(res, 'Client profile not found.');
+
+  const invoice = await prisma.invoice.findUnique({
+    where: { id: parseInt(req.params.id, 10) },
+    include: {
+      client: {
+        select: {
+          code: true,
+          company: true,
+          address: true,
+          gst: true,
+        },
+      },
+      items: {
+        orderBy: { date: 'asc' },
+        select: {
+          id: true,
+          date: true,
+          awb: true,
+          destination: true,
+          courier: true,
+          weight: true,
+          amount: true,
+        },
+      },
+    },
+  });
+
+  if (!invoice || invoice.clientCode !== clientCode) return R.notFound(res, 'Invoice');
+  R.ok(res, invoice);
+}
+
 async function pdfDownload(req, res) {
   const clientCode = await resolveClientCode(req);
   if (!clientCode) return R.notFound(res, 'Client profile not found.');
@@ -142,4 +176,4 @@ async function monthlyExport(req, res) {
   return res.send(html);
 }
 
-module.exports = { list, pdfDownload, exportCsv, exportExcel, monthlyExport };
+module.exports = { list, detail, pdfDownload, exportCsv, exportExcel, monthlyExport };

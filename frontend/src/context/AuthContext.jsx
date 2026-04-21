@@ -46,8 +46,13 @@ export function AuthProvider({ children }) {
       const nextPath = currentPath.startsWith('/portal') ? '/portal/login' : '/login';
       window.location.replace(nextPath);
     };
+    const onSessionExpired = () => handler();
     setUnauthorizedHandler(handler);
-    return () => setUnauthorizedHandler(null);
+    window.addEventListener('shk:session-expired', onSessionExpired);
+    return () => {
+      setUnauthorizedHandler(null);
+      window.removeEventListener('shk:session-expired', onSessionExpired);
+    };
   }, []);
 
   const login = useCallback(async (email, password, rememberMe = true) => {

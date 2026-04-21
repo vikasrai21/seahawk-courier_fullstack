@@ -222,7 +222,6 @@ async function shipmentDetail(req, res) {
           location: true,
           description: true,
           timestamp: true,
-          rawData: true,
         },
       },
     },
@@ -230,6 +229,67 @@ async function shipmentDetail(req, res) {
 
   if (!shipment) return R.notFound(res, 'Shipment not found.');
   R.ok(res, shipment);
+}
+
+async function trackingDetail(req, res) {
+  const clientCode = await resolveClientCode(req);
+  if (!clientCode) return R.notFound(res, 'Client profile not found.');
+
+  const awb = String(req.params.awb || '').trim().toUpperCase();
+  if (!awb) return R.badRequest(res, 'AWB is required.');
+
+  const shipment = await prisma.shipment.findFirst({
+    where: { awb, clientCode },
+    select: {
+      id: true,
+      awb: true,
+      consignee: true,
+      destination: true,
+      pincode: true,
+      courier: true,
+      service: true,
+      status: true,
+      date: true,
+      trackingEvents: {
+        orderBy: { timestamp: 'desc' },
+        select: {
+          id: true,
+          status: true,
+          location: true,
+          description: true,
+          timestamp: true,
+          source: true,
+        },
+      },
+      ndrEvents: {
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          reason: true,
+          action: true,
+          createdAt: true,
+          newAddress: true,
+        },
+      },
+    },
+  });
+
+  if (!shipment) return R.notFound(res, 'Shipment not found.');
+  R.ok(res, {
+    shipment: {
+      id: shipment.id,
+      awb: shipment.awb,
+      consignee: shipment.consignee,
+      destination: shipment.destination,
+      pincode: shipment.pincode,
+      courier: shipment.courier,
+      service: shipment.service,
+      status: shipment.status,
+      date: shipment.date,
+    },
+    events: shipment.trackingEvents,
+    ndrs: shipment.ndrEvents,
+  });
 }
 
 async function performance(req, res) {
@@ -361,4 +421,4 @@ async function syncTracking(req, res) {
   });
 }
 
-module.exports = { stats, shipments, shipmentDetail, performance, bulkTrack, syncTracking };
+module.exports = { stats, shipments, shipmentDetail, trackingDetail, performance, bulkTrack, syncTracking };

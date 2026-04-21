@@ -104,6 +104,7 @@ api.interceptors.response.use(
         return new Promise((resolve, reject) => {
           _waitQueue.push({ resolve, reject });
         }).then(token => {
+          original.headers = original.headers || {};
           original.headers.Authorization = `Bearer ${token}`;
           return api(original);
         });
@@ -128,6 +129,7 @@ api.interceptors.response.use(
         if (!newToken) throw new Error('Refresh did not return an access token');
         tokenManager.set(newToken);
         processQueue(null, newToken);
+        original.headers = original.headers || {};
         original.headers.Authorization = `Bearer ${newToken}`;
         return api(original);
       } catch {

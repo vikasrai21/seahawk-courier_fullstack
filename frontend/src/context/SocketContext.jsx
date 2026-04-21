@@ -21,39 +21,78 @@ export function SocketProvider({ children }) {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    if (!user) return undefined;
+    if (!user) {
+      setSocket(null);
+      setConnected(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    let instance = null;
 
     const getAuthPayload = () => ({ token: tokenManager.get() });
-    if (!getAuthPayload().token) return undefined;
-
-    const instance = io(resolveSocketUrl(), {
-      autoConnect: false,
-      auth: getAuthPayload,
-      withCredentials: true,
-    });
-
-    instance.on('connect', () => setConnected(true));
-    instance.on('disconnect', () => setConnected(false));
-    instance.io.on('reconnect_attempt', () => {
-      instance.auth = getAuthPayload;
-    });
-    instance.on('connect_error', async (err) => {
-      const message = String(err?.message || '').toLowerCase();
-      if (!message.includes('unauthorized')) return;
-      try {
-        await refreshSession();
-        instance.auth = getAuthPayload;
-        if (!instance.connected) instance.connect();
-      } catch {
-        setConnected(false);
+    const connectSocket = async () => {
+      let token = getAuthPayload().token;
+      if (!token) {
+        try {
+          await refreshSession();
+          token = tokenManager.get();
+        } catch {
+          tokenManager.clear();
+          setConnected(false);
+          window.dispatchEvent(new CustomEvent('shk:session-expired'));
+          return;
+        }
       }
-    });
 
-    setSocket(instance);
-    instance.connect();
+      if (!token || cancelled) return;
+
+      instance = io(resolveSocketUrl(), {
+        autoConnect: false,
+        auth: getAuthPayload,
+        withCredentials: true,
+        transports: ['websocket', 'polling'],
+        reconnection: true,
+      });
+
+      instance.on('connect', () => {
+        if (!cancelled) setConnected(true);
+      });
+      instance.on('disconnect', () => {
+        if (!cancelled) setConnected(false);
+      });
+      instance.io.on('reconnect_attempt', () => {
+        instance.auth = getAuthPayload;
+      });
+      instance.on('connect_error', async (err) => {
+        const message = String(err?.message || '').toLowerCase();
+        if (!message.includes('unauthorized')) return;
+        try {
+          await refreshSession();
+          instance.auth = getAuthPayload;
+          if (!instance.connected) instance.connect();
+        } catch {
+          tokenManager.clear();
+          setConnected(false);
+          instance.close();
+          window.dispatchEvent(new CustomEvent('shk:session-expired'));
+        }
+      });
+
+      if (cancelled) {
+        instance.close();
+        return;
+      }
+
+      setSocket(instance);
+      instance.connect();
+    };
+
+    void connectSocket();
 
     return () => {
-      instance.close();
+      cancelled = true;
+      instance?.close();
       setSocket(null);
       setConnected(false);
     };

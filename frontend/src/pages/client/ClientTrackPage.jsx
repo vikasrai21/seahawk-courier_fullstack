@@ -26,7 +26,7 @@ export default function ClientTrackPage({ toast }) {
     (async () => {
       setLoading(true);
       try {
-        const r = await api.get(`/tracking/${prefillAwb}`);
+        const r = await api.get(`/portal/tracking/${prefillAwb}`);
         const data = r.data || r;
         setResult({
           shipment: data.shipment || null,
@@ -46,7 +46,7 @@ export default function ClientTrackPage({ toast }) {
     if (!awb.trim()) return;
     setLoading(true);
     try {
-      const r = await api.get(`/tracking/${awb.trim()}`);
+      const r = await api.get(`/portal/tracking/${awb.trim()}`);
       const data = r.data || r;
       setResult({
         shipment: data.shipment || null,
@@ -88,17 +88,13 @@ export default function ClientTrackPage({ toast }) {
               <div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Consignee</span> <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{result.shipment?.consignee}</span></div>
               <div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Destination</span> <span className="font-bold text-slate-800 dark:text-slate-200 truncate">{result.shipment?.destination}</span></div>
               <div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Courier</span> <span className="font-bold text-orange-600 dark:text-orange-400 truncate">{result.shipment?.courier}</span></div>
-                <div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Weight</span> <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{result.shipment?.weight} kg</span></div>
+              <div className="flex flex-col"><span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Pincode</span> <span className="font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{result.shipment?.pincode || '-'}</span></div>
             </div>
             {result.shipment?.service && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                 <div className="rounded-xl border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-[#0c1631] p-3">
                   <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Service</div>
                   <div className="mt-1 font-bold text-slate-800 dark:text-slate-100">{result.shipment?.service}</div>
-                </div>
-                <div className="rounded-xl border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-[#0c1631] p-3">
-                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Amount</div>
-                  <div className="mt-1 font-bold text-slate-800 dark:text-slate-100">₹{Number(result.shipment?.amount || 0).toLocaleString('en-IN')}</div>
                 </div>
                 <div className="rounded-xl border border-slate-200 dark:border-slate-700/60 bg-white dark:bg-[#0c1631] p-3">
                   <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">Booking Date</div>
