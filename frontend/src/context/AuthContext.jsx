@@ -72,7 +72,8 @@ export function AuthProvider({ children }) {
 
   const hasRole = (...roles) => {
     if (!user) return false;
-    if (user.isOwner) {
+    // OWNER role automatically inherits all permissions except strictly CLIENT
+    if (user.role === 'OWNER' || user.isOwner) {
       return roles.flat().some((role) => role !== 'CLIENT');
     }
     return roles.flat().includes(user.role);
@@ -81,12 +82,12 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       user, loading, login, logout,
-      isAdmin:   user?.role === 'ADMIN' || !!user?.isOwner,
-      isOwner:   !!user?.isOwner,
+      isAdmin:   user?.role === 'ADMIN' || user?.role === 'OWNER' || !!user?.isOwner,
+      isOwner:   user?.role === 'OWNER' || !!user?.isOwner,
       isStaff:   user?.role === 'STAFF',
       isOps:     user?.role === 'OPS_MANAGER',
       isClient:  user?.role === 'CLIENT',
-      canManage: !!user?.isOwner || ['ADMIN', 'OPS_MANAGER'].includes(user?.role),
+      canManage: user?.role === 'OWNER' || !!user?.isOwner || ['ADMIN', 'OPS_MANAGER'].includes(user?.role),
       hasRole,
     }}>
       {children}
