@@ -13,6 +13,12 @@ const prisma = require('../config/prisma');
 const logger = require('../utils/logger');
 const analyticsService = require('./analytics.service');
 const { fetchTracking } = require('./carrier.service');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+let genAI = null;
+if (process.env.GEMINI_API_KEY) {
+  genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+}
 
 // ── Action Types ────────────────────────────────────────────────────────────
 const ACTION_TYPES = {
@@ -878,12 +884,7 @@ async function chat({ message, history = [], sessionId = 'default' }) {
   const nlpResult = await nlp.processMessage(message);
 
   if (!nlpResult.intent || nlpResult.intent === 'None' || nlpResult.confidence < 0.4) {
-    return {
-      reply: nlpResult.answer || "🤔 I didn't understand that. Try: **create client**, **track AWB**, **generate invoice**, **daily report**, or **show overview**.",
-      suggestions: ['Create client', 'Track shipment', 'Generate invoice', 'Daily report', 'Show overview'],
-      requiresConfirmation: false,
-      snapshot,
-    };
+    nlpResult.intent = 'None';
   }
 
   // ── Step 2a: Check if it maps to a Flow ─────────────────────────────────
@@ -995,7 +996,40 @@ async function chat({ message, history = [], sessionId = 'default' }) {
     };
   }
 
-  // ── Fallback ────────────────────────────────────────────────────────────
+  // ── Hybrid LLM Fallback ──────────────────────────────────────────────────
+  if (genAI) {
+    try {
+      const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+      const prompt = `You are HawkAI, the internal Enterprise Owner Command Center Agent for Seahawk Logistics.
+You communicate securely with the Owner of the company. Keep your answer brief, highly analytical, responsive, and professional. Use markdown formatting. Do not hallucinate shipments.
+
+Current System Snapshot:
+- Active Shipments: ${snapshot.activeShipments}
+- Bookings Today: ${snapshot.todayBookings}
+- Revenue Today: ${snapshot.todayRevenue}
+- Pending NDRs: ${snapshot.pendingNDRs}
+- Clients with Negative Wallets: ${snapshot.negativeWallets}
+
+Conversation History (Latest):
+${history.map(h => `${h.role}: ${h.text}`).join('\n')}
+
+Owner Request: ${msg}`;
+
+      const result = await model.generateContent(prompt);
+      let text = result.response.text();
+      
+      return {
+        reply: text,
+        suggestions: ['Show overview', 'Daily report'],
+        requiresConfirmation: false,
+        snapshot,
+      };
+    } catch (err) {
+      logger.warn(`[HawkAI] Gemini LLM fallback failed: ${err.message}`);
+    }
+  }
+
+  // ── Native Fallback ─────────────────────────────────────────────────────
   return {
     reply: "🤔 I understood parts of that but couldn't map it to an action. Try being more specific, like: **create client ABC** or **track AWB 123456**.",
     suggestions: ['Show overview', 'Create client', 'Daily report'],
