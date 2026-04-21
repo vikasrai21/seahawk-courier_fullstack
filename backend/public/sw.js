@@ -1,5 +1,5 @@
 // Sea Hawk Service Worker — offline support + background sync
-const CACHE_NAME  = 'seahawk-v1';
+const CACHE_NAME  = 'seahawk-v2';
 const STATIC_URLS = [
   '/',
   '/app',
