@@ -39,14 +39,14 @@ export default function TimelineModal({ shipment, shipmentId, onClose }) {
   useEffect(() => {
     if (!targetId) return;
     setLoading(true);
-    api.get(`/shipments/${targetId}`)
+    api.get(isClient ? `/portal/shipments/${targetId}` : `/shipments/${targetId}`)
       .then(r => {
         setEvents(r.trackingEvents || []);
         if (!shipmentData) setShipmentData(r.data || r);
       })
       .catch(() => setEvents([]))
       .finally(() => setLoading(false));
-  }, [targetId]);
+  }, [targetId, isClient]);
 
   const displayShipment = shipmentData || shipment;
   const currentIdx = STEPS.indexOf(normalizeStatus(displayShipment?.status || 'Booked'));
@@ -157,12 +157,14 @@ export default function TimelineModal({ shipment, shipmentId, onClose }) {
         </div>
 
         {/* Footer Meta */}
-        <div className="pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-3 gap-2">
-          <div className="text-center">
-            <div className="text-[9px] font-bold text-slate-400 uppercase">Weight</div>
-            <div className="text-xs font-black text-slate-800 dark:text-white">{displayShipment?.weight} kg</div>
-          </div>
-          <div className="text-center border-x border-slate-50 dark:border-slate-800">
+        <div className={`pt-4 border-t border-slate-100 dark:border-slate-800 grid gap-2 ${isClient ? 'grid-cols-2' : 'grid-cols-3'}`}>
+          {!isClient && (
+            <div className="text-center">
+              <div className="text-[9px] font-bold text-slate-400 uppercase">Weight</div>
+              <div className="text-xs font-black text-slate-800 dark:text-white">{displayShipment?.weight} kg</div>
+            </div>
+          )}
+          <div className={`text-center ${isClient ? '' : 'border-x border-slate-50 dark:border-slate-800'}`}>
             <div className="text-[9px] font-bold text-slate-400 uppercase">{isClient ? 'Route Type' : 'Amount'}</div>
             <div className="text-xs font-black text-slate-800 dark:text-white">
               {isClient ? (displayShipment?.service || 'Surface') : fmt(displayShipment?.amount)}

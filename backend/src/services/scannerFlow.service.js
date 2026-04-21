@@ -118,10 +118,11 @@ function buildScanResultPayload({ awb, shipment, ocrHints, linkedDraftId = null,
   const clientCode = ocrHints?.clientCode || shipment?.clientCode || '';
   const clientName = ocrHints?.clientName || shipment?.client?.company || clientCode;
   const reviewRequired = !shouldAutoApproveScan({ ocrHints, shipment });
+  const normalizedAwb = String(awb || shipment?.awb || '').trim().toUpperCase();
 
   return {
     success: true,
-    awb: String(awb || shipment?.awb || '').trim(),
+    awb: normalizedAwb,
     shipmentId: shipment?.id || null,
     linkedDraftId,
     courier: shipment?.courier || ocrHints?.courier || '',

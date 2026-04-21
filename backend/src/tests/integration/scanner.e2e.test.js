@@ -6,11 +6,18 @@ const ocrSvc = require('../../services/ocr.service');
 
 describe('Scanner API Integration Tests', () => {
   let jwtToken;
+  let clientJwtToken;
   const testUser = {
     name: 'Scanner E2E Admin',
     email: 'scanner-e2e-unique@seahawkcourier.in',
     password: 'AdminPass123!',
     role: 'ADMIN',
+  };
+  const clientUser = {
+    name: 'Scanner Portal Client',
+    email: 'scanner-portal-client@seahawkcourier.in',
+    password: 'ClientPass123!',
+    role: 'CLIENT',
   };
 
   beforeAll(async () => {
@@ -46,17 +53,42 @@ describe('Scanner API Integration Tests', () => {
       create: { code: 'IMPORTCL', company: 'Import Ledger Client' }
     });
 
+    await prisma.user.deleteMany({ where: { email: clientUser.email } });
+    const clientPassword = await bcrypt.hash(clientUser.password, 10);
+    const portalUser = await prisma.user.create({
+      data: {
+        name: clientUser.name,
+        email: clientUser.email,
+        password: clientPassword,
+        role: clientUser.role,
+        active: true,
+      }
+    });
+    await prisma.clientUser.upsert({
+      where: { userId: portalUser.id },
+      update: { clientCode: 'IMPORTCL' },
+      create: { userId: portalUser.id, clientCode: 'IMPORTCL' },
+    });
+
     // Login
     const loginRes = await request(app)
       .post('/api/auth/login')
       .send({ email: testUser.email, password: testUser.password });
 
     jwtToken = loginRes.body.data.accessToken;
+
+    const clientLoginRes = await request(app)
+      .post('/api/auth/login')
+      .send({ email: clientUser.email, password: clientUser.password });
+
+    clientJwtToken = clientLoginRes.body.data.accessToken;
   }, 30000);
 
   afterAll(async () => {
     await prisma.shipment.deleteMany({ where: { awb: { startsWith: 'SCAN_TEST' } } });
     await prisma.shipmentImportRow.deleteMany({ where: { awb: { startsWith: 'SCAN_TEST' } } });
+    await prisma.clientUser.deleteMany({ where: { user: { email: clientUser.email } } });
+    await prisma.user.deleteMany({ where: { email: clientUser.email } });
     await prisma.user.deleteMany({ where: { email: testUser.email } });
     await prisma.$disconnect();
     vi.restoreAllMocks();
@@ -292,6 +324,148 @@ describe('Scanner API Integration Tests', () => {
       expect(res.body.data.requiresImageCapture).toBe(true);
       expect(Array.isArray(res.body.data.missingFields)).toBe(true);
       expect(res.body.data.missingFields.length).toBeGreaterThan(0);
+    });
+
+    it('updates an existing imported shipment instead of creating a second shipment', async () => {
+      const awb = `SCAN_TEST_EXISTING_${Date.now()}`;
+      const existing = await prisma.shipment.create({
+        data: {
+          awb,
+          date: '2026-04-17',
+          clientCode: 'IMPORTCL',
+          consignee: 'UNKNOWN',
+          destination: 'UNKNOWN',
+          weight: 0.5,
+          amount: 0,
+          courier: 'Trackon',
+          department: 'Operations',
+          service: 'Standard',
+          status: 'Booked',
+          remarks: 'SCAN_CAPTURED: Intake awaiting tracking sync',
+        },
+      });
+
+      await prisma.shipmentImportRow.create({
+        data: {
+          batchKey: `BATCH-${Date.now()}`,
+          date: '2026-04-17',
+          clientCode: 'IMPORTCL',
+          awb,
+          consignee: 'Merged Receiver',
+          destination: 'Amritsar',
+          phone: '9810012345',
+          pincode: '143001',
+          weight: 3.1,
+          amount: 245,
+          courier: 'Trackon',
+          department: 'Operations',
+          service: 'Standard',
+          status: 'Booked',
+          remarks: 'Imported before scan',
+        },
+      });
+
+      const res = await request(app)
+        .post('/api/shipments/scan-mobile')
+        .set('Authorization', `Bearer ${jwtToken}`)
+        .send({
+          awb,
+          sessionContext: { sessionDate: '2026-04-21' },
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.shipmentId).toBe(existing.id);
+      expect(res.body.data.consignee).toBe('Merged Receiver');
+      expect(res.body.data.destination).toBe('Amritsar');
+      expect(res.body.data.weight).toBe(3.1);
+
+      const shipments = await prisma.shipment.findMany({ where: { awb } });
+      expect(shipments).toHaveLength(1);
+      expect(shipments[0].id).toBe(existing.id);
+      expect(shipments[0].consignee).toBe('MERGED RECEIVER');
+      expect(shipments[0].destination).toBe('AMRITSAR');
+      expect(shipments[0].pincode).toBe('143001');
+      expect(shipments[0].weight).toBe(3.1);
+      expect(shipments[0].amount).toBe(245);
+      expect(shipments[0].date).toBe('2026-04-21');
+    });
+
+    it('matches imported AWBs even when the scan comes in lowercase or mixed case', async () => {
+      const awb = `SCAN_TEST_CASE_${Date.now()}`;
+      const lowercaseAwb = awb.toLowerCase();
+
+      await prisma.shipmentImportRow.create({
+        data: {
+          batchKey: `BATCH-${Date.now()}`,
+          date: '2026-04-18',
+          clientCode: 'IMPORTCL',
+          awb,
+          consignee: 'Case Match',
+          destination: 'Chandigarh',
+          phone: '9999991111',
+          pincode: '160017',
+          weight: 1.4,
+          amount: 120,
+          courier: 'DTDC',
+          department: 'Operations',
+          service: 'Standard',
+          status: 'Booked',
+          remarks: 'Mixed-case lookup test',
+        },
+      });
+
+      const res = await request(app)
+        .post('/api/shipments/scan-mobile')
+        .set('Authorization', `Bearer ${jwtToken}`)
+        .send({ awb: lowercaseAwb });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.awb).toBe(awb);
+      expect(res.body.data.clientCode).toBe('IMPORTCL');
+      expect(res.body.data.consignee).toBe('Case Match');
+    });
+  });
+
+  describe('scanner route access and client-safe shipment detail', () => {
+    it('blocks client accounts from staff shipment routes', async () => {
+      const awb = `SCAN_TEST_PORTAL_LOCK_${Date.now()}`;
+      const shipment = await prisma.shipment.create({
+        data: {
+          awb,
+          date: '2026-04-21',
+          clientCode: 'IMPORTCL',
+          consignee: 'Portal Receiver',
+          destination: 'Mumbai',
+          pincode: '400001',
+          weight: 5.2,
+          amount: 999,
+          courier: 'Delhivery',
+          department: 'Operations',
+          service: 'Express',
+          status: 'Booked',
+          remarks: 'Portal lock test',
+        },
+      });
+
+      const blocked = await request(app)
+        .get(`/api/shipments/${shipment.id}`)
+        .set('Authorization', `Bearer ${clientJwtToken}`);
+
+      expect(blocked.status).toBe(403);
+      expect(blocked.body.success).toBe(false);
+
+      const allowed = await request(app)
+        .get(`/api/portal/shipments/${shipment.id}`)
+        .set('Authorization', `Bearer ${clientJwtToken}`);
+
+      expect(allowed.status).toBe(200);
+      expect(allowed.body.success).toBe(true);
+      expect(allowed.body.data.awb).toBe(awb);
+      expect(allowed.body.data.amount).toBeUndefined();
+      expect(allowed.body.data.weight).toBeUndefined();
+      expect(Array.isArray(allowed.body.data.trackingEvents)).toBe(true);
     });
   });
 });

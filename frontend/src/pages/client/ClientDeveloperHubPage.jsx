@@ -73,20 +73,22 @@ export default function ClientDeveloperHubPage({ toast }) {
 
   const loadLogsAndDiagnostics = async (nextProvider = provider, keyId = operationKeyId) => {
     try {
-      const [l, d, ev, dlq] = await Promise.all([
+      const results = await Promise.allSettled([
         api.get(`/portal/developer/integrations/logs?provider=${encodeURIComponent(nextProvider)}&limit=25${keyId ? `&keyId=${encodeURIComponent(keyId)}` : ''}`),
         api.get('/portal/developer/integrations/diagnostics'),
         api.get(`/portal/developer/integrations/events?limit=80${keyId ? `&keyId=${encodeURIComponent(keyId)}` : ''}`),
         api.get(`/portal/developer/integrations/dead-letters?limit=40${keyId ? `&keyId=${encodeURIComponent(keyId)}` : ''}`),
+        api.get(`/portal/developer/integrations/pull-runs?provider=${encodeURIComponent(nextProvider)}&limit=20${keyId ? `&keyId=${encodeURIComponent(keyId)}` : ''}`)
       ]);
-      const pr = await api.get(`/portal/developer/integrations/pull-runs?provider=${encodeURIComponent(nextProvider)}&limit=20${keyId ? `&keyId=${encodeURIComponent(keyId)}` : ''}`);
-      setLogs(l.data || []);
-      setDiagnostics(d.data || null);
-      setEventInspector(ev.data || []);
-      setDeadLetters(dlq.data || []);
-      setPullRuns(pr.data || { summary: null, rows: [] });
+      const [l, d, ev, dlq, pr] = results;
+      setLogs(l.status === 'fulfilled' ? l.value.data || [] : []);
+      setDiagnostics(d.status === 'fulfilled' ? d.value.data || null : null);
+      setEventInspector(ev.status === 'fulfilled' ? ev.value.data || [] : []);
+      setDeadLetters(dlq.status === 'fulfilled' ? dlq.value.data || [] : []);
+      setPullRuns(pr.status === 'fulfilled' ? (pr.value.data || { summary: null, rows: [] }) : { summary: null, rows: [] });
     } catch (err) {
-      toast?.(err.message || 'Failed to load integration diagnostics', 'error');
+      // Promise.allSettled will rarely throw, but catch unexpected errors silently.
+      console.warn('Diagnostics degrade: ', err);
     }
   };
 

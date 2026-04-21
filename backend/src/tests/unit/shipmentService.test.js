@@ -108,6 +108,14 @@ describe('shipment.service', () => {
       const result = await shipmentService.update(1, { consignee: 'john', destination: 'delhi' }, 1);
       expect(result.consignee).toBe('JOHN');
     });
+
+    it('normalizes AWB casing on update', async () => {
+      mockPrisma.shipment.update.mockResolvedValue({ id: 1, awb: 'SCANABC123', client: {} });
+      await shipmentService.update(1, { awb: 'scanabc123' }, 1);
+      expect(mockPrisma.shipment.update).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ awb: 'SCANABC123' }),
+      }));
+    });
   });
 
   // ── remove ──────────────────────────────────────────────────────
@@ -259,6 +267,66 @@ describe('shipment.service', () => {
           courier: 'DTDC',
           updatedById: 8,
           date: '2026-04-18',
+        }),
+      }));
+    });
+
+    it('fills placeholder fields without overwriting meaningful existing data in capture mode', async () => {
+      vi.spyOn(dtdcService.default, 'getTracking').mockResolvedValue(null);
+      mockPrisma.shipment.findUnique.mockResolvedValue({
+        id: 12,
+        awb: 'Z66077873',
+        clientCode: 'IMPORTCL',
+        consignee: 'UNKNOWN',
+        destination: 'UNKNOWN',
+        phone: null,
+        pincode: null,
+        weight: 0.5,
+        amount: 0,
+        courier: 'DTDC',
+        status: 'Booked',
+        remarks: 'SCAN_CAPTURED: Intake awaiting tracking sync',
+        client: null,
+      });
+      mockPrisma.shipment.update.mockResolvedValue({
+        id: 12,
+        awb: 'Z66077873',
+        clientCode: 'IMPORTCL',
+        consignee: 'REAL PERSON',
+        destination: 'DELHI',
+        phone: '9999999999',
+        pincode: '110001',
+        weight: 2.6,
+        amount: 180,
+        courier: 'DTDC',
+        status: 'Booked',
+        remarks: 'SCAN_CAPTURED: Intake awaiting tracking sync',
+        client: null,
+      });
+
+      await shipmentService.scanAwbAndUpdate('z66077873', 8, 'DTDC', {
+        captureOnly: true,
+        source: 'scanner',
+        ocrHints: {
+          clientCode: 'IMPORTCL',
+          consignee: 'Real Person',
+          destination: 'Delhi',
+          phone: '9999999999',
+          pincode: '110001',
+          weight: 2.6,
+          amount: 180,
+        },
+      });
+
+      expect(mockPrisma.shipment.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { awb: 'Z66077873' },
+        data: expect.objectContaining({
+          consignee: 'REAL PERSON',
+          destination: 'DELHI',
+          phone: '9999999999',
+          pincode: '110001',
+          weight: 2.6,
+          amount: 180,
         }),
       }));
     });

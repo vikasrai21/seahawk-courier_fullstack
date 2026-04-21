@@ -10,6 +10,7 @@ import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
 import ShipmentForm from '../components/ShipmentForm';
 import { useAuth } from '../context/AuthContext';
+import { useSocket } from '../context/SocketContext';
 import { EmptyState } from '../components/ui/EmptyState';
 import { useDebounce } from '../hooks/useDebounce';
 import { useDataStore } from '../stores/dataStore';
@@ -44,6 +45,7 @@ export default function ShipmentDashboardPage({ toast }) {
   const setStoreShipments = useDataStore((state) => state.setShipments);
   const invalidateShipments = useDataStore((state) => state.invalidateShipments);
   const searchRef = useRef();
+  const { socket } = useSocket();
 
   const canEdit   = isAdmin || hasRole('OPS_MANAGER') || hasRole('STAFF');
   const canDelete = isAdmin;
@@ -75,6 +77,16 @@ export default function ShipmentDashboardPage({ toast }) {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetchClients({ limit: 200 }).catch(() => {}); }, [fetchClients]);
+  useEffect(() => {
+    if (!socket) return undefined;
+    const refresh = () => load();
+    socket.on('shipment:created', refresh);
+    socket.on('shipment:status-updated', refresh);
+    return () => {
+      socket.off('shipment:created', refresh);
+      socket.off('shipment:status-updated', refresh);
+    };
+  }, [socket, load]);
 
   const setFilter = (k, v) => { setFilters(f => ({ ...f, [k]: v })); setPage(1); };
   const hasFilters = Object.values(filters).some(Boolean);

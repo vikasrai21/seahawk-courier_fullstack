@@ -25,6 +25,7 @@ const actorFromReq = (req) => ({
 
 router.get('/stats', protect, clientOnly, asyncHandler(portalStats.stats));
 router.get('/shipments', protect, clientOnly, asyncHandler(portalStats.shipments));
+router.get('/shipments/:id', protect, clientOnly, asyncHandler(portalStats.shipmentDetail));
 router.get('/performance', protect, clientOnly, asyncHandler(portalStats.performance));
 router.get('/intelligence', protect, clientOnly, asyncHandler(portalIntel.intelligence));
 router.post('/assistant', protect, clientOnly, asyncHandler(portalAssistant.assistant));

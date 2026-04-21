@@ -10,6 +10,7 @@ const config = require('../config');
 const importJsonParser = express.json({ limit: config.bodyLimits.importJson });
 
 router.use(protect); // All shipment routes require auth
+router.use(requireOwnerOrRole('ADMIN', 'OPS_MANAGER', 'STAFF'));
 
 router.get('/',               ctrl.getAll);
 router.get('/import-ledger',  ownerOnly, ctrl.getImportLedger);

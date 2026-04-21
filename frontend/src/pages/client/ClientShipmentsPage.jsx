@@ -13,6 +13,7 @@ import { StatusBadge } from '../../components/ui/StatusBadge';
 import { PageLoader } from '../../components/ui/Loading';
 import { useDebounce } from '../../hooks/useDebounce';
 import TimelineModal from '../../components/shipments/TimelineModal';
+import { useSocket } from '../../context/SocketContext';
 
 export default function ClientShipmentsPage({ toast }) {
   const navigate = useNavigate();
@@ -25,6 +26,7 @@ export default function ClientShipmentsPage({ toast }) {
   const [status, setStatus] = useState(searchParams.get('status') || '');
   const [selectedShipment, setSelectedShipment] = useState(null);
   const dSearch = useDebounce(search, 300);
+  const { socket } = useSocket();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -47,6 +49,16 @@ export default function ClientShipmentsPage({ toast }) {
   }, [page, dSearch, status, toast]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!socket) return undefined;
+    const refresh = () => load();
+    socket.on('shipment:created', refresh);
+    socket.on('shipment:status-updated', refresh);
+    return () => {
+      socket.off('shipment:created', refresh);
+      socket.off('shipment:status-updated', refresh);
+    };
+  }, [socket, load]);
 
   if (loading && !rows.length) return <PageLoader />;
 

@@ -185,7 +185,6 @@ async function shipments(req, res) {
         consignee: true,
         destination: true,
         pincode: true,
-        weight: true,
         courier: true,
         service: true,
         status: true,
@@ -195,6 +194,42 @@ async function shipments(req, res) {
   ]);
 
   R.ok(res, { shipments: shipmentsList, pagination: { total, page: safePage, limit: safeLimit }, range: { from: startStr, to: endStr } });
+}
+
+async function shipmentDetail(req, res) {
+  const clientCode = await resolveClientCode(req);
+  if (!clientCode) return R.notFound(res, 'Client profile not found.');
+
+  const shipmentId = Math.max(1, parseInt(req.params.id, 10) || 0);
+  const shipment = await prisma.shipment.findFirst({
+    where: { id: shipmentId, clientCode },
+    select: {
+      id: true,
+      date: true,
+      awb: true,
+      consignee: true,
+      destination: true,
+      pincode: true,
+      courier: true,
+      service: true,
+      status: true,
+      trackingEvents: {
+        orderBy: { timestamp: 'desc' },
+        take: 20,
+        select: {
+          id: true,
+          status: true,
+          location: true,
+          description: true,
+          timestamp: true,
+          rawData: true,
+        },
+      },
+    },
+  });
+
+  if (!shipment) return R.notFound(res, 'Shipment not found.');
+  R.ok(res, shipment);
 }
 
 async function performance(req, res) {
@@ -326,4 +361,4 @@ async function syncTracking(req, res) {
   });
 }
 
-module.exports = { stats, shipments, performance, bulkTrack, syncTracking };
+module.exports = { stats, shipments, shipmentDetail, performance, bulkTrack, syncTracking };

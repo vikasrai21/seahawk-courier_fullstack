@@ -21,6 +21,7 @@ const { detectCourier } = require('../utils/awbDetect');
 
 const TRACKABLE_COURIERS = new Set(['Delhivery', 'Trackon', 'DTDC', 'BlueDart', 'FedEx', 'DHL']);
 const TERMINAL_STATUSES = new Set(['Delivered', 'RTO', 'Cancelled']);
+const PLACEHOLDER_TEXT = new Set(['', 'UNKNOWN', 'MISC', 'NA', 'N/A', 'NULL']);
 
 const clearCache = () => {
   if (redis?.status === 'ready') {
@@ -149,6 +150,7 @@ async function create(data, userId) {
 
     const payload = {
       ...data,
+      awb: normalizeAwb(data.awb),
       date: data.date || today,
       consignee: (data.consignee || '').toUpperCase(),
       destination: (data.destination || '').toUpperCase(),
@@ -205,10 +207,12 @@ async function create(data, userId) {
 
 async function update(id, data, userId) {
   const u = { ...data, updatedById: userId };
+  if (data.awb)          u.awb          = normalizeAwb(data.awb);
   if (data.consignee)   u.consignee   = data.consignee.toUpperCase();
   if (data.destination) u.destination = data.destination.toUpperCase();
   const updated = await prisma.shipment.update({ where: { id: parseInt(id) }, data: u, include: { client: { select: { company: true } } } });
   clearCache();
+  emitShipmentStatusUpdated(updated);
   return updated;
 }
 
@@ -281,7 +285,7 @@ async function bulkImport(shipments, userId) {
   for (let index = 0; index < shipments.length; index++) {
     const s = shipments[index];
     if (!s.awb || String(s.awb).trim() === '') { errors.push({ awb: '(empty)', error: 'No AWB' }); continue; }
-    const awb = String(s.awb).trim();
+    const awb = normalizeAwb(s.awb);
     try {
       const clientCode = (s.clientCode || 'MISC').toUpperCase();
       const amount = parseFloat(s.amount) || 0;
@@ -431,6 +435,32 @@ function autoDetectCourier(awbStr) {
   return 'Delhivery';
 }
 
+function normalizeAwb(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function hasMeaningfulText(value) {
+  const text = String(value || '').trim();
+  return Boolean(text) && !PLACEHOLDER_TEXT.has(text.toUpperCase());
+}
+
+function hasMeaningfulNumber(value) {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0;
+}
+
+function shouldReplaceText(currentValue, nextValue) {
+  if (!hasMeaningfulText(nextValue)) return false;
+  return !hasMeaningfulText(currentValue);
+}
+
+function shouldReplaceNumber(currentValue, nextValue, { allowPlaceholderWeight = false } = {}) {
+  if (!hasMeaningfulNumber(nextValue)) return false;
+  if (!hasMeaningfulNumber(currentValue)) return true;
+  if (allowPlaceholderWeight && Number(currentValue) <= 0.5) return true;
+  return false;
+}
+
 function extractPincode(value) {
   const match = String(value || '').match(/\b\d{6}\b/);
   return match ? match[0] : '';
@@ -491,7 +521,7 @@ function buildOcrPatch(ocrHints = null) {
 
 function buildCapturedShipmentPayload(awb, courier, userId, source, overrideDate = null) {
   return {
-    awb,
+    awb: normalizeAwb(awb),
     date: overrideDate || new Date().toISOString().split('T')[0],
     clientCode: 'MISC',
     consignee: 'UNKNOWN',
@@ -511,23 +541,37 @@ function buildCapturedShipmentPayload(awb, courier, userId, source, overrideDate
 }
 
 async function createOrReuseCapturedShipment(awb, userId, courier, source = 'scanner', ocrHints = null, overrideDate = null) {
+  const normalizedAwb = normalizeAwb(awb);
   const ocrPatch = buildOcrPatch(ocrHints);
   const existingShipment = await prisma.shipment.findUnique({
-    where: { awb },
+    where: { awb: normalizedAwb },
     include: { client: { select: { company: true } } },
   });
 
   if (existingShipment) {
-    const updatedRemarks = existingShipment.remarks || ocrPatch.remarks || 'SCAN_CAPTURED: Intake awaiting tracking sync';
+    const updateData = {
+      ...(overrideDate ? { date: overrideDate } : {}),
+      courier,
+      updatedById: userId,
+    };
+
+    if (shouldReplaceText(existingShipment.clientCode, ocrPatch.clientCode) && ocrPatch.clientCode?.toUpperCase() !== 'MISC') {
+      updateData.clientCode = ocrPatch.clientCode.toUpperCase();
+    }
+    if (shouldReplaceText(existingShipment.consignee, ocrPatch.consignee)) updateData.consignee = ocrPatch.consignee.toUpperCase();
+    if (shouldReplaceText(existingShipment.destination, ocrPatch.destination)) updateData.destination = ocrPatch.destination.toUpperCase();
+    if (shouldReplaceText(existingShipment.phone, ocrPatch.phone)) updateData.phone = ocrPatch.phone;
+    if (shouldReplaceText(existingShipment.pincode, ocrPatch.pincode)) updateData.pincode = ocrPatch.pincode;
+    if (shouldReplaceNumber(existingShipment.weight, ocrPatch.weight, { allowPlaceholderWeight: true })) updateData.weight = ocrPatch.weight;
+    if (shouldReplaceNumber(existingShipment.amount, ocrPatch.amount)) updateData.amount = ocrPatch.amount;
+
+    const existingRemarks = String(existingShipment.remarks || '').trim();
+    const incomingRemarks = String(ocrPatch.remarks || '').trim();
+    updateData.remarks = existingRemarks || incomingRemarks || 'SCAN_CAPTURED: Intake awaiting tracking sync';
+
     const updatedShipment = await prisma.shipment.update({
-      where: { awb },
-      data: {
-        ...(overrideDate ? { date: overrideDate } : {}),
-        courier,
-        updatedById: userId,
-        ...ocrPatch,
-        remarks: updatedRemarks,
-      },
+      where: { awb: normalizedAwb },
+      data: updateData,
       include: { client: { select: { company: true } } },
     });
 
@@ -542,9 +586,9 @@ async function createOrReuseCapturedShipment(awb, userId, courier, source = 'sca
 
   const createdShipment = await prisma.shipment.create({
     data: {
-      ...buildCapturedShipmentPayload(awb, courier, userId, source, overrideDate),
+      ...buildCapturedShipmentPayload(normalizedAwb, courier, userId, source, overrideDate),
       ...ocrPatch,
-      remarks: ocrPatch.remarks || buildCapturedShipmentPayload(awb, courier, userId, source, overrideDate).remarks,
+      remarks: ocrPatch.remarks || buildCapturedShipmentPayload(normalizedAwb, courier, userId, source, overrideDate).remarks,
     },
     include: { client: { select: { company: true } } },
   });
@@ -594,6 +638,7 @@ async function attachClientSuggestion(savedShipment, ocrHints = null, sessionCon
 
 async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}) {
   const { captureOnly = false, source = 'scanner', ocrHints = null, forceLiveTrackingInCapture = false, overrideDate = null, sessionContext = null } = options;
+  awb = normalizeAwb(awb);
   if (!courier || courier === 'AUTO') {
     courier = autoDetectCourier(awb);
   }
@@ -661,12 +706,14 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
   if (trackingData.destination) updateData.destination = trackingData.destination.toUpperCase();
   if (trackingData.status && trackingData.status !== 'Booked') updateData.status = normalizeStatus(trackingData.status);
   updateData.courier = courier;
-  if (ocrPatch.clientCode && (!shipment || shipment.clientCode === 'MISC')) updateData.clientCode = ocrPatch.clientCode;
-  if (ocrPatch.phone && (!shipment || !shipment.phone)) updateData.phone = ocrPatch.phone;
+  if (ocrPatch.clientCode && (!shipment || shouldReplaceText(shipment.clientCode, ocrPatch.clientCode))) updateData.clientCode = ocrPatch.clientCode;
+  if (ocrPatch.consignee && (!shipment || shouldReplaceText(shipment.consignee, ocrPatch.consignee))) updateData.consignee = ocrPatch.consignee.toUpperCase();
+  if (ocrPatch.destination && (!shipment || shouldReplaceText(shipment.destination, ocrPatch.destination))) updateData.destination = ocrPatch.destination.toUpperCase();
+  if (ocrPatch.phone && (!shipment || shouldReplaceText(shipment.phone, ocrPatch.phone))) updateData.phone = ocrPatch.phone;
   if (effectiveDate) updateData.date = effectiveDate;
-  if (ocrPatch.pincode) updateData.pincode = ocrPatch.pincode;
-  if (ocrPatch.weight && (!shipment || !shipment.weight || shipment.weight <= 0.5)) updateData.weight = ocrPatch.weight;
-  if (ocrPatch.amount && (!shipment || !shipment.amount)) updateData.amount = ocrPatch.amount;
+  if (ocrPatch.pincode && (!shipment || shouldReplaceText(shipment.pincode, ocrPatch.pincode))) updateData.pincode = ocrPatch.pincode;
+  if (ocrPatch.weight && (!shipment || shouldReplaceNumber(shipment.weight, ocrPatch.weight, { allowPlaceholderWeight: true }))) updateData.weight = ocrPatch.weight;
+  if (ocrPatch.amount && (!shipment || shouldReplaceNumber(shipment.amount, ocrPatch.amount))) updateData.amount = ocrPatch.amount;
   if (ocrPatch.remarks) updateData.remarks = shipment?.remarks ? `${shipment.remarks} | ${ocrPatch.remarks}` : ocrPatch.remarks;
 
   let savedShipment;

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import { tokenManager } from '../services/api';
+import { refreshSession } from '../services/session';
 
 const SocketContext = createContext({ socket: null, connected: false });
 
@@ -20,18 +21,36 @@ export function SocketProvider({ children }) {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const token = tokenManager.get();
-    if (!user || !token) return undefined;
+    if (!user) return undefined;
+
+    const getAuthPayload = () => ({ token: tokenManager.get() });
+    if (!getAuthPayload().token) return undefined;
 
     const instance = io(resolveSocketUrl(), {
-      auth: { token },
+      autoConnect: false,
+      auth: getAuthPayload,
       withCredentials: true,
     });
 
     instance.on('connect', () => setConnected(true));
     instance.on('disconnect', () => setConnected(false));
+    instance.io.on('reconnect_attempt', () => {
+      instance.auth = getAuthPayload;
+    });
+    instance.on('connect_error', async (err) => {
+      const message = String(err?.message || '').toLowerCase();
+      if (!message.includes('unauthorized')) return;
+      try {
+        await refreshSession();
+        instance.auth = getAuthPayload;
+        if (!instance.connected) instance.connect();
+      } catch {
+        setConnected(false);
+      }
+    });
 
     setSocket(instance);
+    instance.connect();
 
     return () => {
       instance.close();

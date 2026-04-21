@@ -397,6 +397,7 @@ export default function ScanAWBPage({ toast }) {
       pincode: normalized.pincode,
       weight: normalized.weight,
       amount: normalized.amount,
+      date: String(approval?.fields?.date || fallbackScan?.shipment?.date || '').trim() || undefined,
       remarks: nextRemarks,
     });
 
