@@ -8,6 +8,9 @@ function getOwnerEmails() {
 }
 
 function isOwnerUser(userOrEmail) {
+  if (typeof userOrEmail === 'object' && userOrEmail?.role === 'OWNER') {
+    return true;
+  }
   const email = typeof userOrEmail === 'string'
     ? userOrEmail
     : userOrEmail?.email;

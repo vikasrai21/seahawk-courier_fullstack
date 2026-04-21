@@ -71,7 +71,7 @@ router.get('/agent/history', ownerOnly, async (req, res) => {
 });
 
 // POST /api/ops/agent/teach — manually teach agent a pattern
-router.post('/agent/teach', ownerOnlyMiddleware, async (req, res) => {
+router.post('/agent/teach', ownerOnly, async (req, res) => {
   try {
     const { category, contextKey, decision, metadata } = req.body;
     if (!category || !contextKey || !decision) return R.error(res, 'category, contextKey, and decision are required', 400);

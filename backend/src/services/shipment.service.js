@@ -298,7 +298,7 @@ async function bulkImport(shipments, userId) {
           );
       const finalAmount = amount > 0 ? amount : Number(contractPrice?.total || 0);
       if (contractPrice) autoPriced++;
-      const normalizedStatus = normalizeStatus(String(s.status || 'Booked'));
+      const normalizedStatus = normalizeStatus('Booked');
       const existing = await prisma.shipment.findUnique({ where: { awb } });
 
       let operationalShipment = existing;

@@ -10,6 +10,7 @@ import { PageHeader } from '../components/ui/PageHeader';
 import { useAuth } from '../context/AuthContext';
 
 const ROLE_META = {
+  OWNER: { label: 'Owner', color: '#10b981', bg: 'rgba(16,185,129,0.1)' },
   ADMIN: { label: 'Admin', color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
   OPS_MANAGER: { label: 'Ops Manager', color: '#f97316', bg: 'rgba(249,115,22,0.1)' },
   STAFF: { label: 'Staff', color: '#3b82f6', bg: 'rgba(59,130,246,0.1)' },

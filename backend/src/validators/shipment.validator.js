@@ -53,8 +53,9 @@ const importSchema = z.object({
     amount:      z.coerce.number().optional().default(0),
     courier:     z.union([z.string(), z.number(), z.null(), z.undefined()]).transform(v => String(v || '')).default(''),
     department:  z.union([z.string(), z.number(), z.null(), z.undefined()]).transform(v => String(v || '')).default(''),
-    service:     optStr.default('Standard'),
-    status:      optStr.default('Booked'),
+    service:     z.union([z.string(), z.number(), z.null(), z.undefined()]).transform(v => String(v || 'Standard')),
+    // Status from Excel is intentionally ignored; import always starts as Booked.
+    status:      z.union([z.string(), z.number(), z.null(), z.undefined()]).transform(() => ''),
     remarks:     z.union([z.string(), z.number(), z.null(), z.undefined()]).transform(v => String(v || '')).default(''),
   })).min(1, 'No shipments provided'),
 });

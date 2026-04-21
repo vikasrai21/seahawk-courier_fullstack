@@ -267,7 +267,7 @@ export default function ImportPage({ toast }) {
     if (!mappedRows.length) return;
     setLoading(true);
     try {
-      const shipments = mappedRows.map(({ _dateCorrected, ...row }) => row);
+      const shipments = mappedRows.map(({ _dateCorrected, status: _ignoredStatus, ...row }) => row);
       const res = await api.post('/shipments/import', { shipments }, { timeout: 600_000 });
       setResult(res.data);
       toast?.(`Imported ${res.data.imported} rows. Tracking sync started for ${res.data.trackingQueued || 0} shipments.`, 'success');
@@ -298,7 +298,7 @@ export default function ImportPage({ toast }) {
         <Info className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
         <div className="text-sm text-blue-800">
           <p className="font-semibold mb-1">Your Excel columns are auto-detected.</p>
-          <p className="text-xs text-blue-600">Works with any column names — Date, AWB No, Docket No, Consignee, DEST, WT, AMOU, Couriers, etc. If amount is blank or zero, the system now auto-prices it from the active client contract during import.</p>
+          <p className="text-xs text-blue-600">Works with any column names — Date, AWB No, Docket No, Consignee, DEST, WT, AMOU, Couriers, etc. If amount is blank or zero, the system now auto-prices it from the active client contract during import. Status values in Excel are ignored; imports always start as Booked and then update from courier tracking.</p>
         </div>
       </div>
 

@@ -27,7 +27,7 @@ async function ensureStartupOwner() {
   const existing = await prisma.user.findUnique({ where: { email } });
 
   if (existing) {
-    const needsUpdate = existing.role !== 'ADMIN' || existing.active !== true || existing.name !== name || (existing.branch || '') !== branch;
+    const needsUpdate = existing.role !== 'OWNER' || existing.active !== true || existing.name !== name || (existing.branch || '') !== branch;
     if (!needsUpdate) {
       return { skipped: true, reason: 'owner already present', email };
     }
@@ -35,7 +35,7 @@ async function ensureStartupOwner() {
     await prisma.user.update({
       where: { email },
       data: {
-        role: 'ADMIN',
+        role: 'OWNER',
         active: true,
         name,
         branch,
@@ -58,7 +58,7 @@ async function ensureStartupOwner() {
       name,
       email,
       password: hashed,
-      role: 'ADMIN',
+      role: 'OWNER',
       branch,
       active: true,
       mustChangePassword: false,
