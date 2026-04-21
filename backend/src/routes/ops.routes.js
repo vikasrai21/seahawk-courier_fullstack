@@ -5,7 +5,7 @@
 const router = require('express').Router();
 const prisma  = require('../config/prisma');
 const R       = require('../utils/response');
-const { protect, requireRole } = require('../middleware/auth.middleware');
+const { protect, requireRole, ownerOnly } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validate.middleware');
 const stateMachine = require('../services/stateMachine');
 const walletSvc = require('../services/wallet.service');
@@ -21,14 +21,9 @@ const ownerAgent = require('../services/ownerAgent.service');
 router.use(protect);
 
 // ── Owner-Only Agent Routes (HawkAI) ─────────────────────────────────────
-function ownerOnlyMiddleware(req, res, next) {
-  if (!req.user) return R.unauthorized(res);
-  if (!req.user.isOwner) return R.forbidden(res, 'Owner access required for HawkAI Agent.');
-  next();
-}
 
 // POST /api/ops/agent/chat — HawkAI enterprise agent chat
-router.post('/agent/chat', ownerOnlyMiddleware, async (req, res) => {
+router.post('/agent/chat', ownerOnly, async (req, res) => {
   try {
     const { message, history = [] } = req.body;
     if (!message?.trim()) return R.error(res, 'message is required', 400);
@@ -42,7 +37,7 @@ router.post('/agent/chat', ownerOnlyMiddleware, async (req, res) => {
 });
 
 // POST /api/ops/agent/execute — execute a confirmed agent action
-router.post('/agent/execute', ownerOnlyMiddleware, async (req, res) => {
+router.post('/agent/execute', ownerOnly, async (req, res) => {
   try {
     const { action, params } = req.body;
     if (!action) return R.error(res, 'action is required', 400);
@@ -55,7 +50,7 @@ router.post('/agent/execute', ownerOnlyMiddleware, async (req, res) => {
 });
 
 // GET /api/ops/agent/memory — view agent's learned patterns
-router.get('/agent/memory', ownerOnlyMiddleware, async (req, res) => {
+router.get('/agent/memory', ownerOnly, async (req, res) => {
   try {
     const summary = await ownerAgent.getMemorySummary();
     R.ok(res, summary);
@@ -64,8 +59,8 @@ router.get('/agent/memory', ownerOnlyMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/ops/agent/history — view action history
-router.get('/agent/history', ownerOnlyMiddleware, async (req, res) => {
+// GET /api/ops/agent/history — view agent's action history
+router.get('/agent/history', ownerOnly, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 30;
     const history = await ownerAgent.getActionHistory(limit);
