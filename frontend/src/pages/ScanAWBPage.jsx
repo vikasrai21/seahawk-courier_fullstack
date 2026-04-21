@@ -423,7 +423,11 @@ export default function ScanAWBPage({ toast }) {
       }
 
       socket.connect();
-      await new Promise((resolve) => window.setTimeout(resolve, 1200));
+      // wait up to 5000ms for connection
+      for (let i = 0; i < 20; i++) {
+        if (socket.connected) break;
+        await new Promise((resolve) => window.setTimeout(resolve, 250));
+      }
     }
 
     if (!socket.connected) {
