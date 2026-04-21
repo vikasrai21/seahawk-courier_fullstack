@@ -3,10 +3,12 @@
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { GoogleGenerativeAI, SchemaType } = require('@google/generative-ai');
+const axios = require('axios');
 const logger = require('../utils/logger');
 const { detectCourier } = require('../utils/awbDetect');
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GOOGLE_VISION_API_KEY = process.env.GOOGLE_VISION_API_KEY;
 let genAI;
 if (GEMINI_API_KEY) genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 // Gemini resilience state
@@ -609,7 +611,32 @@ async function extractWithLocal(base64Data, mimeType, options = {}) {
   return enhanced;
 }
 
-function buildPrompt(knownAwb = '', contextData = {}) {
+async function callGoogleVisionAPI(base64Data) {
+  if (!GOOGLE_VISION_API_KEY) return null;
+  const startedAt = Date.now();
+  try {
+    const response = await axios.post(
+      `https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_API_KEY}`,
+      {
+        requests: [
+          {
+            image: { content: base64Data },
+            features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+          },
+        ],
+      }
+    );
+    const textAnnotations = response.data?.responses?.[0]?.textAnnotations;
+    const visionText = textAnnotations && textAnnotations.length > 0 ? textAnnotations[0].description : '';
+    logger.info(`[OCR GoogleVision] Extracted ${visionText.length} chars in ${Date.now() - startedAt}ms`);
+    return visionText;
+  } catch (error) {
+    logger.error(`[OCR GoogleVision] Failed: ${error.message}`);
+    return null;
+  }
+}
+
+function buildPrompt(knownAwb = '', contextData = {}, visionText = '') {
   const { clients = [], corrections = [], sessionContext = {} } = contextData;
 
   const clientList = clients.length
@@ -624,9 +651,13 @@ function buildPrompt(knownAwb = '', contextData = {}) {
     ? `Most recent scans in this session were for client: ${sessionContext.recentClient}.`
     : 'No recent client context.';
 
+  const visionHint = visionText 
+    ? `\n## PRECISE OCR TEXT EXTRACTED BY HIGH-PERFORMANCE ENGINE:\nHere is the highly accurate text extracted from the label. Rely HEAVILY on this text for extraction.\n\n"""\n${visionText}\n"""\n`
+    : '';
+
   return `You are an expert courier label OCR system for Seahawk Courier & Cargo, India.
 You MUST extract EVERY field from this shipment label, including HANDWRITTEN text.
-
+${visionHint}
 Known AWB: ${knownAwb || 'UNKNOWN'}.
 Never invent a different AWB when known AWB is provided.
 
@@ -728,7 +759,7 @@ function isRateLimitError(msg) {
 /**
  * Try a single Gemini model. Returns the extraction result or throws.
  */
-async function tryGeminiModel(modelName, normalizedBase64, mimeType, knownAwb, contextData) {
+async function tryGeminiModel(modelName, normalizedBase64, mimeType, knownAwb, contextData, visionText = null) {
   const model = genAI.getGenerativeModel({
     model: modelName,
     generationConfig: {
@@ -739,7 +770,7 @@ async function tryGeminiModel(modelName, normalizedBase64, mimeType, knownAwb, c
 
   const startedAt = Date.now();
   const result = await model.generateContent([
-    buildPrompt(knownAwb, contextData),
+    buildPrompt(knownAwb, contextData, visionText),
     { inlineData: { data: normalizedBase64, mimeType: mimeType || 'image/jpeg' } },
   ]);
 
@@ -805,12 +836,18 @@ async function extractWithGemini(base64Data, mimeType, options = {}) {
     }
   }
 
+  // Pre-process with Google Vision API if configured (Dual-Engine Approach)
+  let visionText = null;
+  if (GOOGLE_VISION_API_KEY) {
+    visionText = await callGoogleVisionAPI(normalizedBase64);
+  }
+
   let lastError = null;
   for (const modelName of modelsToTry) {
     // Retry up to 2 times per model (for transient 500/503 errors)
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        return await tryGeminiModel(modelName, normalizedBase64, mimeType, knownAwb, contextData);
+        return await tryGeminiModel(modelName, normalizedBase64, mimeType, knownAwb, contextData, visionText);
       } catch (err) {
         const msg = String(err.message || '');
         lastError = err;

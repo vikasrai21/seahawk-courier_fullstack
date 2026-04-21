@@ -228,138 +228,80 @@ async function getSnapshot() {
   return { activeShipments, pendingNDRs, todayBookings, todayRevenue, negativeWallets, todayShipments };
 }
 
-// ── Intent Detection ────────────────────────────────────────────────────────
+const nlp = require('../utils/agentNlp');
+nlp.initNlp().catch(err => logger.error(`[HawkAI] Failed to init NLP: ${err.message}`));
 
-function detectIntent(message, history = []) {
-  const raw = String(message || '').trim();
-  const msg = raw.toLowerCase();
-  const awb = extractAwb(raw);
-  const date = extractDate(msg);
-  const clientCode = extractClientCode(raw);
-  const courier = extractCourier(msg);
-  const weight = extractWeight(msg);
-  const destination = extractDestination(raw);
+// ── Intent Detection (NLP Based) ────────────────────────────────────────────
 
-  // Create / Enter shipment (including backlog)
-  if (includesAny(msg, ['create shipment', 'enter shipment', 'add shipment', 'book shipment', 'new shipment', 'enter entry', 'add entry', 'new entry'])) {
-    const isBacklog = date && date !== new Date().toISOString().slice(0, 10);
-    return {
-      type: isBacklog ? ACTION_TYPES.BACKLOG_ENTRY : ACTION_TYPES.CREATE_SHIPMENT,
-      confidence: 0.85,
-      params: { date, clientCode, awb, courier, weight, destination },
-      requiresConfirmation: true,
-    };
+async function detectIntent(message, history = []) {
+  const nlpResult = await nlp.processMessage(message);
+  
+  if (!nlpResult.intent || nlpResult.intent === 'None') return null;
+
+  // Extract entities from NLP or fallback to history memory
+  let { date, clientCode, awb, courier, weight, destination, dateRelative } = nlpResult.entities;
+  
+  // Basic Context/Memory matching (if entity is missing, check recent history)
+  if (!awb && history.length > 0) {
+     const lastMsg = history[history.length - 1]?.content || '';
+     const match = String(lastMsg).toUpperCase().match(/[A-Z0-9]{6,16}/);
+     if (match) awb = match[0];
   }
 
-  // Backlog entry
-  if (includesAny(msg, ['backlog', 'backdated', 'back-dated', 'past date entry', 'enter for'])) {
-    return {
-      type: ACTION_TYPES.BACKLOG_ENTRY,
-      confidence: 0.85,
-      params: { date, clientCode, awb, courier, weight, destination },
-      requiresConfirmation: true,
-    };
+  // Resolve relative dates
+  if (dateRelative && !date) {
+     const d = new Date();
+     if (dateRelative === 'yesterday') d.setDate(d.getDate() - 1);
+     if (dateRelative === 'tomorrow') d.setDate(d.getDate() + 1);
+     date = d.toISOString().slice(0, 10);
   }
 
-  // Invoice
-  if (includesAny(msg, ['generate invoice', 'create invoice', 'make invoice', 'send invoice', 'bill client'])) {
-    return {
-      type: ACTION_TYPES.GENERATE_INVOICE,
-      confidence: 0.80,
-      params: { clientCode, dateFrom: extractField(msg, 'from'), dateTo: extractField(msg, 'to') },
-      requiresConfirmation: true,
-    };
-  }
+  const baseParams = { date, clientCode, awb, courier, weight: weight ? parseFloat(weight) : null, destination };
 
-  // Audit bill
-  if (includesAny(msg, ['audit', 'verify bill', 'check bill', 'bill audit', 'reconcile bill'])) {
-    return { type: ACTION_TYPES.AUDIT_BILL, confidence: 0.80, params: { courier }, requiresConfirmation: true };
-  }
+  // Map NLP Intents to ACTION_TYPES
+  switch(nlpResult.intent) {
+    case 'intent.shipment.create':
+      return { type: ACTION_TYPES.CREATE_SHIPMENT, confidence: nlpResult.confidence, params: baseParams, requiresConfirmation: true };
+    
+    case 'intent.shipment.track':
+      return { type: ACTION_TYPES.TRACK_SHIPMENT, confidence: nlpResult.confidence, params: { awb }, requiresConfirmation: false };
 
-  // Send notification
-  if (includesAny(msg, ['send notification', 'notify client', 'send update', 'email client', 'whatsapp client', 'send digest', 'daily digest'])) {
-    return {
-      type: ACTION_TYPES.SEND_NOTIFICATION,
-      confidence: 0.85,
-      params: { clientCode, date, awb },
-      requiresConfirmation: true,
-    };
-  }
+    case 'intent.invoice.generate':
+      return { type: ACTION_TYPES.GENERATE_INVOICE, confidence: nlpResult.confidence, params: { clientCode }, requiresConfirmation: true };
 
-  // Rate query
-  if (includesAny(msg, ['rate for', 'best rate', 'cheapest rate', 'compare rate', 'rate check', 'what rate', 'how much'])) {
-    return {
-      type: ACTION_TYPES.RATE_DECISION,
-      confidence: 0.80,
-      params: { destination, weight, courier },
-      requiresConfirmation: false,
-    };
-  }
+    case 'intent.notification.digest':
+      return { type: ACTION_TYPES.SEND_NOTIFICATION, confidence: nlpResult.confidence, params: { clientCode, date }, requiresConfirmation: true };
+      
+    case 'intent.notification.single':
+      return { type: ACTION_TYPES.SEND_NOTIFICATION, confidence: nlpResult.confidence, params: { awb }, requiresConfirmation: true };
 
-  // NDR actions
-  if (includesAny(msg, ['ndr', 'pending ndr', 'resolve ndr', 'ndr action', 'delivery failed'])) {
-    if (awb) {
-      return { type: ACTION_TYPES.NDR_RESOLVE, confidence: 0.80, params: { awb }, requiresConfirmation: true };
-    }
-    return { type: ACTION_TYPES.PENDING_NDRS, confidence: 0.90, params: {}, requiresConfirmation: false };
-  }
+    case 'intent.report.client_monthly':
+      return { type: ACTION_TYPES.CLIENT_ANALYTICS, confidence: nlpResult.confidence, params: { clientCode }, requiresConfirmation: false };
 
-  // Manage client
-  if (includesAny(msg, ['create client', 'add client', 'new client', 'update client', 'client details'])) {
-    return {
-      type: ACTION_TYPES.MANAGE_CLIENT,
-      confidence: 0.75,
-      params: { clientCode, name: extractField(msg, 'name'), phone: extractField(msg, 'phone') },
-      requiresConfirmation: true,
-    };
-  }
+    case 'intent.report.daily_overview':
+      return { type: ACTION_TYPES.DAILY_REPORT, confidence: nlpResult.confidence, params: { date: date || new Date().toISOString().slice(0, 10) }, requiresConfirmation: false };
 
-  // Reconciliation
-  if (includesAny(msg, ['reconcile', 'reconciliation', 'compare charges'])) {
-    return { type: ACTION_TYPES.RECONCILE, confidence: 0.80, params: { dateFrom: date }, requiresConfirmation: false };
-  }
+    case 'intent.system.wallets':
+      return { type: ACTION_TYPES.WALLET_STATUS, confidence: nlpResult.confidence, params: {}, requiresConfirmation: false };
 
-  // Daily report
-  if (includesAny(msg, ['daily report', 'today report', 'day summary', 'operations report', 'daily summary'])) {
-    return { type: ACTION_TYPES.DAILY_REPORT, confidence: 0.90, params: { date: date || new Date().toISOString().slice(0, 10) }, requiresConfirmation: false };
-  }
+    case 'intent.system.overview':
+      return { type: ACTION_TYPES.SYSTEM_OVERVIEW, confidence: nlpResult.confidence, params: {}, requiresConfirmation: false };
 
-  // Track shipment
-  if (awb && includesAny(msg, ['track', 'status', 'where', 'movement', 'scan'])) {
-    return { type: ACTION_TYPES.TRACK_SHIPMENT, confidence: 0.95, params: { awb }, requiresConfirmation: false };
-  }
+    case 'intent.system.ndrs':
+      return { type: ACTION_TYPES.PENDING_NDRS, confidence: nlpResult.confidence, params: {}, requiresConfirmation: false };
 
-  // Lookup shipment
-  if (awb) {
-    return { type: ACTION_TYPES.LOOKUP_SHIPMENT, confidence: 0.90, params: { awb }, requiresConfirmation: false };
-  }
+    case 'intent.client.manage':
+      return { type: ACTION_TYPES.MANAGE_CLIENT, confidence: nlpResult.confidence, params: { clientCode }, requiresConfirmation: true };
 
-  // Search shipments
-  if (includesAny(msg, ['search', 'find shipment', 'find order', 'look up'])) {
-    return { type: ACTION_TYPES.SEARCH_SHIPMENTS, confidence: 0.75, params: { query: msg }, requiresConfirmation: false };
-  }
+    case 'intent.audit.reconcile':
+      return { type: ACTION_TYPES.RECONCILE, confidence: nlpResult.confidence, params: { dateFrom: date }, requiresConfirmation: false };
 
-  // Wallet status
-  if (includesAny(msg, ['wallet', 'balance', 'negative wallet', 'wallet issue'])) {
-    return { type: ACTION_TYPES.WALLET_STATUS, confidence: 0.90, params: {}, requiresConfirmation: false };
-  }
+    case 'intent.audit.bill':
+      return { type: ACTION_TYPES.AUDIT_BILL, confidence: nlpResult.confidence, params: { courier }, requiresConfirmation: true };
 
-  // Courier performance
-  if (includesAny(msg, ['courier performance', 'courier stats', 'which courier', 'courier comparison'])) {
-    return { type: ACTION_TYPES.COURIER_PERFORMANCE, confidence: 0.90, params: {}, requiresConfirmation: false };
+    default:
+      return null;
   }
-
-  // Client analytics
-  if (includesAny(msg, ['client analytics', 'client revenue', 'top client', 'client summary'])) {
-    return { type: ACTION_TYPES.CLIENT_ANALYTICS, confidence: 0.85, params: { clientCode }, requiresConfirmation: false };
-  }
-
-  // System overview (fallback to useful info)
-  if (includesAny(msg, ['overview', 'dashboard', 'summary', 'status', 'how are things', 'what\'s happening'])) {
-    return { type: ACTION_TYPES.SYSTEM_OVERVIEW, confidence: 0.90, params: {}, requiresConfirmation: false };
-  }
-
-  return null;
 }
 
 // ── Action Resolver ─────────────────────────────────────────────────────────
@@ -724,28 +666,340 @@ function buildReply(intent, data, snapshot) {
   }
 }
 
-// ── Main Chat Handler ───────────────────────────────────────────────────────
+// ── Main Chat Handler (Flow-Aware) ──────────────────────────────────────────
 
-async function chat({ message, history = [] }) {
+const flowRegistry     = require('../utils/agentFlows');
+const sessionManager   = require('../utils/agentSession');
+
+// Map NLP intents to Flow IDs
+const INTENT_TO_FLOW = {
+  // Client
+  'intent.client.create':       'CREATE_CLIENT',
+  'intent.client.update':       'UPDATE_CLIENT',
+  'intent.client.deactivate':   'DEACTIVATE_CLIENT',
+  'intent.client.stats':        'CLIENT_STATS',
+  'intent.client.list':         'LIST_CLIENTS',
+  // Shipment
+  'intent.shipment.create':     'CREATE_SHIPMENT',
+  'intent.shipment.track':      'TRACK_SHIPMENT',
+  'intent.shipment.status':     'UPDATE_SHIPMENT_STATUS',
+  'intent.shipment.delete':     'DELETE_SHIPMENT',
+  'intent.shipment.search':     'SEARCH_SHIPMENTS',
+  'intent.shipment.monthly':    'MONTHLY_STATS',
+  // Invoice
+  'intent.invoice.generate':    'GENERATE_INVOICE',
+  'intent.invoice.list':        'LIST_INVOICES',
+  'intent.invoice.paid':        'MARK_INVOICE_PAID',
+  // Wallet
+  'intent.wallet.credit':       'WALLET_CREDIT',
+  'intent.wallet.balance':      'WALLET_BALANCE',
+  'intent.wallet.debit':        'WALLET_DEBIT',
+  'intent.wallet.adjust':       'WALLET_ADJUST',
+  'intent.wallet.history':      'WALLET_HISTORY',
+  'intent.wallet.negative':     'NEGATIVE_WALLETS',
+  // Contracts
+  'intent.contract.create':     'CREATE_CONTRACT',
+  'intent.contract.list':       'LIST_CONTRACTS',
+  'intent.contract.rate':       'CALCULATE_RATE',
+  // Notifications
+  'intent.notification.digest': 'SEND_DAILY_DIGEST',
+  'intent.notification.pod':    'SEND_POD',
+  // NDR
+  'intent.ndr.list':            'LIST_NDRS',
+  'intent.ndr.resolve':         'RESOLVE_NDR',
+  // Returns
+  'intent.return.list':         'LIST_RETURNS',
+  'intent.return.approve':      'APPROVE_RETURN',
+  'intent.return.reject':       'REJECT_RETURN',
+  'intent.return.stats':        'RETURN_STATS',
+  // Drafts
+  'intent.draft.create':        'CREATE_DRAFT',
+  'intent.draft.list':          'LIST_DRAFTS',
+  // Pickups
+  'intent.pickup.create':       'CREATE_PICKUP',
+  'intent.pickup.list':         'LIST_PICKUPS',
+  // Quotes
+  'intent.quote.create':        'CREATE_QUOTE',
+  'intent.quote.list':          'LIST_QUOTES',
+  'intent.quote.stats':         'QUOTE_STATS',
+  // Reconciliation
+  'intent.recon.stats':         'RECON_STATS',
+  'intent.recon.disputes':      'LIST_DISPUTES',
+  // System
+  'intent.system.overview':     'SYSTEM_OVERVIEW',
+  'intent.system.courier_perf': 'COURIER_PERFORMANCE',
+  'intent.report.daily':        'DAILY_REPORT',
+};
+
+// Legacy intents kept only for edge-case backward compat (almost empty now)
+const LEGACY_INTENTS = [
+  'intent.audit.bill',
+];
+
+async function chat({ message, history = [], sessionId = 'default' }) {
   const snapshot = await getSnapshot();
-  const intent = detectIntent(message, history);
-  const log = intent ? await logAction(intent.type, intent.params || {}, intent.confidence) : null;
+  const msg = String(message || '').trim();
+  const lowerMsg = msg.toLowerCase();
 
-  let data = null;
-  if (intent) {
-    data = await resolveAction(intent);
-    if (log) await completeAction(log.id, data, data?.error ? 'FAILED' : 'DONE');
+  // ── Step 0: Handle "cancel" at any time ─────────────────────────────────
+  if (/^(cancel|stop|nevermind|abort|exit)$/i.test(msg)) {
+    sessionManager.clearSession(sessionId);
+    return {
+      reply: '🚫 Cancelled. What else can I do for you?',
+      suggestions: ['Show overview', 'Create client', 'Daily report'],
+      requiresConfirmation: false,
+      snapshot,
+    };
   }
 
-  const response = buildReply(intent, data, snapshot);
+  // ── Step 1: Check for ACTIVE FLOW session ───────────────────────────────
+  const session = sessionManager.getSession(sessionId);
 
+  if (session) {
+    const flow = flowRegistry.getFlow(session.flowId);
+    if (!flow) {
+      sessionManager.clearSession(sessionId);
+    } else {
+      // ── 1a: Awaiting confirmation? ────────────────────────────────────
+      if (session.awaitingConfirmation) {
+        if (/^(yes|confirm|ok|do it|go|sure|yeah|yep|y)$/i.test(msg)) {
+          // EXECUTE!
+          sessionManager.clearSession(sessionId);
+          try {
+            const result = await flow.executor(session.collectedParams);
+            return {
+              reply: result.message,
+              suggestions: ['Show overview', 'Create another'],
+              requiresConfirmation: false,
+              snapshot,
+            };
+          } catch (err) {
+            return {
+              reply: `❌ Execution failed: ${err.message}`,
+              suggestions: ['Try again', 'Show overview'],
+              requiresConfirmation: false,
+              snapshot,
+            };
+          }
+        } else {
+          sessionManager.clearSession(sessionId);
+          return {
+            reply: '🚫 Cancelled.',
+            suggestions: ['Show overview'],
+            requiresConfirmation: false,
+            snapshot,
+          };
+        }
+      }
+
+      // ── 1b: Collecting a field answer ─────────────────────────────────
+      if (session.pendingField) {
+        const allFields = [...flow.requiredFields, ...(flow.optionalFields || [])];
+        const fieldDef = allFields.find(f => f.key === session.pendingField);
+
+        // Handle "skip" for optional fields
+        const isOptional = (flow.optionalFields || []).some(f => f.key === session.pendingField);
+        if (isOptional && /^(skip|no|none|na|n\/a)$/i.test(msg)) {
+          // Skip this optional field — mark as visited with null
+          session.collectedParams[session.pendingField] = null;
+        } else if (fieldDef && fieldDef.validate && !fieldDef.validate(msg)) {
+          // Validation failed — ask again
+          return {
+            reply: `⚠️ That doesn't look right. ${fieldDef.prompt}`,
+            suggestions: isOptional ? ['Skip'] : [],
+            requiresConfirmation: false,
+            snapshot,
+          };
+        } else {
+          // Store the answer
+          session.collectedParams[session.pendingField] = msg;
+        }
+        session.pendingField = null;
+        sessionManager.updateSession(sessionId, session);
+      }
+
+      // ── 1c: Find next missing field ───────────────────────────────────
+      const nextRequired = flow.requiredFields.find(f => !session.collectedParams[f.key]);
+      if (nextRequired) {
+        sessionManager.updateSession(sessionId, { pendingField: nextRequired.key });
+        return {
+          reply: nextRequired.prompt,
+          suggestions: [],
+          requiresConfirmation: false,
+          snapshot,
+        };
+      }
+
+      const nextOptional = (flow.optionalFields || []).find(f => !session.collectedParams.hasOwnProperty(f.key));
+      if (nextOptional) {
+        sessionManager.updateSession(sessionId, { pendingField: nextOptional.key });
+        return {
+          reply: nextOptional.prompt,
+          suggestions: ['Skip'],
+          requiresConfirmation: false,
+          snapshot,
+        };
+      }
+
+      // ── 1d: All fields collected! ─────────────────────────────────────
+      if (flow.confirmBeforeExecute) {
+        sessionManager.updateSession(sessionId, { awaitingConfirmation: true });
+        const summary = flow.formatSummary ? flow.formatSummary(session.collectedParams) : '📋 Ready to execute.';
+        return {
+          reply: `${summary}\n\n⚡ **Confirm?** Type **yes** to proceed or **cancel** to abort.`,
+          suggestions: ['Yes', 'Cancel'],
+          requiresConfirmation: true,
+          snapshot,
+        };
+      }
+
+      // No confirmation needed — just execute
+      sessionManager.clearSession(sessionId);
+      try {
+        const result = await flow.executor(session.collectedParams);
+        return {
+          reply: result.message,
+          suggestions: ['Show overview'],
+          requiresConfirmation: false,
+          snapshot,
+        };
+      } catch (err) {
+        return {
+          reply: `❌ Error: ${err.message}`,
+          suggestions: ['Show overview'],
+          requiresConfirmation: false,
+          snapshot,
+        };
+      }
+    }
+  }
+
+  // ── Step 2: No active session — detect intent via NLP ───────────────────
+  const nlpResult = await nlp.processMessage(message);
+
+  if (!nlpResult.intent || nlpResult.intent === 'None' || nlpResult.confidence < 0.4) {
+    return {
+      reply: nlpResult.answer || "🤔 I didn't understand that. Try: **create client**, **track AWB**, **generate invoice**, **daily report**, or **show overview**.",
+      suggestions: ['Create client', 'Track shipment', 'Generate invoice', 'Daily report', 'Show overview'],
+      requiresConfirmation: false,
+      snapshot,
+    };
+  }
+
+  // ── Step 2a: Check if it maps to a Flow ─────────────────────────────────
+  const flowId = INTENT_TO_FLOW[nlpResult.intent];
+
+  if (flowId) {
+    const flow = flowRegistry.getFlow(flowId);
+    if (flow) {
+      // Pre-fill any entities the NLP already extracted from the message
+      const prefilled = {};
+      if (nlpResult.entities.clientCode) prefilled.clientCode = nlpResult.entities.clientCode;
+      if (nlpResult.entities.awb) prefilled.awb = nlpResult.entities.awb;
+      if (nlpResult.entities.date) prefilled.date = nlpResult.entities.date;
+      if (nlpResult.entities.dateRelative) {
+        const rel = nlpResult.entities.dateRelative.toLowerCase();
+        const d = new Date();
+        if (rel === 'yesterday') d.setDate(d.getDate() - 1);
+        if (rel === 'tomorrow') d.setDate(d.getDate() + 1);
+        prefilled.date = d.toISOString().slice(0, 10);
+      }
+      if (nlpResult.entities.amount) prefilled.amount = nlpResult.entities.amount;
+      if (nlpResult.entities.courier) prefilled.courier = nlpResult.entities.courier;
+      if (nlpResult.entities.weight) prefilled.weight = nlpResult.entities.weight;
+
+      // Map some aliases
+      if (prefilled.clientCode && !prefilled.code) prefilled.code = prefilled.clientCode;
+
+      // If flow has NO required fields, just execute immediately
+      if (!flow.requiredFields.length) {
+        try {
+          const result = await flow.executor(prefilled);
+          return {
+            reply: result.message,
+            suggestions: ['Show overview'],
+            requiresConfirmation: false,
+            snapshot,
+          };
+        } catch (err) {
+          return { reply: `❌ Error: ${err.message}`, suggestions: ['Show overview'], snapshot };
+        }
+      }
+
+      // Start a session with prefilled data
+      const newSession = sessionManager.startSession(sessionId, flowId);
+      newSession.collectedParams = prefilled;
+
+      // Find the first missing required field
+      const firstMissing = flow.requiredFields.find(f => !newSession.collectedParams[f.key]);
+      if (!firstMissing) {
+        // All required already provided! Check optionals or go to confirm
+        const nextOpt = (flow.optionalFields || []).find(f => !newSession.collectedParams.hasOwnProperty(f.key));
+        if (nextOpt) {
+          sessionManager.updateSession(sessionId, { pendingField: nextOpt.key });
+          return { reply: `${flow.description}...\n\n${nextOpt.prompt}`, suggestions: ['Skip'], snapshot };
+        }
+        if (flow.confirmBeforeExecute) {
+          sessionManager.updateSession(sessionId, { awaitingConfirmation: true });
+          const summary = flow.formatSummary ? flow.formatSummary(newSession.collectedParams) : '📋 Ready.';
+          return { reply: `${summary}\n\n⚡ **Confirm?**`, suggestions: ['Yes', 'Cancel'], requiresConfirmation: true, snapshot };
+        }
+        // Execute immediately
+        sessionManager.clearSession(sessionId);
+        try {
+          const result = await flow.executor(newSession.collectedParams);
+          return { reply: result.message, suggestions: ['Show overview'], snapshot };
+        } catch (err) {
+          return { reply: `❌ Error: ${err.message}`, suggestions: ['Show overview'], snapshot };
+        }
+      }
+
+      sessionManager.updateSession(sessionId, { pendingField: firstMissing.key });
+      return {
+        reply: `Sure! Let's **${flow.description.toLowerCase()}**.\n\n${firstMissing.prompt}`,
+        suggestions: [],
+        requiresConfirmation: false,
+        snapshot,
+      };
+    }
+  }
+
+  // ── Step 2b: Legacy intent handling (non-flow actions) ──────────────────
+  if (LEGACY_INTENTS.includes(nlpResult.intent)) {
+    // Map to old ACTION_TYPES and use resolveAction
+    const legacyMapping = {
+      'intent.client.list':       { type: ACTION_TYPES.SYSTEM_OVERVIEW, params: {} },
+      'intent.client.stats':      { type: ACTION_TYPES.CLIENT_ANALYTICS, params: { clientCode: nlpResult.entities.clientCode } },
+      'intent.client.analytics':  { type: ACTION_TYPES.CLIENT_ANALYTICS, params: { clientCode: nlpResult.entities.clientCode } },
+      'intent.wallet.negative':   { type: ACTION_TYPES.WALLET_STATUS, params: {} },
+      'intent.system.courier_perf': { type: ACTION_TYPES.COURIER_PERFORMANCE, params: {} },
+      'intent.recon.stats':       { type: ACTION_TYPES.RECONCILE, params: {} },
+      'intent.recon.disputes':    { type: ACTION_TYPES.RECONCILE, params: {} },
+      'intent.audit.bill':        { type: ACTION_TYPES.AUDIT_BILL, params: {} },
+    };
+
+    const intent = legacyMapping[nlpResult.intent] || { type: ACTION_TYPES.SYSTEM_OVERVIEW, params: {} };
+    intent.confidence = nlpResult.confidence;
+    intent.requiresConfirmation = false;
+
+    const data = await resolveAction(intent);
+    const response = buildReply(intent, data, snapshot);
+
+    return {
+      reply: response.reply,
+      action: intent,
+      data,
+      suggestions: response.suggestions || [],
+      requiresConfirmation: response.requiresConfirmation || false,
+      snapshot,
+    };
+  }
+
+  // ── Fallback ────────────────────────────────────────────────────────────
   return {
-    reply: response.reply,
-    action: intent,
-    data,
-    suggestions: response.suggestions || [],
-    requiresConfirmation: response.requiresConfirmation || false,
-    actionData: response.actionData || null,
+    reply: "🤔 I understood parts of that but couldn't map it to an action. Try being more specific, like: **create client ABC** or **track AWB 123456**.",
+    suggestions: ['Show overview', 'Create client', 'Daily report'],
+    requiresConfirmation: false,
     snapshot,
   };
 }
