@@ -7,7 +7,7 @@ const { resolveClientCode } = require('./shared');
 const openai = require('../../services/openai.service');
 const cache = require('../../utils/cache');
 
-const STAFF_ROLES = ['ADMIN', 'OPS_MANAGER'];
+const STAFF_ROLES = ['OWNER', 'ADMIN', 'OPS_MANAGER'];
 const FINAL_STATUSES = new Set(['Delivered', 'RTO', 'Cancelled']);
 
 function normalizeText(value) {

@@ -861,7 +861,7 @@ router.get('/approvals', asyncHandler(async (req, res) => {
 router.post('/approvals/:requestNo/decide', asyncHandler(async (req, res) => {
   const clientCode = resolveClientCode(req);
   if (!clientCode) return R.badRequest(res, 'clientCode is required');
-  if (req.user.role !== 'ADMIN') return R.forbidden(res, 'Only admin can approve or reject requests.');
+  if (!req.user?.isOwner && req.user.role !== 'ADMIN') return R.forbidden(res, 'Only admin or owner can approve or reject requests.');
   const requestNo = String(req.params.requestNo || '').trim();
   const decision = String(req.body?.decision || '').trim().toUpperCase();
   if (!['APPROVED', 'REJECTED'].includes(decision)) return R.badRequest(res, 'decision must be APPROVED or REJECTED');

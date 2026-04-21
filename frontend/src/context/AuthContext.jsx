@@ -72,18 +72,21 @@ export function AuthProvider({ children }) {
 
   const hasRole = (...roles) => {
     if (!user) return false;
+    if (user.isOwner) {
+      return roles.flat().some((role) => role !== 'CLIENT');
+    }
     return roles.flat().includes(user.role);
   };
 
   return (
     <AuthContext.Provider value={{
       user, loading, login, logout,
-      isAdmin:   user?.role === 'ADMIN',
+      isAdmin:   user?.role === 'ADMIN' || !!user?.isOwner,
       isOwner:   !!user?.isOwner,
       isStaff:   user?.role === 'STAFF',
       isOps:     user?.role === 'OPS_MANAGER',
       isClient:  user?.role === 'CLIENT',
-      canManage: ['ADMIN', 'OPS_MANAGER'].includes(user?.role),
+      canManage: !!user?.isOwner || ['ADMIN', 'OPS_MANAGER'].includes(user?.role),
       hasRole,
     }}>
       {children}

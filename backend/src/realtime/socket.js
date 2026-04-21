@@ -195,7 +195,7 @@ async function initSocket(server) {
     // ── Regular authenticated user connection ───────────────────────────
     const user = socket.data.user;
 
-    if (['ADMIN', 'OPS_MANAGER', 'STAFF'].includes(user.role)) {
+    if (user.isOwner || ['ADMIN', 'OPS_MANAGER', 'STAFF'].includes(user.role)) {
       socket.join('dashboard:global');
     }
 

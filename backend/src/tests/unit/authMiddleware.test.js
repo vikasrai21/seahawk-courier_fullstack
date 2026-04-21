@@ -121,22 +121,60 @@ describe('auth.middleware', () => {
   });
 
   describe('ownerOnly', () => {
-    it('allows owner access', () => {
-      ownerUtil.isOwnerUser.mockReturnValue(true);
-      const req = createReq({ user: { isOwner: true } });
+    it('allows user with isOwner=true (email-based)', () => {
+      const req = createReq({ user: { isOwner: true, role: 'ADMIN' } });
       const res = createRes();
       const next = vi.fn();
       authMiddleware.ownerOnly(req, res, next);
       expect(next).toHaveBeenCalled();
     });
 
-    it('denies non-owner access', () => {
-      ownerUtil.isOwnerUser.mockReturnValue(false);
-      const req = createReq({ user: { isOwner: false } });
+    it('allows user with concrete OWNER role', () => {
+      const req = createReq({ user: { isOwner: false, role: 'OWNER' } });
+      const res = createRes();
+      const next = vi.fn();
+      authMiddleware.ownerOnly(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('allows ADMIN role (backward compat)', () => {
+      const req = createReq({ user: { isOwner: false, role: 'ADMIN' } });
+      const res = createRes();
+      const next = vi.fn();
+      authMiddleware.ownerOnly(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('denies STAFF role', () => {
+      const req = createReq({ user: { isOwner: false, role: 'STAFF' } });
       const res = createRes();
       const next = vi.fn();
       authMiddleware.ownerOnly(req, res, next);
       expect(responseUtil.forbidden).toHaveBeenCalled();
+    });
+
+    it('denies OPS_MANAGER role', () => {
+      const req = createReq({ user: { isOwner: false, role: 'OPS_MANAGER' } });
+      const res = createRes();
+      const next = vi.fn();
+      authMiddleware.ownerOnly(req, res, next);
+      expect(responseUtil.forbidden).toHaveBeenCalled();
+    });
+
+    it('denies CLIENT role', () => {
+      const req = createReq({ user: { isOwner: false, role: 'CLIENT' } });
+      const res = createRes();
+      const next = vi.fn();
+      authMiddleware.ownerOnly(req, res, next);
+      expect(responseUtil.forbidden).toHaveBeenCalled();
+    });
+
+    it('denies missing user', () => {
+      const req = createReq();
+      const res = createRes();
+      const next = vi.fn();
+      authMiddleware.ownerOnly(req, res, next);
+      expect(responseUtil.unauthorized).toHaveBeenCalled();
     });
   });
 
@@ -159,13 +197,40 @@ describe('auth.middleware', () => {
       expect(responseUtil.forbidden).toHaveBeenCalled();
     });
 
-    it('allows management access regardless', () => {
+    it('allows ADMIN management access', () => {
       const middleware = authMiddleware.requireClientAccountAccess();
-      const req = createReq({ params: { clientCode: 'OTHER' }, user: { role: 'ADMIN', clientCode: null } });
+      const req = createReq({ params: { clientCode: 'OTHER' }, user: { role: 'ADMIN', clientCode: null, isOwner: false } });
       const res = createRes();
       const next = vi.fn();
       middleware(req, res, next);
       expect(next).toHaveBeenCalled();
+    });
+
+    it('allows OWNER management access', () => {
+      const middleware = authMiddleware.requireClientAccountAccess();
+      const req = createReq({ params: { clientCode: 'OTHER' }, user: { role: 'OWNER', clientCode: null, isOwner: true } });
+      const res = createRes();
+      const next = vi.fn();
+      middleware(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('allows OPS_MANAGER management access', () => {
+      const middleware = authMiddleware.requireClientAccountAccess();
+      const req = createReq({ params: { clientCode: 'OTHER' }, user: { role: 'OPS_MANAGER', clientCode: null, isOwner: false } });
+      const res = createRes();
+      const next = vi.fn();
+      middleware(req, res, next);
+      expect(next).toHaveBeenCalled();
+    });
+
+    it('denies CLIENT accessing another client', () => {
+      const middleware = authMiddleware.requireClientAccountAccess();
+      const req = createReq({ params: { clientCode: 'VKR' }, user: { role: 'CLIENT', clientCode: 'TST', isOwner: false } });
+      const res = createRes();
+      const next = vi.fn();
+      middleware(req, res, next);
+      expect(responseUtil.forbidden).toHaveBeenCalled();
     });
   });
 });

@@ -293,7 +293,7 @@ async function sendOpsEscalationAlert({ clientCode, awb, ndrId, urgency, note })
   const recipients = await prisma.user.findMany({
     where: {
       active: true,
-      role: { in: ['ADMIN', 'OPS_MANAGER'] },
+      role: { in: ['OWNER', 'ADMIN', 'OPS_MANAGER'] },
     },
     select: { email: true },
   });

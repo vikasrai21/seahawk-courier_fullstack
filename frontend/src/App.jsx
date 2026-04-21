@@ -112,8 +112,8 @@ function PrivateRoute({ children, adminOnly = false, ownerOnly = false, roles = 
   const { user, isAdmin, isOwner, hasRole } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   if (ownerOnly && !isOwner) return <Navigate to="/app" replace />;
-  if (adminOnly && !(isAdmin || (allowOwner && isOwner))) return <Navigate to="/app" replace />;
-  if (roles && !(hasRole(...roles) || (allowOwner && isOwner))) return <Navigate to="/app" replace />;
+  if (adminOnly && !(isAdmin || isOwner || (allowOwner && isOwner))) return <Navigate to="/app" replace />;
+  if (roles && !(hasRole(...roles) || isOwner || (allowOwner && isOwner))) return <Navigate to="/app" replace />;
   return children;
 }
 

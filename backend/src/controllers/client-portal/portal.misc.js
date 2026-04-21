@@ -333,7 +333,7 @@ async function importShipments(req, res) {
 }
 
 async function supportTicket(req, res) {
-  const clientCode = req.user.role === 'ADMIN' ? req.body.clientCode : await getClientCode(req.user.id);
+  const clientCode = (req.user.isOwner || req.user.role === 'ADMIN') ? req.body.clientCode : await getClientCode(req.user.id);
   if (!clientCode) return R.notFound(res, 'Client profile not found.');
 
   const subject = String(req.body?.subject || '').trim();
@@ -372,7 +372,7 @@ async function supportTicket(req, res) {
   });
 
   const recipients = await prisma.user.findMany({
-    where: { active: true, role: { in: ['ADMIN', 'OPS_MANAGER'] } },
+    where: { active: true, role: { in: ['OWNER', 'ADMIN', 'OPS_MANAGER'] } },
     select: { email: true },
   });
 

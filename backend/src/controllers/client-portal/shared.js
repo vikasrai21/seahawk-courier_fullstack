@@ -8,7 +8,7 @@ async function getClientCode(userId) {
 }
 
 async function resolveClientCode(req, source = req.query) {
-  if (req.user.role === 'ADMIN') return String(source?.clientCode || '').trim() || null;
+  if (req.user.isOwner || req.user.role === 'ADMIN') return String(source?.clientCode || '').trim() || null;
   return req.user.clientCode || await getClientCode(req.user.id);
 }
 

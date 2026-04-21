@@ -60,7 +60,7 @@ export default function SupportTicketsPage({ toast }) {
   const fetchUsers = async () => {
     try {
       const res = await api.get('/auth/users');
-      setUsers((res.data || []).filter((u) => ['ADMIN', 'OPS_MANAGER', 'STAFF'].includes(u.role)));
+      setUsers((res.data || []).filter((u) => ['OWNER', 'ADMIN', 'OPS_MANAGER', 'STAFF'].includes(u.role)));
     } catch {
       // no-op
     }

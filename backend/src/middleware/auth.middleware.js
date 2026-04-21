@@ -5,6 +5,11 @@ const prisma = require('../config/prisma');
 const R      = require('../utils/response');
 const { isOwnerUser } = require('../utils/owner');
 
+function ownerCanBypass(allowed = []) {
+  const roles = Array.isArray(allowed) ? allowed : [allowed];
+  return roles.some((role) => role !== 'CLIENT');
+}
+
 const protect = async (req, res, next) => {
   try {
     let token;
@@ -53,6 +58,7 @@ const protect = async (req, res, next) => {
 const requireRole = (...args) => (req, res, next) => {
   if (!req.user) return R.unauthorized(res);
   const allowed = Array.isArray(args[0]) ? args[0] : args;
+  if (req.user.isOwner && ownerCanBypass(allowed)) return next();
   if (!allowed.includes(req.user.role)) {
     return R.forbidden(res, `Access denied. Required: ${allowed.join(' or ')}`);
   }

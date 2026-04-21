@@ -233,7 +233,7 @@ async function createUser({ name, email, password, role, branch, clientCode }) {
   const normalizedClientCode = normalizeClientCode(clientCode);
   const existing = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (existing) throw new AppError('Email already registered.', 409);
-  const validRoles = ['ADMIN', 'OPS_MANAGER', 'STAFF', 'CLIENT'];
+  const validRoles = ['OWNER', 'ADMIN', 'OPS_MANAGER', 'STAFF', 'CLIENT'];
   if (!validRoles.includes(normalizedRole)) throw new AppError('Invalid role.', 400);
 
   // CLIENT role must have a clientCode

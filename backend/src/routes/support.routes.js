@@ -6,7 +6,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const notify = require('../services/notification.service');
 const R = require('../utils/response');
 
-const STAFF_ROLES = ['ADMIN', 'OPS_MANAGER', 'STAFF'];
+const STAFF_ROLES = ['OWNER', 'ADMIN', 'OPS_MANAGER', 'STAFF'];
 const ALLOWED_STATUS = new Set(['OPEN', 'IN_PROGRESS', 'WAITING_CLIENT', 'RESOLVED', 'CLOSED']);
 const ALLOWED_PRIORITY = new Set(['LOW', 'NORMAL', 'HIGH', 'URGENT']);
 
@@ -270,7 +270,7 @@ router.post('/tickets/:ticketNo/comment', requireRole(['ADMIN', 'OPS_MANAGER', '
 
   if (req.user.role === 'CLIENT') {
     const recipients = await prisma.user.findMany({
-      where: { active: true, role: { in: ['ADMIN', 'OPS_MANAGER'] } },
+      where: { active: true, role: { in: ['OWNER', 'ADMIN', 'OPS_MANAGER'] } },
       select: { email: true },
     });
     await Promise.all(
