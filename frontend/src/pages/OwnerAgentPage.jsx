@@ -81,7 +81,7 @@ export default function OwnerAgentPage({ toast }) {
     // Load initial snapshot
     api.post('/ops/agent/chat', { message: 'show overview', history: [] })
       .then(res => {
-        const d = res.data?.data;
+        const d = res.data;
         if (d?.reply) {
           setMessages([{ role: 'assistant', content: d.reply, suggestions: d.suggestions || [], timestamp: new Date() }]);
         }
@@ -92,14 +92,14 @@ export default function OwnerAgentPage({ toast }) {
   const loadMemory = async () => {
     try {
       const res = await api.get('/ops/agent/memory');
-      setMemory(res.data?.data || {});
+      setMemory(res.data || {});
     } catch { toast?.('Failed to load memory', 'error'); }
   };
 
   const loadHistory = async () => {
     try {
       const res = await api.get('/ops/agent/history?limit=30');
-      setActionHistory(res.data?.data || []);
+      setActionHistory(res.data || []);
     } catch { toast?.('Failed to load history', 'error'); }
   };
 
@@ -113,7 +113,7 @@ export default function OwnerAgentPage({ toast }) {
     try {
       const history = messages.slice(-10).map(m => ({ role: m.role, text: m.content }));
       const res = await api.post('/ops/agent/chat', { message: text.trim(), history });
-      const data = res.data?.data;
+      const data = res.data;
       if (data) {
         setMessages(prev => [...prev, {
           role: 'assistant',
@@ -138,7 +138,7 @@ export default function OwnerAgentPage({ toast }) {
     setLoading(true);
     try {
       const res = await api.post('/ops/agent/execute', { action, params });
-      const result = res.data?.data;
+      const result = res.data;
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: result?.message || result?.error || '✅ Action completed.',
