@@ -76,9 +76,9 @@ const staffOnly      = requireOwnerOrRole('ADMIN', 'OPS_MANAGER', 'STAFF');
 
 const ownerOnly = (req, res, next) => {
   if (!req.user) return R.unauthorized(res);
-  // Give ADMINs owner-level access for backward compatibility and test passing
-  if (!req.user.isOwner && req.user.role !== 'ADMIN') {
-    return R.forbidden(res, 'Owner/Admin access required.');
+  // OWNER role is the highest privilege; ADMINs also allowed for backward compat
+  if (!req.user.isOwner && !['OWNER', 'ADMIN'].includes(req.user.role)) {
+    return R.forbidden(res, 'Owner access required.');
   }
   next();
 };
@@ -93,7 +93,7 @@ const requireClientAccountAccess = ({ param = 'clientCode', body = null, allowMa
     ''
   ).trim().toUpperCase();
 
-  if (allowManagement && ['ADMIN', 'OPS_MANAGER', 'STAFF'].includes(req.user.role)) {
+  if (allowManagement && (req.user.isOwner || ['OWNER', 'ADMIN', 'OPS_MANAGER', 'STAFF'].includes(req.user.role))) {
     if (requested && param && req.params?.[param]) req.params[param] = requested;
     if (requested && body && req.body?.[body]) req.body[body] = requested;
     return next();
