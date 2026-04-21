@@ -49,7 +49,7 @@ export function SocketProvider({ children }) {
 
       instance = io(resolveSocketUrl(), {
         autoConnect: false,
-        auth: getAuthPayload,
+        auth: (cb) => cb(getAuthPayload()),
         withCredentials: true,
         transports: ['websocket', 'polling'],
         reconnection: true,
@@ -62,14 +62,14 @@ export function SocketProvider({ children }) {
         if (!cancelled) setConnected(false);
       });
       instance.io.on('reconnect_attempt', () => {
-        instance.auth = getAuthPayload;
+        instance.auth = (cb) => cb(getAuthPayload());
       });
       instance.on('connect_error', async (err) => {
         const message = String(err?.message || '').toLowerCase();
         if (!message.includes('unauthorized')) return;
         try {
           await refreshSession();
-          instance.auth = getAuthPayload;
+          instance.auth = (cb) => cb(getAuthPayload());
           if (!instance.connected) instance.connect();
         } catch {
           tokenManager.clear();
