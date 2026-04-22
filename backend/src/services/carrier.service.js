@@ -89,6 +89,7 @@ function getCarrierConfig(carrier) {
 const delhivery = {
 
   async createShipment(data, cfg) {
+    const codAmount = Number(data.codAmount || (data.cod ? data.declaredValue || 0 : 0) || 0);
     const payload = {
       format:          'json',
       data: JSON.stringify({
@@ -101,8 +102,8 @@ const delhivery = {
           pin:         data.pin,
           phone:       data.phone || '9999999999',
           order:       data.orderRef || data.awb,
-          payment_mode: 'Pre-paid',
-          cod_amount:  '0',
+          payment_mode: codAmount > 0 ? 'COD' : 'Pre-paid',
+          cod_amount:  String(codAmount),
           weight:      (data.weightGrams / 1000).toFixed(3),
           shipment_length: data.length || 10,
           shipment_width:  data.width  || 10,
@@ -127,12 +128,15 @@ const delhivery = {
     const res = await _post(
       `${cfg.apiUrl}/api/cmu/create.json`,
       payload,
-      { 'Authorization': `Token ${cfg.apiKey}`, 'Content-Type': 'application/json' },
+      { 'Authorization': `Token ${cfg.apiKey}` },
       'form'
     );
 
     if (!res.packages?.[0]?.waybill) {
-      throw new Error(res.packages?.[0]?.remarks || 'Delhivery AWB generation failed');
+      const packageError = String(res?.packages?.[0]?.remarks || '').trim();
+      const topLevelError = String(res?.remarks || res?.rmk || res?.message || res?.error || '').trim();
+      const fallbackDetail = packageError || topLevelError || JSON.stringify(res || {}).slice(0, 300);
+      throw new Error(fallbackDetail || 'Delhivery AWB generation failed');
     }
 
     return {
