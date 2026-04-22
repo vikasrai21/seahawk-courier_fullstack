@@ -36,6 +36,26 @@ const scanAwbSchema        = z.object({
   focusImageBase64: z.string().optional(),
   sessionContext: sessionContextSchema.optional(),
 });
+const scanImageSchema = z.object({
+  imageBase64: z.string().trim().min(1, 'imageBase64 is required'),
+  sessionContext: sessionContextSchema.optional(),
+});
+const scanMobileSchema = z.object({
+  awb: z.string().trim().optional().default(''),
+  imageBase64: z.string().trim().optional(),
+  focusImageBase64: z.string().trim().optional(),
+  sessionContext: sessionContextSchema.optional(),
+}).superRefine((value, ctx) => {
+  const hasAwb = Boolean(String(value.awb || '').trim());
+  const hasImage = Boolean(String(value.imageBase64 || '').trim() || String(value.focusImageBase64 || '').trim());
+  if (!hasAwb && !hasImage) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['awb'],
+      message: 'Provide awb, imageBase64, or focusImageBase64.',
+    });
+  }
+});
 const scanAwbBulkSchema    = z.object({ 
   awbs: z.array(z.string().trim().min(1)).min(1, 'At least one AWB is required').max(200, 'Max 200 AWBs per request'),
   courier: z.enum(['Delhivery','Trackon','DTDC','AUTO']).default('AUTO'),
@@ -101,5 +121,7 @@ const invoiceSchema = z.object({
 module.exports = { shipmentSchema,  updateShipmentSchema,
   statusUpdateSchema,
   scanAwbSchema,
+  scanImageSchema,
+  scanMobileSchema,
   scanAwbBulkSchema,
   importSchema, clientSchema, contractSchema, invoiceSchema };

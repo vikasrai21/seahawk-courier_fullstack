@@ -64,7 +64,7 @@ export default function ShipmentDashboardPage({ toast }) {
         ...(filters.dateFrom   && { dateFrom:    filters.dateFrom }),
         ...(filters.dateTo     && { dateTo:      filters.dateTo }),
       });
-      const { shipments, meta } = await fetchShipments(Object.fromEntries(p.entries()), true);
+      const { shipments, meta } = await fetchShipments(Object.fromEntries(p.entries()), false);
       setRows(shipments || []);
       setTotal(meta?.pagination?.total || 0);
       setStats(meta?.stats || null);
@@ -98,7 +98,7 @@ export default function ShipmentDashboardPage({ toast }) {
   };
 
   const handleDelete = async (s) => {
-    if (!confirm(`Engage Termination for ${s.awb}? This operation is immutable.`)) return;
+    if (!confirm(`Delete shipment ${s.awb}? This cannot be undone.`)) return;
     try {
       await api.delete(`/shipments/${s.id}`);
       const nextRows = rows.filter((x) => x.id !== s.id);
@@ -106,7 +106,7 @@ export default function ShipmentDashboardPage({ toast }) {
       setStoreShipments(nextRows, { pagination: { total: Math.max(total - 1, 0) }, stats });
       setTotal(t => t - 1);
       invalidateShipments();
-      toast?.('Node Repository Purged', 'success');
+      toast?.('Shipment deleted', 'success');
     } catch (err) { toast?.(err.message, 'error'); }
   };
 
@@ -119,7 +119,7 @@ export default function ShipmentDashboardPage({ toast }) {
       setStoreShipments(nextRows, { pagination: { total }, stats });
       invalidateShipments();
       setEditShip(null);
-      toast?.('Deployment Parameters Synchronized', 'success');
+      toast?.('Shipment updated', 'success');
     } catch (err) { toast?.(err.message, 'error'); }
     finally { setEditLoading(false); }
   };
@@ -132,7 +132,7 @@ export default function ShipmentDashboardPage({ toast }) {
     ])].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(','));
     const blob = new Blob([lines.join('\n')], { type:'text/csv' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `repository-delta-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+    a.download = `shipments-${new Date().toISOString().slice(0,10)}.csv`; a.click();
   };
 
   const Th = ({ col, label, align='left' }) => (
@@ -147,8 +147,8 @@ export default function ShipmentDashboardPage({ toast }) {
   return (
     <div className="mx-auto max-w-[1440px] p-6 lg:p-8 space-y-8 animate-in fade-in duration-700">
       <PageHeader
-        title="Tactical Deployment Dashboard"
-        subtitle={`${total.toLocaleString()} total nodes actively engaged across the network stream.`}
+        title="Shipment Dashboard"
+        subtitle={`${total.toLocaleString()} shipments in your operations list.`}
         icon={Monitor}
         actions={
           <div className="flex gap-2 flex-wrap">
@@ -160,7 +160,7 @@ export default function ShipmentDashboardPage({ toast }) {
             </button>
             {canEdit && (
               <button onClick={() => setEditShip({})} className="px-5 py-2.5 bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-2xl shadow-xl shadow-slate-900/10 flex items-center gap-2 hover:bg-black transition-all active:scale-95">
-                <Plus size={16} /> New Engagement
+                <Plus size={16} /> New Shipment
               </button>
             )}
           </div>
@@ -171,10 +171,10 @@ export default function ShipmentDashboardPage({ toast }) {
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label:'Total Node Flux', val: stats.count?.toLocaleString() || total.toLocaleString(), icon: Package,      color:'blue'   },
-            { label:'Tactical Revenue',   val: fmt(stats.totalAmount),                                  icon: TrendingUp,   color:'emerald'  },
-            { label:'Aggregated Mass',    val: fmtWt(stats.totalWeight),                                icon: Zap,      color:'purple' },
-            { label:'Completed Flows',       val: rows.filter(r=>r.status==='Delivered').length,           icon: CheckCircle2, color:'emerald'  },
+            { label:'Total Shipments', val: stats.count?.toLocaleString() || total.toLocaleString(), icon: Package, color:'blue' },
+            { label:'Total Revenue', val: fmt(stats.totalAmount), icon: TrendingUp, color:'emerald' },
+            { label:'Total Weight', val: fmtWt(stats.totalWeight), icon: Zap, color:'purple' },
+            { label:'Delivered', val: Number(stats.delivered ?? rows.filter(r => r.status === 'Delivered').length).toLocaleString(), icon: CheckCircle2, color:'emerald' },
           ].map(({ label, val, icon: Icon, color }) => (
             <div key={label} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow group">
                <div className={`w-10 h-10 rounded-xl bg-${color}-500/10 text-${color}-500 flex items-center justify-center shrink-0 border border-${color}-500/20 group-hover:scale-110 transition-transform`}>
@@ -197,7 +197,7 @@ export default function ShipmentDashboardPage({ toast }) {
             <input
               ref={searchRef}
               className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl pl-11 pr-4 py-3.5 text-xs font-black uppercase tracking-widest text-slate-700 dark:text-white placeholder:text-slate-200 focus:ring-2 focus:ring-blue-500/10 transition-all font-mono"
-              placeholder="Enter Target Node ID..."
+              placeholder="Search AWB, consignee, destination..."
               value={filters.search}
               onChange={e => setFilter('search', e.target.value)}
               onKeyDown={e => e.key === 'Enter' && load()}
@@ -208,25 +208,25 @@ export default function ShipmentDashboardPage({ toast }) {
             {COURIERS.map(c => <option key={c}>{c.toUpperCase()}</option>)}
           </select>
           <select className="bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-4 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-500 appearance-none min-w-[160px]" value={filters.status} onChange={e => setFilter('status',e.target.value)}>
-            <option value="">All Streams</option>
+            <option value="">All Statuses</option>
             {STATUSES.map(s => <option key={s}>{s.toUpperCase()}</option>)}
           </select>
           <button
             onClick={() => setShowFilters(f=>!f)}
             className={`flex items-center gap-2 px-6 py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-widest border transition-all ${showFilters ? 'bg-slate-900 border-slate-900 text-white shadow-xl shadow-slate-900/10' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-600'}`}
           >
-            <Filter size={14} /> Flux Filter {hasFilters && <span className="bg-blue-500 text-white px-1.5 py-0.5 rounded-md ml-1">ACTIVE</span>}
+            <Filter size={14} /> Filters {hasFilters && <span className="bg-blue-500 text-white px-1.5 py-0.5 rounded-md ml-1">ACTIVE</span>}
           </button>
         </div>
 
         {showFilters && (
           <div className="flex gap-6 mt-6 flex-wrap pt-6 border-t border-slate-100 dark:border-slate-800 animate-in slide-in-from-top-2">
             <div className="flex flex-col gap-2">
-              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Flux Epoch (From)</label>
+              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Date From</label>
               <input type="date" className="bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600" value={filters.dateFrom} onChange={e=>setFilter('dateFrom',e.target.value)}/>
             </div>
             <div className="flex flex-col gap-2">
-              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Flux Epoch (To)</label>
+              <label className="text-[9px] font-black uppercase tracking-widest text-slate-400 ml-1">Date To</label>
               <input type="date" className="bg-slate-50 dark:bg-slate-800 border-none rounded-xl px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600" value={filters.dateTo} onChange={e=>setFilter('dateTo',e.target.value)}/>
             </div>
             {(isAdmin || hasRole('OPS_MANAGER')) && (
@@ -242,33 +242,33 @@ export default function ShipmentDashboardPage({ toast }) {
         )}
       </div>
 
-      {/* High-Density Repository Table */}
+      {/* Shipment Table */}
       <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-[40px] shadow-sm overflow-hidden overflow-x-auto">
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-32 text-slate-400">
+            <div className="flex flex-col items-center justify-center py-32 text-slate-400">
             <RefreshCw className="w-12 h-12 animate-spin mb-6 text-blue-500" />
-            <span className="text-[12px] font-black uppercase tracking-[0.4em] animate-pulse">Engaging Data Flux</span>
+            <span className="text-[12px] font-black uppercase tracking-[0.4em] animate-pulse">Loading shipments</span>
           </div>
         ) : rows.length === 0 ? (
           <EmptyState
             icon="📦"
-            title="Silence in Node"
-            message={hasFilters ? 'No data matches the current filtration stream.' : 'The network repository is currently empty.'}
+            title="No shipments found"
+            message={hasFilters ? 'No shipment matches the selected filters.' : 'No shipment has been added yet.'}
           />
         ) : (
           <table className="w-full whitespace-nowrap border-collapse">
             <thead>
               <tr className="bg-slate-50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800">
-                <Th col="awb"       label="AWB / Node ID" />
-                <Th col="date"      label="Phase 1 Date" />
-                <Th col="clientCode"label="Entity" />
-                <Th col="consignee" label="Consignee Node" />
-                <Th col="destination" label="Target Zone" />
-                <Th col="courier"   label="Carrier Force" />
-                <Th col="weight"    label="Mass (KG)" align="right" />
-                <Th col="amount"    label="Yield (₹)" align="right" />
-                <Th col="status"    label="Flux State" align="center" />
-                <Th col="actions"   label="Engage" align="right" />
+                <Th col="awb" label="AWB" />
+                <Th col="date" label="Date" />
+                <Th col="clientCode" label="Client" />
+                <Th col="consignee" label="Consignee" />
+                <Th col="destination" label="Destination" />
+                <Th col="courier" label="Courier" />
+                <Th col="weight" label="Weight (KG)" align="right" />
+                <Th col="amount" label="Amount (₹)" align="right" />
+                <Th col="status" label="Status" align="center" />
+                <Th col="actions" label="Action" align="right" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
@@ -277,7 +277,7 @@ export default function ShipmentDashboardPage({ toast }) {
                   <td className="p-4">
                     <div className="font-mono text-[13px] font-black text-slate-900 dark:text-white tracking-tight">{s.awb}</div>
                     <div className="text-[9px] font-bold text-slate-400 mt-1 flex items-center gap-1.5 uppercase tracking-widest leading-none">
-                      <Activity size={10} className="text-blue-500" /> {s.status || 'LOGGED'}
+                      <Activity size={10} className="text-blue-500" /> {s.status || 'BOOKED'}
                     </div>
                   </td>
                   <td className="p-4 font-black text-[11px] text-slate-400 uppercase tracking-widest">{s.date}</td>
@@ -291,7 +291,7 @@ export default function ShipmentDashboardPage({ toast }) {
                   </td>
                   <td className="p-4">
                      <span className="bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-[0.2em] text-slate-500">
-                        {s.courier || 'NULL_NODE'}
+                        {s.courier || 'UNASSIGNED'}
                      </span>
                   </td>
                   <td className="p-4 text-right font-black text-[11px] text-slate-400 tabular-nums">{fmtWt(s.weight)}</td>
@@ -318,7 +318,7 @@ export default function ShipmentDashboardPage({ toast }) {
 
         {!loading && pages > 1 && (
           <div className="flex items-center justify-between px-8 py-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-            <p className="text-[10px] font-black tracking-[0.2em] uppercase text-slate-400">Page <span className="text-slate-900 dark:text-white">{page}</span> of <span className="text-slate-900 dark:text-white">{pages}</span> Loops</p>
+            <p className="text-[10px] font-black tracking-[0.2em] uppercase text-slate-400">Page <span className="text-slate-900 dark:text-white">{page}</span> of <span className="text-slate-900 dark:text-white">{pages}</span></p>
             <div className="flex items-center gap-2">
               <button disabled={page===1} onClick={()=>setPage(p=>p-1)} className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 hover:text-slate-600 disabled:opacity-20 transition-all shadow-sm"><ChevronLeft size={16} /></button>
               <button disabled={page===pages} onClick={()=>setPage(p=>p+1)} className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 hover:text-slate-600 disabled:opacity-20 transition-all shadow-sm"><ChevronRight size={16} /></button>
@@ -328,7 +328,7 @@ export default function ShipmentDashboardPage({ toast }) {
       </div>
 
       {editShip !== null && (
-        <Modal title={editShip.id ? `Modifying Parameters — ${editShip.awb}` : 'Initialize New Engagement'} onClose={()=>setEditShip(null)}>
+        <Modal title={editShip.id ? `Edit Shipment - ${editShip.awb}` : 'Create Shipment'} onClose={()=>setEditShip(null)}>
           <ShipmentForm initial={editShip} loading={editLoading} onSave={handleEditSave} onCancel={()=>setEditShip(null)} />
         </Modal>
       )}

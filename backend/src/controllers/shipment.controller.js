@@ -7,11 +7,31 @@ const R = require('../utils/response');
 const { asyncHandler } = require('../middleware/errorHandler');
 
 const getAll = asyncHandler(async (req, res) => {
-  const { client, courier, status, date_from, date_to, q, page = 1, limit = 50 } = req.query;
+  const {
+    client,
+    clientCode,
+    courier,
+    status,
+    date_from,
+    dateFrom,
+    date_to,
+    dateTo,
+    q,
+    search,
+    page = 1,
+    limit = 50,
+  } = req.query;
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.min(5000, Math.max(10, parseInt(limit, 10) || 50));
   const { shipments, total } = await svc.getAll(
-    { client, courier, status, dateFrom: date_from, dateTo: date_to, q },
+    {
+      client: client || clientCode,
+      courier,
+      status,
+      dateFrom: date_from || dateFrom,
+      dateTo: date_to || dateTo,
+      q: q || search,
+    },
     pageNum,
     limitNum
   );
@@ -230,7 +250,7 @@ const scanAwbBulk = asyncHandler(async (req, res) => {
 
 const scanImage = asyncHandler(async (req, res) => {
   const { imageBase64 } = req.body;
-  if (!imageBase64) return res.status(400).json({ success: false, message: 'Image base64 string is required' });
+  const sessionDate = (req.body.sessionContext?.sessionDate || '').trim();
 
   // 1. Process image using configured OCR engine (local by default)
   const { extractShipmentFromImage } = require('../services/ocr.service');
@@ -242,72 +262,26 @@ const scanImage = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Could not extract a valid AWB from the image.' });
   }
 
-  // 2. We now have the AWB and optionally consignee, weight, destination
-  // We feed this into the existing scanAwbAndUpdate logic, but we augment the DB if needed
-  const prisma = require('../config/prisma');
+  const awb = String(details.awb || '').trim();
+  const result = await svc.scanAwbAndUpdate(awb, req.user?.id, details.courier || 'AUTO', {
+    captureOnly: true,
+    source: 'scanner_image',
+    ocrHints: details,
+    sessionContext: req.body.sessionContext || {},
+    overrideDate: sessionDate || null,
+  });
 
-  const awb = details.awb.trim();
-  let courier = details.courier || 'AUTO';
-
-  if (!courier || courier === 'AUTO') {
-    // If OCR did not resolve courier, use AWB heuristics
-    const autoDetectCourier = (awbStr) => {
-      const a = String(awbStr || '').toUpperCase().trim();
-      if (/^\d{12}$/.test(a)) return 'Trackon';
-      if (/^\d{13,14}$/.test(a)) return 'Delhivery';
-      if (/^[A-Z]{1,2}\d{8,10}$/.test(a)) return 'DTDC';
-      return 'Delhivery';
-    };
-    courier = autoDetectCourier(awb);
-  }
-
-  // Check if shipment exists
-  let shipment = await prisma.shipment.findUnique({ where: { awb } });
-
-  // Regardless, we will TRY to fetch tracking if possible, or just apply OCR data directly
-  // Actually, OCR gives us richer details than standard API responses!
-  const updateData = { updatedById: req.user?.id };
-  if (details.consignee) updateData.consignee = details.consignee.toUpperCase();
-  if (details.destination) updateData.destination = details.destination.toUpperCase();
-  if (details.weight) updateData.weight = details.weight;
-  if (details.amount) updateData.amount = details.amount;
-  updateData.courier = courier;
-
-  let savedShipment;
-  if (!shipment) {
-    // Auto-create newly discovered shipment from image
-    savedShipment = await prisma.shipment.create({
-      data: {
-        awb,
-        date: new Date().toISOString().split('T')[0],
-        clientCode: 'MISC',
-        consignee: updateData.consignee || 'UNKNOWN',
-        destination: updateData.destination || 'UNKNOWN',
-        weight: updateData.weight || 0.5,
-        amount: updateData.amount || 0,
-        courier: courier,
-        department: 'Operations',
-        service: 'Standard',
-        status: 'InTransit', 
-        remarks: 'OCR_DISCOVERED: Captured via AI Vision Scanner',
-        createdById: req.user?.id,
-        updatedById: req.user?.id
-      },
-      include: { client: { select: { company: true } } }
-    });
-    // emitShipmentCreated(savedShipment); (Handled by socket emit if imported, but omitted here for simplicity)
-  } else {
-    // Update existing shipment with OCR details (never override existing weight/amount with 0)
-    savedShipment = await prisma.shipment.update({
-      where: { awb },
-      data: updateData,
-      include: { client: { select: { company: true } } }
-    });
-  }
-
-  await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'SCAN_IMAGE_OCR', entity: 'SHIPMENT', entityId: savedShipment.id, newValue: details, ip: req.ip });
+  await auditLog({
+    userId: req.user?.id,
+    userEmail: req.user?.email,
+    action: 'SCAN_IMAGE_OCR',
+    entity: 'SHIPMENT',
+    entityId: result.shipment?.id,
+    newValue: { ocr: details, resultMeta: result.meta || null },
+    ip: req.ip,
+  });
   
-  R.ok(res, { message: 'Image scanned safely.', shipment: savedShipment, ocrDetails: details });
+  R.ok(res, { message: 'Image scanned safely.', shipment: result.shipment, ocrDetails: details, meta: result.meta || null });
 });
 
 const learnCorrections = asyncHandler(async (req, res) => {

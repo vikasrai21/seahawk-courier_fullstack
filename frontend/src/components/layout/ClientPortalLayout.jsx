@@ -33,9 +33,9 @@ import { useTheme } from '../../context/ThemeContext';
 
 const navGroups = [
   {
-    label: 'Command',
+    label: 'Main',
     items: [
-      { to: '/portal', label: 'Command Center', icon: LayoutDashboard, end: true },
+      { to: '/portal', label: 'Dashboard', icon: LayoutDashboard, end: true },
       { to: '/portal/shipments', label: 'Shipments', icon: Package2 },
       { to: '/portal/book-shipment', label: 'Book Shipment', icon: FilePlus2 },
       { to: '/portal/drafts', label: 'Orders Queue', icon: ClipboardList },
@@ -47,16 +47,16 @@ const navGroups = [
   {
     label: 'Operations',
     items: [
-      { to: '/portal/ndr', label: 'Delivery Recovery Engine', icon: AlertTriangle },
+      { to: '/portal/ndr', label: 'NDR Management', icon: AlertTriangle },
       { to: '/portal/pickups', label: 'Pickup Requests', icon: Truck },
       { to: '/portal/import', label: 'Order Import', icon: Upload },
       { to: '/portal/pod', label: 'POD Vault', icon: FileText },
-      { to: '/portal/rto-intelligence', label: 'Delivery Risk Engine', icon: Calculator },
+      { to: '/portal/rto-intelligence', label: 'RTO Risk', icon: Calculator },
       { to: '/portal/returns', label: 'Returns', icon: RotateCcw },
     ],
   },
   {
-    label: 'Workspace',
+    label: 'Account',
     items: [
       { to: '/portal/invoices', label: 'Invoices', icon: FileText },
       { to: '/portal/wallet', label: 'Wallet', icon: Wallet },
@@ -70,25 +70,25 @@ const navGroups = [
 ];
 
 const pageMeta = {
-  '/portal': { title: 'Command Center', subtitle: 'Live control tower for your logistics operation.' },
-  '/portal/shipments': { title: 'Shipments', subtitle: 'Operational shipment list, filters, and deep drilldowns.' },
-  '/portal/book-shipment': { title: 'Book Shipment', subtitle: 'Create order and auto-book with carrier in one flow.' },
+  '/portal': { title: 'Dashboard', subtitle: 'Daily shipment overview for your team.' },
+  '/portal/shipments': { title: 'Shipments', subtitle: 'Search, filter, and update shipments quickly.' },
+  '/portal/book-shipment': { title: 'Book Shipment', subtitle: 'Create and book a new shipment.' },
   '/portal/drafts': { title: 'Orders Queue', subtitle: 'Draft and queued orders ready for dispatch.' },
-  '/portal/bulk-track': { title: 'Bulk Track', subtitle: 'High-volume tracking intelligence and bulk lookup.' },
-  '/portal/track': { title: 'Single Track', subtitle: 'Deep event timeline and full shipment journey story.' },
-  '/portal/map': { title: 'Live Map', subtitle: 'Realtime movement visibility for in-transit shipments.' },
-  '/portal/ndr': { title: 'Delivery Recovery Engine', subtitle: 'At-risk, failed-attempt, and reattempt lifecycle control.' },
+  '/portal/bulk-track': { title: 'Bulk Track', subtitle: 'Track many AWBs at once.' },
+  '/portal/track': { title: 'Single Track', subtitle: 'Track one shipment with full event history.' },
+  '/portal/map': { title: 'Live Map', subtitle: 'Live movement view for in-transit shipments.' },
+  '/portal/ndr': { title: 'NDR Management', subtitle: 'Resolve failed delivery attempts.' },
   '/portal/pickups': { title: 'Pickup Requests', subtitle: 'Schedule and manage pickup workflow.' },
-  '/portal/import': { title: 'Order Import', subtitle: 'Bulk order ingestion pipeline.' },
+  '/portal/import': { title: 'Order Import', subtitle: 'Upload and map orders in bulk.' },
   '/portal/pod': { title: 'POD Vault', subtitle: 'Proof-of-delivery documents and events.' },
-  '/portal/rto-intelligence': { title: 'Delivery Risk Engine', subtitle: 'Predictive return prevention with risk scoring and actions.' },
+  '/portal/rto-intelligence': { title: 'RTO Risk', subtitle: 'Identify and reduce return-to-origin risk.' },
   '/portal/invoices': { title: 'Invoices', subtitle: 'Billing, invoices, and downloadable statements.' },
   '/portal/wallet': { title: 'Wallet', subtitle: 'Balance, transactions, and recharge controls.' },
   '/portal/support': { title: 'Support', subtitle: 'Tickets, escalations, and issue resolution.' },
   '/portal/notifications': { title: 'Notifications', subtitle: 'Alert preferences and communication controls.' },
   '/portal/branding': { title: 'Branding', subtitle: 'White-label settings for client-facing tracking.' },
   '/portal/developer': { title: 'Developer Hub', subtitle: 'API and integration tools for engineering teams.' },
-  '/portal/governance': { title: 'Governance', subtitle: 'Security, audit, and compliance workspace.' },
+  '/portal/governance': { title: 'Governance', subtitle: 'Security and audit settings.' },
   '/portal/returns': { title: 'Returns', subtitle: 'Request and track product returns and reverse pickups.' },
 };
 
@@ -175,7 +175,7 @@ export function ClientPortalLayout() {
           <img src="/images/logo.png" alt="Seahawk Logo" className="h-10 w-auto rounded-xl bg-white p-1.5 shadow-[0_12px_20px_-14px_rgba(15,23,42,0.6)]" />
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Client Portal</p>
-            <p className="text-sm font-black text-slate-900 dark:text-slate-100">Sea Hawk Workspace</p>
+            <p className="text-sm font-black text-slate-900 dark:text-slate-100">Sea Hawk Client Portal</p>
           </div>
         </div>
         <div className="mx-3 mt-3 rounded-[22px] border border-sky-200/70 bg-gradient-to-r from-sky-50 via-white to-orange-50 px-3.5 py-3 shadow-[0_20px_34px_-24px_rgba(37,99,235,0.62)] dark:border-sky-900/40 dark:from-slate-800 dark:via-slate-900 dark:to-slate-800/90">
@@ -183,7 +183,7 @@ export function ClientPortalLayout() {
             <Sparkles size={12} />
             Enterprise Mode
           </p>
-          <p className="text-[11px] font-semibold leading-4 text-slate-600 dark:text-slate-300">Designed for channel partners who need faster dispatch, cleaner decisions, and clearer shipment visibility.</p>
+          <p className="text-[11px] font-semibold leading-4 text-slate-600 dark:text-slate-300">Built for dispatch and admin teams who need faster work and clear shipment visibility.</p>
         </div>
         <SidebarNav />
         <SidebarFooter />
@@ -198,7 +198,7 @@ export function ClientPortalLayout() {
                 <img src="/images/logo.png" alt="Seahawk Logo" className="h-8 w-auto rounded-md bg-white p-1 shadow-sm" />
                 <div>
                   <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Client Portal</p>
-                  <p className="text-sm font-black text-slate-900 dark:text-slate-100">Sea Hawk Workspace</p>
+                  <p className="text-sm font-black text-slate-900 dark:text-slate-100">Sea Hawk Client Portal</p>
                 </div>
               </div>
               <button type="button" onClick={() => setMobileOpen(false)} className="rounded-lg p-2 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800">
@@ -218,7 +218,7 @@ export function ClientPortalLayout() {
               <Menu size={18} />
             </button>
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Channel Partner View</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400 dark:text-slate-500">Client Portal</p>
               <div className="flex items-center gap-2">
                 <p className="text-sm font-black text-slate-900 dark:text-slate-100">{headerMeta.title}</p>
                 <ChevronRight size={13} className="text-slate-300 dark:text-slate-600" />
@@ -231,7 +231,7 @@ export function ClientPortalLayout() {
               Live
             </div>
             <div className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-sky-700">
-              Client Workspace
+              Client Account
             </div>
             <div className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-violet-700">
               Secure

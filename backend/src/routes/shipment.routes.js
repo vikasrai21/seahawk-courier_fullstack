@@ -4,7 +4,16 @@ const router = express.Router();
 const ctrl   = require('../controllers/shipment.controller');
 const { protect, ownerOnly, requireRole, requireOwnerOrRole } = require('../middleware/auth.middleware');
 const { validate } = require('../middleware/validate.middleware');
-const { shipmentSchema, updateShipmentSchema, statusUpdateSchema, scanAwbSchema, importSchema, scanAwbBulkSchema } = require('../validators/shipment.validator');
+const {
+  shipmentSchema,
+  updateShipmentSchema,
+  statusUpdateSchema,
+  scanAwbSchema,
+  scanImageSchema,
+  scanMobileSchema,
+  importSchema,
+  scanAwbBulkSchema,
+} = require('../validators/shipment.validator');
 const config = require('../config');
 
 const importJsonParser = express.json({ limit: config.bodyLimits.importJson });
@@ -20,8 +29,8 @@ router.get('/:id',            ctrl.getOne);
 router.post('/',              validate(shipmentSchema),       ctrl.create);
 router.post('/import',        requireRole('ADMIN', 'OPS_MANAGER'), importJsonParser, validate(importSchema), ctrl.bulkImport);
 router.post('/scan',          requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), validate(scanAwbSchema), ctrl.scanAwb);
-router.post('/scan-image',    requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), importJsonParser, ctrl.scanImage);
-router.post('/scan-mobile',   requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), importJsonParser, ctrl.scanMobile);
+router.post('/scan-image',    requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), importJsonParser, validate(scanImageSchema), ctrl.scanImage);
+router.post('/scan-mobile',   requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), importJsonParser, validate(scanMobileSchema), ctrl.scanMobile);
 router.post('/scan-bulk',     requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), validate(scanAwbBulkSchema), ctrl.scanAwbBulk);
 router.post('/learn-corrections', requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), ctrl.learnCorrections);
 router.put('/:id',            validate(updateShipmentSchema), ctrl.update);

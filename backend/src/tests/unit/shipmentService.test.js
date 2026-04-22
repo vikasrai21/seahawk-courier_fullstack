@@ -234,7 +234,7 @@ describe('shipment.service', () => {
       expect(['local_existing', 'captured_placeholder']).toContain(result.meta.source);
     });
 
-    it('applies overrideDate when reusing an existing shipment in capture mode', async () => {
+    it('keeps the original date when reusing an existing shipment in capture mode', async () => {
       vi.spyOn(dtdcService.default, 'getTracking').mockResolvedValue(null);
       mockPrisma.shipment.findUnique.mockResolvedValue({
         id: 11,
@@ -261,14 +261,13 @@ describe('shipment.service', () => {
         overrideDate: '2026-04-18',
       });
 
-      expect(mockPrisma.shipment.update).toHaveBeenCalledWith(expect.objectContaining({
-        where: { awb: 'Z66077872' },
-        data: expect.objectContaining({
-          courier: 'DTDC',
-          updatedById: 8,
-          date: '2026-04-18',
-        }),
+      expect(mockPrisma.shipment.update).toHaveBeenCalled();
+      expect(mockPrisma.shipment.update.mock.calls[0][0].where).toEqual({ id: expect.any(Number) });
+      expect(mockPrisma.shipment.update.mock.calls[0][0].data).toEqual(expect.objectContaining({
+        courier: 'DTDC',
+        updatedById: 8,
       }));
+      expect(mockPrisma.shipment.update.mock.calls[0][0].data).not.toHaveProperty('date');
     });
 
     it('fills placeholder fields without overwriting meaningful existing data in capture mode', async () => {
@@ -297,7 +296,7 @@ describe('shipment.service', () => {
         phone: '9999999999',
         pincode: '110001',
         weight: 2.6,
-        amount: 180,
+        amount: 0,
         courier: 'DTDC',
         status: 'Booked',
         remarks: 'SCAN_CAPTURED: Intake awaiting tracking sync',
@@ -318,16 +317,48 @@ describe('shipment.service', () => {
         },
       });
 
+      expect(mockPrisma.shipment.update).toHaveBeenCalled();
+      expect(mockPrisma.shipment.update.mock.calls[0][0].where).toEqual({ id: expect.any(Number) });
+      expect(mockPrisma.shipment.update.mock.calls[0][0].data).toEqual(expect.objectContaining({
+        consignee: 'REAL PERSON',
+        destination: 'DELHI',
+        phone: '9999999999',
+        pincode: '110001',
+        weight: 2.6,
+      }));
+      expect(mockPrisma.shipment.update.mock.calls[0][0].data).not.toHaveProperty('amount');
+    });
+
+    it('normalizes whitespace inside scanned AWBs before matching existing shipments', async () => {
+      vi.spyOn(dtdcService.default, 'getTracking').mockResolvedValue(null);
+      mockPrisma.shipment.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          id: 13,
+          awb: 'D1015 823129',
+          courier: 'DTDC',
+          status: 'Booked',
+          remarks: '',
+          client: null,
+        });
+      mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([{ id: 13 }]);
+      mockPrisma.shipment.update.mockResolvedValue({
+        id: 13,
+        awb: 'D1015 823129',
+        courier: 'DTDC',
+        status: 'Booked',
+        remarks: '',
+        client: null,
+      });
+
+      await shipmentService.scanAwbAndUpdate(' D1015 823129 ', 8, 'DTDC', {
+        captureOnly: true,
+        source: 'scanner',
+      });
+
+      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalled();
       expect(mockPrisma.shipment.update).toHaveBeenCalledWith(expect.objectContaining({
-        where: { awb: 'Z66077873' },
-        data: expect.objectContaining({
-          consignee: 'REAL PERSON',
-          destination: 'DELHI',
-          phone: '9999999999',
-          pincode: '110001',
-          weight: 2.6,
-          amount: 180,
-        }),
+        where: { id: 13 },
       }));
     });
   });

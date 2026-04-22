@@ -31,13 +31,13 @@ export default function ClientBulkTrackPage({ toast }) {
       <div className="mx-auto client-premium-main">
         <ClientPortalPageIntro
           eyebrow="Bulk Tracking"
-          title="Paste a full AWB list once and turn it into a clean, action-ready tracking table."
-          description="Use commas, spaces, or line breaks. This workspace is tuned for operations teams who need a fast scan across many shipments without opening them one by one."
-          badges={['Multi search', `${result?.total || 0} submitted`, `${result?.found || 0} found`]}
+          title="Paste AWB numbers and track all shipments in one click."
+          description="Use commas, spaces, or line breaks. Built for dispatch teams who need quick status checks."
+          badges={['Bulk track', `${result?.total || 0} submitted`, `${result?.found || 0} found`]}
           actions={(
             <>
               <button onClick={submit} disabled={loading} className="client-action-btn-primary">
-                {loading ? 'Tracking…' : 'Run bulk track'}
+                {loading ? 'Tracking...' : 'Run Tracking'}
               </button>
               <button onClick={() => { setText(''); setResult(null); }} className="client-action-btn-secondary">
                 Clear list
@@ -48,16 +48,16 @@ export default function ClientBulkTrackPage({ toast }) {
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_320px]">
           <div className="overflow-hidden rounded-[28px] border border-slate-200/60 bg-[linear-gradient(145deg,#0f2748_0%,#123563_55%,#174576_100%)] p-6 text-white shadow-[0_22px_50px_-30px_rgba(15,39,72,0.9)]">
             <div className="inline-flex rounded-full border border-sky-200/20 bg-sky-300/10 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-sky-100">
-              Multi Search
+              Bulk Search
             </div>
-            <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight">Paste a full AWB list once and get a clean status table back instantly.</h1>
+            <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight">Track many AWBs in seconds.</h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-200">
-              Use commas, spaces, or line breaks. This page is now optimized to feel like a true operations tool, not just a textarea with a button.
+              Paste your list, click Run Tracking, and review status in one table.
             </p>
           </div>
           <div className="rounded-[26px] border border-orange-200 bg-[linear-gradient(180deg,#fff8f2_0%,#ffffff_100%)] p-5 shadow-[0_18px_40px_-28px_rgba(194,65,12,0.45)] dark:border-orange-500/40 dark:bg-[linear-gradient(180deg,rgba(124,45,18,0.35)_0%,rgba(15,23,42,0.94)_100%)]">
             <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-500">Format Tips</div>
-            <div className="mt-2 text-2xl font-black text-slate-900 dark:text-white">Paste however you have it</div>
+            <div className="mt-2 text-2xl font-black text-slate-900 dark:text-white">Paste in any format</div>
             <div className="mt-4 grid gap-3 text-sm text-slate-600 dark:text-slate-100">
               <div className="rounded-2xl border border-orange-100 bg-white px-4 py-3 dark:border-orange-400/30 dark:bg-slate-900/80">One AWB per line from spreadsheets or chat exports.</div>
               <div className="rounded-2xl border border-orange-100 bg-white px-4 py-3 dark:border-orange-400/30 dark:bg-slate-900/80">Comma-separated values from CSV or reports.</div>
@@ -80,7 +80,7 @@ export default function ClientBulkTrackPage({ toast }) {
           />
           <div className="mt-4 flex gap-3">
             <button onClick={submit} disabled={loading} className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-extrabold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70">
-              {loading ? 'Tracking…' : 'Track Shipments'}
+              {loading ? 'Tracking...' : 'Track Shipments'}
             </button>
             <button onClick={() => { setText(''); setResult(null); }} className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800">
               Clear

@@ -48,13 +48,17 @@ function buildFilters({ client, courier, status, dateFrom, dateTo, q }) {
   if (courier) where.courier = { contains: courier, mode: 'insensitive' };
   if (status)  where.status = status;
   if (dateFrom || dateTo) { where.date = {}; if (dateFrom) where.date.gte = dateFrom; if (dateTo) where.date.lte = dateTo; }
-  if (q) { where.OR = [
-    { awb: { contains: q, mode: 'insensitive' } },
-    { clientCode: { contains: q, mode: 'insensitive' } },
-    { consignee: { contains: q, mode: 'insensitive' } },
-    { destination: { contains: q, mode: 'insensitive' } },
-    { courier: { contains: q, mode: 'insensitive' } },
-  ];}
+  if (q) {
+    const rawQuery = String(q || '').trim();
+    const awbQuery = normalizeAwb(rawQuery);
+    where.OR = [
+      { awb: { contains: awbQuery, mode: 'insensitive' } },
+      { clientCode: { contains: rawQuery, mode: 'insensitive' } },
+      { consignee: { contains: rawQuery, mode: 'insensitive' } },
+      { destination: { contains: rawQuery, mode: 'insensitive' } },
+      { courier: { contains: rawQuery, mode: 'insensitive' } },
+    ];
+  }
   return where;
 }
 
@@ -436,7 +440,37 @@ function autoDetectCourier(awbStr) {
 }
 
 function normalizeAwb(value) {
-  return String(value || '').trim().toUpperCase();
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/[\s\u200B-\u200D\uFEFF]+/g, '')
+    .trim()
+    .toUpperCase();
+}
+
+function buildShipmentQuery(where, include) {
+  return include ? { where, include } : { where };
+}
+
+async function findShipmentByAwb(awb, include = null) {
+  const normalizedAwb = normalizeAwb(awb);
+  if (!normalizedAwb) return null;
+
+  const directMatch = await prisma.shipment.findUnique(buildShipmentQuery({ awb: normalizedAwb }, include));
+  if (directMatch) return directMatch;
+
+  const legacyMatches = await prisma.$queryRawUnsafe(
+    `SELECT id
+     FROM shipments
+     WHERE regexp_replace(upper(awb), '[^A-Z0-9]+', '', 'g') = $1
+     ORDER BY id ASC
+     LIMIT 1`,
+    normalizedAwb
+  );
+
+  const legacyId = Number(legacyMatches?.[0]?.id || 0);
+  if (!legacyId) return null;
+
+  return prisma.shipment.findUnique(buildShipmentQuery({ id: legacyId }, include));
 }
 
 function hasMeaningfulText(value) {
@@ -512,7 +546,6 @@ function buildOcrPatch(ocrHints = null) {
   if (summary.phone) patch.phone = summary.phone;
   if (summary.pincode) patch.pincode = summary.pincode;
   if (summary.weight > 0) patch.weight = summary.weight;
-  if (summary.amount > 0) patch.amount = summary.amount;
   if (summary.orderNo) {
     patch.remarks = `ORDER_NO:${summary.orderNo}`;
   }
@@ -543,14 +576,10 @@ function buildCapturedShipmentPayload(awb, courier, userId, source, overrideDate
 async function createOrReuseCapturedShipment(awb, userId, courier, source = 'scanner', ocrHints = null, overrideDate = null) {
   const normalizedAwb = normalizeAwb(awb);
   const ocrPatch = buildOcrPatch(ocrHints);
-  const existingShipment = await prisma.shipment.findUnique({
-    where: { awb: normalizedAwb },
-    include: { client: { select: { company: true } } },
-  });
+  const existingShipment = await findShipmentByAwb(normalizedAwb, { client: { select: { company: true } } });
 
   if (existingShipment) {
     const updateData = {
-      ...(overrideDate ? { date: overrideDate } : {}),
       courier,
       updatedById: userId,
     };
@@ -563,14 +592,13 @@ async function createOrReuseCapturedShipment(awb, userId, courier, source = 'sca
     if (shouldReplaceText(existingShipment.phone, ocrPatch.phone)) updateData.phone = ocrPatch.phone;
     if (shouldReplaceText(existingShipment.pincode, ocrPatch.pincode)) updateData.pincode = ocrPatch.pincode;
     if (shouldReplaceNumber(existingShipment.weight, ocrPatch.weight, { allowPlaceholderWeight: true })) updateData.weight = ocrPatch.weight;
-    if (shouldReplaceNumber(existingShipment.amount, ocrPatch.amount)) updateData.amount = ocrPatch.amount;
 
     const existingRemarks = String(existingShipment.remarks || '').trim();
     const incomingRemarks = String(ocrPatch.remarks || '').trim();
     updateData.remarks = existingRemarks || incomingRemarks || 'SCAN_CAPTURED: Intake awaiting tracking sync';
 
     const updatedShipment = await prisma.shipment.update({
-      where: { awb: normalizedAwb },
+      where: { id: existingShipment.id },
       data: updateData,
       include: { client: { select: { company: true } } },
     });
@@ -663,7 +691,7 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
     };
   }
 
-  let shipment = await prisma.shipment.findUnique({ where: { awb } });
+  let shipment = await findShipmentByAwb(awb);
   
   const tracker = COURIERS[courier] || COURIERS['Delhivery'];
 
@@ -710,10 +738,9 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
   if (ocrPatch.consignee && (!shipment || shouldReplaceText(shipment.consignee, ocrPatch.consignee))) updateData.consignee = ocrPatch.consignee.toUpperCase();
   if (ocrPatch.destination && (!shipment || shouldReplaceText(shipment.destination, ocrPatch.destination))) updateData.destination = ocrPatch.destination.toUpperCase();
   if (ocrPatch.phone && (!shipment || shouldReplaceText(shipment.phone, ocrPatch.phone))) updateData.phone = ocrPatch.phone;
-  if (effectiveDate) updateData.date = effectiveDate;
+  if (effectiveDate && !shipment) updateData.date = effectiveDate;
   if (ocrPatch.pincode && (!shipment || shouldReplaceText(shipment.pincode, ocrPatch.pincode))) updateData.pincode = ocrPatch.pincode;
   if (ocrPatch.weight && (!shipment || shouldReplaceNumber(shipment.weight, ocrPatch.weight, { allowPlaceholderWeight: true }))) updateData.weight = ocrPatch.weight;
-  if (ocrPatch.amount && (!shipment || shouldReplaceNumber(shipment.amount, ocrPatch.amount))) updateData.amount = ocrPatch.amount;
   if (ocrPatch.remarks) updateData.remarks = shipment?.remarks ? `${shipment.remarks} | ${ocrPatch.remarks}` : ocrPatch.remarks;
 
   let savedShipment;
@@ -729,7 +756,7 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
         phone: updateData.phone || null,
         pincode: updateData.pincode || null,
         weight: 0.5,
-        amount: updateData.amount || 0,
+        amount: 0,
         courier: courier,
         department: 'Operations',
         service: 'Standard',
@@ -744,7 +771,7 @@ async function scanAwbAndUpdate(awb, userId, courier = 'Delhivery', options = {}
   } else {
     // Update existing shipment
     savedShipment = await prisma.shipment.update({
-      where: { awb },
+      where: { id: shipment.id },
       data: updateData,
       include: { client: { select: { company: true } } }
     });

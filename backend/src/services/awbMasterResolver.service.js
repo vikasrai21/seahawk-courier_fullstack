@@ -9,6 +9,26 @@ function normalizeText(value) {
   return String(value || '').trim();
 }
 
+function normalizeAwb(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .replace(/[\s\u200B-\u200D\uFEFF]+/g, '')
+    .trim()
+    .toUpperCase();
+}
+
+async function findLegacyMatchId(tableName, awb) {
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT id
+     FROM ${tableName}
+     WHERE regexp_replace(upper(awb), '[^A-Z0-9]+', '', 'g') = $1
+     ORDER BY id DESC
+     LIMIT 1`,
+    awb
+  );
+  return Number(rows?.[0]?.id || 0) || null;
+}
+
 function normalizeUpper(value) {
   return normalizeText(value).toUpperCase();
 }
@@ -26,7 +46,7 @@ function hasMeaningfulNumber(value) {
 function mapShipment(shipment) {
   if (!shipment) return null;
   return {
-    awb: normalizeText(shipment.awb),
+    awb: normalizeAwb(shipment.awb),
     date: normalizeText(shipment.date),
     clientCode: normalizeUpper(shipment.clientCode),
     clientName: normalizeText(shipment.client?.company || ''),
@@ -46,7 +66,7 @@ function mapShipment(shipment) {
 function mapImportRow(row) {
   if (!row) return null;
   return {
-    awb: normalizeText(row.awb),
+    awb: normalizeAwb(row.awb),
     date: normalizeText(row.date),
     clientCode: normalizeUpper(row.clientCode),
     clientName: normalizeText(row.client?.company || ''),
@@ -84,11 +104,11 @@ function chooseNumber(primary, secondary) {
 }
 
 async function resolveAwbMasterData(awb) {
-  const cleanAwb = normalizeUpper(awb);
+  const cleanAwb = normalizeAwb(awb);
   if (!cleanAwb) return null;
 
   try {
-    const [shipment, importRows] = await Promise.all([
+    let [shipment, importRows] = await Promise.all([
       prisma.shipment.findUnique({
         where: { awb: cleanAwb },
         include: { client: { select: { company: true } } },
@@ -100,6 +120,28 @@ async function resolveAwbMasterData(awb) {
         include: { client: { select: { company: true } } },
       }),
     ]);
+
+    if (!shipment || !importRows.length) {
+      const [legacyShipmentId, legacyImportId] = await Promise.all([
+        shipment ? Promise.resolve(null) : findLegacyMatchId('shipments', cleanAwb),
+        importRows.length ? Promise.resolve(null) : findLegacyMatchId('shipment_import_rows', cleanAwb),
+      ]);
+
+      if (!shipment && legacyShipmentId) {
+        shipment = await prisma.shipment.findUnique({
+          where: { id: legacyShipmentId },
+          include: { client: { select: { company: true } } },
+        });
+      }
+
+      if (!importRows.length && legacyImportId) {
+        importRows = await prisma.shipmentImportRow.findMany({
+          where: { id: legacyImportId },
+          take: 1,
+          include: { client: { select: { company: true } } },
+        });
+      }
+    }
 
     const shipmentData = mapShipment(shipment);
     const importData = mapImportRow(importRows[0] || null);

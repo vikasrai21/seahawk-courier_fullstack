@@ -83,6 +83,12 @@ function buildBookingFingerprint(payload) {
   return crypto.createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
 }
 
+function hasValue(value) {
+  if (value === null || value === undefined) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  return true;
+}
+
 async function notificationPreferences(req, res) {
   const clientCode = await resolveClientCode(req);
   if (!clientCode) return R.notFound(res, 'Client profile not found.');
@@ -433,6 +439,14 @@ async function createAndBookShipment(req, res) {
   const weightKg = Number(req.body?.weight || 0);
   const weightGramsInput = Number(req.body?.weightGrams || 0);
   const weightGrams = weightGramsInput > 0 ? weightGramsInput : Math.round(weightKg * 1000);
+  const forbiddenFields = ['amount', 'status', 'department'];
+  const attemptedPrivilegedFields = forbiddenFields.filter((field) => hasValue(req.body?.[field]));
+  if (attemptedPrivilegedFields.length > 0) {
+    return R.badRequest(
+      res,
+      `The following fields are server controlled and cannot be set from client portal: ${attemptedPrivilegedFields.join(', ')}.`
+    );
+  }
 
   if (!consignee || !deliveryAddress || !deliveryCity || !pincode || !weightGrams) {
     return R.badRequest(res, 'consignee, deliveryAddress, deliveryCity, pincode and weight/weightGrams are required.');
@@ -504,11 +518,11 @@ async function createAndBookShipment(req, res) {
     phone: phone || null,
     pincode,
     weight: Number((weightGrams / 1000).toFixed(3)),
-    amount: Number(req.body?.amount || 0),
+    amount: 0,
     courier: resolvedCourier,
-    department: String(req.body?.department || 'Operations').trim(),
+    department: 'Operations',
     service,
-    status: String(req.body?.status || 'Booked').trim(),
+    status: 'Booked',
     remarks: String(req.body?.remarks || '').trim(),
     labelUrl: resolvedBooking.labelUrl || null,
   }, req.user?.id);

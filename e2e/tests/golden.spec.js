@@ -36,4 +36,17 @@ test.describe('Golden path (demo users)', () => {
     await page.getByRole('button', { name: /Sign In to Client Portal/i }).click();
     await page.waitForURL(/\/portal/, { timeout: 30_000 });
   });
+
+  test('client can open shipments workspace from portal', async ({ page, context }) => {
+    await context.clearCookies();
+    await page.goto('/portal/login');
+    await page.locator('#email').fill('client.user@seahawk.com');
+    await page.locator('#password').fill('Client@12345');
+    await page.getByRole('button', { name: /Sign In to Client Portal/i }).click();
+    await page.waitForURL(/\/portal/, { timeout: 30_000 });
+
+    await page.getByRole('link', { name: /Shipments/i }).click();
+    await page.waitForURL(/\/portal\/shipments/, { timeout: 30_000 });
+    await expect(page.getByText(/Shipments/i).first()).toBeVisible();
+  });
 });

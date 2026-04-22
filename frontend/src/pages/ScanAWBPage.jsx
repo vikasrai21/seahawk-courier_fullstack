@@ -205,7 +205,7 @@ export default function ScanAWBPage({ toast }) {
   const [mobileQRData, setMobileQRData] = useState('');
   const { socket, connected: socketConnected } = useSocket();
   const [reviewQueue, setReviewQueue] = useState([]);
-  const [reviewForm, setReviewForm] = useState({ clientCode: '', consignee: '', destination: '', pincode: '', weight: 0, amount: 0, orderNo: '' });
+  const [reviewForm, setReviewForm] = useState({ clientCode: '', consignee: '', destination: '', pincode: '', weight: 0, amount: '', orderNo: '' });
   const [stickyClientCode, setStickyClientCode] = useState(() => {
     if (typeof window === 'undefined') return '';
     try {
@@ -267,7 +267,7 @@ export default function ScanAWBPage({ toast }) {
 
   useEffect(() => {
     if (!reviewScan) {
-      setReviewForm({ clientCode: '', consignee: '', destination: '', pincode: '', weight: 0, amount: 0, orderNo: '' });
+      setReviewForm({ clientCode: '', consignee: '', destination: '', pincode: '', weight: 0, amount: '', orderNo: '' });
       return;
     }
 
@@ -279,7 +279,7 @@ export default function ScanAWBPage({ toast }) {
       destination: reviewScan.shipment?.destination || '',
       pincode: reviewScan.shipment?.pincode || reviewScan.meta?.ocrExtracted?.pincode || '',
       weight: reviewScan.shipment?.weight || 0,
-      amount: reviewScan.shipment?.amount || 0,
+      amount: '',
       orderNo: extractOrderNo(reviewScan.shipment, reviewScan.meta),
     });
   }, [reviewScan, stickyClientCode]);
@@ -376,7 +376,9 @@ export default function ScanAWBPage({ toast }) {
     destination: String(fields.destination || fallbackScan?.shipment?.destination || '').trim().toUpperCase(),
     pincode: String(fields.pincode || fallbackScan?.shipment?.pincode || fallbackScan?.meta?.ocrExtracted?.pincode || '').trim(),
     weight: parseFloat(fields.weight ?? fallbackScan?.shipment?.weight ?? 0) || 0,
-    amount: parseFloat(fields.amount ?? fallbackScan?.shipment?.amount ?? 0) || 0,
+      amount: fields.amount === '' || fields.amount === undefined || fields.amount === null
+        ? ''
+        : (parseFloat(fields.amount) || 0),
     orderNo: String(fields.orderNo || extractOrderNo(fallbackScan?.shipment, fallbackScan?.meta) || '').trim(),
   });
 
@@ -397,9 +399,9 @@ export default function ScanAWBPage({ toast }) {
       destination: normalized.destination,
       pincode: normalized.pincode,
       weight: normalized.weight,
-      amount: normalized.amount,
       date: String(approval?.fields?.date || fallbackScan?.shipment?.date || '').trim() || undefined,
       remarks: nextRemarks,
+      ...(normalized.amount !== '' ? { amount: normalized.amount } : {}),
     });
 
     return {
@@ -728,10 +730,10 @@ export default function ScanAWBPage({ toast }) {
         destination: reviewForm.destination,
         pincode: reviewForm.pincode,
         weight: parseFloat(reviewForm.weight) || 0,
-        amount: parseFloat(reviewForm.amount) || 0,
         remarks: reviewForm.orderNo
           ? `${String(reviewScan.shipment?.remarks || '').replace(/\s*\|\s*ORDER_NO:[^|]+/gi, '').replace(/^ORDER_NO:[^|]+\s*\|?\s*/i, '').trim()}${String(reviewScan.shipment?.remarks || '').replace(/\s*\|\s*ORDER_NO:[^|]+/gi, '').replace(/^ORDER_NO:[^|]+\s*\|?\s*/i, '').trim() ? ' | ' : ''}ORDER_NO:${reviewForm.orderNo}`
           : String(reviewScan.shipment?.remarks || '').replace(/\s*\|\s*ORDER_NO:[^|]+/gi, '').replace(/^ORDER_NO:[^|]+\s*\|?\s*/i, '').trim(),
+        ...(reviewForm.amount !== '' ? { amount: parseFloat(reviewForm.amount) || 0 } : {}),
       });
       
       const updatedShipment = payload.data;
@@ -1636,13 +1638,18 @@ export default function ScanAWBPage({ toast }) {
                         <div className={`w-2 h-2 rounded-full mr-2 ${confLevel(ocrData.weightConfidence || 0)}`} />
                         <label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Weight (kg)</label>
                       </div>
-                      <input 
+                     <input 
                         type="number" step="0.01" min="0"
                         className="w-full bg-transparent border-none p-0 text-sm font-bold text-slate-900 tabular-nums focus:ring-0"
                         value={reviewForm.weight || ''}
                         onChange={(e) => setReviewForm(p => ({ ...p, weight: e.target.value }))}
                         disabled={savingReview}
                       />
+                      {Number(ocrData.amount || 0) > 0 && (
+                        <div className="text-[9px] text-slate-500 font-bold mt-1 leading-tight">
+                          AI estimate only: Rs {Number(ocrData.amount).toFixed(2)} (not saved automatically)
+                        </div>
+                      )}
                       {intelligence?.weightAnomaly?.anomaly && (
                         <div className="text-[9px] text-amber-600 font-bold mt-1 leading-tight">⚠️ {intelligence.weightAnomaly.warning}</div>
                       )}

@@ -260,4 +260,28 @@ describe('Client Portal E2E Tests — /api/portal', () => {
     expect(client.brandSettings.notificationCenter.whatsapp.delivered).toBe(true);
     expect(client.brandSettings.notificationCenter.whatsapp.delay).toBe(true);
   });
+
+  it('rejects privileged fields when client tries create-and-book shipment', async () => {
+    const res = await request(app)
+      .post('/api/portal/shipments/create-and-book')
+      .set('Authorization', `Bearer ${clientJwtToken}`)
+      .send({
+        consignee: 'Portal Booking Receiver',
+        deliveryAddress: '12 Test Street',
+        deliveryCity: 'Delhi',
+        pincode: '110001',
+        weight: 1.5,
+        service: 'Standard',
+        amount: 1,
+        status: 'Delivered',
+        department: 'Finance',
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.success).toBe(false);
+    expect(String(res.body.message || '')).toContain('server controlled');
+    expect(String(res.body.message || '')).toContain('amount');
+    expect(String(res.body.message || '')).toContain('status');
+    expect(String(res.body.message || '')).toContain('department');
+  });
 });

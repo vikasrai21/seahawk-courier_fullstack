@@ -69,10 +69,10 @@ export default function ClientShipmentsPage({ toast }) {
     <div className="min-h-full pb-12">
       <div className="mx-auto client-premium-main animate-in fade-in duration-700">
         <ClientPortalPageIntro
-          eyebrow="Shipment Workspace"
-          title="Track, filter, and act on every client shipment from one clean operational view."
-          description="Search by AWB, consignee, or destination, narrow the queue by status, and jump straight into tracking without losing context."
-          badges={['90 day shipment archive', 'Realtime refresh enabled', `${total} filtered shipments`]}
+          eyebrow="Shipment List"
+          title="Track, filter, and update shipments from one clear screen."
+          description="Search by AWB, consignee, or destination, filter by status, and open tracking quickly."
+          badges={['Last 90 days', 'Live refresh', `${total} filtered shipments`]}
           actions={(
             <>
               <button type="button" onClick={() => load()} className="client-action-btn-primary">
@@ -115,7 +115,7 @@ export default function ClientShipmentsPage({ toast }) {
                           <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-300 dark:text-white" />
                           <input 
                             className="client-filter-input py-4 pl-11 pr-4" 
-                            placeholder="Enter AWB, Consignee or Target Zone…" 
+                            placeholder="Search AWB, consignee, destination..." 
                             value={search} 
                             onChange={(e) => { setSearch(e.target.value); setPage(1); }} 
                           />
@@ -127,7 +127,7 @@ export default function ClientShipmentsPage({ toast }) {
                          value={status} 
                          onChange={(e) => { setStatus(e.target.value); setPage(1); }}
                        >
-                          <option value="" className="bg-slate-900">All Nodes</option>
+                          <option value="" className="bg-slate-900">All Statuses</option>
                           {['Booked', 'InTransit', 'OutForDelivery', 'Delivered', 'Delayed', 'RTO'].map(s => (
                             <option key={s} value={s} className="bg-slate-900">{s.toUpperCase()}</option>
                           ))}
@@ -141,10 +141,10 @@ export default function ClientShipmentsPage({ toast }) {
               <div className="client-section-card flex h-full flex-col justify-between gap-4 text-center">
                  <div className="flex items-center justify-center gap-3 mb-2">
                     <Zap size={18} className="text-blue-500 animate-pulse" />
-                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-100">Tactical Snapshot</span>
+                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-100">Quick Snapshot</span>
                  </div>
                  <div className="text-5xl font-black text-slate-900 dark:text-white tabular-nums tracking-tighter mb-2">{total}</div>
-                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-100">Active filtered deliveries</p>
+                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-100">Filtered shipments</p>
                  <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-left dark:border-slate-700 dark:bg-slate-900/70">
                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Best next step</p>
                    <p className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -168,7 +168,7 @@ export default function ClientShipmentsPage({ toast }) {
                    <table className="w-full min-w-[1000px] text-sm">
                       <thead>
                           <tr>
-                            {['Dispatched', 'AWB Identity', 'Consignee Node', 'Destination Label', 'Carrier Force', 'Status Flow', 'Engage'].map(h => (
+                            {['Date', 'AWB', 'Consignee', 'Destination', 'Courier', 'Status', 'Action'].map(h => (
                                <th key={h}>{h}</th>
                             ))}
                          </tr>
@@ -183,7 +183,7 @@ export default function ClientShipmentsPage({ toast }) {
                               <td>
                                  <div className="flex flex-col">
                                     <span className="text-xs font-black text-slate-800 dark:text-slate-200 leading-none mb-1">{s.date}</span>
-                                    <span className="text-[9px] font-bold uppercase leading-none tracking-widest text-slate-400 dark:text-slate-100">90-Day Loop</span>
+                                    <span className="text-[9px] font-bold uppercase leading-none tracking-widest text-slate-400 dark:text-slate-100">Last 90 Days</span>
                                  </div>
                               </td>
                               <td>
@@ -192,17 +192,17 @@ export default function ClientShipmentsPage({ toast }) {
                                     <Activity size={12} className="text-blue-500 opacity-0 group-hover:opacity-100 transition-all animate-pulse" />
                                  </div>
                               </td>
-                              <td className="text-xs font-black uppercase tracking-tight text-slate-700 dark:text-white">{s.consignee || 'UNRECORDED'}</td>
+                              <td className="text-xs font-black uppercase tracking-tight text-slate-700 dark:text-white">{s.consignee || 'NOT AVAILABLE'}</td>
                               <td>
                                  <div className="flex items-center gap-2">
                                     <MapPin size={14} className="text-slate-300 dark:text-slate-100" />
-                                    <span className="max-w-[160px] truncate text-xs font-bold text-slate-600 dark:text-slate-100">{s.destination || 'Global Pincode'}</span>
+                                    <span className="max-w-[160px] truncate text-xs font-bold text-slate-600 dark:text-slate-100">{s.destination || '-'}</span>
                                  </div>
                               </td>
                               <td>
                                  <div className="flex items-center gap-2">
                                     <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-100">{s.courier || 'TBA'}</span>
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-100">{s.courier || '-'}</span>
                                  </div>
                               </td>
                               <td><StatusBadge status={s.status} /></td>
@@ -232,11 +232,11 @@ export default function ClientShipmentsPage({ toast }) {
         {total > 25 && (
           <div className="flex items-center justify-between px-2">
              <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-100">
-                Showing Delta: {((page - 1) * 25) + 1} TO {Math.min(page * 25, total)} OF {total}
+                Showing {((page - 1) * 25) + 1} to {Math.min(page * 25, total)} of {total}
              </div>
              <div className="flex gap-2">
-                <button onClick={() => setPage((p) => p - 1)} disabled={page === 1} className="client-action-btn-secondary px-5 py-2 text-[10px] uppercase tracking-[0.16em] disabled:translate-y-0 disabled:opacity-30">Prev Loop</button>
-                <button onClick={() => setPage((p) => p + 1)} disabled={page * 25 >= total} className="client-action-btn-secondary px-5 py-2 text-[10px] uppercase tracking-[0.16em] disabled:translate-y-0 disabled:opacity-30">Next Loop</button>
+                <button onClick={() => setPage((p) => p - 1)} disabled={page === 1} className="client-action-btn-secondary px-5 py-2 text-[10px] uppercase tracking-[0.16em] disabled:translate-y-0 disabled:opacity-30">Previous</button>
+                <button onClick={() => setPage((p) => p + 1)} disabled={page * 25 >= total} className="client-action-btn-secondary px-5 py-2 text-[10px] uppercase tracking-[0.16em] disabled:translate-y-0 disabled:opacity-30">Next</button>
              </div>
           </div>
         )}
