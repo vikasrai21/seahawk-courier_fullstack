@@ -8,6 +8,7 @@ const contractSvc = require('../../services/contract.service');
 const shipmentSvc = require('../../services/shipment.service');
 const carrierSvc = require('../../services/carrier.service');
 const courierDecisionSvc = require('../../services/courierDecision.service');
+const { AppError } = require('../../middleware/errorHandler');
 const R = require('../../utils/response');
 const { resolveClientCode, getClientCode, fmtDate } = require('./shared');
 
@@ -87,6 +88,52 @@ function hasValue(value) {
   if (value === null || value === undefined) return false;
   if (typeof value === 'string') return value.trim().length > 0;
   return true;
+}
+
+function normalizePreferredCourier(value) {
+  return courierDecisionSvc.normalizeCarrier
+    ? courierDecisionSvc.normalizeCarrier(value)
+    : null;
+}
+
+function getBookingCarrierCandidates({ preferredCourier, decision }) {
+  const normalizedPreferred = normalizePreferredCourier(preferredCourier);
+  const explicitlyRequested = normalizedPreferred && normalizedPreferred !== 'AUTO' ? normalizedPreferred : null;
+
+  const configured = carrierSvc.getConfiguredCarriers();
+  if (!configured.length) {
+    throw new AppError(
+      'No booking courier is active right now. Please ask admin to enable at least one courier API before booking.',
+      503
+    );
+  }
+
+  if (explicitlyRequested && !configured.includes(explicitlyRequested)) {
+    throw new AppError(
+      `${explicitlyRequested} booking is not active right now. Please choose Auto or another active courier.`,
+      503
+    );
+  }
+
+  const ordered = [];
+  for (const carrier of [
+    explicitlyRequested,
+    decision?.recommendedCourier,
+    decision?.fallbackCourier,
+    ...configured,
+  ]) {
+    if (!carrier || !configured.includes(carrier) || ordered.includes(carrier)) continue;
+    ordered.push(carrier);
+  }
+
+  if (!ordered.length) {
+    throw new AppError(
+      'No active booking courier is available for this shipment right now. Please try again shortly.',
+      503
+    );
+  }
+
+  return { configured, ordered };
 }
 
 async function notificationPreferences(req, res) {
@@ -468,7 +515,11 @@ async function createAndBookShipment(req, res) {
       ? client.brandSettings
       : {},
   });
-  const selectedCourier = decision.recommendedCourier;
+  const { ordered: carrierCandidates, configured: configuredCouriers } = getBookingCarrierCandidates({
+    preferredCourier: req.body?.courier || req.body?.preferredCourier,
+    decision,
+  });
+  const selectedCourier = carrierCandidates[0];
 
   const bookingPayload = {
     consignee,
@@ -533,6 +584,11 @@ async function createAndBookShipment(req, res) {
       return R.ok(res, {
         clientCode,
         decision,
+        carrierPlan: {
+          selectedCourier,
+          fallbackCouriers: carrierCandidates.slice(1),
+          configuredCouriers,
+        },
         orchestration: {
           idempotencyKey: idempotencyKey || null,
           fingerprint: bookingFingerprint,
@@ -544,19 +600,26 @@ async function createAndBookShipment(req, res) {
     let bookingResult = null;
     let selectedCarrierUsed = selectedCourier;
     let usedFallback = false;
-    const fallbackCarrier = decision.fallbackCourier && decision.fallbackCourier !== selectedCourier
-      ? decision.fallbackCourier
-      : null;
+    const failures = [];
 
-    try {
-      bookingResult = await carrierSvc.createShipment(selectedCourier, bookingPayload, { dryRun: false });
-      if (!bookingResult?.awb) throw new Error(`${selectedCourier} booking did not return AWB.`);
-    } catch (primaryErr) {
-      if (!fallbackCarrier) throw primaryErr;
-      bookingResult = await carrierSvc.createShipment(fallbackCarrier, bookingPayload, { dryRun: false });
-      if (!bookingResult?.awb) throw new Error(`${fallbackCarrier} booking did not return AWB.`);
-      selectedCarrierUsed = fallbackCarrier;
-      usedFallback = true;
+    for (const carrier of carrierCandidates) {
+      try {
+        const candidateResult = await carrierSvc.createShipment(carrier, bookingPayload, { dryRun: false });
+        if (!candidateResult?.awb) throw new Error(`${carrier} booking did not return AWB.`);
+        bookingResult = candidateResult;
+        selectedCarrierUsed = candidateResult.carrier || carrier;
+        usedFallback = carrier !== selectedCourier;
+        break;
+      } catch (carrierErr) {
+        failures.push(`${carrier}: ${carrierErr.message}`);
+      }
+    }
+
+    if (!bookingResult?.awb) {
+      throw new AppError(
+        `Booking could not be completed right now. ${failures[0] || 'Courier API did not accept this shipment.'}`,
+        502
+      );
     }
 
     const shipment = await persistBookedShipment(selectedCarrierUsed, bookingResult);
@@ -574,6 +637,12 @@ async function createAndBookShipment(req, res) {
         trackUrl: bookingResult.trackUrl || null,
         labelUrl: bookingResult.labelUrl || null,
         usedFallback,
+      },
+      carrierPlan: {
+        selectedCourier,
+        bookedCourier: selectedCarrierUsed,
+        fallbackCouriers: carrierCandidates.slice(1),
+        configuredCouriers,
       },
     };
 
