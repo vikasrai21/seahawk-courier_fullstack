@@ -11,6 +11,7 @@ import {
 import api from '../../services/api';
 import { PageLoader } from '../../components/ui/Loading';
 import TransactionList from '../../components/wallet/TransactionList';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
@@ -189,6 +190,12 @@ export default function ClientWalletPage({ toast }) {
       </header>
 
       <div className="mx-auto client-premium-main animate-in fade-in duration-700">
+        <ClientPortalPageIntro
+          eyebrow="Wallet Control Center"
+          title="Manage wallet balance, top-up rules, and transaction flow from one premium financial desk."
+          description="Fund the account, track transaction history, configure auto-topup alerts, and download monthly ledgers without leaving the client portal."
+          badges={[`Client ${wallet?.code || '—'}`, `${txns.length} transactions`, autoTopup.enabled ? 'Auto-topup on' : 'Auto-topup off']}
+        />
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
            {/* LEFT: Balance & Recharge Command Center */}
            <div className="lg:col-span-4 space-y-6">

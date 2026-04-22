@@ -171,19 +171,19 @@ export function ClientPortalLayout() {
   return (
     <div className="client-premium-shell flex h-screen overflow-hidden dark:bg-slate-950">
       <aside className="client-shell-sidebar hidden w-64 flex-col border-r border-slate-200/80 bg-slate-50/90 dark:border-slate-800 dark:bg-slate-900/95 lg:flex">
-        <div className="flex items-center gap-2 border-b border-slate-200/80 px-3 py-3 dark:border-slate-800">
-          <img src="/images/logo.png" alt="Seahawk Logo" className="h-8 w-auto rounded-md bg-white p-1 shadow-sm" />
+        <div className="flex items-center gap-3 border-b border-slate-200/80 px-4 py-4 dark:border-slate-800">
+          <img src="/images/logo.png" alt="Seahawk Logo" className="h-10 w-auto rounded-xl bg-white p-1.5 shadow-[0_12px_20px_-14px_rgba(15,23,42,0.6)]" />
           <div>
             <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Client Portal</p>
             <p className="text-sm font-black text-slate-900 dark:text-slate-100">Sea Hawk Workspace</p>
           </div>
         </div>
-        <div className="mx-3 mt-3 rounded-xl border border-sky-200/70 bg-gradient-to-r from-sky-50 to-indigo-50 px-3 py-2.5 shadow-[0_16px_30px_-24px_rgba(37,99,235,0.8)] dark:border-sky-900/40 dark:from-slate-800 dark:to-slate-800/90">
+        <div className="mx-3 mt-3 rounded-[22px] border border-sky-200/70 bg-gradient-to-r from-sky-50 via-white to-orange-50 px-3.5 py-3 shadow-[0_20px_34px_-24px_rgba(37,99,235,0.62)] dark:border-sky-900/40 dark:from-slate-800 dark:via-slate-900 dark:to-slate-800/90">
           <p className="mb-1 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-sky-600 dark:text-sky-300">
             <Sparkles size={12} />
             Enterprise Mode
           </p>
-          <p className="text-[11px] font-semibold leading-4 text-slate-600 dark:text-slate-300">Designed for channel partners who need speed, clarity, and control.</p>
+          <p className="text-[11px] font-semibold leading-4 text-slate-600 dark:text-slate-300">Designed for channel partners who need faster dispatch, cleaner decisions, and clearer shipment visibility.</p>
         </div>
         <SidebarNav />
         <SidebarFooter />
@@ -229,6 +229,9 @@ export function ClientPortalLayout() {
           <div className="hidden items-center gap-2 md:flex">
             <div className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-700">
               Live
+            </div>
+            <div className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-sky-700">
+              Client Workspace
             </div>
             <div className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-violet-700">
               Secure

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { RotateCcw, Package, Search, CheckCircle2, Clock, Truck, XCircle, MapPin, ArrowRight, ExternalLink, MessageCircle } from 'lucide-react';
 import api from '../../services/api';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 const STATUS_CONFIG = {
   PENDING:             { label: 'Pending',            color: 'amber',   icon: Clock },
@@ -234,19 +235,13 @@ export default function ClientReturnsPage({ toast }) {
   const activeCount = returns.filter(r => ['APPROVED', 'LABEL_READY', 'PICKUP_BOOKED', 'IN_TRANSIT'].includes(r.status)).length;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-orange-500 to-amber-500 text-white flex items-center justify-center shadow-lg shadow-orange-500/20">
-              <RotateCcw size={20} strokeWidth={2.5} />
-            </div>
-            Returns
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">Request and track product returns</p>
-        </div>
-      </div>
+    <div className="client-premium-main space-y-6">
+      <ClientPortalPageIntro
+        eyebrow="Returns"
+        title="Request, track, and complete reverse logistics from one client returns workspace."
+        description="Move between eligible delivered shipments and active return requests without losing sight of status, method, or label-sharing actions."
+        badges={[`${returns.length} returns`, `${eligible.length} eligible shipments`, `${activeCount} active reverse moves`]}
+      />
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

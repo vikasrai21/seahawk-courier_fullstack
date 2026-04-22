@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import { formatStatusLabel, normalizeStatus } from '../../components/ui/StatusBadge';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 const STATUS_STEPS = ['Booked', 'PickedUp', 'InTransit', 'OutForDelivery', 'Delivered'];
 const pick = (obj, ...keys) => {
@@ -62,6 +63,12 @@ export default function ClientTrackPage({ toast }) {
   return (
     <div className="min-h-full">
       <div className="client-premium-main max-w-3xl">
+        <ClientPortalPageIntro
+          eyebrow="Single Track"
+          title="Track one shipment deeply with timeline context, milestone state, and NDR history in one place."
+          description="Enter an AWB or open this page from another workspace to inspect the full journey without jumping across tools."
+          badges={[awb ? `AWB ${awb}` : 'Enter an AWB', result?.shipment?.status || 'Waiting for query', `${result?.events?.length || 0} events`]}
+        />
         <div className="flex gap-2">
           <input
             className="input flex-1"
@@ -70,7 +77,7 @@ export default function ClientTrackPage({ toast }) {
             onChange={e => setAwb(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && track()}
           />
-          <button onClick={track} disabled={loading} className="btn-primary">
+          <button onClick={track} disabled={loading} className="client-action-btn-primary">
             {loading ? '...' : '🔍 Track'}
           </button>
         </div>

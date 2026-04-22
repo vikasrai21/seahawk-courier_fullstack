@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import api from '../../services/api';
 import { StatusBadge } from '../../components/ui/StatusBadge';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 export default function ClientOrdersQueuePage({ toast }) {
   const [drafts, setDrafts] = useState([]);
@@ -47,13 +48,18 @@ export default function ClientOrdersQueuePage({ toast }) {
 
   return (
     <div className="min-h-full flex flex-col">
-      <div className="px-4 py-3 flex items-center justify-end">
-        <button className="btn-primary" onClick={() => setShowForm(!showForm)}>
-          + New Order
-        </button>
-      </div>
-
       <div className="client-premium-main flex-1">
+        <ClientPortalPageIntro
+          eyebrow="Orders Queue"
+          title="Keep draft orders organized before dispatch and turn queue items into shipments with less friction."
+          description="This workspace helps client teams stage shipment data, review pending items, and hand them cleanly into fulfillment."
+          badges={[`${drafts.length} queued orders`, showForm ? 'Draft form open' : 'Draft form closed', 'Client-side staging']}
+          actions={(
+            <button className="client-action-btn-primary" onClick={() => setShowForm(!showForm)}>
+              {showForm ? 'Hide draft form' : '+ New Order'}
+            </button>
+          )}
+        />
         
         {showForm && (
           <div className="client-premium-card p-5 border-[#f97316] shadow-sm shadow-orange-100/50 dark:shadow-orange-500/10">

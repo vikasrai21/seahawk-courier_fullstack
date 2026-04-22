@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 const tomorrow = () => {
   const d = new Date();
@@ -100,6 +101,12 @@ export default function ClientPickupPage({ toast }) {
       </header>
 
       <div className="mx-auto client-premium-main">
+        <ClientPortalPageIntro
+          eyebrow="Pickup Coordination"
+          title="Schedule pickups with a clearer handoff between your team and Sea Hawk operations."
+          description="Set the slot, package profile, and destination context in one pass, then keep the recent request timeline visible beside the form."
+          badges={[`${pickups.length} requests tracked`, form.timeSlot, form.packageType]}
+        />
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.18fr)_320px]">
           <div className="overflow-hidden rounded-[28px] border border-slate-200/60 bg-[linear-gradient(145deg,#0f2748_0%,#123563_55%,#174576_100%)] p-6 text-white shadow-[0_22px_50px_-30px_rgba(15,39,72,0.9)]">
             <div className="inline-flex rounded-full border border-sky-200/20 bg-sky-300/10 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-sky-100">

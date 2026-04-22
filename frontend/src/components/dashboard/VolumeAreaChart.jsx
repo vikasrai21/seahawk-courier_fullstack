@@ -4,10 +4,10 @@ const fmt = n => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 export default function VolumeAreaChart({ data, dark, hideRevenue }) {
   const T = {
-    grid: dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)',
-    text: dark ? '#94a3b8' : '#475569',
-    stop1: dark ? '#3b82f6' : '#2563eb',
-    stop2: dark ? '#10b981' : '#059669',
+    grid: dark ? 'rgba(99,130,191,0.06)' : 'rgba(0,0,0,0.05)',
+    text: dark ? '#4a5a7a' : '#475569',
+    stop1: dark ? '#60a5fa' : '#2563eb',
+    stop2: dark ? '#34d399' : '#059669',
   };
 
   return (
@@ -42,11 +42,12 @@ export default function VolumeAreaChart({ data, dark, hideRevenue }) {
           />
           <Tooltip 
             contentStyle={{ 
-              background: dark ? '#0f172a' : '#fff', 
-              border: `1px solid ${dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+              background: dark ? 'rgba(13,20,37,0.95)' : '#fff', 
+              border: `1px solid ${dark ? 'rgba(99,130,191,0.2)' : 'rgba(0,0,0,0.1)'}`,
               borderRadius: '12px',
               fontSize: '12px',
-              boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
+              boxShadow: dark ? '0 10px 30px rgba(0,0,0,0.4)' : '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
+              color: dark ? '#f1f5f9' : '#0f172a',
             }}
             formatter={(value, name) => [
               name === 'revenue' ? fmt(value) : value, 

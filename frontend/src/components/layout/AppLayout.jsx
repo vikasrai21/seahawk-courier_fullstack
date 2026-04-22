@@ -188,7 +188,7 @@ function SidebarContent({ onClose }) {
     <div style={{
       display: 'flex', flexDirection: 'column',
       height: '100%', overflow: 'hidden',
-      background: dark ? '#0B1120' : '#ffffff',
+      background: dark ? 'linear-gradient(180deg, #080c18, #060a14)' : '#ffffff',
     }}>
 
       {/* Logo */}
@@ -197,7 +197,7 @@ function SidebarContent({ onClose }) {
         borderBottom: `1px solid ${dark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)'}`,
         display: 'flex', alignItems: 'center',
         justifyContent: 'space-between', flexShrink: 0,
-        background: dark ? '#0B1120' : '#ffffff',
+        background: dark ? 'linear-gradient(180deg, #080c18, #060a14)' : '#ffffff',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <img 
@@ -416,8 +416,8 @@ export function AppLayout({ children }) {
         <header style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: '10px 24px',
-          background: dark ? 'rgba(15,23,42,0.88)' : 'rgba(255,255,255,0.88)',
-          borderBottom: `1px solid ${C.border}`,
+          background: dark ? 'rgba(8,12,24,0.88)' : 'rgba(255,255,255,0.88)',
+          borderBottom: `1px solid ${dark ? 'rgba(99,130,191,0.1)' : C.border}`,
           flexShrink: 0,
           zIndex: 40,
           height: 64,

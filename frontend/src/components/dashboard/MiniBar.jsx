@@ -2,14 +2,14 @@ const fmt = n => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 function tokens(dark) {
   return dark ? {
-    surfaceHi: 'rgba(30, 41, 59, 0.5)',
-    border:    'rgba(255, 255, 255, 0.08)',
-    text:      '#f8fafc',
-    textMid:   '#94a3b8',
-    textDim:   '#475569',
+    surfaceHi: 'rgba(13, 20, 37, 0.5)',
+    border:    'rgba(99, 130, 191, 0.1)',
+    text:      '#f1f5f9',
+    textMid:   '#8b9cc0',
+    textDim:   '#4a5a7a',
   } : {
     surfaceHi: 'rgba(241, 245, 249, 0.5)',
-    border:    'rgba(255, 255, 255, 0.3)',
+    border:    'rgba(0, 0, 0, 0.05)',
     text:      '#0f172a',
     textMid:   '#475569',
     textDim:   '#94a3b8',

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../../services/api';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 export default function ClientBrandTrackingPage({ toast }) {
   const [brand, setBrand] = useState(null);
@@ -57,6 +58,12 @@ export default function ClientBrandTrackingPage({ toast }) {
   return (
     <div className="min-h-full">
       <div className="client-premium-main max-w-5xl">
+        <ClientPortalPageIntro
+          eyebrow="Brand Tracking"
+          title="Shape the white-label tracking experience your customers see after every shipment."
+          description="Control your hosted tracking link, embed code, visual identity, and message template from one branded workspace."
+          badges={['White-label setup', brand?.trackingUrl ? 'Hosted link ready' : 'Loading link', copied ? 'Copied recently' : 'Ready to share']}
+        />
         <div className="client-premium-card p-5">
           <h1 className="font-bold text-slate-900 dark:text-white">White-Label Tracking Setup</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Share a hosted tracking link with your customers or embed the Sea Hawk tracker on your own website.</p>
@@ -67,7 +74,7 @@ export default function ClientBrandTrackingPage({ toast }) {
             <div className="text-xs text-slate-400 dark:text-slate-500 uppercase">Hosted Link</div>
             <div className="mt-2 text-sm font-semibold text-slate-900 dark:text-white break-all">{brand?.trackingUrl || 'Loading…'}</div>
             <div className="mt-4 flex gap-2">
-              <button className="btn-primary" onClick={() => copy(brand?.trackingUrl || '', 'link')}>Copy Link</button>
+              <button className="client-action-btn-primary" onClick={() => copy(brand?.trackingUrl || '', 'link')}>Copy Link</button>
               {brand?.trackingUrl && <a className="btn-secondary" href={brand.trackingUrl} target="_blank" rel="noreferrer">Open</a>}
             </div>
             {copied === 'link' && <div className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">Hosted link copied.</div>}
@@ -77,7 +84,7 @@ export default function ClientBrandTrackingPage({ toast }) {
             <div className="text-xs text-slate-400 dark:text-slate-500 uppercase">Embed Script</div>
             <pre className="mt-2 rounded-xl bg-slate-950 text-slate-100 text-xs p-4 overflow-x-auto whitespace-pre-wrap">{brand?.embedCode || 'Loading…'}</pre>
             <div className="mt-4">
-              <button className="btn-primary" onClick={() => copy(brand?.embedCode || '', 'embed')}>Copy Embed Code</button>
+              <button className="client-action-btn-primary" onClick={() => copy(brand?.embedCode || '', 'embed')}>Copy Embed Code</button>
             </div>
             {copied === 'embed' && <div className="mt-2 text-xs text-emerald-600 dark:text-emerald-400">Embed code copied.</div>}
           </div>
@@ -94,7 +101,7 @@ export default function ClientBrandTrackingPage({ toast }) {
             <textarea className="input md:col-span-2 min-h-[90px]" value={form.smsTemplate} onChange={(e) => setForm((p) => ({ ...p, smsTemplate: e.target.value }))} placeholder="SMS template for delivery updates" />
           </div>
           <div className="mt-4">
-            <button className="btn-primary" onClick={saveBrandSettings} disabled={saving}>{saving ? 'Saving…' : 'Save Brand Settings'}</button>
+            <button className="client-action-btn-primary" onClick={saveBrandSettings} disabled={saving}>{saving ? 'Saving…' : 'Save Brand Settings'}</button>
           </div>
         </div>
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 export default function ClientPODPage({ toast }) {
   const [pods, setPods] = useState([]);
@@ -36,6 +37,12 @@ export default function ClientPODPage({ toast }) {
       </header>
 
       <div className="mx-auto client-premium-main">
+        <ClientPortalPageIntro
+          eyebrow="Proof of Delivery"
+          title="Review proof-of-delivery records as a clean evidence log instead of a scattered shipment list."
+          description="See delivered rows with proof availability, open POD links faster, and verify final delivery place and time in one scrollable workspace."
+          badges={[`${pods.length} delivered records`, loading ? 'Loading evidence' : 'Evidence loaded']}
+        />
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.12fr)_320px]">
           <div className="overflow-hidden rounded-[28px] border border-slate-200/60 bg-[linear-gradient(145deg,#eff6ff_0%,#ffffff_70%)] p-6 shadow-[0_22px_44px_-30px_rgba(37,99,235,0.25)]">
             <div className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-sky-600">

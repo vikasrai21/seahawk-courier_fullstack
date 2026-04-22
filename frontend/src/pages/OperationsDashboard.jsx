@@ -26,26 +26,27 @@ const fmtN = n => Number(n || 0).toLocaleString('en-IN');
 
 function tokens(dark) {
   return dark ? {
-    bg:        'radial-gradient(circle at top left, #0a1224, #05080f)',
-    surface:   'rgba(15, 23, 42, 0.65)',
-    surfaceHi: 'rgba(30, 41, 59, 0.5)',
-    border:    'rgba(255, 255, 255, 0.08)',
-    text:      '#f8fafc',
-    textMid:   '#94a3b8',
-    textDim:   '#475569',
-    blue:      '#3b82f6',
-    green:     '#10b981',
-    red:       '#ef4444',
-    purple:    '#8b5cf6',
-    orange:    '#f97316',
-    cyan:      '#06b6d4',
-    shadow:    '0 8px 32px rgba(0,0,0,0.4)',
-    glass:     'blur(12px)',
+    bg:        'transparent',
+    surface:   'rgba(13, 20, 37, 0.75)',
+    surfaceHi: 'rgba(21, 32, 56, 0.5)',
+    border:    'rgba(99, 130, 191, 0.12)',
+    text:      '#f1f5f9',
+    textMid:   '#8b9cc0',
+    textDim:   '#4a5a7a',
+    blue:      '#60a5fa',
+    green:     '#34d399',
+    red:       '#f87171',
+    purple:    '#a78bfa',
+    orange:    '#fb923c',
+    cyan:      '#22d3ee',
+    yellow:    '#fbbf24',
+    shadow:    '0 8px 32px rgba(0,0,0,0.35), 0 0 1px rgba(99,130,191,0.1)',
+    glass:     'blur(16px)',
   } : {
-    bg:        'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)',
+    bg:        'transparent',
     surface:   'rgba(255, 255, 255, 0.8)',
     surfaceHi: 'rgba(241, 245, 249, 0.5)',
-    border:    'rgba(255, 255, 255, 0.3)',
+    border:    'rgba(0, 0, 0, 0.06)',
     text:      '#0f172a',
     textMid:   '#475569',
     textDim:   '#94a3b8',
@@ -55,6 +56,7 @@ function tokens(dark) {
     purple:    '#7c3aed',
     orange:    '#ea580c',
     cyan:      '#0891b2',
+    yellow:    '#eab308',
     shadow:    '0 8px 32px rgba(31, 38, 135, 0.07)',
     glass:     'blur(8px)',
   };
@@ -78,10 +80,13 @@ export default function OperationsDashboard({ toast }) {
         api.get('/ops/dashboard'),
         api.get('/rates/health'),
       ]);
-      setData(ops?.data || ops);
-      setRateHealth(health?.data || health || []);
+      // R.ok wraps as { success, data }, Axios wraps as { data: { success, data } }
+      const opsPayload = ops?.data?.data || ops?.data || ops;
+      setData(opsPayload);
+      const healthPayload = health?.data?.data || health?.data || health || [];
+      setRateHealth(healthPayload);
     } catch (e) {
-      toast?.('Transmission Failed: Logistics Node Offline', 'error');
+      toast?.('Dashboard temporarily unavailable. Retrying...', 'error');
     } finally {
       if (showLoading) setTimeout(() => setLoading(false), 400);
     }
@@ -150,9 +155,10 @@ export default function OperationsDashboard({ toast }) {
   return (
     <div style={{ background: T.bg, minHeight: '100vh', padding: '32px 40px', color: T.text, transition: 'background 0.5s ease' }}>
       
-      {/* Background Orbs */}
-      <div style={{ position: 'fixed', top: '-10%', right: '-5%', width: '40vw', height: '40vw', background: `${T.blue}08`, filter: 'blur(120px)', borderRadius: '50%', pointerEvents: 'none', zIndex: 0 }} />
-      <div style={{ position: 'fixed', bottom: '0%', left: '-5%', width: '30vw', height: '30vw', background: `${T.purple}08`, filter: 'blur(100px)', borderRadius: '50%', pointerEvents: 'none', zIndex: 0 }} />
+      {/* Background Orbs — more vibrant */}
+      <div style={{ position: 'fixed', top: '-8%', right: '5%', width: '35vw', height: '35vw', background: `radial-gradient(circle, ${T.orange}12, transparent 70%)`, filter: 'blur(100px)', borderRadius: '50%', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'fixed', bottom: '5%', left: '-3%', width: '28vw', height: '28vw', background: `radial-gradient(circle, ${T.purple}10, transparent 70%)`, filter: 'blur(90px)', borderRadius: '50%', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'fixed', top: '40%', left: '30%', width: '20vw', height: '20vw', background: `radial-gradient(circle, ${T.blue}08, transparent 70%)`, filter: 'blur(80px)', borderRadius: '50%', pointerEvents: 'none', zIndex: 0 }} />
 
       <div style={{ position: 'relative', zIndex: 1, maxWidth: 1600, margin: '0 auto' }}>
         
@@ -205,7 +211,7 @@ export default function OperationsDashboard({ toast }) {
         {/* Analytics Section with Recharts */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 24, marginBottom: 32 }}>
           
-          <SCard title={isOwner ? "Volume & Revenue Velocity" : "Shipment Volume Trend"} icon={TrendingUp} iconColor={T.blue} dark={dark} delay="0.1s">
+          <SCard title={isOwner ? "Volume & Revenue Trend" : "Shipment Volume Trend"} icon={TrendingUp} iconColor={T.blue} dark={dark} delay="0.1s">
             {trendData.length === 0 ? <p style={{ fontSize: 13, color: T.textDim, textAlign: 'center', padding: '40px 0' }}>Analyzing historical trends...</p> : (
               <VolumeAreaChart data={trendData} dark={dark} hideRevenue={!isOwner} />
             )}

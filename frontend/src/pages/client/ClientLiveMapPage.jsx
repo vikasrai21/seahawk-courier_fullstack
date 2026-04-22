@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { useTheme } from '../../context/ThemeContext';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 const STATUS_COLORS = {
   Booked: '#64748b',
@@ -68,6 +69,12 @@ export default function ClientLiveMapPage({ toast }) {
       </header>
 
       <div className="mx-auto client-premium-main">
+        <ClientPortalPageIntro
+          eyebrow="Live Map"
+          title="Watch active shipments across a cleaner, more focused India delivery grid."
+          description="Pins are placed from destination or latest location hints, giving your team a faster read on where movement and risk are clustering."
+          badges={[`${payloadRows.length} plotted shipments`, `${geoRows.length} geocoded rows`, dark ? 'Dark map mode' : 'Light map mode']}
+        />
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_320px]">
           <div className="overflow-hidden rounded-[28px] border border-slate-200/60 bg-[linear-gradient(145deg,#0f2748_0%,#123563_55%,#174576_100%)] p-6 text-white shadow-[0_22px_50px_-30px_rgba(15,39,72,0.9)]">
             <div className="inline-flex rounded-full border border-sky-200/20 bg-sky-300/10 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-sky-100">

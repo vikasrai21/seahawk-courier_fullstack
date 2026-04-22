@@ -100,7 +100,8 @@ export default function AnalyticsPage({ toast }) {
         api.get('/analytics/ndr'),
       ]);
       setOverview(r1.data);
-      setCouriers(r2.data?.carriers || r2.data || []);
+      const couriersList = Array.isArray(r2.data) ? r2.data : (r2.data?.couriers || r2.data?.carriers || []);
+      setCouriers(couriersList.filter(Boolean));
       setMonthly(r3.data?.months || r3.data || []);
       setNdr(r4.data);
     } catch(e) { toast?.(e.message, 'error'); }
@@ -132,7 +133,8 @@ export default function AnalyticsPage({ toast }) {
   }, [monthly]);
 
   return (
-    <div className="mx-auto max-w-7xl p-6 space-y-8 min-h-screen">
+    <div className="client-premium-shell min-h-screen transition-colors duration-300">
+      <div className="client-premium-main portal-visual-upgrade">
       <PageHeader
         title="Performance Analytics"
         subtitle="Real-time courier benchmarking and logistics efficiency intel"
@@ -190,10 +192,10 @@ export default function AnalyticsPage({ toast }) {
           
           {/* KPI Dashboard */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <KPI label="Global Volume" value={kpis?.totalShipments?.toLocaleString() || '0'} icon={Package} accent="#3b82f6" sub={`${PERIODS.find(p=>p.days===period)?.label} performance`} dark={true} />
-            <KPI label="Success Ratio" value={`${kpis?.deliveryRate || '0'}%`} icon={CheckCircle2} accent="#10b981" sub="Across all carriers" dark={true} />
-            <KPI label="Return Velocity" value={`${kpis?.rtoRate || '0'}%`} icon={RotateCcw} accent="#ef4444" sub="Risk corridor monitoring" dark={true} />
-            {isOwner && <KPI label="Realized Revenue" value={fmt(kpis?.totalRevenue || 0)} icon={TrendingUp} accent="#f59e0b" sub="Gross logistics income" dark={true} />}
+            <KPI label="Total Shipments" value={kpis?.totalShipments?.toLocaleString() || '0'} icon={Package} accent="#3b82f6" sub={`${PERIODS.find(p=>p.days===period)?.label} performance`} dark={true} />
+            <KPI label="Delivery Success Rate" value={`${kpis?.deliveryRate || '0'}%`} icon={CheckCircle2} accent="#10b981" sub="Across all carriers" dark={true} />
+            <KPI label="Return to Origin (RTO)" value={`${kpis?.rtoRate || '0'}%`} icon={RotateCcw} accent="#ef4444" sub="Risk corridor monitoring" dark={true} />
+            {isOwner && <KPI label="Total Billed Revenue" value={fmt(kpis?.totalRevenue || 0)} icon={TrendingUp} accent="#f59e0b" sub="Gross logistics income" dark={true} />}
           </div>
 
           {/* AI Intelligence Layer */}
@@ -210,8 +212,8 @@ export default function AnalyticsPage({ toast }) {
                     <TrendingUp size={20} />
                   </div>
                   <div>
-                    <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none mb-1">Growth Intelligence</h3>
-                    <p className="text-xs font-bold text-slate-500">Monthly scale & financial velocity</p>
+                    <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none mb-1">Performance Trends</h3>
+                    <p className="text-xs font-bold text-slate-500">Monthly volume and revenue overview</p>
                   </div>
                 </div>
               </div>
@@ -237,7 +239,7 @@ export default function AnalyticsPage({ toast }) {
                   {isOwner && <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 800, fill: '#94a3b8' }} />}
                   <Tooltip content={<CustomTooltip isCurrency={isOwner} />} />
                   <Legend wrapperStyle={{ fontSize: '10px', fontWeight: '900', textTransform: 'uppercase', letterSpacing: '0.1em', paddingTop: '20px' }} />
-                  <Area yAxisId="left" type="monotone" dataKey="shipments" name="Volume" stroke="#3b82f6" strokeWidth={3} fill="url(#areaBlue)" animationDuration={1500} />
+                  <Area yAxisId="left" type="monotone" dataKey="count" name="Volume" stroke="#3b82f6" strokeWidth={3} fill="url(#areaBlue)" animationDuration={1500} />
                   {isOwner && <Area yAxisId="right" type="monotone" dataKey="revenue" name="Revenue" stroke="#f59e0b" strokeWidth={3} fill="url(#areaAmber)" animationDuration={1500} />}
                   {isOwner && <Area yAxisId="right" type="monotone" dataKey="projected" name="Target Forecast" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="5 5" fill="url(#areaPurple)" animationDuration={2000} />}
                 </AreaChart>
@@ -251,14 +253,14 @@ export default function AnalyticsPage({ toast }) {
                   <PieIcon size={20} />
                 </div>
                 <div>
-                  <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none mb-1">Status Mix</h3>
-                  <p className="text-xs font-bold text-slate-500">Operational distribution</p>
+                  <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none mb-1">Shipment Status</h3>
+                  <p className="text-xs font-bold text-slate-500">Current state of shipments</p>
                 </div>
               </div>
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie 
-                    data={overview?.byStatus} 
+                    data={Object.entries(overview?.byStatus || {}).map(([status, count]) => ({ status, count }))}
                     dataKey="count" 
                     nameKey="status" 
                     innerRadius={65} 
@@ -267,19 +269,19 @@ export default function AnalyticsPage({ toast }) {
                     stroke="none"
                     animationDuration={1500}
                   >
-                    {overview?.byStatus?.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                    {Object.entries(overview?.byStatus || {}).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
                   <Tooltip content={<CustomTooltip />} />
                 </PieChart>
               </ResponsiveContainer>
               <div className="mt-6 grid grid-cols-2 gap-3">
-                 {overview?.byStatus?.slice(0, 4).map((s, i) => (
-                   <div key={s.status} className="flex flex-col p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
+                 {Object.entries(overview?.byStatus || {}).slice(0, 4).map(([status, count], i) => (
+                   <div key={status} className="flex flex-col p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-700/50">
                       <div className="flex items-center gap-2 mb-1">
                         <div className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
-                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 truncate">{s.status}</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-slate-400 truncate">{status}</span>
                       </div>
-                      <span className="text-sm font-black text-slate-800 dark:text-white tabular-nums">{s.count.toLocaleString()}</span>
+                      <span className="text-sm font-black text-slate-800 dark:text-white tabular-nums">{count.toLocaleString()}</span>
                    </div>
                  ))}
               </div>
@@ -294,8 +296,8 @@ export default function AnalyticsPage({ toast }) {
                   <Award size={20} />
                 </div>
                 <div>
-                  <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none mb-1">Carrier Benchmark</h3>
-                  <p className="text-xs font-bold text-slate-500">Multidimensional contractor performance</p>
+                  <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none mb-1">Carrier Performance</h3>
+                  <p className="text-xs font-bold text-slate-500">Carrier benchmarking and ranking</p>
                 </div>
               </div>
               <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-4 py-1.5 rounded-full border border-slate-200 dark:border-slate-700">
@@ -326,7 +328,7 @@ export default function AnalyticsPage({ toast }) {
                           <CourierBadge name={c.carrier || c.courier} />
                         </td>
                         <td className="p-4 text-right">
-                          <div className="text-sm font-black text-slate-800 dark:text-white tabular-nums">{(c.total || c.count).toLocaleString()}</div>
+                          <div className="text-sm font-black text-slate-800 dark:text-white tabular-nums">{Number(c.total || c.count || 0).toLocaleString()}</div>
                           <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Requests</div>
                         </td>
                         <td className="p-4 text-right">
@@ -336,12 +338,12 @@ export default function AnalyticsPage({ toast }) {
                           <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Efficiency</div>
                         </td>
                         <td className="p-4 text-right">
-                          <div className="text-sm font-black text-rose-500 tabular-nums">{c.rto || 0}</div>
+                          <div className="text-sm font-black text-rose-500 tabular-nums">{Number(c.rto || 0)}</div>
                           <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Returns</div>
                         </td>
                         <td className="p-4 text-right">
                           <div className="text-sm font-black text-slate-700 dark:text-slate-300 tabular-nums">
-                            {c.avgDeliveryDays ? `${c.avgDeliveryDays.toFixed(1)}d` : '—'}
+                            {c.avgDeliveryDays != null ? `${Number(c.avgDeliveryDays).toFixed(1)}d` : '—'}
                           </div>
                           <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Lead Time</div>
                         </td>
@@ -370,8 +372,8 @@ export default function AnalyticsPage({ toast }) {
                   <Zap size={20} />
                 </div>
                 <div>
-                  <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none mb-1">Failure Intelligence</h3>
-                  <p className="text-xs font-bold text-slate-500">Primary delivery rejection drivers</p>
+                  <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none mb-1">Non-Delivery Reasons (NDR)</h3>
+                  <p className="text-xs font-bold text-slate-500">Top reasons for failed deliveries</p>
                 </div>
               </div>
               <ResponsiveContainer width="100%" height={240}>
@@ -393,6 +395,7 @@ export default function AnalyticsPage({ toast }) {
         .density-compact .p-4 { padding: 6px 16px !important; }
         .density-compact .CourierBadge { transform: scale(0.85); transform-origin: left; }
       `}</style>
+      </div>
     </div>
   );
 }

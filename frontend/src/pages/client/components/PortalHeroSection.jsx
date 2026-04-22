@@ -20,13 +20,13 @@ export default function PortalHeroSection({
   onSync,
 }) {
   return (
-    <section className="client-premium-card relative overflow-hidden p-5 md:p-6">
+    <section className="client-page-intro client-premium-card relative overflow-hidden p-5 md:p-6">
       <div className="portal-hero-glow" />
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <div>
-          <div className="text-[11px] font-black uppercase tracking-[0.14em] text-orange-500">Command Center</div>
-          <h1 className="mt-1 text-2xl font-black text-slate-900 dark:text-slate-100">Shipment Operations Overview</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">
+          <div className="client-page-eyebrow">Command Center</div>
+          <h1 className="mt-2 text-2xl font-black text-slate-950 dark:text-slate-100 md:text-[2rem]">Shipment Operations Overview</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
             Focused home view for shipment health, immediate attention items, and live movement.
           </p>
         </div>
@@ -37,13 +37,13 @@ export default function PortalHeroSection({
           <button
             type="button"
             onClick={onSync}
-            className="rounded-full border border-orange-300 bg-orange-500 px-3 py-1.5 text-xs font-black text-white transition hover:bg-orange-600"
+            className="client-action-btn-primary rounded-full px-4 py-2 text-xs"
           >
             Sync Now
           </button>
           <Link
             to="/portal/shipments"
-            className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-black text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+            className="client-action-btn-secondary rounded-full px-4 py-2 text-xs"
           >
             Shipments
           </Link>
@@ -54,7 +54,7 @@ export default function PortalHeroSection({
         {trustSignals.map((signal) => (
           <span
             key={signal}
-            className="rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-700 dark:border-slate-700 dark:bg-slate-900/70 dark:text-emerald-300"
+            className="client-page-chip text-[10px] font-black uppercase tracking-[0.12em]"
           >
             {signal}
           </span>
@@ -69,8 +69,8 @@ export default function PortalHeroSection({
             onClick={() => setRange(option.key)}
             className={`rounded-full border px-3 py-1.5 text-xs font-extrabold transition ${
               range === option.key
-                ? 'border-orange-300 bg-orange-50 text-orange-700 dark:border-orange-600 dark:bg-orange-950/40 dark:text-orange-300'
-                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800'
+                ? 'border-orange-300 bg-orange-50 text-orange-700 shadow-sm dark:border-orange-600 dark:bg-orange-950/40 dark:text-orange-300'
+                : 'border-slate-200 bg-white/90 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/80 dark:text-slate-200 dark:hover:bg-slate-800'
             }`}
           >
             {option.label}

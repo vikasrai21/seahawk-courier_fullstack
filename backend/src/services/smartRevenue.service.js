@@ -545,9 +545,8 @@ async function getSummary(dateFrom, dateTo) {
     if (dateTo) where.date.lte = dateTo;
   }
 
-  // Fast check if import rows exist for this period
-  const importCount = await prisma.shipmentImportRow.count({ where: dateFrom || dateTo ? { date: { gte: dateFrom, lte: dateTo } } : undefined });
-  const tableName = importCount > 0 ? 'shipment_import_rows' : 'shipments';
+  // Always use the canonical shipments table
+  const tableName = 'shipments';
 
   // Fetch ALL shipments for the range
   const rows = await prisma.$queryRawUnsafe(
@@ -647,11 +646,8 @@ async function getDetails(dateFrom, dateTo, page = 1, limit = 10, search = '') {
 
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
-  // Fast check if import rows exist for this period
-  const importCount = await prisma.shipmentImportRow.count({
-    where: dateFrom || dateTo ? { date: { gte: dateFrom, lte: dateTo } } : undefined
-  });
-  const tableName = importCount > 0 ? 'shipment_import_rows' : 'shipments';
+  // Always use the canonical shipments table
+  const tableName = 'shipments';
 
   // Total count
   const totalResult = await prisma.$queryRawUnsafe(

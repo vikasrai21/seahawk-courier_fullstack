@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../../services/api';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 export default function ClientGovernancePage({ toast }) {
   const [loading, setLoading] = useState(true);
@@ -68,6 +69,17 @@ export default function ClientGovernancePage({ toast }) {
           <div className="text-sm text-slate-500 dark:text-slate-400">Loading governance dashboards...</div>
         ) : (
           <>
+            <ClientPortalPageIntro
+              eyebrow="Governance"
+              title="Review approvals, evidence packs, and audit activity from one controlled client workspace."
+              description="This page brings together maker-checker actions, compliance evidence, and immutable audit history so governance decisions stay visible and reviewable."
+              badges={['Maker-checker enabled', `${diagnostics?.keys?.length || 0} integration keys`, `${approvals.length} approval records`]}
+              actions={(
+                <button className="client-action-btn-secondary" onClick={requestApproval} disabled={requesting}>
+                  {requesting ? 'Submitting…' : 'Request governance approval'}
+                </button>
+              )}
+            />
             <section className="client-premium-card p-5">
               <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Account Governance</h2>
               <div className="grid md:grid-cols-3 gap-3 text-sm">
@@ -85,7 +97,7 @@ export default function ClientGovernancePage({ toast }) {
                 </div>
               </div>
               <div className="mt-3">
-                <button className="btn-secondary btn-sm" onClick={requestApproval} disabled={requesting}>
+                <button className="client-action-btn-secondary px-3 py-2 text-xs" onClick={requestApproval} disabled={requesting}>
                   {requesting ? 'Submitting...' : 'Request Governance Approval'}
                 </button>
               </div>
@@ -137,8 +149,8 @@ export default function ClientGovernancePage({ toast }) {
                         <div className="text-slate-500 dark:text-slate-400">{a.newValue?.approvalAction || a.newValue?.requestNo || 'approval'} · {status} · by {a.userEmail || 'system'}</div>
                         {a.action === 'APPROVAL_REQUESTED' && (
                           <div className="mt-2 flex gap-2">
-                            <button className="btn-secondary btn-sm" onClick={() => decide(requestNo, 'APPROVED')} disabled={deciding === requestNo}>Approve</button>
-                            <button className="btn-secondary btn-sm text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/30" onClick={() => decide(requestNo, 'REJECTED')} disabled={deciding === requestNo}>Reject</button>
+                            <button className="client-action-btn-secondary px-3 py-2 text-xs" onClick={() => decide(requestNo, 'APPROVED')} disabled={deciding === requestNo}>Approve</button>
+                            <button className="client-action-btn-secondary px-3 py-2 text-xs text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-500/30" onClick={() => decide(requestNo, 'REJECTED')} disabled={deciding === requestNo}>Reject</button>
                           </div>
                         )}
                       </div>

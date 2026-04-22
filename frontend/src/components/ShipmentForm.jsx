@@ -100,7 +100,7 @@ export default function ShipmentForm({ initial = {}, onSave, onCancel, loading }
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Velocity Tier" icon={Clock}>
+        <Field label="Service Tier" icon={Clock}>
            <select className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-3.5 text-[10px] font-black uppercase tracking-widest text-slate-700 dark:text-white appearance-none" value={form.service} onChange={(e) => set('service', e.target.value)}>
              {['Standard', 'Express', 'Priority', 'Economy', 'Same Day'].map((s) => <option key={s}>{s.toUpperCase()}</option>)}
            </select>

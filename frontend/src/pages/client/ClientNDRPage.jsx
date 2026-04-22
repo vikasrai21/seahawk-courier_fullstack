@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import { Modal } from '../../components/ui/Modal';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 const ACTION_OPTIONS = [
   { value: 'REATTEMPT', label: 'Request reattempt' },
@@ -104,6 +105,12 @@ export default function ClientNDRPage({ toast }) {
       </header>
 
       <div className="mx-auto client-premium-main">
+        <ClientPortalPageIntro
+          eyebrow="Delivery Exceptions"
+          title="Failed-delivery recovery now feels clearer, calmer, and more action-oriented."
+          description="Review exception cases, inspect the shipment, and send the next instruction to operations from one focused queue."
+          badges={[`${items.length} open cases`, selected ? `Viewing ${selected.shipment?.awb || 'case'}` : 'Queue ready', loading ? 'Refreshing queue' : 'Queue loaded']}
+        />
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_320px]">
           <div className="overflow-hidden rounded-[28px] border border-slate-200/60 bg-[linear-gradient(145deg,#fff7f5_0%,#ffffff_70%)] p-6 shadow-[0_22px_44px_-30px_rgba(220,38,38,0.25)]">
             <div className="inline-flex rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-600">

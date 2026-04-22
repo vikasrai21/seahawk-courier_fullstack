@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import api from '../../services/api';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 export default function ClientBulkTrackPage({ toast }) {
   const [text, setText] = useState('');
@@ -28,6 +29,22 @@ export default function ClientBulkTrackPage({ toast }) {
   return (
     <div className="min-h-full">
       <div className="mx-auto client-premium-main">
+        <ClientPortalPageIntro
+          eyebrow="Bulk Tracking"
+          title="Paste a full AWB list once and turn it into a clean, action-ready tracking table."
+          description="Use commas, spaces, or line breaks. This workspace is tuned for operations teams who need a fast scan across many shipments without opening them one by one."
+          badges={['Multi search', `${result?.total || 0} submitted`, `${result?.found || 0} found`]}
+          actions={(
+            <>
+              <button onClick={submit} disabled={loading} className="client-action-btn-primary">
+                {loading ? 'Tracking…' : 'Run bulk track'}
+              </button>
+              <button onClick={() => { setText(''); setResult(null); }} className="client-action-btn-secondary">
+                Clear list
+              </button>
+            </>
+          )}
+        />
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_320px]">
           <div className="overflow-hidden rounded-[28px] border border-slate-200/60 bg-[linear-gradient(145deg,#0f2748_0%,#123563_55%,#174576_100%)] p-6 text-white shadow-[0_22px_50px_-30px_rgba(15,39,72,0.9)]">
             <div className="inline-flex rounded-full border border-sky-200/20 bg-sky-300/10 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-sky-100">
@@ -92,7 +109,7 @@ export default function ClientBulkTrackPage({ toast }) {
                     <tr key={row.awb} className={`${index % 2 ? 'bg-slate-50/40 dark:bg-slate-800/40' : 'bg-white dark:bg-transparent'} hover:bg-orange-50/30 dark:hover:bg-slate-800/70`}>
                       <td className="px-4 py-3 font-mono text-xs font-black text-slate-900 dark:text-white">{row.awb}</td>
                       <td className="px-4 py-3">
-                        <span className={`badge ${row.found ? 'badge-blue' : 'badge-red'}`}>{row.status}</span>
+                        <span className={`badge ${row.found ? 'badge-info' : 'badge-error'}`}>{row.status}</span>
                       </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-100">{row.courier || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-100">{row.destination || '—'}</td>

@@ -2,15 +2,25 @@ import { BarChart3, PieChart as PieIcon, TrendingUp, AlertTriangle, DollarSign }
 import { CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, AreaChart, Area, BarChart, Bar, Legend } from 'recharts';
 import { EmptyState } from '../ui/EmptyState';
 import { useAuth } from '../../context/AuthContext';
+import { useTheme } from '../../context/ThemeContext';
 
-const COLORS = ['#f97316', '#14b8a6', '#0f172a', '#38bdf8', '#ef4444', '#a855f7', '#06b6d4', '#84cc16'];
-const DELAY_COLORS = ['#ef4444', '#f97316', '#eab308', '#14b8a6', '#6366f1'];
+const COLORS = ['#f97316', '#14b8a6', '#60a5fa', '#38bdf8', '#f87171', '#a78bfa', '#22d3ee', '#84cc16'];
+const DELAY_COLORS = ['#f87171', '#fb923c', '#fbbf24', '#34d399', '#818cf8'];
+
+const ACCENT_MAP = {
+  orange: { color: '#fb923c', glow: 'rgba(249,115,22,0.1)', gradient: 'from-orange-500/20 to-amber-500/5' },
+  blue:   { color: '#60a5fa', glow: 'rgba(59,130,246,0.1)', gradient: 'from-blue-500/20 to-cyan-500/5' },
+  purple: { color: '#a78bfa', glow: 'rgba(139,92,246,0.1)', gradient: 'from-purple-500/20 to-pink-500/5' },
+  green:  { color: '#34d399', glow: 'rgba(16,185,129,0.1)', gradient: 'from-emerald-500/20 to-teal-500/5' },
+  red:    { color: '#f87171', glow: 'rgba(239,68,68,0.1)', gradient: 'from-rose-500/20 to-red-500/5' },
+  default:{ color: '#94a3b8', glow: 'rgba(148,163,184,0.05)', gradient: 'from-slate-400/10 to-slate-500/5' },
+};
 
 function CustomTooltip({ active, payload, label, prefix = '', suffix = '' }) {
   if (active && payload && payload.length) {
     return (
-      <div className="rounded-xl border border-slate-200 bg-white/90 p-3 shadow-xl backdrop-blur-md dark:border-slate-700 dark:bg-slate-900/90">
-        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">{label}</p>
+      <div className="rounded-xl border p-3 shadow-2xl backdrop-blur-xl border-slate-200 bg-white/95 dark:border-[rgba(99,130,191,0.2)] dark:bg-[rgba(13,20,37,0.95)]">
+        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 mb-1">{label}</p>
         {payload.map((entry, i) => (
           <p key={i} className="text-sm font-black" style={{ color: entry.color || '#0f172a' }}>
             {prefix}{typeof entry.value === 'number' ? entry.value.toLocaleString('en-IN') : entry.value}{suffix}
@@ -24,18 +34,33 @@ function CustomTooltip({ active, payload, label, prefix = '', suffix = '' }) {
 }
 
 function ChartShell({ title, icon: Icon, insight, tone = 'default', children }) {
-  const iconColors = { orange: 'text-orange-500', blue: 'text-blue-500', purple: 'text-purple-500', green: 'text-emerald-500', red: 'text-rose-500', default: 'text-slate-500' };
+  const accent = ACCENT_MAP[tone] || ACCENT_MAP.default;
 
   return (
-    <div className={`group relative overflow-hidden rounded-[24px] border border-slate-200/80 bg-white p-6 shadow-[0_8px_24px_rgba(15,23,42,0.04)]`}>
-      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r opacity-30 group-hover:opacity-100 transition-opacity" style={{ backgroundImage: `linear-gradient(to right, transparent, ${iconColors[tone]?.split('-')[1] || 'gray'})` }} />
+    <div className="group relative overflow-hidden rounded-[24px] border p-6 transition-all duration-500 
+      border-slate-200/80 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.04)]
+      dark:border-[rgba(99,130,191,0.1)] dark:bg-[rgba(13,20,37,0.6)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.3)] dark:backdrop-blur-xl
+      hover:shadow-[0_16px_40px_rgba(15,23,42,0.08)] dark:hover:shadow-[0_16px_48px_rgba(0,0,0,0.4)] dark:hover:border-[rgba(99,130,191,0.18)]"
+    >
+      {/* Top accent line */}
+      <div className="absolute top-0 left-0 h-[2px] w-full opacity-40 group-hover:opacity-100 transition-opacity duration-500"
+        style={{ background: `linear-gradient(90deg, ${accent.color}, ${accent.color}44, transparent)` }} />
+      
+      {/* Ambient glow */}
+      <div className="absolute -top-20 -right-20 w-40 h-40 rounded-full opacity-0 dark:opacity-60 pointer-events-none transition-opacity duration-700 blur-3xl"
+        style={{ background: accent.glow }} />
+
       <div className="mb-6 flex items-start justify-between gap-3">
         <div>
-          <div className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-            <Icon size={14} className={iconColors[tone] || iconColors.default} strokeWidth={2.5} />
+          <div className="inline-flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em]"
+            style={{ color: accent.color }}>
+            <div className="w-6 h-6 rounded-lg flex items-center justify-center" 
+              style={{ background: `${accent.color}15`, border: `1px solid ${accent.color}25` }}>
+              <Icon size={12} style={{ color: accent.color }} strokeWidth={2.5} />
+            </div>
             {title}
           </div>
-          <p className="mt-2 text-[13px] font-bold text-slate-700 leading-snug tracking-tight">{insight}</p>
+          <p className="mt-2 text-[13px] font-bold text-slate-700 dark:text-slate-300 leading-snug tracking-tight">{insight}</p>
         </div>
       </div>
       <div className="relative">
@@ -47,6 +72,9 @@ function ChartShell({ title, icon: Icon, insight, tone = 'default', children }) 
 
 export default function DashboardCharts({ overview, courierAnalytics, rangeLabel, opsData, smartRevenue }) {
   const { isOwner } = useAuth();
+  const { dark } = useTheme();
+  const gridColor = dark ? 'rgba(99,130,191,0.08)' : '#f1f5f9';
+  const tickColor = dark ? '#4a5a7a' : '#94a3b8';
   
   const statusData = Object.entries(overview?.byStatus || {})
     .map(([name, value]) => ({ name, value: Number(value || 0) }))
@@ -66,20 +94,22 @@ export default function DashboardCharts({ overview, courierAnalytics, rangeLabel
     return map;
   }, {});
 
-  const courierData = courierAnalytics?.couriers?.slice(0, 8).map((item) => {
+  const courierList = Array.isArray(courierAnalytics) ? courierAnalytics : (courierAnalytics?.couriers || []);
+  const courierData = courierList.slice(0, 8).map((item) => {
     const smart = smartByCourier[item.courier] || {};
     return {
       name: item.courier || 'Unknown',
       deliveryRate: item.deliveryRate || 0,
-      count: smart.smartCount || item.total || 0,
+      count: smart.smartCount || item.total || item.count || 0,
       revenue: smart.smartRevenue || item.revenue || 0,
       hasSmartRevenue: !!smart.smartRevenue,
     };
   }) || [];
 
   // Delay data from ops
-  const delayData = (opsData?.delayedByCourier || []).slice(0, 8);
-  const totalDelayed = delayData.reduce((sum, d) => sum + d.count, 0);
+  const delayList = Array.isArray(opsData?.delayedByCourier) ? opsData.delayedByCourier : [];
+  const delayData = delayList.slice(0, 8);
+  const totalDelayed = delayData.reduce((sum, d) => sum + (d.count || 0), 0);
 
   // Revenue vs Cost from daily trend (estimate cost at ~72% of revenue)
   const revCostData = trendData.map(d => {
@@ -117,9 +147,9 @@ export default function DashboardCharts({ overview, courierAnalytics, rangeLabel
                     <stop offset="95%" stopColor="#ef4444" stopOpacity={0.01} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="#f1f5f9" strokeDasharray="6 6" vertical={false} />
-                <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} />
+                <CartesianGrid stroke={gridColor} strokeDasharray="6 6" vertical={false} />
+                <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: tickColor }} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: tickColor }} />
                 <Tooltip content={<CustomTooltip prefix="₹" />} />
                 <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
                 <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#10b981" fill="url(#revArea)" strokeWidth={3} animationDuration={1200} />
@@ -167,7 +197,7 @@ export default function DashboardCharts({ overview, courierAnalytics, rangeLabel
 
       {/* Row 2: Volume Trend + Delay Analysis */}
       <div className="grid gap-6 xl:grid-cols-2">
-        <ChartShell title="Volume Trend" icon={TrendingUp} tone="orange" insight={`${maxTrend ? `Peak hit ${maxTrend} units` : 'Shipment velocity'} during ${rangeLabel}`}>
+        <ChartShell title="Volume Trend" icon={TrendingUp} tone="orange" insight={`${maxTrend ? `Peak hit ${maxTrend} units` : 'Shipment trend'} during ${rangeLabel}`}>
           {trendData.length ? (
             <ResponsiveContainer width="100%" height={260}>
               <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -177,9 +207,9 @@ export default function DashboardCharts({ overview, courierAnalytics, rangeLabel
                     <stop offset="95%" stopColor="#f97316" stopOpacity={0.01} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="#f1f5f9" strokeDasharray="6 6" vertical={false} />
-                <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} />
+                <CartesianGrid stroke={gridColor} strokeDasharray="6 6" vertical={false} />
+                <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: tickColor }} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: tickColor }} />
                 <Tooltip content={<CustomTooltip />} />
                 <Area type="monotone" dataKey="count" stroke="#f97316" fill="url(#shipmentArea)" strokeWidth={4} animationDuration={1500} />
               </AreaChart>
@@ -193,9 +223,9 @@ export default function DashboardCharts({ overview, courierAnalytics, rangeLabel
           {delayData.length ? (
             <ResponsiveContainer width="100%" height={260}>
               <BarChart data={delayData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-                <CartesianGrid stroke="#f1f5f9" strokeDasharray="6 6" vertical={false} />
-                <XAxis dataKey="courier" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: '#94a3b8' }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: '#94a3b8' }} />
+                <CartesianGrid stroke={gridColor} strokeDasharray="6 6" vertical={false} />
+                <XAxis dataKey="courier" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 700, fill: tickColor }} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 700, fill: tickColor }} />
                 <Tooltip content={<CustomTooltip suffix=" delayed" />} />
                 <Bar dataKey="count" name="Delayed" radius={[8, 8, 0, 0]} animationDuration={1000}>
                   {delayData.map((_, i) => <Cell key={i} fill={DELAY_COLORS[i % DELAY_COLORS.length]} />)}

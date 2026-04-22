@@ -3,12 +3,12 @@ import { Bot, Send, Zap, Brain, History, BookOpen, Loader2, CheckCircle, AlertCi
 import api from '../services/api';
 
 const QUICK_ACTIONS = [
-  { label: 'System Overview', msg: 'Show overview', icon: TrendingUp, color: '#3b82f6' },
-  { label: 'Daily Report', msg: 'Show daily report', icon: Clock, color: '#f59e0b' },
-  { label: 'Pending NDRs', msg: 'Pending NDRs', icon: AlertCircle, color: '#ef4444' },
-  { label: 'Wallet Status', msg: 'Wallet status', icon: Package, color: '#10b981' },
-  { label: 'Courier Performance', msg: 'Courier performance', icon: TrendingUp, color: '#8b5cf6' },
-  { label: 'Top Clients', msg: 'Client analytics', icon: Users, color: '#06b6d4' },
+  { label: 'System Overview', msg: 'Show overview', icon: TrendingUp, color: 'var(--shk-blue)' },
+  { label: 'Daily Report', msg: 'Show daily report', icon: Clock, color: 'var(--shk-orange)' },
+  { label: 'Pending NDRs', msg: 'Pending NDRs', icon: AlertCircle, color: 'var(--shk-red)' },
+  { label: 'Wallet Status', msg: 'Wallet status', icon: Package, color: 'var(--shk-green)' },
+  { label: 'Courier Performance', msg: 'Courier performance', icon: TrendingUp, color: 'var(--shk-purple)' },
+  { label: 'Top Clients', msg: 'Client analytics', icon: Users, color: 'var(--shk-cyan)' },
 ];
 
 function MarkdownRenderer({ text }) {
@@ -22,36 +22,36 @@ function MarkdownRenderer({ text }) {
     return line
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      .replace(/`(.+?)`/g, '<code style="background:rgba(99,102,241,0.1);padding:1px 5px;border-radius:4px;font-family:monospace;font-size:11px">$1</code>');
+      .replace(/`(.+?)`/g, '<code style="background:var(--shk-surface-hi);padding:2px 6px;border-radius:4px;font-family:monospace;font-size:11px;color:var(--shk-orange)">$1</code>');
   };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (line.startsWith('## ')) {
       if (inTable) { elements.push(<table key={`t${i}`} style={{ width: '100%', borderCollapse: 'collapse', margin: '8px 0', fontSize: 12 }}><tbody>{tableRows}</tbody></table>); tableRows = []; inTable = false; }
-      elements.push(<h3 key={i} style={{ fontSize: 14, fontWeight: 800, margin: '10px 0 6px', color: 'var(--shk-text, #0f172a)' }} dangerouslySetInnerHTML={{ __html: renderInline(line.slice(3)) }} />);
+      elements.push(<h3 key={i} style={{ fontSize: 14, fontWeight: 800, margin: '10px 0 6px', color: 'var(--shk-text)' }} dangerouslySetInnerHTML={{ __html: renderInline(line.slice(3)) }} />);
     } else if (line.startsWith('### ')) {
       if (inTable) { elements.push(<table key={`t${i}`} style={{ width: '100%', borderCollapse: 'collapse', margin: '8px 0', fontSize: 12 }}><tbody>{tableRows}</tbody></table>); tableRows = []; inTable = false; }
-      elements.push(<h4 key={i} style={{ fontSize: 12, fontWeight: 700, margin: '8px 0 4px', color: 'var(--shk-text-mid, #475569)', textTransform: 'uppercase', letterSpacing: '0.05em' }} dangerouslySetInnerHTML={{ __html: renderInline(line.slice(4)) }} />);
+      elements.push(<h4 key={i} style={{ fontSize: 12, fontWeight: 700, margin: '8px 0 4px', color: 'var(--shk-text-mid)', textTransform: 'uppercase', letterSpacing: '0.05em' }} dangerouslySetInnerHTML={{ __html: renderInline(line.slice(4)) }} />);
     } else if (line.startsWith('|') && line.includes('|')) {
       const cells = line.split('|').filter(c => c.trim()).map(c => c.trim());
       if (cells.every(c => /^[-:]+$/.test(c))) continue;
       const isHeader = !inTable;
       inTable = true;
       tableRows.push(
-        <tr key={`tr${i}`} style={{ borderBottom: '1px solid rgba(148,163,184,0.15)' }}>
+        <tr key={`tr${i}`} style={{ borderBottom: '1px solid var(--shk-border)' }}>
           {cells.map((c, ci) => isHeader
-            ? <th key={ci} style={{ padding: '6px 8px', textAlign: 'left', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--shk-text-dim, #94a3b8)' }} dangerouslySetInnerHTML={{ __html: renderInline(c) }} />
-            : <td key={ci} style={{ padding: '6px 8px', fontSize: 12, color: 'var(--shk-text, #0f172a)' }} dangerouslySetInnerHTML={{ __html: renderInline(c) }} />
+            ? <th key={ci} style={{ padding: '6px 8px', textAlign: 'left', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--shk-text-dim)' }} dangerouslySetInnerHTML={{ __html: renderInline(c) }} />
+            : <td key={ci} style={{ padding: '6px 8px', fontSize: 12, color: 'var(--shk-text)' }} dangerouslySetInnerHTML={{ __html: renderInline(c) }} />
           )}
         </tr>
       );
     } else if (line.startsWith('• ') || line.startsWith('- ')) {
       if (inTable) { elements.push(<table key={`t${i}`} style={{ width: '100%', borderCollapse: 'collapse', margin: '8px 0', fontSize: 12 }}><tbody>{tableRows}</tbody></table>); tableRows = []; inTable = false; }
-      elements.push(<div key={i} style={{ display: 'flex', gap: 6, padding: '2px 0', fontSize: 12, color: 'var(--shk-text-mid, #475569)' }}><span style={{ color: 'var(--shk-orange, #f97316)', fontWeight: 700 }}>›</span><span dangerouslySetInnerHTML={{ __html: renderInline(line.slice(2)) }} /></div>);
+      elements.push(<div key={i} style={{ display: 'flex', gap: 6, padding: '2px 0', fontSize: 12, color: 'var(--shk-text-mid)' }}><span style={{ color: 'var(--shk-orange)', fontWeight: 700 }}>›</span><span dangerouslySetInnerHTML={{ __html: renderInline(line.slice(2)) }} /></div>);
     } else if (line.trim()) {
       if (inTable) { elements.push(<table key={`t${i}`} style={{ width: '100%', borderCollapse: 'collapse', margin: '8px 0', fontSize: 12 }}><tbody>{tableRows}</tbody></table>); tableRows = []; inTable = false; }
-      elements.push(<p key={i} style={{ fontSize: 12, lineHeight: 1.6, margin: '4px 0', color: 'var(--shk-text-mid, #475569)' }} dangerouslySetInnerHTML={{ __html: renderInline(line) }} />);
+      elements.push(<p key={i} style={{ fontSize: 12, lineHeight: 1.6, margin: '4px 0', color: 'var(--shk-text-mid)' }} dangerouslySetInnerHTML={{ __html: renderInline(line) }} />);
     }
   }
   if (inTable && tableRows.length) {
@@ -167,9 +167,9 @@ export default function OwnerAgentPage({ toast }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{
             width: 42, height: 42, borderRadius: 14,
-            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+            background: 'linear-gradient(135deg, var(--shk-orange), #f59e0b)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 4px 16px rgba(99,102,241,0.3)',
+            boxShadow: '0 4px 16px rgba(249,115,22,0.3)',
           }}>
             <Bot size={22} color="#fff" />
           </div>
@@ -226,16 +226,17 @@ export default function OwnerAgentPage({ toast }) {
                   padding: '12px 16px',
                   borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
                   background: msg.role === 'user'
-                    ? 'linear-gradient(135deg, #6366f1, #8b5cf6)'
+                    ? 'linear-gradient(135deg, var(--shk-orange), #f59e0b)'
                     : 'var(--shk-surface)',
                   color: msg.role === 'user' ? '#fff' : 'var(--shk-text)',
                   border: msg.role === 'user' ? 'none' : '1px solid var(--shk-border)',
                   boxShadow: msg.role === 'user'
-                    ? '0 4px 12px rgba(99,102,241,0.2)'
-                    : '0 2px 8px rgba(0,0,0,0.04)',
+                    ? '0 4px 12px rgba(249,115,22,0.3)'
+                    : '0 8px 24px rgba(0,0,0,0.1)',
+                  backdropFilter: msg.role === 'user' ? 'none' : 'var(--shk-glass, blur(12px))',
                 }}>
                   {msg.role === 'user' ? (
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 500, lineHeight: 1.5 }}>{msg.content}</p>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 700, lineHeight: 1.5, textShadow: '0 1px 2px rgba(0,0,0,0.2)' }}>{msg.content}</p>
                   ) : (
                     <MarkdownRenderer text={msg.content} />
                   )}
@@ -274,7 +275,7 @@ export default function OwnerAgentPage({ toast }) {
                             background: 'transparent', cursor: 'pointer', fontSize: 11, fontWeight: 600,
                             color: 'var(--shk-text-mid)', transition: 'all 0.15s',
                           }}
-                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; e.currentTarget.style.borderColor = '#6366f1'; e.currentTarget.style.color = '#6366f1'; }}
+                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(249,115,22,0.08)'; e.currentTarget.style.borderColor = 'var(--shk-orange)'; e.currentTarget.style.color = 'var(--shk-orange)'; }}
                           onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'var(--shk-border)'; e.currentTarget.style.color = 'var(--shk-text-mid)'; }}
                         >
                           {s} <ArrowRight size={10} />
@@ -287,7 +288,7 @@ export default function OwnerAgentPage({ toast }) {
             ))}
             {loading && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px', borderRadius: 16, background: 'var(--shk-surface)', border: '1px solid var(--shk-border)', maxWidth: '60%' }}>
-                <Loader2 size={16} style={{ animation: 'spin 1s linear infinite', color: '#6366f1' }} />
+                <Loader2 size={16} style={{ animation: 'spin 1s linear infinite', color: 'var(--shk-orange)' }} />
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--shk-text-dim)' }}>HawkAI is thinking...</span>
               </div>
             )}
@@ -307,17 +308,17 @@ export default function OwnerAgentPage({ toast }) {
                     fontSize: 13, color: 'var(--shk-text)', outline: 'none',
                     transition: 'border-color 0.2s',
                   }}
-                  onFocus={e => e.currentTarget.style.borderColor = '#6366f1'}
+                  onFocus={e => e.currentTarget.style.borderColor = 'var(--shk-orange)'}
                   onBlur={e => e.currentTarget.style.borderColor = 'var(--shk-border)'}
                 />
               </div>
               <button onClick={() => sendMessage(input)} disabled={loading || !input.trim()}
                 style={{
                   width: 44, height: 44, borderRadius: 12, border: 'none', cursor: 'pointer',
-                  background: input.trim() ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'var(--shk-border)',
+                  background: input.trim() ? 'linear-gradient(135deg, var(--shk-orange), #f59e0b)' : 'var(--shk-border)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   transition: 'all 0.2s',
-                  boxShadow: input.trim() ? '0 4px 12px rgba(99,102,241,0.3)' : 'none',
+                  boxShadow: input.trim() ? '0 4px 12px rgba(249,115,22,0.3)' : 'none',
                 }}
               >
                 <Send size={18} color="#fff" />

@@ -4,18 +4,28 @@ export default function KPI({ label, value, sub, icon: Icon, accent, trend }) {
   const up = trend >= 0;
   
   return (
-    <div className="fade-in-up relative group overflow-hidden rounded-[32px] p-6 transition-all duration-500 hover:-translate-y-1 hover:shadow-[0_20px_50px_rgba(0,0,0,0.1)] dark:hover:shadow-[0_20px_50px_rgba(0,0,0,0.3)] border border-slate-100 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 backdrop-blur-xl">
-      {/* Decorative top bar */}
+    <div className="fade-in-up relative group overflow-hidden rounded-[32px] p-6 transition-all duration-500 hover:-translate-y-1 border border-slate-100 dark:border-[rgba(99,130,191,0.12)] bg-white/60 dark:bg-transparent backdrop-blur-xl"
+      style={{
+        background: 'var(--shk-surface, rgba(255,255,255,0.6))',
+      }}
+    >
+      {/* Decorative top bar — gradient accent */}
       <div 
-        className="absolute top-0 left-0 h-1 transition-all duration-500 group-hover:w-full" 
+        className="absolute top-0 left-0 h-[2px] transition-all duration-700 group-hover:w-full" 
         style={{ 
-          width: '40px',
-          background: `linear-gradient(90deg, ${accent}, ${accent}33)` 
+          width: '50px',
+          background: `linear-gradient(90deg, ${accent}, ${accent}66, transparent)`,
         }} 
       />
-      
+
+      {/* Ambient glow — dark mode only */}
+      <div 
+        className="absolute -right-8 -top-8 w-32 h-32 rounded-full opacity-0 dark:opacity-100 transition-opacity duration-700 pointer-events-none blur-3xl group-hover:opacity-0 dark:group-hover:opacity-100"
+        style={{ background: `${accent}10` }}
+      />
+
       {/* Subtle Background Pattern */}
-      <div className="absolute -right-4 -bottom-4 opacity-[0.03] dark:opacity-[0.05] pointer-events-none group-hover:scale-110 transition-transform duration-700">
+      <div className="absolute -right-4 -bottom-4 opacity-[0.03] dark:opacity-[0.06] pointer-events-none group-hover:scale-110 transition-transform duration-700">
         <Icon size={120} strokeWidth={1} />
       </div>
 
@@ -25,7 +35,7 @@ export default function KPI({ label, value, sub, icon: Icon, accent, trend }) {
           style={{ 
             background: `${accent}15`, 
             border: `1px solid ${accent}30`,
-            boxShadow: `0 0 20px ${accent}00`
+            boxShadow: `0 4px 16px ${accent}15`
           }}
         >
           <Icon size={22} style={{ color: accent }} />
@@ -33,8 +43,8 @@ export default function KPI({ label, value, sub, icon: Icon, accent, trend }) {
         
         {trend !== undefined && trend !== null && (
           <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider border transition-all ${
-            up ? 'text-emerald-600 bg-emerald-50/50 border-emerald-100/50 dark:text-emerald-400 dark:bg-emerald-900/20 dark:border-emerald-800/50' : 
-                 'text-rose-600 bg-rose-50/50 border-rose-100/50 dark:text-rose-400 dark:bg-rose-900/20 dark:border-rose-800/50'
+            up ? 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20' : 
+                 'text-rose-500 bg-rose-500/10 border-rose-500/20'
           }`}>
             {up ? <ArrowUp size={10} strokeWidth={3} /> : <ArrowDown size={10} strokeWidth={3} />}
             {Math.abs(trend)}%
@@ -47,19 +57,27 @@ export default function KPI({ label, value, sub, icon: Icon, accent, trend }) {
           {value}
         </div>
         
-        <div className="text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em] leading-none mb-1">
+        <div className="text-[11px] font-black uppercase tracking-[0.2em] leading-none mb-1" style={{ color: `${accent}cc` }}>
           {label}
         </div>
         
         {sub && (
-          <div className="text-[10px] font-bold text-slate-400/70 dark:text-slate-600 italic">
+          <div className="text-[10px] font-bold text-slate-400/70 dark:text-slate-500 italic">
             {sub}
           </div>
         )}
       </div>
 
-      {/* Glossy Overlay */}
-      <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/0 pointer-events-none" />
+      {/* Glass overlay */}
+      <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/0 pointer-events-none rounded-[32px]" />
+      
+      {/* Hover glow border effect */}
+      <div 
+        className="absolute inset-0 rounded-[32px] opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
+        style={{ 
+          boxShadow: `inset 0 0 0 1px ${accent}20, 0 12px 36px ${accent}10`
+        }}
+      />
     </div>
   );
 }

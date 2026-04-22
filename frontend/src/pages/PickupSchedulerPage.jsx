@@ -422,7 +422,7 @@ function CreatePickupForm({ toast, onSaved, onClose }) {
         <Field label="Deployment Date" req>
            <input type="date" className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white" value={form.scheduledDate} onChange={e=>setForm(f=>({...f,scheduledDate:e.target.value}))}/>
         </Field>
-        <Field label="Velocity Window">
+        <Field label="Time Window">
            <select className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white appearance-none" value={form.timeSlot} onChange={e=>setForm(f=>({...f,timeSlot:e.target.value}))}>
               {['Morning','Afternoon','Evening'].map(t=><option key={t}>{t.toUpperCase()}</option>)}
            </select>

@@ -60,7 +60,7 @@ export default function CarrierMatchmaker({ couriers }) {
       </div>
 
       <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-all">
-         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Deploy Selection</span>
+         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">View Details</span>
          <ArrowRight size={14} className="text-slate-300" />
       </div>
     </div>
@@ -73,36 +73,42 @@ export default function CarrierMatchmaker({ couriers }) {
            <Crown size={20} />
         </div>
         <div>
-          <h3 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 leading-none mb-1">Carrier Matchmaker</h3>
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">AI-Ranked Contractor Benchmarks</p>
+          <h3 className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 leading-none mb-1">Carrier Performance</h3>
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Carrier benchmarking and ranking</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <RecommendationCard 
-          title="Reliability Champ"
-          carrier={reliabilityChamp}
-          icon={ShieldCheck}
-          color="emerald"
-          metric={`${reliabilityChamp.deliveryRate}%`}
-          sub="Success Rate"
-        />
-        <RecommendationCard 
-          title="Velocity King"
-          carrier={speedKing}
-          icon={Zap}
-          color="blue"
-          metric={`${speedKing.avgDeliveryDays.toFixed(1)}d`}
-          sub="Avg Lead Time"
-        />
-        <RecommendationCard 
-          title="Seahawk Intelligence Pick"
-          carrier={overallPick}
-          icon={Trophy}
-          color="purple"
-          metric={overallPick.carrier || overallPick.courier}
-          sub="Highest Efficiency Score"
-        />
+        {reliabilityChamp && (
+          <RecommendationCard 
+            title="Highest Success Rate"
+            carrier={reliabilityChamp}
+            icon={ShieldCheck}
+            color="emerald"
+            metric={`${reliabilityChamp.deliveryRate || 0}%`}
+            sub="Success Rate"
+          />
+        )}
+        {speedKing && (
+          <RecommendationCard 
+            title="Fastest Delivery"
+            carrier={speedKing}
+            icon={Zap}
+            color="blue"
+            metric={`${(speedKing.avgDeliveryDays || 0).toFixed(1)}d`}
+            sub="Avg Lead Time"
+          />
+        )}
+        {overallPick && (
+          <RecommendationCard 
+            title="Top Recommended"
+            carrier={overallPick}
+            icon={Trophy}
+            color="purple"
+            metric={overallPick.carrier || overallPick.courier || 'N/A'}
+            sub="Highest Efficiency Score"
+          />
+        )}
       </div>
     </div>
   );

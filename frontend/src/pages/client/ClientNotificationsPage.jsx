@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 function Toggle({ checked, onChange, icon, label, hint, sample }) {
   return (
@@ -187,6 +188,12 @@ export default function ClientNotificationsPage({ toast }) {
       </header>
 
       <div className="mx-auto max-w-6xl p-6 space-y-6">
+        <ClientPortalPageIntro
+          eyebrow="Notification Controls"
+          title="Choose which shipment moments deserve attention and keep alert fatigue under control."
+          description="Tune WhatsApp, email, journeys, and template defaults in one place so your team gets the right operational signal at the right time."
+          badges={['WhatsApp and email', prefs.whatsapp.delivered ? 'Delivery alerts on' : 'Delivery alerts off', prefs.email.ndr ? 'NDR emails on' : 'NDR emails off']}
+        />
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.08fr)_320px]">
           <div className="overflow-hidden rounded-[28px] border border-slate-200/60 bg-[linear-gradient(145deg,#fffaf5_0%,#ffffff_70%)] p-6 shadow-[0_22px_44px_-30px_rgba(194,65,12,0.35)]">
             <div className="inline-flex rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-600">

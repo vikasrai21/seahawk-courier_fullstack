@@ -22,6 +22,34 @@ function trainModel() {
   manager.addRegexEntity('amount', 'en', /\b(?:rs|₹|inr)?\s*\d+(?:,\d{3})*(?:\.\d+)?\b/gi);
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // CONVERSATIONAL / CHITCHAT (4 intents)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  manager.addDocument('en', 'hi', 'intent.greetings.hello');
+  manager.addDocument('en', 'hello', 'intent.greetings.hello');
+  manager.addDocument('en', 'hey', 'intent.greetings.hello');
+  manager.addDocument('en', 'good morning', 'intent.greetings.hello');
+  manager.addDocument('en', 'good afternoon', 'intent.greetings.hello');
+  manager.addAnswer('en', 'intent.greetings.hello', "Hello! I am HawkAI, your enterprise logistics assistant. How can I help you streamline operations today?");
+
+  manager.addDocument('en', 'what can you do', 'intent.greetings.capabilities');
+  manager.addDocument('en', 'who are you', 'intent.greetings.capabilities');
+  manager.addDocument('en', 'how can you help', 'intent.greetings.capabilities');
+  manager.addDocument('en', 'help', 'intent.greetings.capabilities');
+  manager.addAnswer('en', 'intent.greetings.capabilities', "I can help you manage your entire logistics pipeline! I can track AWBs, manage clients and wallets, handle returns and NDRs, process invoices, and give you real-time operational reports. Try asking for a **System Overview**.");
+
+  manager.addDocument('en', 'thanks', 'intent.greetings.thanks');
+  manager.addDocument('en', 'thank you', 'intent.greetings.thanks');
+  manager.addDocument('en', 'awesome', 'intent.greetings.thanks');
+  manager.addDocument('en', 'good job', 'intent.greetings.thanks');
+  manager.addAnswer('en', 'intent.greetings.thanks', "You're very welcome! Let me know if you need anything else.");
+
+  manager.addDocument('en', 'bye', 'intent.greetings.bye');
+  manager.addDocument('en', 'goodbye', 'intent.greetings.bye');
+  manager.addDocument('en', 'see ya', 'intent.greetings.bye');
+  manager.addAnswer('en', 'intent.greetings.bye', "Goodbye! I'll be here monitoring the system when you return.");
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // CLIENT MANAGEMENT (5 intents)
   // ═══════════════════════════════════════════════════════════════════════════
 

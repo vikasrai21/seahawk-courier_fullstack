@@ -84,7 +84,11 @@ function Filters({ range, onRangeChange, customFrom, customTo, onCustomFromChang
             <button
               key={option.key}
               onClick={() => onRangeChange(option.key)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition pressable ${range === option.key ? 'bg-slate-900 text-white shadow-[0_10px_20px_rgba(15,23,42,0.14)]' : 'bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-700'}`}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition pressable ${
+                range === option.key 
+                  ? 'bg-slate-900 text-white shadow-[0_10px_20px_rgba(15,23,42,0.14)] dark:bg-gradient-to-r dark:from-orange-500 dark:to-amber-500 dark:shadow-[0_10px_20px_rgba(249,115,22,0.2)]' 
+                  : 'bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-700 dark:bg-[rgba(99,130,191,0.08)] dark:text-slate-400 dark:hover:bg-[rgba(249,115,22,0.1)] dark:hover:text-orange-300'
+              }`}
             >
               {option.label}
             </button>
@@ -113,7 +117,7 @@ const COMMANDS = [
 
 function SmartCommandBar({ user }) {
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/50">
+    <div className="client-premium-card rounded-3xl p-5 shadow-sm">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <Zap size={14} className="text-amber-500" />
@@ -252,9 +256,19 @@ export default function DashboardPage() {
           from { opacity: 0; transform: translateY(8px); }
           to { opacity: 1; transform: translateY(0); }
         }
+        .portal-visual-upgrade .card,
+        .portal-visual-upgrade .client-premium-card {
+          box-shadow: 0 20px 36px -26px rgba(2, 6, 23, 0.75);
+        }
+        .portal-visual-upgrade .group.relative {
+          transition: background-color 0.18s ease, transform 0.16s ease;
+        }
+        .portal-visual-upgrade .group.relative:hover {
+          transform: translateY(-1px);
+        }
       `}</style>
-      <div className="app-shell min-h-screen p-6 transition-colors duration-300">
-        <div className="mx-auto max-w-7xl space-y-5">
+      <div className="client-premium-shell min-h-screen transition-colors duration-300">
+        <div className="client-premium-main portal-visual-upgrade">
           <PageHeader
             title="Command Center"
             subtitle="Real-time business intelligence, performance analytics, and operational insights."

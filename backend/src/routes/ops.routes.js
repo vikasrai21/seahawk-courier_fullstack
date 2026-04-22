@@ -382,7 +382,16 @@ router.get('/profit-summary', requireRole('ADMIN', 'OPS_MANAGER'), async (req, r
 // ── GET /api/ops/dashboard — consolidated analytics with intelligence ─────
 router.get('/dashboard', async (req, res) => {
   try {
-    const now = new Date();
+    let now = new Date();
+    // Intelligent Date Anchor: Use latest shipment date if we are in a demo/inactive state
+    const latestShipment = await prisma.shipment.findFirst({ orderBy: { createdAt: 'desc' } });
+    if (latestShipment && latestShipment.date) {
+      const latestDate = new Date(latestShipment.date);
+      if (latestDate < now) {
+        now = new Date(latestDate.getTime() + 12 * 3600000); // Add 12 hours to safely be inside that day
+      }
+    }
+    
     const today = now.toISOString().split('T')[0];
     const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000).toISOString().split('T')[0];
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000).toISOString().split('T')[0];

@@ -1,6 +1,6 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899'];
+const COLORS = ['#60a5fa', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#22d3ee', '#f472b6'];
 
 export default function CourierPieChart({ data, dark }) {
   const chartData = (data || []).map(c => ({
@@ -9,9 +9,9 @@ export default function CourierPieChart({ data, dark }) {
   }));
 
   const T = {
-    text: dark ? '#94a3b8' : '#475569',
-    bg: dark ? '#0f172a' : '#fff',
-    border: dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+    text: dark ? '#8b9cc0' : '#475569',
+    bg: dark ? 'rgba(13,20,37,0.95)' : '#fff',
+    border: dark ? 'rgba(99,130,191,0.2)' : 'rgba(0,0,0,0.1)',
   };
 
   return (

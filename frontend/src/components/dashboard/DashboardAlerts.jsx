@@ -123,7 +123,7 @@ export default function DashboardAlerts({ actions, rtoAlerts, navigate }) {
         <AlertCard
           icon={Info}
           tone="emerald"
-          title="Pickup Velocity"
+          title="Pickup Volume"
           description={`${actions.todayPickups} assigned for carrier pickup today`}
           badge={actions.todayPickups}
           onClick={() => navigate?.('/pending?filter=Booked')}

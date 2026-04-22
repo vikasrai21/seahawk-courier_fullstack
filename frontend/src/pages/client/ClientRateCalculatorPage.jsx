@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../../services/api';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 const money = (n) => `₹${Number(n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
 
@@ -49,13 +50,19 @@ export default function ClientRateCalculatorPage({ toast }) {
   return (
     <div className="min-h-full">
       <div className="client-premium-main max-w-6xl">
+        <ClientPortalPageIntro
+          eyebrow="Rate Calculator"
+          title="Estimate your contracted courier rates instantly with weight-aware pricing and surcharge visibility."
+          description="These estimates use the contracts visible to your client account, including fuel, GST, and any base-charge logic already configured."
+          badges={['Contract-backed rates', `${contracts.length} active contracts`, `${estimates.length} estimates shown`]}
+        />
         <div className="client-premium-card p-5">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[180px]">
               <label className="label">Chargeable Weight (kg)</label>
               <input className="input" type="number" step="0.1" min="0.1" value={weight} onChange={(e) => setWeight(e.target.value)} />
             </div>
-            <button className="btn-primary" onClick={calculate} disabled={calculating}>
+            <button className="client-action-btn-primary" onClick={calculate} disabled={calculating}>
               {calculating ? 'Calculating…' : 'Get My Rates'}
             </button>
           </div>

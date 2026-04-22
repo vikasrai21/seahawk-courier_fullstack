@@ -4,6 +4,7 @@ import { Eye, FileText, Download, Receipt, X } from 'lucide-react';
 import api from '../../services/api';
 import { PageLoader } from '../../components/ui/Loading';
 import { EmptyState } from '../../components/ui/EmptyState';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 const STATUS_COLORS = { DRAFT: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300', SENT: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400', PAID: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400', OVERDUE: 'bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-400' };
@@ -145,6 +146,12 @@ export default function ClientInvoicesPage({ toast }) {
       </header>
 
       <div className="mx-auto max-w-6xl p-6 space-y-6">
+        <ClientPortalPageIntro
+          eyebrow="Billing Desk"
+          title="Download invoices, export ledgers, and keep billing operations cleaner from one client finance workspace."
+          description="Use PDFs for records, spreadsheet exports for reconciliation, and month-wise ledger downloads for finance and CA workflows."
+          badges={[`${invoices.length} invoices`, `${paidCount} paid`, `${openCount} open`]}
+        />
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_320px]">
           <div className="overflow-hidden rounded-[28px] border border-slate-200/60 bg-[linear-gradient(145deg,#fffaf5_0%,#ffffff_70%)] p-6 shadow-[0_22px_44px_-30px_rgba(194,65,12,0.35)]">
             <div className="inline-flex rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-600">

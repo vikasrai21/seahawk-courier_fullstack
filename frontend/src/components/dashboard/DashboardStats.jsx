@@ -46,8 +46,8 @@ function TodayPulse({ stats, label = 'Current Range' }) {
   ];
 
   return (
-    <div className="flex flex-wrap items-center gap-4 bg-white shadow-sm border border-slate-200/80 rounded-[20px] p-2.5 px-5 mb-6">
-      <div className="flex items-center gap-2.5 pr-5 border-r border-slate-200">
+    <div className="flex flex-wrap items-center gap-4 bg-white dark:bg-[rgba(13,20,37,0.7)] shadow-sm border border-slate-200/80 dark:border-[rgba(99,130,191,0.1)] rounded-[20px] p-2.5 px-5 mb-6 dark:backdrop-blur-xl">
+      <div className="flex items-center gap-2.5 pr-5 border-r border-slate-200 dark:border-[rgba(99,130,191,0.15)]">
         <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
         <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">{label}</span>
       </div>
@@ -69,22 +69,22 @@ function StatCard({ title, value, previous, format, icon: Icon, tone, subtitle }
   const trend = useMemo(() => getTrend(value, previous), [value, previous]);
   
   const toneMap = {
-    orange: 'text-orange-500 bg-orange-50 ring-orange-100/50',
-    blue:   'text-blue-500 bg-blue-50 ring-blue-100/50',
-    green:  'text-emerald-500 bg-emerald-50 ring-emerald-100/50',
-    purple: 'text-violet-500 bg-violet-50 ring-violet-100/50',
-    cyan:   'text-cyan-500 bg-cyan-50 ring-cyan-100/50',
-    red:    'text-rose-500 bg-rose-50 ring-rose-100/50'
+    orange: 'text-orange-500 bg-orange-50 ring-orange-100/50 dark:bg-orange-500/10 dark:ring-orange-500/20',
+    blue:   'text-blue-500 bg-blue-50 ring-blue-100/50 dark:bg-blue-500/10 dark:ring-blue-500/20',
+    green:  'text-emerald-500 bg-emerald-50 ring-emerald-100/50 dark:bg-emerald-500/10 dark:ring-emerald-500/20',
+    purple: 'text-violet-500 bg-violet-50 ring-violet-100/50 dark:bg-violet-500/10 dark:ring-violet-500/20',
+    cyan:   'text-cyan-500 bg-cyan-50 ring-cyan-100/50 dark:bg-cyan-500/10 dark:ring-cyan-500/20',
+    red:    'text-rose-500 bg-rose-50 ring-rose-100/50 dark:bg-rose-500/10 dark:ring-rose-500/20'
   };
   const t = toneMap[tone] || toneMap.orange;
 
   return (
-    <div className="group relative overflow-hidden rounded-[24px] bg-white border border-slate-200/70 p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition-all hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)] hover:-translate-y-0.5">
+    <div className="group relative overflow-hidden rounded-[24px] bg-white dark:bg-[rgba(13,20,37,0.65)] border border-slate-200/70 dark:border-[rgba(99,130,191,0.1)] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.3)] transition-all hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)] dark:hover:shadow-[0_12px_32px_rgba(0,0,0,0.4)] hover:-translate-y-0.5 dark:backdrop-blur-xl">
       <div className="flex items-center justify-between">
         <div className={`flex items-center justify-center w-11 h-11 rounded-2xl ring-1 ${t}`}>
           <Icon size={22} strokeWidth={2.5} />
         </div>
-        <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${trend.up ? 'text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200/50' : 'text-rose-700 bg-rose-50 ring-1 ring-rose-200/50'}`}>
+        <div className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold ${trend.up ? 'text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200/50 dark:text-emerald-400 dark:bg-emerald-500/10 dark:ring-emerald-500/20' : 'text-rose-700 bg-rose-50 ring-1 ring-rose-200/50 dark:text-rose-400 dark:bg-rose-500/10 dark:ring-rose-500/20'}`}>
           {trend.up ? <ArrowUpRight size={12} strokeWidth={2.5} /> : <ArrowDownRight size={12} strokeWidth={2.5} />}
           {trend.delta}%
         </div>
@@ -92,7 +92,7 @@ function StatCard({ title, value, previous, format, icon: Icon, tone, subtitle }
       
       <div className="mt-5">
         <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{title}</p>
-        <p className="mt-1 text-2xl font-black text-slate-900 tracking-tight">
+        <p className="mt-1 text-2xl font-black text-slate-900 dark:text-white tracking-tight">
           <AnimatedNumber value={value} format={format} />
         </p>
         {subtitle && (

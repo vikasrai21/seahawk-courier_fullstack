@@ -258,7 +258,7 @@ export default function MonthlyReportPage({ toast }) {
                     <BarChart3 size={20} />
                   </div>
                   <div>
-                    <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none mb-1">Activity Velocity</h3>
+                    <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none mb-1">Activity Volume</h3>
                     <p className="text-xs font-bold text-slate-500">Daily shipment distribution</p>
                   </div>
                 </div>

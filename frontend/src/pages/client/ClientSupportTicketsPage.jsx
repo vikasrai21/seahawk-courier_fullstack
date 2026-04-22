@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { LifeBuoy, MessageSquareText, Send, TimerReset } from 'lucide-react';
 import api from '../../services/api';
 import { PageLoader } from '../../components/ui/Loading';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 function PriorityPill({ priority }) {
   const tone = {
@@ -65,80 +67,94 @@ export default function ClientSupportTicketsPage({ toast }) {
   if (loading) return <PageLoader />;
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7faff_0%,#eef4fd_100%)]">
-      <header className="client-premium-header px-6 py-4">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Link to="/portal" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-500 transition hover:text-slate-700">← Portal</Link>
-            <div>
-              <div className="text-sm font-black text-slate-900">Support Tickets</div>
-              <div className="text-xs font-semibold uppercase tracking-[0.12em] text-orange-500">Client Help Desk</div>
-            </div>
-          </div>
-          <div className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-extrabold uppercase tracking-[0.08em] text-sky-700">
-            {tickets.length} conversations
-          </div>
-        </div>
-      </header>
-
+    <div className="min-h-full pb-10">
       <div className="mx-auto client-premium-main">
-        <section className="overflow-hidden rounded-[28px] border border-slate-200/60 bg-[linear-gradient(145deg,#fffaf5_0%,#ffffff_70%)] p-6 shadow-[0_22px_44px_-30px_rgba(194,65,12,0.35)]">
-          <div className="inline-flex rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-600">
-            Issue Tracking
-          </div>
-          <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight text-slate-900">Support now feels like an inbox, not a plain list.</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
-            Open a conversation, follow status changes, and send a reply without losing the thread of what happened.
-          </p>
-        </section>
+        <ClientPortalPageIntro
+          eyebrow="Client Help Desk"
+          title="Support now feels like a conversation hub instead of a dead-end ticket list."
+          description="Open the latest thread, review status updates in context, and respond without breaking your operational flow."
+          badges={[`${tickets.length} conversations`, active?.ticketNo ? `Active ${active.ticketNo}` : 'No ticket selected', 'Threaded updates']}
+          actions={(
+            <>
+              <Link to="/portal" className="client-action-btn-secondary">
+                Back to portal
+              </Link>
+              <Link to="/portal/shipments" className="client-action-btn-primary">
+                Review shipments first
+              </Link>
+            </>
+          )}
+          aside={(
+            <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+              <div className="client-page-metric">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="client-page-metric-label">Open conversations</span>
+                  <LifeBuoy size={16} className="text-orange-500" />
+                </div>
+                <div className="client-page-metric-value">{tickets.length}</div>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Each ticket keeps its replies and operational updates in one place.</p>
+              </div>
+              <div className="client-page-metric">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="client-page-metric-label">Reply state</span>
+                  <MessageSquareText size={16} className="text-sky-500" />
+                </div>
+                <div className="mt-2 text-base font-black text-slate-950 dark:text-white">{reply.trim() ? 'Draft ready' : 'No draft yet'}</div>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Select a ticket and add context before sending your response.</p>
+              </div>
+            </div>
+          )}
+        />
 
         <section className="grid grid-cols-1 gap-5 lg:grid-cols-[360px,minmax(0,1fr)]">
-          <div className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_18px_42px_-32px_rgba(15,23,42,0.38)]">
-            <div className="border-b border-slate-100 px-5 py-4">
-              <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-500">Inbox</div>
-              <h2 className="mt-1 text-lg font-black text-slate-900">Your complaints & queries</h2>
-              <p className="mt-1 text-sm text-slate-500">Select a ticket to see the full conversation and respond.</p>
+          <div className="client-section-card overflow-hidden p-0">
+            <div className="border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+              <div className="client-page-eyebrow">Inbox</div>
+              <h2 className="mt-3 text-lg font-black text-slate-900 dark:text-white">Your complaints and queries</h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-300">Select a ticket to see the full conversation and respond.</p>
             </div>
             {tickets.length === 0 ? (
-              <div className="p-8 text-sm text-slate-500">No tickets yet.</div>
+              <div className="p-8 text-sm text-slate-500 dark:text-slate-300">No tickets yet.</div>
             ) : (
               <div className="divide-y divide-slate-100">
                 {tickets.map((ticket) => (
                   <button
                     key={ticket.ticketNo}
                     onClick={() => loadTicket(ticket.ticketNo)}
-                    className={`w-full p-4 text-left transition ${active?.ticketNo === ticket.ticketNo ? 'bg-sky-50' : 'hover:bg-slate-50'}`}
+                    className={`w-full p-4 text-left transition ${active?.ticketNo === ticket.ticketNo ? 'bg-sky-50 dark:bg-sky-950/30' : 'hover:bg-slate-50 dark:hover:bg-slate-900/50'}`}
                   >
                     <div className="flex items-center justify-between gap-3">
-                      <div className="font-mono text-xs font-black text-slate-800">{ticket.ticketNo}</div>
-                      <span className="badge badge-blue">{ticket.status}</span>
+                      <div className="font-mono text-xs font-black text-slate-800 dark:text-slate-100">{ticket.ticketNo}</div>
+                      <span className="badge badge-info">{ticket.status}</span>
                     </div>
-                    <div className="mt-2 text-sm font-black text-slate-900">{ticket.subject}</div>
-                    <div className="mt-1 text-xs text-slate-500">{ticket.awb || 'General issue'} · {new Date(ticket.createdAt).toLocaleDateString('en-IN')}</div>
+                    <div className="mt-2 text-sm font-black text-slate-900 dark:text-white">{ticket.subject}</div>
+                    <div className="mt-1 text-xs text-slate-500 dark:text-slate-300">{ticket.awb || 'General issue'} · {new Date(ticket.createdAt).toLocaleDateString('en-IN')}</div>
                   </button>
                 ))}
               </div>
             )}
           </div>
 
-          <div className="rounded-[26px] border border-slate-200 bg-white p-5 shadow-[0_18px_42px_-32px_rgba(15,23,42,0.38)]">
+          <div className="client-section-card">
             {!active ? (
               <div className="grid min-h-[420px] place-items-center text-center">
                 <div>
-                  <div className="text-5xl">🎫</div>
-                  <div className="mt-4 text-lg font-black text-slate-900">Select a ticket to open the conversation.</div>
-                  <div className="mt-2 max-w-md text-sm text-slate-500">
+                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-orange-200 bg-orange-50 text-orange-600 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-200">
+                    <TimerReset size={28} />
+                  </div>
+                  <div className="mt-4 text-lg font-black text-slate-900 dark:text-white">Select a ticket to open the conversation.</div>
+                  <div className="mt-2 max-w-md text-sm text-slate-500 dark:text-slate-300">
                     Tickets raised from the portal dashboard will appear here with their full timeline and replies.
                   </div>
                 </div>
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/70">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <div className="text-xl font-black text-slate-900">{active.subject}</div>
-                      <div className="mt-1 text-xs text-slate-500">{active.ticketNo} · {active.awb || 'No AWB linked'} · {active.status}</div>
+                      <div className="text-xl font-black text-slate-900 dark:text-white">{active.subject}</div>
+                      <div className="mt-1 text-xs text-slate-500 dark:text-slate-300">{active.ticketNo} · {active.awb || 'No AWB linked'} · {active.status}</div>
                     </div>
                     <PriorityPill priority={active.priority} />
                   </div>
@@ -146,21 +162,21 @@ export default function ClientSupportTicketsPage({ toast }) {
 
                 <div className="max-h-[440px] space-y-3 overflow-y-auto pr-1">
                   {(active.timeline || []).map((item, idx) => (
-                    <div key={`${item.at}-${idx}`} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+                    <div key={`${item.at}-${idx}`} className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/65">
                       <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-bold text-slate-900">{item.type === 'comment' ? item.by : 'Ticket Update'}</div>
-                        <div className="text-xs text-slate-500">{new Date(item.at).toLocaleString('en-IN')}</div>
+                        <div className="text-sm font-bold text-slate-900 dark:text-white">{item.type === 'comment' ? item.by : 'Ticket Update'}</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-300">{new Date(item.at).toLocaleString('en-IN')}</div>
                       </div>
-                      <div className="mt-2 text-sm leading-6 text-slate-700">
+                      <div className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-200">
                         {item.message || item.note || 'Ticket created'}
                       </div>
                     </div>
                   ))}
                 </div>
 
-                <div className="border-t border-slate-100 pt-4">
-                  <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-500">Reply</div>
-                  <label className="mt-2 block text-sm font-bold text-slate-900">Add more details</label>
+                <div className="border-t border-slate-100 pt-4 dark:border-slate-800">
+                  <div className="client-page-eyebrow">Reply</div>
+                  <label className="mt-3 block text-sm font-bold text-slate-900 dark:text-white">Add more details</label>
                   <textarea
                     className="input mt-2"
                     rows={4}
@@ -169,7 +185,8 @@ export default function ClientSupportTicketsPage({ toast }) {
                     placeholder="Share additional details, screenshot links, or request an update..."
                   />
                   <div className="mt-3 flex justify-end">
-                    <button className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-extrabold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70" onClick={sendReply} disabled={sending || !reply.trim()}>
+                    <button className="client-action-btn-primary" onClick={sendReply} disabled={sending || !reply.trim()}>
+                      <Send size={14} />
                       {sending ? 'Sending…' : 'Send Reply'}
                     </button>
                   </div>

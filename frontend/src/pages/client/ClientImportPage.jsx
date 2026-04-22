@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { readExcelAsJson } from '../../utils/excel';
 import api from '../../services/api';
+import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 const FIELD_MAP = {
   awb: ['awb', 'airway', 'tracking', 'shipment'],
@@ -81,12 +82,23 @@ export default function ClientImportPage({ toast }) {
   return (
     <div className="min-h-full">
       <div className="client-premium-main max-w-6xl">
+        <ClientPortalPageIntro
+          eyebrow="Order Import"
+          title="Upload spreadsheets, auto-map the columns, and bring bulk orders into the client workspace safely."
+          description="Shopify exports and basic CSV sheets work best. We detect common headers, preview the normalized rows, and then import them into your client account only."
+          badges={['Excel and CSV', `${rows.length} rows staged`, `${result?.imported || 0} rows saved`]}
+          actions={(
+            <button className="client-action-btn-primary" onClick={importRows} disabled={loading || !rows.length}>
+              {loading ? 'Importing…' : `Import ${rows.length || 0} orders`}
+            </button>
+          )}
+        />
         <div className="client-premium-card p-5">
           <h1 className="font-bold text-slate-900 dark:text-white">Upload Excel / CSV</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Shopify exports and basic order sheets work best. We'll auto-map common columns and import them into your account only.</p>
           <input className="mt-4 block w-full text-sm text-slate-700 dark:text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-orange-500/10 file:text-orange-600 dark:file:bg-orange-500/20 dark:file:text-orange-300 hover:file:bg-orange-500/20" type="file" accept=".xlsx,.xls,.csv" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
           <div className="mt-4 flex justify-end">
-            <button className="btn-primary" onClick={importRows} disabled={loading || !rows.length}>
+            <button className="client-action-btn-primary" onClick={importRows} disabled={loading || !rows.length}>
               {loading ? 'Importing…' : `Import ${rows.length || 0} Orders`}
             </button>
           </div>
