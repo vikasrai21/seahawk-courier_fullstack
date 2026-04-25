@@ -8,6 +8,10 @@ if (process.env.NODE_ENV !== 'production') {
 const os = require('os');
 const { createServer } = require('http');
 
+function isDisabledFlag(value) {
+  return typeof value === 'string' && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+}
+
 function writeStartupError(err, context = 'startup') {
   const message = err instanceof Error ? err.message : String(err);
   const stack = err instanceof Error ? err.stack : '';
@@ -98,8 +102,19 @@ async function startServer() {
   });
 
   try {
-    startScheduler();
-    initWorkers();
+    const disableBackgroundJobs =
+      isDisabledFlag(process.env.DISABLE_BACKGROUND_JOBS) ||
+      isDisabledFlag(process.env.PERF_PROOF_MODE);
+
+    if (disableBackgroundJobs) {
+      logger.warn('Background jobs disabled for this server process.', {
+        disableBackgroundJobs: process.env.DISABLE_BACKGROUND_JOBS,
+        perfProofMode: process.env.PERF_PROOF_MODE,
+      });
+    } else {
+      startScheduler();
+      initWorkers();
+    }
   } catch (err) {
     logger.error('Background startup failed. Exiting.', { error: err.message });
     writeStartupError(err, 'background-jobs');

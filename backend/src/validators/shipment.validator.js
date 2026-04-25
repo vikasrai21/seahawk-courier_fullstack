@@ -1,6 +1,6 @@
 const { z } = require('zod');
 
-const STATUSES = ['Booked','InTransit','OutForDelivery','Delivered','Delayed','RTO','Cancelled'];
+const STATUSES = ['Booked','PickedUp','InTransit','OutForDelivery','Delivered','Delayed','RTO','RTODelivered','Cancelled'];
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 // Helper: coerce null/undefined to empty string

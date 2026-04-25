@@ -23,6 +23,11 @@
     "ocr:local:setup": "python -m pip install --upgrade pip && python -m pip install rapidocr-onnxruntime zxing-cpp",
     "scanner:dataset:collect": "node scripts/scanner-dataset-collect.js",
     "scanner:benchmark": "node scripts/scanner-benchmark.js",
+    "perf:run": "node --input-type=module --experimental-vm-modules scripts/perf/local-load-runner.mjs",
+    "perf:run:clean": "node --input-type=module scripts/perf/local-load-runner.mjs --cleanup",
+    "perf:proof": "node --input-type=module scripts/perf/runtime-proof.mjs",
+    "perf:clean": "node scripts/cleanup-perf-shipments.js --confirm",
+    "perf:clean:dry": "node scripts/cleanup-perf-shipments.js",
     "lint": "eslint src --ext .js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "retention:run": "node -e \"const cfg=require('./src/config');const prisma=require('./src/config/prisma');(async()=>{const auditCutoff=new Date(Date.now()-cfg.operations.retention.auditDays*86400000);const jobCutoff=new Date(Date.now()-cfg.operations.retention.jobQueueDays*86400000);const notifCutoff=new Date(Date.now()-cfg.operations.retention.notificationDays*86400000);const [a,j,n]=await Promise.all([prisma.auditLog.deleteMany({where:{createdAt:{lt:auditCutoff}}}),prisma.jobQueue.deleteMany({where:{createdAt:{lt:jobCutoff},status:{in:['DONE','FAILED']}}}),prisma.notification.deleteMany({where:{createdAt:{lt:notifCutoff},status:{in:['SENT','FAILED']}}})]);console.log(JSON.stringify({auditDeleted:a.count,jobDeleted:j.count,notificationDeleted:n.count}));await prisma.$disconnect();})().catch(async(e)=>{console.error(e);try{await prisma.$disconnect();}catch{}process.exit(1);});\""
