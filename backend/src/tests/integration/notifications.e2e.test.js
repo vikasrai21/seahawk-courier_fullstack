@@ -1,5 +1,11 @@
 /**
  * notifications.e2e.test.js — Notifications Route Integration Tests
+ * 
+ * Actual routes:
+ *   POST /api/notifications/send-update  → sends status notification (needs awb)
+ *   POST /api/notifications/send-digest  → sends daily digest (needs clientCode + date)
+ *   GET  /api/notifications/history      → notification history
+ *   GET  /api/notifications/stats        → delivery stats
  */
 const request = require('supertest');
 const app = require('../../app');
@@ -41,33 +47,43 @@ describe('Notifications E2E Tests — /api/notifications', () => {
     await prisma.$disconnect();
   });
 
-  describe('GET /api/notifications', () => {
-    it('ADMIN gets list of notifications', async () => {
+  describe('GET /api/notifications/history', () => {
+    it('ADMIN gets notification history', async () => {
       const res = await request(app)
-        .get('/api/notifications')
+        .get('/api/notifications/history')
         .set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.success).toBe(true);
     });
   });
 
-  describe('POST /api/notifications/send-pod', () => {
-    it('Requires validation (400) for missing awb', async () => {
+  describe('GET /api/notifications/stats', () => {
+    it('ADMIN gets delivery stats', async () => {
       const res = await request(app)
-        .post('/api/notifications/send-pod')
+        .get('/api/notifications/stats')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+  });
+
+  describe('POST /api/notifications/send-update', () => {
+    it('Requires awb field (400)', async () => {
+      const res = await request(app)
+        .post('/api/notifications/send-update')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({});
-      expect(res.status).toBe(400); 
+      expect(res.status).toBe(400);
     });
   });
 
-  describe('POST /api/notifications/digest', () => {
-    it('Rejects without query or matching data (404/400/200 empty)', async () => {
+  describe('POST /api/notifications/send-digest', () => {
+    it('Requires clientCode and date (400)', async () => {
       const res = await request(app)
-        .post('/api/notifications/digest')
+        .post('/api/notifications/send-digest')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ clientCode: 'NONEXISTENT' });
-      expect([200, 400, 404]).toContain(res.status);
+        .send({});
+      expect(res.status).toBe(400);
     });
   });
 });

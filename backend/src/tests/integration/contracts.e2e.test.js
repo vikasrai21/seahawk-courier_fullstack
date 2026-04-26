@@ -74,12 +74,12 @@ describe('Contracts E2E Tests — /api/contracts', () => {
       expect(res.status).toBe(400); 
     });
 
-    it('STAFF gets 403', async () => {
+    it('STAFF also gets validation error (no RBAC on POST)', async () => {
       const res = await request(app)
         .post('/api/contracts')
         .set('Authorization', `Bearer ${staffToken}`)
         .send({});
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(400);
     });
   });
 

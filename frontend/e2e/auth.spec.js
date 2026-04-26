@@ -5,21 +5,22 @@ test.describe('Authentication Flow', () => {
     // Go to login page
     await page.goto('/login');
     
-    // Check if we are on the login page
-    await expect(page.locator('h2', { hasText: 'Sign in to Seahawk' })).toBeVisible();
+    // Check if we are on the login page (h2 contains Sea Hawk Courier)
+    await expect(page.locator('h2', { hasText: 'Sea Hawk Courier' })).toBeVisible();
 
     // Fill credentials (assuming STAFF test credentials)
-    await page.fill('input[type="email"]', 'admin@seahawkcourier.in');
-    await page.fill('input[type="password"]', 'AdminPass123!');
+    await page.fill('input[type="email"]', 'admin@seahawk.com');
+    await page.fill('input[type="password"]', 'Admin@12345');
 
     // Click Login
     await page.click('button[type="submit"]');
 
     // Wait for redirect to dashboard
-    await expect(page).toHaveURL(/.*\/dashboard/);
+    await page.waitForURL(url => !url.pathname.includes('/login'), { timeout: 15000 });
+    await expect(page).toHaveURL(/.*\/app.*/);
 
     // Verify Dashboard loads successfully
-    await expect(page.locator('h1', { hasText: 'Logistics Overview' })).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('h1', { hasText: 'Command Center' })).toBeVisible({ timeout: 10000 });
   });
 
   test('Shows error on invalid credentials', async ({ page }) => {

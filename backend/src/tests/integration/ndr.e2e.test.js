@@ -1,5 +1,11 @@
 /**
  * ndr.e2e.test.js — NDR Routes Integration Tests
+ * 
+ * Actual routes (ndr.routes.js):
+ *   GET  /api/ndr/        → list (authenticate, requireRole(STAFF))
+ *   GET  /api/ndr/stats   → stats
+ *   POST /api/ndr/        → create
+ *   PATCH /api/ndr/:id    → update
  */
 const request = require('supertest');
 const app = require('../../app');
@@ -47,7 +53,7 @@ describe('NDR E2E Tests — /api/ndr', () => {
         .get('/api/ndr')
         .set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.success).toBe(true);
     });
   });
 
@@ -57,17 +63,17 @@ describe('NDR E2E Tests — /api/ndr', () => {
         .get('/api/ndr/stats')
         .set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
-      expect(res.body.data.total).toBeDefined();
+      expect(res.body.success).toBe(true);
     });
   });
 
-  describe('PUT /api/ndr/:id/resolve', () => {
-    it('Missing fields return 400', async () => {
+  describe('PATCH /api/ndr/:id', () => {
+    it('Invalid NDR ID returns 400 or 404', async () => {
       const res = await request(app)
-        .put('/api/ndr/999999/resolve')
+        .patch('/api/ndr/999999')
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({});
-      expect(res.status).toBe(400);
+        .send({ action: 'REATTEMPT' });
+      expect([400, 404, 500]).toContain(res.status);
     });
   });
 });

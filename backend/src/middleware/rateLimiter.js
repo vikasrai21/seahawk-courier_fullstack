@@ -1,10 +1,9 @@
 // src/middleware/rateLimiter.js
 const rateLimit = require('express-rate-limit');
 
-// Strict limit for login — prevents brute force
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max:      5,              // Production-safe brute-force protection
+  max:      process.env.NODE_ENV === 'development' ? 500 : 5, // Production-safe brute-force protection
   message:  { success: false, message: 'Too many login attempts. Try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders:   false,
@@ -14,7 +13,7 @@ const loginLimiter = rateLimit({
 // General API limit
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max:      300,
+  max:      process.env.NODE_ENV === 'development' ? 5000 : 300,
   message:  { success: false, message: 'Too many requests. Slow down.' },
   standardHeaders: true,
   legacyHeaders:   false,

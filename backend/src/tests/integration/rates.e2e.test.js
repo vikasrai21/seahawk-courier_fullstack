@@ -1,5 +1,12 @@
 /**
  * rates.e2e.test.js — Rates Route Integration Tests
+ * 
+ * Actual routes:
+ *   POST /api/rates/calculate         → calculate rates
+ *   GET  /api/rates/versions          → list rate versions
+ *   GET  /api/rates/health            → rate health check
+ *   GET  /api/rates/margin-rules      → list margin rules
+ *   POST /api/rates/auto-suggest      → suggest best courier
  */
 const request = require('supertest');
 const app = require('../../app');
@@ -41,23 +48,43 @@ describe('Rates E2E Tests — /api/rates', () => {
     await prisma.$disconnect();
   });
 
-  describe('GET /api/rates', () => {
+  describe('GET /api/rates/versions', () => {
     it('ADMIN gets list of rate versions', async () => {
       const res = await request(app)
-        .get('/api/rates')
+        .get('/api/rates/versions')
         .set('Authorization', `Bearer ${adminToken}`);
       expect(res.status).toBe(200);
-      expect(Array.isArray(res.body.data)).toBe(true);
+      expect(res.body.success).toBe(true);
     });
   });
 
-  describe('POST /api/rates/upload', () => {
-    it('Rejects missing file with 400', async () => {
+  describe('GET /api/rates/health', () => {
+    it('ADMIN gets rate health status', async () => {
       const res = await request(app)
-        .post('/api/rates/upload')
-        .set('Authorization', `Bearer ${ownerToken}`);
-      // Doesn't attach file, triggers Multer/validation error
-      expect(res.status).toBeGreaterThanOrEqual(400); 
+        .get('/api/rates/health')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+  });
+
+  describe('GET /api/rates/margin-rules', () => {
+    it('returns margin rules array', async () => {
+      const res = await request(app)
+        .get('/api/rates/margin-rules')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+  });
+
+  describe('POST /api/rates/calculate', () => {
+    it('Rejects missing state/weight with error', async () => {
+      const res = await request(app)
+        .post('/api/rates/calculate')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({});
+      expect(res.status).toBe(400);
     });
   });
 });
