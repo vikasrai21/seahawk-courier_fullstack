@@ -83,4 +83,32 @@ async function ndrAnalytics(req, res) {
   } catch (err) { return R.error(res, err.message); }
 }
 
-module.exports = { overview, courierPerformance, clientAnalytics, monthlyTrend, ndrAnalytics };
+/* ── GET /api/analytics/sla ── */
+async function slaCompliance(req, res) {
+  try {
+    const { clientCode, dateFrom, dateTo } = req.query;
+    const key = cacheKey('sla', { clientCode: clientCode || '', dateFrom: dateFrom || '', dateTo: dateTo || '' });
+
+    const result = await cache.wrap(key, async () => {
+      return await analyticsService.getSLACompliance(clientCode, dateFrom, dateTo);
+    }, TTL);
+
+    return R.ok(res, result);
+  } catch (err) { return R.error(res, err.message); }
+}
+
+/* ── GET /api/analytics/cost ── */
+async function costPerShipment(req, res) {
+  try {
+    const { clientCode, dateFrom, dateTo } = req.query;
+    const key = cacheKey('cost', { clientCode: clientCode || '', dateFrom: dateFrom || '', dateTo: dateTo || '' });
+
+    const result = await cache.wrap(key, async () => {
+      return await analyticsService.getCostPerShipment(clientCode, dateFrom, dateTo);
+    }, TTL);
+
+    return R.ok(res, result);
+  } catch (err) { return R.error(res, err.message); }
+}
+
+module.exports = { overview, courierPerformance, clientAnalytics, monthlyTrend, ndrAnalytics, slaCompliance, costPerShipment };

@@ -1,4 +1,4 @@
-name: Seahawk CI/CD Full-Stack Tests
+name: Seahawk CI — Full-Stack Test Suite
 
 on:
   push:
@@ -6,10 +6,15 @@ on:
   pull_request:
     branches: [ "main" ]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  # ── Backend Unit Tests ────────────────────────────────────────────
+  backend-tests:
+    name: 🔧 Backend Unit Tests
     runs-on: ubuntu-latest
-    
     defaults:
       run:
         working-directory: ./backend
@@ -30,28 +35,97 @@ jobs:
         cache: 'npm'
         cache-dependency-path: './backend/package-lock.json'
 
-    # 1. Install Backend Dependencies
     - name: Install Dependencies
       run: npm ci
-      
-    # 2. Generate Prisma Client (required for mocks)
+
     - name: Generate Prisma Client
       run: npx prisma generate
 
-    # 3. Unit Tests & Coverage
-    - name: Run Unit Tests & Measure Coverage 
+    - name: Run Unit Tests & Measure Coverage
       run: npm run test:ci
       env:
-        JWT_SECRET: test-jwt-secret-ci
+        JWT_SECRET: test-jwt-secret-ci-min-32-chars-long
         NODE_ENV: test
         REDIS_URL: redis://localhost:6379
         DATABASE_URL: postgresql://mock:mock@localhost:5432/mock
 
-    # 4. Upload Coverage Report
-    - name: Upload Coverage to GitHub Actions
+    - name: Upload Coverage Report
       uses: actions/upload-artifact@v4
-      if: always() # Upload even if tests fail
+      if: always()
       with:
-        name: coverage-report
+        name: backend-coverage
         path: ./backend/coverage/
         retention-days: 7
+
+  # ── Frontend Component Tests ──────────────────────────────────────
+  frontend-tests:
+    name: ⚛️ Frontend Component Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        cache-dependency-path: './frontend/package-lock.json'
+
+    - name: Install Dependencies
+      run: npm ci
+
+    - name: Run Component Tests (Vitest + RTL)
+      run: npm run test
+
+  # ── Frontend Build Verification ───────────────────────────────────
+  frontend-build:
+    name: 🏗️ Frontend Build Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+        cache: 'npm'
+        cache-dependency-path: './frontend/package-lock.json'
+
+    - name: Install Dependencies
+      run: npm ci
+
+    - name: Build Production Bundle
+      run: npm run build
+      env:
+        NODE_ENV: production
+
+  # ── CI Summary ────────────────────────────────────────────────────
+  ci-status:
+    name: ✅ CI Status Gate
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests, frontend-build]
+    if: always()
+    steps:
+    - name: Check all jobs passed
+      run: |
+        if [ "${{ needs.backend-tests.result }}" != "success" ] || \
+           [ "${{ needs.frontend-tests.result }}" != "success" ] || \
+           [ "${{ needs.frontend-build.result }}" != "success" ]; then
+          echo "❌ One or more CI jobs failed"
+          echo "  Backend:  ${{ needs.backend-tests.result }}"
+          echo "  Frontend: ${{ needs.frontend-tests.result }}"
+          echo "  Build:    ${{ needs.frontend-build.result }}"
+          exit 1
+        fi
+        echo "✅ All CI checks passed"
+        echo "  Backend:  ${{ needs.backend-tests.result }}"
+        echo "  Frontend: ${{ needs.frontend-tests.result }}"
+        echo "  Build:    ${{ needs.frontend-build.result }}"

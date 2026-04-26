@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import PublicLayout from './PublicLayout';
 import { PageMeta } from '../../components/seo/PageMeta';
 import { LocalBusinessSchema } from '../../components/seo/LocalBusinessSchema';
+import { CheckCircle2, Globe2, Clock, ShieldCheck, MapPin, Building2, Package, Search, PhoneCall, Truck, FileText } from 'lucide-react';
 
 /* ════════════════════════════════════════
    RATE CALCULATOR DATA (from calculator.js)
@@ -507,10 +508,10 @@ export default function LandingPage() {
             <div className="hero-inner">
               <div className="rev">
                 <div className="hero-kicker"><span className="dot" />Trusted Since 2004 — 20+ Years Delivering Excellence</div>
-                <h1 className="hero-h1">India's Most Trusted<br /><em>Courier &amp; Cargo</em><br /><span className="sub-line">Partner</span></h1>
-                <p className="hero-p">From same-day Delhi NCR deliveries to international shipments across 220+ countries — we power your logistics with unmatched speed, security and competitive rates.</p>
+                <h1 className="hero-h1">Precision B2B Logistics<br /><em>for Growing Brands</em><br /></h1>
+                <p className="hero-p">From same-day Delhi NCR deliveries to international shipments across 220+ countries. Get the reach of a giant, with the dedicated support of a boutique logistics partner.</p>
                 <div className="hero-trust">
-                  {['35,000+ PIN Codes','220+ Countries','24×7 Support','Real-Time Tracking'].map(t => (
+                  {['19,000+ PIN Codes (100% India)','220+ Countries','< 15 Min Support Response','Real-Time Tracking'].map(t => (
                     <div key={t} className="t-chip"><span className="chk">✓</span>{t}</div>
                   ))}
                 </div>
@@ -519,7 +520,7 @@ export default function LandingPage() {
                   <Link to="/track" className="btn btn-ghost-w btn-lg">🔍 Track Shipment</Link>
                 </div>
                 <div className="hero-mini-stats rev d1">
-                  {[{t:120000,dur:2500,l:'Shipments Delivered'},{t:350,dur:1800,l:'Cities Covered'},{t:220,dur:1600,l:'Countries'},{t:20,dur:1400,l:'Years Experience',sup:'+ Yrs'}].map(({t,dur,l,sup}) => (
+                  {[{t:98.4,dur:2000,l:'On-Time Delivery',sup:'%'},{t:19000,dur:1800,l:'PIN Codes Covered',sup:'+'},{t:220,dur:1600,l:'Countries',sup:'+'},{t:20,dur:1400,l:'Years Experience',sup:'+'}].map(({t,dur,l,sup}) => (
                     <div key={l} className="hms">
                       <div className="hms-n"><span className="count" data-t={t} data-dur={dur}>0</span><sup>{sup || '+'}</sup></div>
                       <div className="hms-l">{l}</div>
@@ -538,7 +539,7 @@ export default function LandingPage() {
         {/* ── TICKER ── */}
         <div className="ticker">
           <div className="ticker-track">
-            {['🚀 Same Day Express Delivery','✈️ International Air Courier','🌍 220+ Countries & Territories','📦 Bulk & LTL Surface Freight','🔍 Real-Time Shipment Tracking','🛡️ Fully Insured Deliveries','💼 B2B Corporate Logistics','📋 35,000+ PIN Codes Covered','🕐 24×7 Customer Support'].flatMap((t, i) => [
+            {['Same Day Express Delivery','International Air Courier','220+ Countries & Territories','Bulk & LTL Surface Freight','Real-Time Shipment Tracking','Fully Insured Deliveries','B2B Corporate Logistics','19,000+ PIN Codes Covered','Dedicated Account Managers'].flatMap((t, i) => [
               <span key={`t${i}`} className="tick-item">{t}</span>,
               <span key={`s${i}`} className="tick-sep" />,
             ])}
@@ -549,9 +550,9 @@ export default function LandingPage() {
         <section id="stats-band">
           <div className="wrap">
             <div className="stats-grid">
-              {[{icon:'📦',t:120000,dur:2800,l:'Shipments Delivered'},{icon:'📍',t:35000,dur:2500,l:'PIN Codes Covered'},{icon:'🏙️',t:800,dur:2000,l:'Cities in India'},{icon:'🌍',t:220,dur:1800,l:'Countries Served'},{icon:'🏆',t:20,dur:1500,l:'Years of Excellence',sup:'+ Yrs'}].map(({icon,t,dur,l,sup},i) => (
+              {[{icon:<ShieldCheck size={28}/>,t:98,dur:2800,l:'On-Time Delivery Rate',sup:'%'},{icon:<MapPin size={28}/>,t:19000,dur:2500,l:'PIN Codes Covered',sup:'+'},{icon:<Building2 size={28}/>,t:800,dur:2000,l:'Cities in India',sup:'+'},{icon:<Globe2 size={28}/>,t:220,dur:1800,l:'Countries Served',sup:'+'},{icon:<Clock size={28}/>,t:20,dur:1500,l:'Years of Excellence',sup:'+'}].map(({icon,t,dur,l,sup},i) => (
                 <div key={l} className={`stat-block rev${i > 0 ? ` d${i}` : ''}`}>
-                  <div className="stat-icon-wrap">{icon}</div>
+                  <div className="stat-icon-wrap" style={{ color: 'var(--navy)' }}>{icon}</div>
                   <div className="stat-number"><span className="count" data-t={t} data-dur={dur}>0</span><sup>{sup || '+'}</sup></div>
                   <div className="stat-label">{l}</div>
                 </div>
@@ -577,7 +578,7 @@ export default function LandingPage() {
                 ))}
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
-                {['✓ Free Doorstep Pickup','✓ Real-Time Tracking','✓ GST Invoicing','✓ 35,000+ PIN Codes','✓ 24×7 Emergency'].map(t => (
+                {['✓ Free Doorstep Pickup','✓ Real-Time Tracking','✓ GST Invoicing','✓ 19,000+ PIN Codes','✓ Dedicated Manager'].map(t => (
                   <div key={t} style={{ padding: '6px 14px', background: '#fff', border: '1.5px solid var(--border-l)', borderRadius: 40, fontSize: '.73rem', fontWeight: 700, color: 'var(--ink-2)' }}>{t}</div>
                 ))}
               </div>
@@ -609,15 +610,15 @@ export default function LandingPage() {
             </div>
             <div className="svc-grid">
               {[
-                {icon:'🚀',t:'Express Delivery',d:'Same-day and next-day delivery to Delhi NCR and all major cities. Fastest transit times with guaranteed POD on every consignment.',note:'📍 Delhi NCR · Metro Cities · North India',link:'#calculator',cta:'Learn more →'},
-                {icon:'✈️',t:'International Courier',d:'Documents and parcels to 220+ countries via DHL, FedEx, Aramex and our own global partner network across 8 international zones.',note:'🌍 USA · UK · UAE · Australia · 220+ Countries',link:'#calculator',cta:'Calculate rate →'},
-                {icon:'📦',t:'Surface & LTL Cargo',d:'Cost-effective road freight for heavy consignments. LTL road express connecting 800+ cities pan-India at competitive rates.',note:'📦 Pan-India · Up to 500 kg per consignment',link:'/contact',cta:'Contact us →'},
-                {icon:'🏢',t:'B2B Logistics',d:'Custom rate contracts, dedicated account manager, monthly invoicing and full client portal access for enterprise shippers.',note:'💼 Custom rates · Volume discounts available',link:'/services#b2b',cta:'Open an account →'},
-                {icon:'🛡️',t:'Insured Shipments',d:"Full declared-value insurance for electronics, jewellery, fragile goods and high-value items at just 5% premium.",note:'🔒 5% premium · Hassle-free claims process',link:'#calculator',cta:'Calculate cost →'},
-                {icon:'📋',t:'Document Courier',d:'Secure delivery of legal documents, passports, bank documents and diplomatic mail — handled with absolute care.',note:'🗂️ Domestic · International · Diplomatic Mail',link:'/contact',cta:'Enquire now →'},
+                {icon:<Package size={24} color="var(--orange)"/>,t:'Express Delivery',d:'Same-day and next-day delivery to Delhi NCR and all major cities. Fastest transit times with guaranteed POD on every consignment.',note:'📍 Delhi NCR · Metro Cities · North India',link:'#calculator',cta:'Learn more →'},
+                {icon:<Globe2 size={24} color="var(--navy)"/>,t:'International Courier',d:'Documents and parcels to 220+ countries via DHL, FedEx, Aramex and our own global partner network across 8 international zones.',note:'🌍 USA · UK · UAE · Australia · 220+ Countries',link:'#calculator',cta:'Calculate rate →'},
+                {icon:<Truck size={24} color="var(--navy)"/>,t:'Surface & LTL Cargo',d:'Cost-effective road freight for heavy consignments. LTL road express connecting 800+ cities pan-India at competitive rates.',note:'📦 Pan-India · Up to 500 kg per consignment',link:'/contact',cta:'Contact us →'},
+                {icon:<Building2 size={24} color="var(--navy)"/>,t:'B2B Logistics',d:'Custom rate contracts, dedicated account manager, monthly invoicing and full client portal access for enterprise shippers.',note:'💼 Custom rates · Volume discounts available',link:'/services#b2b',cta:'Open an account →'},
+                {icon:<ShieldCheck size={24} color="var(--navy)"/>,t:'Insured Shipments',d:"Full declared-value insurance for electronics, jewellery, fragile goods and high-value items at just 5% premium.",note:'🔒 5% premium · Hassle-free claims process',link:'#calculator',cta:'Calculate cost →'},
+                {icon:<FileText size={24} color="var(--navy)"/>,t:'Document Courier',d:'Secure delivery of legal documents, passports, bank documents and diplomatic mail — handled with absolute care.',note:'🗂️ Domestic · International · Diplomatic Mail',link:'/contact',cta:'Enquire now →'},
               ].map(({icon,t,d,note,link,cta},i) => (
                 <div key={t} className={`svc-card rev${i > 0 ? ` d${(i % 3) || ''}` : ''}`}>
-                  <div className="svc-icon">{icon}</div>
+                  <div className="svc-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</div>
                   <h3 className="svc-title">{t}</h3>
                   <p className="svc-desc">{d}</p>
                   <div className="svc-note">{note}</div>

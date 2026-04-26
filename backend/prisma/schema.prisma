@@ -98,6 +98,7 @@ model Client {
   autoTopupRule   Json?               @map("auto_topup_rule")
   brandSettings   Json?               @map("brand_settings")
   apiKeys         ClientApiKey[]
+  webhooks        ClientWebhook[]
 
   @@index([code])
   @@map("clients")
@@ -643,4 +644,44 @@ model AgentActionLog {
   @@index([status])
   @@index([createdAt])
   @@map("agent_action_logs")
+}
+
+model ClientWebhook {
+  id            Int       @id @default(autoincrement())
+  clientCode    String    @map("client_code")
+  url           String                          // Client's endpoint URL
+  secret        String                          // HMAC-SHA256 signing secret
+  events        String[]  @default([])          // ["shipment.booked", "shipment.delivered", ...]
+  active        Boolean   @default(true)
+  description   String?                         // Human-readable label
+  lastDelivery  DateTime? @map("last_delivery") // Last successful delivery timestamp
+  failCount     Int       @default(0) @map("fail_count")  // Consecutive failure count
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  client        Client    @relation(fields: [clientCode], references: [code])
+
+  @@index([clientCode])
+  @@index([active])
+  @@map("client_webhooks")
+}
+
+model WebhookDelivery {
+  id            Int       @id @default(autoincrement())
+  webhookId     Int       @map("webhook_id")
+  event         String                          // e.g. "shipment.delivered"
+  payload       Json                            // Full signed payload sent
+  statusCode    Int?      @map("status_code")   // HTTP response code
+  response      String?   @db.Text              // Response body (truncated)
+  success       Boolean   @default(false)
+  attempts      Int       @default(1)
+  maxAttempts   Int       @default(5) @map("max_attempts")
+  nextRetryAt   DateTime? @map("next_retry_at")
+  error         String?                         // Error message on failure
+  deliveredAt   DateTime? @map("delivered_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([webhookId])
+  @@index([success])
+  @@index([nextRetryAt])
+  @@map("webhook_deliveries")
 }

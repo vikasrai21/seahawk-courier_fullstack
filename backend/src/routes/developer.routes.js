@@ -8,6 +8,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
 const integrationIngestSvc = require('../services/integration-ingest.service');
 const { fetchWithRetry } = require('../utils/httpRetry');
 const integrationIngestService = require('../services/integration-ingest.service');
+const webhookDispatch = require('../services/webhook-dispatch.service');
 
 router.use(authenticate);
 
@@ -992,6 +993,136 @@ router.get('/integrations/diagnostics', asyncHandler(async (req, res) => {
       createdAt: { gte: new Date(Date.now() - 24 * 3600000) },
     },
     orderBy: { createdAt: 'desc' },
+  const requestNo = String(req.params.requestNo || '').trim();
+  const decision = String(req.body?.decision || '').trim().toUpperCase();
+  if (!['APPROVED', 'REJECTED'].includes(decision)) return R.badRequest(res, 'decision must be APPROVED or REJECTED');
+  const requestKey = `${clientCode}:${requestNo}`;
+  const source = await prisma.auditLog.findFirst({
+    where: {
+      entity: 'CLIENT_GOVERNANCE',
+      entityId: requestKey,
+      action: 'APPROVAL_REQUESTED',
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (!source) return R.notFound(res, 'Approval request');
+  if (source.userId && source.userId === req.user.id) {
+    return R.forbidden(res, 'Maker-checker violation: requester cannot approve their own request.');
+  }
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      userEmail: req.user.email,
+      action: 'APPROVAL_DECIDED',
+      entity: 'CLIENT_GOVERNANCE',
+      entityId: requestKey,
+      newValue: {
+        requestNo,
+        decision,
+        decidedBy: req.user.email,
+        note: String(req.body?.note || '').trim() || null,
+      },
+      ip: req.ip,
+    },
+  });
+  R.ok(res, { requestNo, decision }, `Request ${decision.toLowerCase()}`);
+}));
+
+// GET /api/portal/developer/integrations/diagnostics
+router.get('/integrations/diagnostics', asyncHandler(async (req, res) => {
+  const clientCode = resolveClientCode(req);
+  if (!clientCode) return R.badRequest(res, 'clientCode is required');
+
+  const [activeKeys, recentLogs, client, dlqRows, sandboxAccepted] = await Promise.all([
+    prisma.clientApiKey.count({
+      where: {
+        clientCode,
+        active: true,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
+    }),
+    prisma.auditLog.findMany({
+      where: { entity: 'INTEGRATION_WEBHOOK', entityId: { startsWith: `${clientCode}:` } },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      select: { action: true, newValue: true, createdAt: true, entityId: true },
+    }),
+    prisma.client.findUnique({ where: { code: clientCode }, select: { brandSettings: true } }),
+    prisma.jobQueue.findMany({
+      where: {
+        type: 'INTEGRATION_DEAD_LETTER',
+      },
+      select: { payload: true },
+      take: 2000,
+    }),
+    prisma.auditLog.count({
+      where: {
+        entity: 'INTEGRATION_WEBHOOK',
+        action: 'INTEGRATION_SANDBOX_ACCEPTED',
+        entityId: { startsWith: `${clientCode}:` },
+      },
+    }),
+  ]);
+
+  const stats = {
+    total: recentLogs.length,
+    created: recentLogs.filter((l) => l.action === 'INTEGRATION_DRAFT_CREATED').length,
+    duplicate: recentLogs.filter((l) => l.action === 'INTEGRATION_DRAFT_DUPLICATE').length,
+    failed: recentLogs.filter((l) => l.action === 'INTEGRATION_DRAFT_FAILED').length,
+  };
+
+  const byProvider = recentLogs.reduce((acc, row) => {
+    const provider = String(row.entityId || '').split(':')[1] || 'unknown';
+    acc[provider] = (acc[provider] || 0) + 1;
+    return acc;
+  }, {});
+  const dlqCount = dlqRows.filter((row) => String(row?.payload?.clientCode || '').toUpperCase() === clientCode).length;
+
+  const policies = client?.brandSettings?.integrationKeyPolicies || {};
+  const keys = await prisma.clientApiKey.findMany({
+    where: {
+      clientCode,
+      active: true,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    },
+    select: { id: true, name: true, createdAt: true, lastUsedAt: true },
+    orderBy: { createdAt: 'desc' },
+  });
+  const keyPolicies = keys.map((k) => {
+    const policy = policies[String(k.id)] || {};
+    return {
+      id: k.id,
+      name: k.name,
+      createdAt: k.createdAt,
+      lastUsedAt: k.lastUsedAt,
+      mode: String(policy.mode || 'live').toLowerCase() === 'sandbox' ? 'sandbox' : 'live',
+      scopes: integrationIngestSvc.normalizeScopes(policy.scopes),
+    };
+  });
+
+  const sampleMapping = {};
+  const integrations = client?.brandSettings?.integrations || {};
+  Object.keys(integrations).forEach((provider) => {
+    const cfg = integrations[provider];
+    const sample = {
+      referenceId: cfg?.mappings?.referenceId || '',
+      consignee: cfg?.mappings?.consignee || '',
+      destination: cfg?.mappings?.destination || '',
+      phone: cfg?.mappings?.phone || '',
+      pincode: cfg?.mappings?.pincode || '',
+      weight: cfg?.mappings?.weight || '',
+    };
+    sampleMapping[provider] = sample;
+  });
+
+  const pullRuns = await prisma.auditLog.findMany({
+    where: {
+      entity: 'INTEGRATION_WEBHOOK',
+      action: 'INTEGRATION_CONNECTOR_PULL_RUN',
+      entityId: { startsWith: `${clientCode}:` },
+      createdAt: { gte: new Date(Date.now() - 24 * 3600000) },
+    },
+    orderBy: { createdAt: 'desc' },
     take: 200,
     select: { newValue: true },
   });
@@ -1018,6 +1149,140 @@ router.get('/integrations/diagnostics', asyncHandler(async (req, res) => {
       'Replay dead-letter events from the developer hub after fixing mapping issues.',
     ],
   });
+}));
+
+// ── Outbound Webhooks Management ──────────────────────────────────────────
+
+// GET /api/portal/developer/webhook-events
+router.get('/webhook-events', asyncHandler(async (req, res) => {
+  R.ok(res, { events: webhookDispatch.SUPPORTED_EVENTS });
+}));
+
+// GET /api/portal/developer/webhooks
+router.get('/webhooks', asyncHandler(async (req, res) => {
+  const clientCode = resolveClientCode(req);
+  if (!clientCode) return R.badRequest(res, 'clientCode is required');
+
+  const webhooks = await prisma.clientWebhook.findMany({
+    where: { clientCode },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      url: true,
+      events: true,
+      active: true,
+      description: true,
+      lastDelivery: true,
+      failCount: true,
+      createdAt: true,
+    },
+  });
+
+  R.ok(res, webhooks);
+}));
+
+// POST /api/portal/developer/webhooks
+router.post('/webhooks', asyncHandler(async (req, res) => {
+  const clientCode = resolveClientCode(req);
+  if (!clientCode) return R.badRequest(res, 'clientCode is required');
+
+  const { url, events, description } = req.body;
+  if (!url || !isValidHttpUrl(url)) return R.badRequest(res, 'Valid URL is required');
+
+  // Limit 5 webhooks per client
+  const count = await prisma.clientWebhook.count({ where: { clientCode, active: true } });
+  if (count >= 5) return res.status(403).json({ success: false, message: 'Maximum 5 active webhooks allowed.' });
+
+  const webhook = await webhookDispatch.registerWebhook(clientCode, { url, events, description });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      userEmail: req.user.email,
+      action: 'OUTBOUND_WEBHOOK_CREATED',
+      entity: 'CLIENT_WEBHOOK',
+      entityId: `${clientCode}:${webhook.id}`,
+      newValue: { url, events, description },
+      ip: req.ip,
+    },
+  });
+
+  res.json({ success: true, data: webhook });
+}));
+
+// DELETE /api/portal/developer/webhooks/:id
+router.delete('/webhooks/:id', asyncHandler(async (req, res) => {
+  const clientCode = resolveClientCode(req);
+  if (!clientCode) return R.badRequest(res, 'clientCode is required');
+
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return R.badRequest(res, 'Invalid webhook id');
+
+  const webhook = await prisma.clientWebhook.findFirst({
+    where: { id, clientCode },
+  });
+  if (!webhook) return R.notFound(res, 'Webhook');
+
+  await prisma.clientWebhook.delete({ where: { id } });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      userEmail: req.user.email,
+      action: 'OUTBOUND_WEBHOOK_DELETED',
+      entity: 'CLIENT_WEBHOOK',
+      entityId: `${clientCode}:${id}`,
+      newValue: { deleted: true, url: webhook.url },
+      ip: req.ip,
+    },
+  });
+
+  R.ok(res, null, 'Webhook deleted');
+}));
+
+// POST /api/portal/developer/webhooks/:id/test
+router.post('/webhooks/:id/test', asyncHandler(async (req, res) => {
+  const clientCode = resolveClientCode(req);
+  if (!clientCode) return R.badRequest(res, 'clientCode is required');
+
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return R.badRequest(res, 'Invalid webhook id');
+
+  const webhook = await prisma.clientWebhook.findFirst({
+    where: { id, clientCode },
+  });
+  if (!webhook) return R.notFound(res, 'Webhook');
+
+  const result = await webhookDispatch.sendTestWebhook(id);
+  if (result.success) {
+    R.ok(res, result, 'Test webhook delivered successfully');
+  } else {
+    res.status(500).json({ success: false, message: 'Test webhook failed', error: result.error || `HTTP ${result.statusCode}` });
+  }
+}));
+
+// GET /api/portal/developer/webhooks/:id/deliveries
+router.get('/webhooks/:id/deliveries', asyncHandler(async (req, res) => {
+  const clientCode = resolveClientCode(req);
+  if (!clientCode) return R.badRequest(res, 'clientCode is required');
+
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return R.badRequest(res, 'Invalid webhook id');
+
+  const webhook = await prisma.clientWebhook.findFirst({
+    where: { id, clientCode },
+  });
+  if (!webhook) return R.notFound(res, 'Webhook');
+
+  const limit = Math.min(100, Math.max(10, parseInt(req.query?.limit, 10) || 30));
+
+  const deliveries = await prisma.webhookDelivery.findMany({
+    where: { webhookId: id },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  });
+
+  R.ok(res, deliveries);
 }));
 
 module.exports = router;

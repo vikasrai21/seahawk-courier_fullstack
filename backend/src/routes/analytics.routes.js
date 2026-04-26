@@ -11,6 +11,8 @@ router.get('/couriers',    authenticate, ownerOnly, ctrl.courierPerformance);
 router.get('/clients',     authenticate, ownerOnly, ctrl.clientAnalytics);
 router.get('/monthly',     authenticate, ownerOnly, ctrl.monthlyTrend);
 router.get('/ndr',         authenticate, ownerOnly, ctrl.ndrAnalytics);
+router.get('/sla',         authenticate, ctrl.slaCompliance);
+router.get('/cost',        authenticate, ctrl.costPerShipment);
 
 // ── Smart Revenue Intelligence ───────────────────────────────────────────
 router.get('/smart-revenue', authenticate, ownerOnly, async (req, res) => {

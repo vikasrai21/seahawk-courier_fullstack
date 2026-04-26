@@ -9,6 +9,7 @@ const { syncTrackingEvents } = require('../services/carrier.service');
 const returnService = require('../services/return.service');
 const geocode = require('../services/geocode.service');
 const integrationIngestSvc = require('../services/integration-ingest.service');
+const webhookDispatch = require('../services/webhook-dispatch.service');
 
 // ── Tracking sync ──────────────────────────────────────────────────────────
 async function syncTracking() {
@@ -280,7 +281,12 @@ function startScheduler() {
   // SLO checks — every 30 minutes
   cron.schedule('*/30 * * * *', runSloChecks);
 
-  logger.info('Scheduler started: tracking sync (30m), reverse return sync (30m), token cleanup (3am), DB backup (2am), NDR check (9am), geo cache (hourly), connector pulls (10m), retention (1am), SLO checks (30m)');
+  // Outbound Webhook Retries — every 5 minutes
+  cron.schedule('*/5 * * * *', () => {
+    webhookDispatch.retryFailedWebhooks().catch(err => logger.error('Webhook retry failed', { error: err.message }));
+  });
+
+  logger.info('Scheduler started: tracking sync (30m), reverse return sync (30m), token cleanup (3am), DB backup (2am), NDR check (9am), geo cache (hourly), connector pulls (10m), retention (1am), SLO checks (30m), webhook retry (5m)');
 }
 
 module.exports = { startScheduler };

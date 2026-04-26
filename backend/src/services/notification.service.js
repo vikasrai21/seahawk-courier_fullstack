@@ -4,6 +4,7 @@ const prisma  = require('../config/prisma');
 const logger  = require('../utils/logger');
 const config  = require('../config');
 const appBaseUrl = String(config.app?.publicBaseUrl || '').replace(/\/+$/, '');
+const webhookDispatch = require('./webhook-dispatch.service');
 const supportPhone = config.app?.supportPhone || '+91 99115 65523';
 
 const DEFAULT_PREFS = {
@@ -259,6 +260,13 @@ async function notifyStatusChange(shipment) {
         html: `<p>Dear <strong>${c.company}</strong>,</p><p>Delivery attempt for AWB <strong>${awb}</strong> addressed to <strong>${consignee}</strong> has failed.</p><p>Please <a href="${appBaseUrl}/portal">update delivery instructions</a>.</p><p>— Sea Hawk Courier</p>`,
       });
     }
+  }
+
+  // ── Outbound client webhooks ──────────────────────────────────────────────
+  try {
+    await webhookDispatch.dispatchShipmentStatusChange(shipment);
+  } catch (err) {
+    logger.error(`[Notification] Webhook dispatch failed for AWB ${awb}: ${err.message}`);
   }
 }
 
