@@ -36,9 +36,10 @@ const navGroups = [
     label: null,
     items: [
       { to: '/app/',          label: 'Dashboard',           icon: LayoutDashboard },
-      { to: '/app/ops',       label: 'Operations',          icon: Activity, badge: 'CEO' },
+      { to: '/app/ops',       label: 'Operations',          icon: Activity },
       { to: '/app/agent',     label: 'HawkAI Agent',        icon: Bot, badge: 'NEW', roles: ['OWNER'] },
       { to: '/app/analytics', label: 'Analytics',           icon: BarChart2, roles: ['OWNER'] },
+      { to: '/app/pnl',       label: 'P&L Control Room',    icon: Activity, badge: 'PRO', roles: ['OWNER'] },
       { to: '/app/entry',     label: 'New Entry',           icon: PlusCircle, accent: true },
       { to: '/app/import',    label: 'Import',              icon: FileUp, isSecondary: true },
     ],
@@ -82,7 +83,7 @@ const navGroups = [
     ],
   },
   {
-    label: 'Data',
+    label: 'Export',
     items: [
       { to: '/app/sync', label: 'Export & Backup', icon: RefreshCw, isSecondary: true },
     ],

@@ -236,8 +236,6 @@ export default function ClientRTOIntelligencePage({ toast }) {
     () =>
       (data?.monthlyTrend || []).map((row) => ({
         ...row,
-        loss: Number(((row.rto || 0) * 900).toFixed(0)),
-        save: Number(((row.total - row.rto) * 120).toFixed(0)),
       })),
     [data]
   );
@@ -324,14 +322,13 @@ export default function ClientRTOIntelligencePage({ toast }) {
           <div className="relative z-10 flex flex-wrap items-start justify-between gap-4">
             <div>
               <div className="mb-1 flex items-center gap-3">
-                <span className="rounded-full border border-sky-300/60 bg-sky-50 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-sky-700 dark:border-sky-400/30 dark:bg-sky-500/10 dark:text-sky-300">Dist RTO Rate</span>
-                <span className="rounded-full border border-slate-200 bg-white/80 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-400">MetricSafe</span>
+                <span className="rounded-full border border-sky-300/60 bg-sky-50 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-sky-700 dark:border-sky-400/30 dark:bg-sky-500/10 dark:text-sky-300">RTO Analytics</span>
               </div>
               <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 dark:text-white md:text-4xl">Delivery Risk Engine</h1>
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-slate-600 dark:text-slate-300">
                 Advanced analytics to minimize RTOs and protect your profits. Identify high-risk shipments and take proactive actions before returns happen.
               </p>
-              <p className="mt-1 text-xs text-slate-500">Distributes Shipments · Up to the management</p>
+              <p className="mt-1 text-xs text-slate-500">Analyze delivery risks and take action to reduce returns.</p>
             </div>
             <div className="flex flex-col items-end gap-2">
               <div className="flex items-center gap-2">
@@ -349,7 +346,6 @@ export default function ClientRTOIntelligencePage({ toast }) {
           <div className="relative z-10 mt-5 flex flex-wrap items-center gap-3">
             <div className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50/90 p-1 dark:border-slate-700/60 dark:bg-[#0a1228]/80">
               <span className="rounded-lg bg-orange-500/20 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-orange-300">RTO Rate</span>
-              <span className="rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">Curr NEER</span>
             </div>
             <div className="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50/90 p-1 dark:border-slate-700/60 dark:bg-[#0a1228]/80">
               {[30, 60, 90, 180].map((value) => (
@@ -390,10 +386,10 @@ export default function ClientRTOIntelligencePage({ toast }) {
             sparkColor="#f97316"
           />
           <KPICard
-            icon="💰"
-            label="Loss to RTOs"
-            value={money(data?.summary?.estimatedLoss)}
-            hint={`Potential saving ${money(data?.summary?.potentialSaved)} week`}
+            icon="📦"
+            label="Total RTOs"
+            value={data?.summary?.totalRto || 0}
+            hint={`${data?.summary?.atRiskCount || 0} currently at risk`}
             hintColor="text-emerald-600 dark:text-emerald-300"
             sparkData={sparkRto}
             sparkColor="#22d3ee"
@@ -402,7 +398,7 @@ export default function ClientRTOIntelligencePage({ toast }) {
             icon="🛡️"
             label="Shipments Saved"
             value={(data?.summary?.totalShipments || 0) - (data?.summary?.totalRto || 0)}
-            hint="Future saved this week"
+            hint="Successfully delivered shipments"
             hintColor="text-sky-600 dark:text-sky-300"
             sparkData={sparkSave}
             sparkColor="#60a5fa"
@@ -496,15 +492,9 @@ export default function ClientRTOIntelligencePage({ toast }) {
                 <div className="flex items-center justify-between text-[10px] text-slate-400">
                   <span className="font-bold">RTO Hotspot Zones</span>
                   <div className="flex items-center gap-2">
-                    <span>Full RTO orders:</span>
-                    <span className="font-black text-orange-300">Observe and listen to shifts</span>
+                    <span>{heatRows.length} zones tracked</span>
+                    <div className="h-1.5 w-12 rounded-full bg-gradient-to-r from-blue-500 to-emerald-500" />
                   </div>
-                </div>
-                <div className="mt-1 flex items-center gap-3">
-                  <span className="text-[10px] font-bold text-slate-500">LMR</span>
-                  <span className="text-[10px] font-bold text-slate-500">CartMgr: 13</span>
-                  <div className="h-1.5 w-12 rounded-full bg-gradient-to-r from-blue-500 to-emerald-500" />
-                  <span className="text-[10px] font-bold text-slate-500">04 lines</span>
                 </div>
               </div>
             </div>
@@ -545,7 +535,7 @@ export default function ClientRTOIntelligencePage({ toast }) {
                 </div>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs font-bold text-slate-600 dark:border-slate-700/40 dark:bg-[#080f22] dark:text-slate-300">
-                ⓘ Potential loss reduced by {money(data?.summary?.potentialSaved)} compared to last week
+                ⓘ {(data?.summary?.totalShipments || 0) - (data?.summary?.totalRto || 0)} shipments delivered successfully this period
               </div>
               <div className="mt-3 text-[10px] font-bold text-slate-500">Projected for RTO trends</div>
               <div className="mt-2 h-12">
@@ -587,7 +577,7 @@ export default function ClientRTOIntelligencePage({ toast }) {
               Recovered {recoveredCount > 0 ? `-${recoveredCount}` : ''}
             </button>
             <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-black text-slate-500 dark:border-slate-600 dark:bg-slate-800/60 dark:text-slate-400">
-              More EO ▾
+              More Actions ▾
             </span>
 
             <div className="mx-2 h-5 w-px bg-slate-200 dark:bg-slate-700" />
@@ -750,26 +740,24 @@ export default function ClientRTOIntelligencePage({ toast }) {
             {/* RTO Risk Distribution */}
             <div className="client-premium-card rounded-2xl bg-gradient-to-b from-white to-slate-50 p-5 dark:from-[#0c1631] dark:to-[#0a1228]">
               <h3 className="mb-1 text-sm font-black uppercase tracking-[0.1em] text-slate-900 dark:text-white">RTO Risk Distribution</h3>
-              <p className="mb-4 text-[10px] font-bold text-slate-500">RTShipments TED</p>
+              <p className="mb-4 text-[10px] font-bold text-slate-500">Shipment risk breakdown across all tracked deliveries</p>
 
               <div className="grid grid-cols-2 gap-4">
                 {/* Percentages */}
                 <div className="space-y-3">
                   <div>
                     <div className="text-3xl font-black text-slate-900 dark:text-white">{Math.round((riskDistribution.low / riskDistribution.total) * 100)}%</div>
-                    <div className="text-[10px] font-bold text-slate-500">Slow</div>
+                    <div className="text-[10px] font-bold text-slate-500">Low Risk</div>
                   </div>
                   <div>
                     <div className="text-3xl font-black text-slate-900 dark:text-white">{Math.round((riskDistribution.medium / riskDistribution.total) * 100)}%</div>
-                    <div className="text-[10px] font-bold text-slate-500">Moderate</div>
+                    <div className="text-[10px] font-bold text-slate-500">Medium Risk</div>
                   </div>
                 </div>
                 {/* Visual bars */}
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-bold text-slate-500">TALLY</span>
-                    <span className="text-[10px] font-bold text-slate-500">LIBRARY</span>
-                    <span className="text-[10px] font-bold text-slate-500">SISCO</span>
+                    <span className="text-[10px] font-bold text-slate-500">Risk Segments</span>
                   </div>
                   <div className="flex gap-1">
                     <div className="h-14 flex-1 rounded-lg bg-rose-500/30" style={{ flex: riskDistribution.high }} />
@@ -810,7 +798,7 @@ export default function ClientRTOIntelligencePage({ toast }) {
                     <div className="mt-1 font-mono text-xl font-black text-slate-900 dark:text-white">{topRisk.awb}</div>
                     <div className="mt-0.5 text-xs font-bold text-slate-600 dark:text-slate-300">{topRisk.consignee || 'Unknown customer'}</div>
                     <div className="mt-0.5 text-[10px] font-bold uppercase text-slate-500">
-                      {topRisk.destination ? `EXP BRNNE ${topRisk.destination} TRACK` : 'Destination pending'}
+                      {topRisk.destination ? `Destination: ${topRisk.destination}` : 'Destination pending'}
                     </div>
                   </div>
                   <RiskGauge score={topRisk.riskScore || 78} />
@@ -828,7 +816,7 @@ export default function ClientRTOIntelligencePage({ toast }) {
                         </span>
                         <span className="text-xs font-bold text-slate-900 dark:text-white">{reason}</span>
                       </div>
-                      <span className="text-[10px] font-bold text-slate-500">1:2:{(i + 1) * 10 + 30}</span>
+                      <span className="text-[10px] font-bold text-slate-500">Factor {i + 1}</span>
                     </div>
                   ))}
                 </div>

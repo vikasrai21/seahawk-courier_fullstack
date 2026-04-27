@@ -183,7 +183,7 @@ export default function ClientShipmentsPage({ toast }) {
                               <td>
                                  <div className="flex flex-col">
                                     <span className="text-xs font-black text-slate-800 dark:text-slate-200 leading-none mb-1">{s.date}</span>
-                                    <span className="text-[9px] font-bold uppercase leading-none tracking-widest text-slate-400 dark:text-slate-100">Last 90 Days</span>
+
                                  </div>
                               </td>
                               <td>
@@ -192,7 +192,7 @@ export default function ClientShipmentsPage({ toast }) {
                                     <Activity size={12} className="text-blue-500 opacity-0 group-hover:opacity-100 transition-all animate-pulse" />
                                  </div>
                               </td>
-                              <td className="text-xs font-black uppercase tracking-tight text-slate-700 dark:text-white">{s.consignee || 'NOT AVAILABLE'}</td>
+                              <td className="text-xs font-black uppercase tracking-tight text-slate-700 dark:text-white">{s.consignee || '—'}</td>
                               <td>
                                  <div className="flex items-center gap-2">
                                     <MapPin size={14} className="text-slate-300 dark:text-slate-100" />

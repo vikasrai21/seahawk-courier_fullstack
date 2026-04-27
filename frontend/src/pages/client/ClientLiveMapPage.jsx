@@ -71,7 +71,7 @@ export default function ClientLiveMapPage({ toast }) {
       <div className="mx-auto client-premium-main">
         <ClientPortalPageIntro
           eyebrow="Live Map"
-          title="Watch active shipments across a cleaner, more focused India delivery grid."
+          title="Watch active shipments across a live map view."
           description="Pins are placed from destination or latest location hints, giving your team a faster read on where movement and risk are clustering."
           badges={[`${payloadRows.length} plotted shipments`, `${geoRows.length} geocoded rows`, dark ? 'Dark map mode' : 'Light map mode']}
         />
@@ -80,7 +80,7 @@ export default function ClientLiveMapPage({ toast }) {
             <div className="inline-flex rounded-full border border-sky-200/20 bg-sky-300/10 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-sky-100">
               Geography Layer
             </div>
-            <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight">Watch active shipments across a cleaner, more focused India delivery grid.</h1>
+            <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight">Watch active shipments across a live map view.</h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-200">
               Pins are placed from destination or latest location hints, with stronger status color separation and better side details.
             </p>
@@ -125,7 +125,7 @@ export default function ClientLiveMapPage({ toast }) {
               }}
             >
               <div style={{ position: 'absolute', inset: 0, backgroundImage: dark ? 'linear-gradient(to right, rgba(71,85,105,.24) 1px, transparent 1px), linear-gradient(to bottom, rgba(71,85,105,.24) 1px, transparent 1px)' : 'linear-gradient(to right, rgba(148,163,184,.12) 1px, transparent 1px), linear-gradient(to bottom, rgba(148,163,184,.12) 1px, transparent 1px)', backgroundSize: '48px 48px' }} />
-              <div style={{ position: 'absolute', left: 18, top: 18, color: dark ? '#e2e8f0' : '#0f172a', fontWeight: 900 }}>India Delivery Grid</div>
+              <div style={{ position: 'absolute', left: 18, top: 18, color: dark ? '#e2e8f0' : '#0f172a', fontWeight: 900 }}>Live Shipment Map</div>
               {loading && <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: dark ? '#94a3b8' : '#64748b' }}>Locating shipments…</div>}
               {!loading && geoRows.map((row) => {
                 const pos = coordinateToPosition(row.geo.lat, row.geo.lon);

@@ -92,7 +92,7 @@ export default function ClientLoginPage() {
               Premium Portal
             </div>
             <h1 style={{ fontSize: 40, lineHeight: 1.05, margin: '0 0 14px', fontWeight: 800, letterSpacing: '-0.04em' }}>
-              Give clients a calm, professional window into their operations.
+              Complete visibility into your logistics operations.
             </h1>
             <p style={{ margin: 0, maxWidth: 460, color: 'rgba(255,255,255,0.7)', fontSize: 15, lineHeight: 1.7 }}>
               Shipment visibility, invoices, pickups, wallet history, returns, and live tracking in one clean client workspace.

@@ -131,7 +131,7 @@ export default function ClientBookShipmentPage({ toast }) {
           <div className="mb-5">
             <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-500 dark:text-orange-300">Booking Form</div>
             <h2 className="mt-1 text-xl font-black text-slate-900 dark:text-white">Create order and book instantly</h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-100">Use dry-run first to verify payload and credentials without creating a live AWB.</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-100">Use dry-run first to test the booking without creating a live AWB.</p>
           </div>
 
           <form onSubmit={submit} className="grid gap-3 md:grid-cols-2">

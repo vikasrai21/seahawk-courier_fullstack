@@ -115,7 +115,7 @@ export default function WalletPage({ toast }) {
                <div className="w-10 h-10 rounded-2xl bg-blue-500/10 text-blue-500 flex items-center justify-center">
                   <Wallet size={20} />
                </div>
-               <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Aggregated Liquidity</h4>
+               <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Total Balance</h4>
             </div>
             <div className="text-4xl font-black text-slate-900 dark:text-white tabular-nums mb-1">{fmt(totalBalance)}</div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Across {wallets.length} active client accounts</p>
@@ -129,7 +129,7 @@ export default function WalletPage({ toast }) {
                <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
                   <ShieldCheck size={20} />
                </div>
-               <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Health Quotient</h4>
+               <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Healthy Accounts</h4>
             </div>
             <div className="text-4xl font-black text-emerald-500 tabular-nums mb-1">{healthyCount}</div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Wallets with positive credit runway</p>
@@ -143,7 +143,7 @@ export default function WalletPage({ toast }) {
                <div className="w-10 h-10 rounded-2xl bg-rose-500/10 text-rose-500 flex items-center justify-center">
                   <AlertCircle size={20} />
                </div>
-               <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Risk Mitigation</h4>
+               <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Low Balance Alerts</h4>
             </div>
             <div className="text-4xl font-black text-rose-500 tabular-nums mb-1">{lowCount}</div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Accounts requiring immediate top-up</p>
@@ -159,7 +159,7 @@ export default function WalletPage({ toast }) {
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input 
                 className="w-full bg-slate-100 dark:bg-slate-900 border-none rounded-2xl pl-11 pr-4 py-3 text-sm font-bold placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/20 transition-all" 
-                placeholder="Search Client Node…" 
+                placeholder="Search client..." 
                 value={search} 
                 onChange={e => setSearch(e.target.value)} 
               />
@@ -202,8 +202,8 @@ export default function WalletPage({ toast }) {
                <div className="w-20 h-20 rounded-[30px] bg-slate-50 dark:bg-slate-900 flex items-center justify-center text-slate-300 mb-8 border border-slate-100 dark:border-slate-800">
                   <History size={32} />
                </div>
-               <h3 className="text-xl font-black text-slate-800 dark:text-white mb-2 tracking-tight">Financial Hub Inactive</h3>
-               <p className="text-sm text-slate-500 max-w-sm leading-relaxed">Select a client node from the left to engage the real-time financial ledger and reconciliation engine.</p>
+               <h3 className="text-xl font-black text-slate-800 dark:text-white mb-2 tracking-tight">No client selected</h3>
+               <p className="text-sm text-slate-500 max-w-sm leading-relaxed">Select a client from the list to view their wallet and transactions.</p>
             </div>
           ) : (
             <div className="space-y-6 animate-in fade-in zoom-in-95 duration-500">
@@ -220,7 +220,7 @@ export default function WalletPage({ toast }) {
                               <h2 className="text-2xl font-black text-white leading-none">{selected.company || selected.clientCode}</h2>
                               <div className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[9px] font-black text-slate-400 uppercase tracking-widest">{selected.clientCode}</div>
                            </div>
-                           <p className="text-xs font-bold text-slate-500 uppercase tracking-[0.2em]">Operational Funding Node</p>
+                           <p className="text-xs font-bold text-slate-500 uppercase tracking-[0.2em]">Client Wallet</p>
                         </div>
                      </div>
                      <div className="text-left md:text-right">
@@ -241,7 +241,7 @@ export default function WalletPage({ toast }) {
                <div className="space-y-4">
                   <div className="flex items-center justify-between px-2">
                      <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Sub-ledger Audit Log</h3>
-                     <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Last {txns.length} Settlements</span>
+                     <span className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Recent Transactions</span>
                   </div>
                   <TransactionList transactions={txns} loading={txLoading} />
                </div>
@@ -302,7 +302,7 @@ function RechargeModal({ clientCode, company, toast, onClose, onSuccess }) {
             handler: async (response) => {
               try {
                 await api.post('/wallet/recharge/verify', { razorpay_order_id: response.razorpay_order_id, razorpay_payment_id: response.razorpay_payment_id, razorpay_signature: response.razorpay_signature, clientCode, amount: amt });
-                toast?.(`₹${amt} engagement successful!`,'success');
+                toast?.(`₹${amt} added successfully!`,'success');
                 onSuccess();
               } catch(e) { toast?.(e.message,'error'); }
             },
@@ -361,7 +361,7 @@ function AdjustModal({ wallets, toast, onClose, onSuccess }) {
     setSaving(true);
     try {
       await api.post('/wallet/adjust', form);
-      toast?.(`Engagement ${form.type.toLowerCase()}ed successfully`,'success');
+      toast?.(`Manual adjustment successful`,'success');
       onSuccess();
     } catch(e) { toast?.(e.message,'error'); }
     finally { setSaving(false); }

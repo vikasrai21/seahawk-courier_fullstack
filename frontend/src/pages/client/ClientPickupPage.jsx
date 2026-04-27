@@ -103,7 +103,7 @@ export default function ClientPickupPage({ toast }) {
       <div className="mx-auto client-premium-main">
         <ClientPortalPageIntro
           eyebrow="Pickup Coordination"
-          title="Schedule pickups with a clearer handoff between your team and Sea Hawk operations."
+          title="Schedule pickups seamlessly with Sea Hawk operations."
           description="Set the slot, package profile, and destination context in one pass, then keep the recent request timeline visible beside the form."
           badges={[`${pickups.length} requests tracked`, form.timeSlot, form.packageType]}
         />
@@ -112,7 +112,7 @@ export default function ClientPickupPage({ toast }) {
             <div className="inline-flex rounded-full border border-sky-200/20 bg-sky-300/10 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-sky-100">
               Pickup Command
             </div>
-            <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight">Schedule pickups with a clearer handoff between your team and ops.</h1>
+            <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight">Schedule pickups seamlessly with ops.</h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-200">
               Choose the slot, package details, and service level in one pass. The request goes straight into the ops workflow.
             </p>
@@ -148,7 +148,7 @@ export default function ClientPickupPage({ toast }) {
             <div className="mb-5">
               <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-500">Request Form</div>
               <h2 className="mt-1 text-xl font-black text-slate-900">Book a pickup</h2>
-              <p className="mt-1 text-sm text-slate-500">Cleaned up into grouped fields so the form feels less like a wall of inputs.</p>
+              <p className="mt-1 text-sm text-slate-500">Fill out the pickup details below.</p>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <input className="input" placeholder="Contact name" value={form.contactName} onChange={(e) => setForm((prev) => ({ ...prev, contactName: e.target.value }))} />
@@ -190,7 +190,7 @@ export default function ClientPickupPage({ toast }) {
             <div className="border-b border-slate-100 px-5 py-4">
               <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-500">Recent Requests</div>
               <h2 className="mt-1 text-lg font-black text-slate-900">Pickup timeline</h2>
-              <p className="mt-1 text-sm text-slate-500">Recent requests are easier to scan now, with stronger request numbers and status pills.</p>
+              <p className="mt-1 text-sm text-slate-500">Track the status of your recent pickups.</p>
             </div>
             {loading ? (
               <div className="p-5 text-slate-500">Loading pickups…</div>

@@ -118,8 +118,8 @@ export default function OperationsDashboard({ toast }) {
       <div className="pulse" style={{ width: 64, height: 64, borderRadius: '50%', background: `linear-gradient(135deg, ${T.blue}, ${T.purple})`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 24, boxShadow: `0 0 50px ${T.blue}40` }}>
         <RefreshCw size={32} color="#fff" className="spin" />
       </div>
-      <h2 style={{ fontSize: 20, fontWeight: 900, color: T.text, margin: 0, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Reconstructing Intelligence</h2>
-      <p style={{ fontSize: 13, color: T.textDim, marginTop: 10, fontWeight: 500 }}>Syncing global operational metrics...</p>
+      <h2 style={{ fontSize: 20, fontWeight: 900, color: T.text, margin: 0, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Loading dashboard data...</h2>
+      <p style={{ fontSize: 13, color: T.textDim, marginTop: 10, fontWeight: 500 }}>Loading metrics...</p>
       <style>{`
         .spin { animation: spin 2s linear infinite; }
         .pulse { animation: pulse 2s ease-in-out infinite; }
@@ -133,8 +133,8 @@ export default function OperationsDashboard({ toast }) {
     <div style={{ padding: 60, textAlign: 'center', background: T.bg, minHeight: '80vh' }}>
       <div style={{ maxWidth: 440, margin: '0 auto', background: T.surface, padding: 48, borderRadius: 36, border: `1px solid ${T.border}`, backdropFilter: T.glass, boxShadow: T.shadow }}>
         <ShieldAlert size={56} color={T.red} style={{ marginBottom: 24, opacity: 0.8 }} />
-        <h2 style={{ fontSize: 22, fontWeight: 900, color: T.text, marginBottom: 12, letterSpacing: '-0.02em' }}>Intelligence Offline</h2>
-        <p style={{ fontSize: 14, color: T.textMid, lineHeight: 1.6, marginBottom: 32 }}>The logistics engine failed to aggregate real-time data. Check your network connection.</p>
+        <h2 style={{ fontSize: 22, fontWeight: 900, color: T.text, marginBottom: 12, letterSpacing: '-0.02em' }}>Dashboard unavailable</h2>
+        <p style={{ fontSize: 14, color: T.textMid, lineHeight: 1.6, marginBottom: 32 }}>Dashboard data could not load. Check your connection and refresh</p>
         <button onClick={() => load()} style={{ width: '100%', padding: '16px', background: `linear-gradient(135deg, ${T.blue}, ${T.purple})`, color: '#fff', border: 'none', borderRadius: 20, cursor: 'pointer', fontSize: 14, fontBlack: 900, textTransform: 'uppercase', letterSpacing: '0.1em', boxShadow: `0 10px 30px ${T.blue}40` }}>
           Reinitialize Engine
         </button>
@@ -204,7 +204,7 @@ export default function OperationsDashboard({ toast }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginBottom: 20 }}>
           <KPI label="Today's Volume"   value={fmtN(overview?.todayShipments)}  icon={Package}      accent={T.blue}   sub={`${fmtN(overview?.weekShipments)} this week`}             trend={shipTrend} dark={dark} />
           {isOwner && <KPI label="Projected Revenue" value={fmt(overview?.todayRevenue)}      icon={IndianRupee}  accent={T.green}  sub={`${fmt(overview?.monthRevenue)} monthly total`}                          dark={dark} />}
-          <KPI label="Active Log"       value={fmtN(overview?.pendingCount)}     icon={Activity}       accent={T.cyan}   sub="Pending carrier pickup/transit"                                            dark={dark} />
+          <KPI label="In Transit / Pending"       value={fmtN(overview?.pendingCount)}     icon={Activity}       accent={T.cyan}   sub="Pending carrier pickup/transit"                                            dark={dark} />
           <KPI label="Delivery Success"  value={fmtP(overview?.deliveryRate)}     icon={CheckCircle2 || CheckCircle}  accent={T.purple} sub={`${fmtN(overview?.deliveredCount)} completed this month`} dark={dark} />
         </div>
 
@@ -217,13 +217,13 @@ export default function OperationsDashboard({ toast }) {
             )}
           </SCard>
 
-          <SCard title="Market Share Breakdown" icon={Truck} iconColor={T.green} dark={dark} delay="0.2s">
+          <SCard title="Courier Breakdown" icon={Truck} iconColor={T.green} dark={dark} delay="0.2s">
             {(courierBreakdown || []).length === 0 ? <p style={{ fontSize: 13, color: T.textDim, textAlign: 'center', padding: '40px 0' }}>Aggregating carrier data...</p> : (
               <CourierPieChart data={courierBreakdown} dark={dark} />
             )}
           </SCard>
 
-          <SCard title="Core Client Portfolio" icon={Users} iconColor={T.purple} dark={dark} delay="0.3s">
+          <SCard title="Top Clients" icon={Users} iconColor={T.purple} dark={dark} delay="0.3s">
             {(!topClients || topClients.length === 0) ? <p style={{ fontSize: 13, color: T.textDim, textAlign: 'center', padding: '40px 0' }}>Ranking business partners...</p> : (
               <div style={{ paddingTop: 8 }}>
                 {topClients.map((c, i) => (
@@ -236,7 +236,7 @@ export default function OperationsDashboard({ toast }) {
           </SCard>
         </div>
 
-        {/* Global Operational Feed */}
+        {/* Recent Activity */}
         <div className="fade-in-up" style={{ 
           background: T.surface, border: `1px solid ${T.border}`, borderRadius: 28, overflow: 'hidden', 
           boxShadow: T.shadow, backdropFilter: T.glass, animationDelay: '0.4s' 
@@ -244,9 +244,9 @@ export default function OperationsDashboard({ toast }) {
           <div style={{ padding: '24px 32px', borderBottom: `1px solid ${T.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: T.blue, boxShadow: `0 0 10px ${T.blue}` }} />
-              <h3 style={{ fontSize: 16, fontWeight: 800, color: T.text, margin: 0 }}>Global Operational Feed</h3>
+              <h3 style={{ fontSize: 16, fontWeight: 800, color: T.text, margin: 0 }}>Recent Activity</h3>
             </div>
-            <span style={{ fontSize: 12, fontWeight: 700, color: T.textDim }}>Latest 15 operational events</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: T.textDim }}>Last 15 events</span>
           </div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -290,8 +290,8 @@ export default function OperationsDashboard({ toast }) {
 
         {/* Additional Stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, marginTop: 24, marginBottom: 40 }}>
-           <KPI label="Quotes Finalized" value={fmtN(quotes?.total || 0)} icon={Zap} accent={T.orange} sub={isOwner ? `Avg profitability ${fmtP(quotes?.avgMargin)}` : "Registered Quotes"} dark={dark} />
-           <KPI label="Invoiced Assets" value={fmtN(reconciliation?.totalInvoices || 0)} icon={Shield} accent={T.textMid} sub="Matched carrier invoices" dark={dark} />
+           <KPI label="Quotes This Period" value={fmtN(quotes?.total || 0)} icon={Zap} accent={T.orange} sub={isOwner ? `Avg profitability ${fmtP(quotes?.avgMargin)}` : "Registered Quotes"} dark={dark} />
+           <KPI label="Matched Invoices" value={fmtN(reconciliation?.totalInvoices || 0)} icon={Shield} accent={T.textMid} sub="Matched carrier invoices" dark={dark} />
            {isOwner && <KPI label="Avg Performance" value={fmt(quotes?.avgProfit || 0)} icon={TrendingUp} accent={T.green} sub="Target profit per shipment" dark={dark} />}
            <KPI label="Rate Authority" value={fmtN(rateHealth?.length || 0)} icon={Calculator} accent={T.blue} sub={`${staleRates.length} versions pending update`} dark={dark} />
         </div>

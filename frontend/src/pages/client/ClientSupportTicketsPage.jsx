@@ -71,7 +71,7 @@ export default function ClientSupportTicketsPage({ toast }) {
       <div className="mx-auto client-premium-main">
         <ClientPortalPageIntro
           eyebrow="Client Help Desk"
-          title="Support now feels like a conversation hub instead of a dead-end ticket list."
+          title="Resolve issues and track support conversations."
           description="Open the latest thread, review status updates in context, and respond without breaking your operational flow."
           badges={[`${tickets.length} conversations`, active?.ticketNo ? `Active ${active.ticketNo}` : 'No ticket selected', 'Threaded updates']}
           actions={(

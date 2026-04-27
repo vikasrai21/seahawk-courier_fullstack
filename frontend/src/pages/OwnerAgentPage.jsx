@@ -357,7 +357,7 @@ export default function OwnerAgentPage({ toast }) {
             </div>
           )}
 
-          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--shk-text)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Recent Learnings</h3>
+          <h3 style={{ fontSize: 13, fontWeight: 700, color: 'var(--shk-text)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Recent Memories</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {(memory?.recentLearnings || []).map((m, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10, border: '1px solid var(--shk-border)', background: 'var(--shk-surface)' }}>

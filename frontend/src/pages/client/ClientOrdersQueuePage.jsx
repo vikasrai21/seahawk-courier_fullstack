@@ -101,7 +101,7 @@ export default function ClientOrdersQueuePage({ toast }) {
           <div className="client-premium-card overflow-hidden p-0">
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700/60 bg-slate-50 dark:bg-[#0a1228] px-4 py-3">
              <h3 className="font-bold text-slate-900 dark:text-white">Pending & Fulfilled Queue</h3>
-             <span className="text-xs text-slate-500 dark:text-slate-400">Autonomous Binding Enabled</span>
+             <span className="text-xs text-slate-500 dark:text-slate-400">Auto-Assignment Active</span>
           </div>
           
           {loading ? (

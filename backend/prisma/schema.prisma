@@ -155,6 +155,8 @@ model Shipment {
   pincode        String?
   weight         Float               @default(0)
   amount         Float               @default(0)
+  cost           Float?              @default(0)
+  profit         Float?              @default(0)
   courier        String?
   department     String?
   service        String              @default("Standard")

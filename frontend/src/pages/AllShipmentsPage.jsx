@@ -431,7 +431,7 @@ export default function AllShipmentsPage({ toast }) {
     try {
       await api.delete(`/shipments/${s.id}`);
       setShipments(prev => prev.filter(x => x.id !== s.id));
-      toast?.('Record purged', 'success');
+      toast?.('Shipment deleted', 'success');
     } catch (err) { toast?.(err.message, 'error'); }
   };
 
@@ -472,7 +472,7 @@ export default function AllShipmentsPage({ toast }) {
   return (
     <div className="mx-auto max-w-7xl p-6">
       <PageHeader
-        title="Operation Control"
+        title="All Shipments"
         subtitle={`${total} global shipment records managed`}
         icon={Box}
         actions={
@@ -643,7 +643,7 @@ export default function AllShipmentsPage({ toast }) {
                         <button onClick={() => setEditShip(s)} className="p-2 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-xl transition-colors" title="Edit Properties">
                           <Edit2 size={16} />
                         </button>
-                        <button onClick={() => handleDelete(s)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors" title="Purge Record">
+                        <button onClick={() => handleDelete(s)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors" title="Delete Shipment">
                           <Trash2 size={16} />
                         </button>
                       </div>

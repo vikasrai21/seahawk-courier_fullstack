@@ -117,7 +117,7 @@ export default function BulkComparePage({ toast }) {
       <div className="flex items-start justify-between mb-5">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Bulk Rate Comparison</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Upload a shipment list — get cost + profit for every row across all 17 couriers</p>
+          <p className="text-xs text-gray-400 mt-0.5">Upload a shipment list — get cost + profit for every row across all active courier partners</p>
         </div>
         <button onClick={downloadTemplate}
           className="flex items-center gap-2 border border-gray-200 bg-white text-gray-700 px-3 py-2 rounded-xl text-xs font-bold hover:border-gray-400">
@@ -182,7 +182,7 @@ export default function BulkComparePage({ toast }) {
               <Play className="w-5 h-5 text-slate-300" />
             </div>
             <p className="text-sm font-bold text-slate-600">Ready to Compare Rates</p>
-            <p className="text-xs text-slate-400 mt-1 max-w-[200px]">Upload a CSV and click parse to see your 17-courier comparison.</p>
+            <p className="text-xs text-slate-400 mt-1 max-w-[200px]">Upload a CSV and click parse to see your active courier partners comparison.</p>
           </div>
         )}
 

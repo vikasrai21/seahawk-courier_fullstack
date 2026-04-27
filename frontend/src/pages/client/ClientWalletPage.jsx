@@ -77,7 +77,7 @@ export default function ClientWalletPage({ toast }) {
           razorpay_order_id: payload.order?.id,
           razorpay_payment_id: `devpay_${Date.now()}`,
         });
-        toast?.('Neural Funding: Simulation Successful', 'success');
+        toast?.('Payment simulation successful', 'success');
         load();
         return;
       }
@@ -105,7 +105,7 @@ export default function ClientWalletPage({ toast }) {
             amount: Number(amount),
             ...response,
           });
-          toast?.('Funds Engaged Successfully', 'success');
+          toast?.('Payment successful', 'success');
           load();
         },
         theme: { color: '#0f172a' },
@@ -174,7 +174,7 @@ export default function ClientWalletPage({ toast }) {
              </Link>
              <div>
                 <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 leading-none mb-1">Financial Desk</h4>
-                <div className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-tight">Wallet Control Center</div>
+                <div className="text-sm font-black text-slate-800 dark:text-white uppercase tracking-tight">Wallet</div>
              </div>
           </div>
           <div className="flex items-center gap-3">
@@ -183,7 +183,7 @@ export default function ClientWalletPage({ toast }) {
              </Link>
              <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 hidden sm:block" />
              <div className="text-[11px] font-black text-blue-600 bg-blue-50 dark:bg-blue-500/10 px-3 py-1 rounded-lg uppercase tracking-widest border border-blue-100 dark:border-blue-500/20">
-                LTD #{wallet?.code}
+                Account #{wallet?.code}
              </div>
           </div>
         </div>
@@ -191,8 +191,8 @@ export default function ClientWalletPage({ toast }) {
 
       <div className="mx-auto client-premium-main animate-in fade-in duration-700">
         <ClientPortalPageIntro
-          eyebrow="Wallet Control Center"
-          title="Manage wallet balance, top-up rules, and transaction flow from one premium financial desk."
+          eyebrow="Wallet"
+          title="Manage your wallet balance, recharge, and view transaction history."
           description="Fund the account, track transaction history, configure auto-topup alerts, and download monthly ledgers without leaving the client portal."
           badges={[`Client ${wallet?.code || '—'}`, `${txns.length} transactions`, autoTopup.enabled ? 'Auto-topup on' : 'Auto-topup off']}
         />
@@ -206,7 +206,7 @@ export default function ClientWalletPage({ toast }) {
                     <div className="w-10 h-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-blue-500 animate-pulse">
                        <Zap size={20} />
                     </div>
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Liquid Capital</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Wallet Balance</span>
                  </div>
                  <div className="text-5xl font-black text-white tabular-nums tracking-tighter mb-2 relative z-10">{fmt(wallet?.walletBalance)}</div>
                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest relative z-10">Available credit for bookings</p>
@@ -215,13 +215,13 @@ export default function ClientWalletPage({ toast }) {
                     <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
                        <div className="h-full bg-blue-500 w-[70%]" />
                     </div>
-                    <span className="text-[10px] font-black text-slate-400 uppercase">Buffer: OK</span>
+                    <span className="text-[10px] font-black text-slate-400 uppercase">Balance: Healthy</span>
                  </div>
               </div>
 
               {/* Quick Recharge Card */}
                <div className="rounded-[32px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 p-8 shadow-sm">
-                 <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 mb-6">Neural Funding Bolt</h4>
+                 <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 mb-6">Quick Recharge</h4>
                  <div className="space-y-4">
                     <div className="grid grid-cols-3 gap-2">
                        {[1000, 2500, 5000].map((p) => (
@@ -236,7 +236,7 @@ export default function ClientWalletPage({ toast }) {
                     </div>
                     <button onClick={startTopup} disabled={toppingUp} className="w-full py-4 bg-blue-600 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-3xl shadow-xl shadow-blue-600/20 hover:bg-blue-700 transition-all flex items-center justify-center gap-3 disabled:opacity-50 group/btn active:scale-95">
                        <Zap size={14} className={toppingUp ? 'animate-pulse' : 'group-hover/btn:animate-bounce'} />
-                       {toppingUp ? 'Engaging Flow…' : 'Top Up Wallet'}
+                       {toppingUp ? 'Processing…' : 'Top Up Wallet'}
                     </button>
                     <p className="text-[9px] text-center font-bold text-slate-400 uppercase tracking-widest mt-2">🔐 Encrypted via Razorpay Secured Stack</p>
                </div>
@@ -315,8 +315,8 @@ export default function ClientWalletPage({ toast }) {
                        <TrendingUp size={24} />
                     </div>
                     <div>
-                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Delta Tracking</p>
-                       <p className="text-sm font-black text-slate-800 dark:text-white uppercase">{txns.length} Settlements active</p>
+                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Recent Activity</p>
+                       <p className="text-sm font-black text-slate-800 dark:text-white uppercase">{txns.length} Transactions</p>
                     </div>
                  </div>
               </div>
@@ -329,7 +329,7 @@ export default function ClientWalletPage({ toast }) {
                        <h3 className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Activity Sub-ledger</h3>
                     </div>
                     <div className="px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-[9px] font-black text-slate-500 uppercase tracking-widest">
-                       Audited Record
+                       Verified
                     </div>
                   </div>
 

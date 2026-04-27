@@ -92,7 +92,7 @@ export default function ClientGovernancePage({ toast }) {
                   <div className="text-2xl font-black text-slate-900 dark:text-white">{diagnostics?.keys?.length || 0}</div>
                 </div>
                 <div className="border border-slate-200 dark:border-slate-700/60 rounded-lg p-3">
-                  <div className="text-slate-500 dark:text-slate-400">Dead-letter Events</div>
+                  <div className="text-slate-500 dark:text-slate-400">Webhook Failures</div>
                   <div className="text-2xl font-black text-slate-900 dark:text-white">{diagnostics?.deadLetters?.length || 0}</div>
                 </div>
               </div>

@@ -558,35 +558,134 @@ router.get(
 
       const revenue = await prisma.shipment.aggregate({
         where,
-        _sum: { amount: true, weight: true },
+        _sum: { amount: true, weight: true, cost: true, profit: true },
+        _count: { id: true },
+      });
+
+      const rto = await prisma.shipment.aggregate({
+        where: { ...where, status: "RTO" },
+        _sum: { cost: true, amount: true },
         _count: { id: true },
       });
 
       const byCourier = await prisma.shipment.groupBy({
         by: ["courier"],
         where: { ...where, courier: { not: null } },
-        _sum: { amount: true },
+        _sum: { amount: true, cost: true, profit: true },
         _count: { id: true },
         orderBy: { _sum: { amount: "desc" } },
       });
 
+      const totalRev = revenue._sum.amount || 0;
+      const totalCost = revenue._sum.cost || 0;
+      const totalProfit = revenue._sum.profit || (totalRev - totalCost);
+      const margin = totalRev > 0 ? (totalProfit / totalRev) * 100 : 0;
+
       R.ok(res, {
-        totalRevenue: revenue._sum.amount || 0,
+        totalRevenue: totalRev,
+        totalCost: totalCost,
+        totalProfit: totalProfit,
+        marginPct: Number(margin.toFixed(2)),
         totalWeight: revenue._sum.weight || 0,
         totalShipments: revenue._count.id || 0,
-        avgPerShipment: revenue._count.id
-          ? (revenue._sum.amount || 0) / revenue._count.id
-          : 0,
-        byCourier: byCourier.map((c) => ({
-          courier: c.courier,
-          revenue: c._sum.amount || 0,
-          count: c._count.id,
-        })),
+        rtoBleed: rto._sum.cost || 0,
+        rtoCount: rto._count.id || 0,
+        avgPerShipment: revenue._count.id ? totalRev / revenue._count.id : 0,
+        byCourier: byCourier.map((c) => {
+          const rev = c._sum.amount || 0;
+          const cCost = c._sum.cost || 0;
+          const cProfit = c._sum.profit || (rev - cCost);
+          return {
+            courier: c.courier,
+            revenue: rev,
+            cost: cCost,
+            profit: cProfit,
+            marginPct: rev > 0 ? Number(((cProfit / rev) * 100).toFixed(2)) : 0,
+            count: c._count.id,
+          };
+        }),
       });
     } catch (err) {
       R.error(res, err.message);
     }
   },
+);
+
+// ── GET /api/ops/client-health ─────────────────────────────────────────────
+router.get(
+  "/client-health",
+  requireRole("ADMIN", "OPS_MANAGER"),
+  async (req, res) => {
+    try {
+      // Get all clients
+      const clients = await prisma.client.findMany({
+        where: { active: true },
+        select: { code: true, company: true, walletBalance: true },
+      });
+
+      // Get shipment stats for last 30 days
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const dateStr = thirtyDaysAgo.toISOString().split("T")[0];
+
+      const stats = await prisma.shipment.groupBy({
+        by: ["clientCode"],
+        where: { date: { gte: dateStr } },
+        _count: { id: true },
+        _sum: { amount: true, cost: true, profit: true },
+      });
+
+      const rtoStats = await prisma.shipment.groupBy({
+        by: ["clientCode"],
+        where: { date: { gte: dateStr }, status: "RTO" },
+        _count: { id: true },
+      });
+
+      const statsMap = stats.reduce((acc, curr) => {
+        acc[curr.clientCode] = curr;
+        return acc;
+      }, {});
+
+      const rtoMap = rtoStats.reduce((acc, curr) => {
+        acc[curr.clientCode] = curr._count.id;
+        return acc;
+      }, {});
+
+      const healthData = clients.map((c) => {
+        const clientStats = statsMap[c.code] || { _count: { id: 0 }, _sum: { amount: 0, cost: 0, profit: 0 } };
+        const total = clientStats._count.id;
+        const rto = rtoMap[c.code] || 0;
+        const revenue = clientStats._sum.amount || 0;
+        const profit = clientStats._sum.profit || 0;
+        
+        const rtoRate = total > 0 ? (rto / total) * 100 : 0;
+        const marginPct = revenue > 0 ? (profit / revenue) * 100 : 0;
+
+        // Grading Logic
+        let grade = "A";
+        if (rtoRate > 20 || marginPct < 5) grade = "F";
+        else if (rtoRate > 15 || marginPct < 10) grade = "D";
+        else if (rtoRate > 10 || marginPct < 15) grade = "C";
+        else if (rtoRate > 5 || marginPct < 20) grade = "B";
+
+        return {
+          code: c.code,
+          company: c.company,
+          walletBalance: c.walletBalance,
+          volume30d: total,
+          revenue30d: revenue,
+          profit30d: profit,
+          marginPct: Number(marginPct.toFixed(2)),
+          rtoRate: Number(rtoRate.toFixed(2)),
+          grade,
+        };
+      });
+
+      R.ok(res, healthData.sort((a, b) => b.volume30d - a.volume30d));
+    } catch (err) {
+      R.error(res, err.message);
+    }
+  }
 );
 
 // ── GET /api/ops/dashboard — consolidated analytics with intelligence ─────

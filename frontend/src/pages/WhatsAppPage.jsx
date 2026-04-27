@@ -242,7 +242,7 @@ export default function WhatsAppPage({ toast }) {
         </div>
         <div className="bg-green-50 border border-green-100 rounded-2xl px-3 py-2 text-center hidden sm:block">
           <p className="text-[9px] text-green-500 font-bold uppercase tracking-wide">Live rates from</p>
-          <p className="text-sm font-bold text-green-800">17 couriers</p>
+          <p className="text-sm font-bold text-green-800">active courier partners</p>
         </div>
       </div>
 
@@ -278,7 +278,7 @@ export default function WhatsAppPage({ toast }) {
               className="w-full bg-green-600 text-white py-2.5 rounded-xl text-sm font-bold hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
             >
               {loading
-                ? <><Loader className="w-4 h-4 animate-spin"/>Calculating all 17 couriers…</>
+                ? <><Loader className="w-4 h-4 animate-spin"/>Calculating courier options…</>
                 : <><Zap className="w-4 h-4"/>Get Rate</>}
             </button>
 
@@ -347,7 +347,7 @@ export default function WhatsAppPage({ toast }) {
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
               <Loader className="w-8 h-8 mx-auto animate-spin text-green-500 mb-3"/>
               <p className="text-sm text-gray-500 font-medium">Calculating rates…</p>
-              <p className="text-xs text-gray-300 mt-1">Checking all 17 courier services</p>
+              <p className="text-xs text-gray-300 mt-1">Checking all courier services</p>
             </div>
           )}
 
@@ -393,7 +393,7 @@ export default function WhatsAppPage({ toast }) {
                 <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                   <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
                     <h2 className="font-bold text-sm text-gray-700">Top Options</h2>
-                    <span className="text-[10px] text-gray-400">{top5.length} of 17 couriers</span>
+                    <span className="text-[10px] text-gray-400">Top {top5.length} courier options</span>
                   </div>
                   <div className="divide-y divide-gray-50">
                     {top5.map((r, i) => (
@@ -473,7 +473,7 @@ export default function WhatsAppPage({ toast }) {
           </div>
           <div className="bg-white rounded-xl border border-slate-100 p-3">
             <p className="font-bold text-slate-800 mb-1">② Paste here, hit Enter</p>
-            <p className="text-slate-500">Instantly checks all 17 couriers, finds best margin, ready in &lt;1 second</p>
+            <p className="text-slate-500">Instantly checks all courier partners, finds best margin, ready in &lt;1 second</p>
           </div>
           <div className="bg-white rounded-xl border border-slate-100 p-3">
             <p className="font-bold text-slate-800 mb-1">③ Send the pre-built reply</p>

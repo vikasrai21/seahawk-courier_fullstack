@@ -39,7 +39,7 @@ export default function ClientPODPage({ toast }) {
       <div className="mx-auto client-premium-main">
         <ClientPortalPageIntro
           eyebrow="Proof of Delivery"
-          title="Review proof-of-delivery records as a clean evidence log instead of a scattered shipment list."
+          title="Review proof-of-delivery records."
           description="See delivered rows with proof availability, open POD links faster, and verify final delivery place and time in one scrollable workspace."
           badges={[`${pods.length} delivered records`, loading ? 'Loading evidence' : 'Evidence loaded']}
         />
@@ -48,7 +48,7 @@ export default function ClientPODPage({ toast }) {
             <div className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-sky-600">
               Delivery Proof
             </div>
-            <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight text-slate-900">Proof-of-delivery records now read like a clean evidence log.</h1>
+            <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight text-slate-900">Proof-of-delivery records.</h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
               Open proof links when available, review the delivery place and time, and scan the list faster.
             </p>

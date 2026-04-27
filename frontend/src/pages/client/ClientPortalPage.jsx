@@ -150,9 +150,9 @@ export default function ClientPortalPage({ toast }) {
   const sparklineValues = trendData.slice(-12).map((row) => Number(row.shipments || 0));
 
   const trustSignals = [
-    '99.9% uptime',
+    'Secure Client Session',
     `Last sync: ${formatRelativeTime(lastSyncAt)}`,
-    'All couriers operational',
+    'System Online',
   ];
 
   const courierCounts = useMemo(

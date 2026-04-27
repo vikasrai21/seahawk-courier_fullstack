@@ -155,7 +155,7 @@ export default function MonthlyReportPage({ toast }) {
     });
     setShowWA(false);
     if (result.error) { toast?.(result.error, 'error'); return; }
-    toast?.('Intel Transmission Successful ✓', 'success');
+    toast?.('Report Sent Successfully ✓', 'success');
   };
 
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
@@ -164,7 +164,7 @@ export default function MonthlyReportPage({ toast }) {
     <div className="mx-auto max-w-7xl p-6 space-y-8 min-h-screen transition-all duration-500">
       <div className="print:hidden">
         <PageHeader
-          title="Market Intelligence"
+          title="Monthly Report"
           subtitle={`Aggregated logistics performance for ${monthName}`}
           icon={TrendingUp}
           actions={
@@ -184,14 +184,14 @@ export default function MonthlyReportPage({ toast }) {
                   onClick={() => setShowWA(!showWA)}
                   className="flex items-center gap-2.5 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg shadow-emerald-600/20 active:scale-95 transition-all"
                 >
-                  <MessageCircle size={14} /> Intelligence Relay
+                  <MessageCircle size={14} /> Share on WhatsApp
                 </button>
                 {showWA && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setShowWA(false)} />
                     <div className="absolute right-0 top-full mt-3 bg-white dark:bg-slate-900 rounded-[28px] border border-slate-200 dark:border-slate-800 shadow-[0_30px_70px_rgba(0,0,0,0.15)] z-50 min-w-[280px] py-4 overflow-hidden animate-in slide-in-from-top-4 duration-300">
                       <div className="px-5 py-3 bg-blue-50/50 dark:bg-blue-900/10 border-b border-blue-100 dark:border-blue-900/30 mb-2">
-                        <p className="text-[10px] text-blue-700 dark:text-blue-400 font-black uppercase tracking-widest">Relay Configuration</p>
+                        <p className="text-[10px] text-blue-700 dark:text-blue-400 font-black uppercase tracking-widest">WhatsApp Sharing</p>
                         <p className="text-[9px] text-blue-600/60 dark:text-blue-400/40 mt-1">Automatic attachments for large datasets</p>
                       </div>
                       <div className="max-h-[300px] overflow-y-auto px-2">

@@ -98,7 +98,7 @@ export default function ClientNDRPage({ toast }) {
             <Link to="/portal" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-500 transition hover:text-slate-700">← Portal</Link>
             <div>
               <div className="text-sm font-black text-slate-900">NDR Self-Service</div>
-              <div className="text-xs font-semibold uppercase tracking-[0.12em] text-orange-500">Exception Handling</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.12em] text-orange-500">NDR Management</div>
             </div>
           </div>
         </div>
@@ -107,26 +107,11 @@ export default function ClientNDRPage({ toast }) {
       <div className="mx-auto client-premium-main">
         <ClientPortalPageIntro
           eyebrow="Delivery Exceptions"
-          title="Failed-delivery recovery now feels clearer, calmer, and more action-oriented."
-          description="Review exception cases, inspect the shipment, and send the next instruction to operations from one focused queue."
+          title="Review and resolve failed deliveries."
+          description="Send the next instruction to operations from one focused queue."
           badges={[`${items.length} open cases`, selected ? `Viewing ${selected.shipment?.awb || 'case'}` : 'Queue ready', loading ? 'Refreshing queue' : 'Queue loaded']}
         />
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_320px]">
-          <div className="overflow-hidden rounded-[28px] border border-slate-200/60 bg-[linear-gradient(145deg,#fff7f5_0%,#ffffff_70%)] p-6 shadow-[0_22px_44px_-30px_rgba(220,38,38,0.25)]">
-            <div className="inline-flex rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-600">
-              Delivery Exceptions
-            </div>
-            <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight text-slate-900">Failed-delivery recovery now feels clearer and more action-oriented.</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
-              Review exception cases, open the shipment, and send the next instruction directly to operations from one cleaner queue.
-            </p>
-          </div>
-          <div className="rounded-[26px] border border-amber-200 bg-[linear-gradient(180deg,#fffbea_0%,#ffffff_100%)] p-5 shadow-[0_18px_40px_-28px_rgba(202,138,4,0.35)]">
-            <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-amber-600">Open Cases</div>
-            <div className="mt-2 text-4xl font-black text-slate-900">{items.length}</div>
-            <p className="mt-2 text-sm text-slate-500">Every case here needs a client-side decision or confirmation.</p>
-          </div>
-        </section>
+
 
         {loading ? (
           <div className="rounded-[26px] border border-slate-200 bg-white p-6 text-slate-500 shadow-sm">Loading NDRs…</div>

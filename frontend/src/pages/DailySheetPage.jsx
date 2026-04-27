@@ -79,7 +79,7 @@ export default function DailySheetPage({ toast }) {
         .sum-val { font-size: 16px; font-weight: bold; }
         .footer { margin-top: 20px; font-size: 9px; color: #aaa; text-align: center; }
       </style></head><body>
-      <h1><img src="/images/logo.png" alt="Logo" style="height: 20px; vertical-align: middle; margin-right: 8px;" /> Sea Hawk Courier — Dispatch Sheet</h1>
+      <h1><img src="/images/logo.png" alt="Logo" style="height: 20px; vertical-align: middle; margin-right: 8px;" /> Sea Hawk Courier & Cargo — Dispatch Sheet</h1>
       <div class="meta">Date: ${date} | Total: ${filtered.length} | Generated: ${new Date().toLocaleString("en-IN")}</div>
       <table>
         <thead><tr><th>#</th><th>AWB No.</th><th>Client</th><th>Consignee</th><th>Destination</th><th>Courier</th><th>Wt (kg)</th><th>Amount</th><th>Status</th></tr></thead>

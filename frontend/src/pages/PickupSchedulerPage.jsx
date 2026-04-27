@@ -82,7 +82,7 @@ export default function PickupSchedulerPage({ toast }) {
     try {
       await api.patch(`/pickups/${id}`, { assignedAgentId: agentId, status:'ASSIGNED' });
       load();
-      toast?.('Agent Dispatched', 'success');
+      toast?.('Pickup assigned to agent', 'success');
       setSelected(null);
     } catch(e) { toast?.(e.message, 'error'); }
   };
@@ -90,13 +90,13 @@ export default function PickupSchedulerPage({ toast }) {
   return (
     <div className="mx-auto max-w-[1400px] p-6 lg:p-8 space-y-8 animate-in fade-in duration-700">
       <PageHeader 
-        title="Industrial Pickup Master" 
-        subtitle="Manage last-mile field operations and agent dispatch workflows." 
+        title="Pickup Manager" 
+        subtitle="Schedule and track pickup requests" 
         icon={Calendar}
         actions={
           <div className="flex gap-2">
              <button onClick={() => setShowNew(true)} className="px-5 py-2.5 bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-2xl shadow-xl shadow-slate-900/10 flex items-center gap-2 hover:bg-black transition-all active:scale-95">
-                <Plus size={16} /> New Engagement
+                <Plus size={16} /> New Pickup
              </button>
              <button onClick={load} className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-slate-600 transition-all">
                 <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
@@ -109,8 +109,8 @@ export default function PickupSchedulerPage({ toast }) {
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {[
-            { label:'Engagement Flow', val:stats.total,     icon: LayoutGrid, color:'blue'   },
-            { label:'Pending Flux',   val:stats.pending,   icon: Clock,      color:'amber'  },
+            { label:'Total Pickups', val:stats.total,     icon: LayoutGrid, color:'blue'   },
+            { label:'Pending',   val:stats.pending,   icon: Clock,      color:'amber'  },
             { label:'Confirmed',      val:stats.confirmed, icon: CheckCircle2, color:'emerald' },
             { label:'Completed',      val:stats.completed, icon: TrendingUp,  color:'emerald' },
             { label:'Cancelled',      val:stats.cancelled, icon: X,           color:'rose'   },
@@ -165,10 +165,10 @@ export default function PickupSchedulerPage({ toast }) {
       {loading ? (
         <div className="flex flex-col items-center justify-center py-24 text-slate-400">
            <RefreshCw className="w-10 h-10 animate-spin mb-4 text-blue-500" />
-           <span className="text-[11px] font-black uppercase tracking-[0.3em]">Synching Network Ops</span>
+           <span className="text-[11px] font-black uppercase tracking-[0.3em]">Loading Pickups</span>
         </div>
       ) : pickups.length === 0 ? (
-        <EmptyState icon="📦" title="Quiet Channel" message="No pickups active in the current filter loop." />
+        <EmptyState icon="📦" title="No Pickups" message="No pickups found for the selected filters." />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
           {pickups.map(p => {
@@ -181,7 +181,7 @@ export default function PickupSchedulerPage({ toast }) {
               >
                 <div className="flex items-start justify-between mb-6">
                    <div className="flex flex-col">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">REQ ID</span>
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Request ID</span>
                       <span className="text-sm font-black text-slate-900 dark:text-white font-mono tracking-tight">{p.requestNo || p.refNo}</span>
                    </div>
                    <div className={`px-3 py-1 rounded-full border text-[9px] font-black uppercase tracking-widest ${conf.color}`}>
@@ -195,7 +195,7 @@ export default function PickupSchedulerPage({ toast }) {
                          <MapPin size={14} className="text-orange-500" />
                       </div>
                       <div className="flex-1">
-                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Tactical Pickup Point</p>
+                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Pickup Address</p>
                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{p.pickupAddress || p.contactAddress}</p>
                          <p className="text-[10px] font-medium text-slate-400">{p.pickupCity} ({p.pickupPin})</p>
                       </div>
@@ -206,7 +206,7 @@ export default function PickupSchedulerPage({ toast }) {
                          <Clock size={14} className="text-blue-500" />
                       </div>
                       <div className="flex-1">
-                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Execution Slot</p>
+                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Time Slot</p>
                          <p className="text-xs font-bold text-slate-700 dark:text-slate-300">{p.scheduledDate || p.pickupDate} · {p.timeSlot}</p>
                       </div>
                       <span className="text-xl grayscale group-hover:grayscale-0 transition-all">{SLOT_ICONS[p.timeSlot] || '📦'}</span>
@@ -240,7 +240,7 @@ export default function PickupSchedulerPage({ toast }) {
 
       {/* Detail Intelligence Modal */}
       {selected && (
-        <Modal title={`Deployment Protocol — ${selected.requestNo || selected.refNo}`} onClose={()=>setSelected(null)} wide>
+        <Modal title={`Pickup Details — ${selected.requestNo || selected.refNo}`} onClose={()=>setSelected(null)} wide>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
              <div className="space-y-6">
                 <div className="flex items-center gap-4 p-5 rounded-[32px] bg-slate-900 border border-slate-800">
@@ -248,7 +248,7 @@ export default function PickupSchedulerPage({ toast }) {
                       <Zap size={24} />
                    </div>
                    <div className="flex-1">
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">System Operational State</p>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Current Status</p>
                       <div className="flex items-center gap-3">
                          <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-[0.2em] border ${STATUS_CONFIG[selected.status].color}`}>
                             {selected.status}
@@ -260,32 +260,32 @@ export default function PickupSchedulerPage({ toast }) {
 
                 <div className="grid grid-cols-1 gap-1">
                    <DetailRow label="Client / Consignor" value={selected.contactName || selected.pickupContact} />
-                   <DetailRow label="Engagement Pulse" value={selected.contactPhone || selected.pickupPhone} />
+                   <DetailRow label="Phone" value={selected.contactPhone || selected.pickupPhone} />
                    <DetailRow label="Primary Address" value={`${selected.pickupAddress}, ${selected.pickupCity} ${selected.pickupPin}`} />
-                   <DetailRow label="Mass Metrics" value={`${(selected.weightGrams/1000).toFixed(3)}kg / ${selected.pieces}pc`} />
-                   <DetailRow label="Service Network" value={selected.preferredCarrier || selected.serviceType || 'Standard'} />
-                   <DetailRow label="Network Node" value={selected.service || 'Default'} />
-                   {selected.notes && <DetailRow label="Neural Notes" value={selected.notes} highlight />}
+                   <DetailRow label="Weight & Pieces" value={`${(selected.weightGrams/1000).toFixed(3)}kg / ${selected.pieces}pc`} />
+                   <DetailRow label="Carrier" value={selected.preferredCarrier || selected.serviceType || 'Standard'} />
+                   <DetailRow label="Service Type" value={selected.service || 'Default'} />
+                   {selected.notes && <DetailRow label="Notes" value={selected.notes} highlight />}
                 </div>
              </div>
 
              <div className="space-y-6">
                 <div className="p-6 rounded-[32px] bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800">
-                   <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4">Command Actions</h4>
+                   <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4">Actions</h4>
                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {selected.status === 'PENDING' && (
                         <button onClick={() => updateStatus(selected.id,'CONFIRMED')} className="px-4 py-3 bg-blue-600 text-white text-[10px] font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-blue-600/10 hover:bg-blue-700 transition-all flex items-center justify-center gap-2 group/btn">
-                           Confirm Flight <ChevronRight size={14} className="group-hover/btn:translate-x-1" />
+                           Confirm <ChevronRight size={14} className="group-hover/btn:translate-x-1" />
                         </button>
                       )}
                       {['PENDING','CONFIRMED','ASSIGNED'].includes(selected.status) && (
                         <button onClick={() => updateStatus(selected.id,'CANCELLED')} className="px-4 py-3 bg-white dark:bg-slate-900 border border-rose-500/30 text-rose-500 text-[10px] font-black uppercase tracking-widest rounded-2xl hover:bg-rose-500 hover:text-white transition-all">
-                           Engage Cancel
+                           Cancel Pickup
                         </button>
                       )}
                       {selected.status === 'ASSIGNED' && (
                         <button onClick={() => updateStatus(selected.id,'COMPLETED')} className="sm:col-span-2 px-4 py-4 bg-emerald-600 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-2xl shadow-xl shadow-emerald-600/20 hover:bg-emerald-700 transition-all active:scale-95">
-                           Finalize Dispatch Node
+                           Mark Completed
                         </button>
                       )}
                    </div>
@@ -294,7 +294,7 @@ export default function PickupSchedulerPage({ toast }) {
                 {canAssign && ['PENDING','CONFIRMED'].includes(selected.status) && agents.length > 0 && (
                    <div className="p-6 rounded-[32px] bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm">
                       <div className="flex items-center justify-between mb-4">
-                         <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Rider Deployment</h4>
+                         <h4 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-400">Assign Agent</h4>
                          <div className="flex items-center gap-1.5">
                             <div className="w-1 h-1 rounded-full bg-emerald-500" />
                             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{agents.length} Ready</span>
@@ -329,7 +329,7 @@ export default function PickupSchedulerPage({ toast }) {
 
       {/* New Engagement Console */}
       {showNew && (
-        <Modal title="Deployment Configuration" onClose={()=>setShowNew(false)}>
+        <Modal title="New Pickup" onClose={()=>setShowNew(false)}>
           <CreatePickupForm toast={toast} onSaved={() => { setShowNew(false); load(); }} onClose={() => setShowNew(false)} />
         </Modal>
       )}
@@ -383,43 +383,43 @@ function CreatePickupForm({ toast, onSaved, onClose }) {
   return (
     <div className="space-y-6 max-h-[75vh] overflow-y-auto pr-2 custom-scrollbar">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Contact Identifier" req>
+        <Field label="Contact Name" req>
            <input className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-xs font-black uppercase tracking-tight text-slate-800 dark:text-white" value={form.contactName} onChange={e=>setForm(f=>({...f,contactName:e.target.value}))}/>
         </Field>
-        <Field label="Engagement Pulse (Phone)" req>
+        <Field label="Phone Number" req>
            <input className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-xs font-black uppercase tracking-tight text-slate-800 dark:text-white" value={form.contactPhone} onChange={e=>setForm(f=>({...f,contactPhone:e.target.value}))}/>
         </Field>
       </div>
       
-      <Field label="Pickup Geometry (Full Address)" req>
+      <Field label="Full Address" req>
          <textarea className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-[28px] px-6 py-4 text-xs font-black uppercase tracking-tight text-slate-700 dark:text-white min-h-[100px]" rows={2} value={form.pickupAddress} onChange={e=>setForm(f=>({...f,pickupAddress:e.target.value}))}/>
       </Field>
 
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Target City" req>
+        <Field label="City" req>
            <input className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-xs font-black uppercase tracking-tight text-slate-800 dark:text-white" value={form.pickupCity} onChange={e=>setForm(f=>({...f,pickupCity:e.target.value}))}/>
         </Field>
-        <Field label="Zone Pincode" req>
+        <Field label="Pincode" req>
            <input className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-xs font-black uppercase tracking-tight text-slate-800 dark:text-white" value={form.pickupPin} onChange={e=>setForm(f=>({...f,pickupPin:e.target.value}))}/>
         </Field>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <Field label="Mass Type">
+        <Field label="Package Type">
            <select className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white appearance-none" value={form.packageType} onChange={e=>setForm(f=>({...f,packageType:e.target.value}))}>
               {['Document','Parcel','Fragile','Bulk / Cargo'].map(t=><option key={t}>{t.toUpperCase()}</option>)}
            </select>
         </Field>
-        <Field label="Weight Flux (G)">
+        <Field label="Weight (Grams)">
            <input type="number" className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-[11px] font-black text-slate-800 dark:text-white" value={form.weightGrams} onChange={e=>setForm(f=>({...f,weightGrams:+e.target.value}))}/>
         </Field>
-        <Field label="Array Count">
+        <Field label="Number of Pieces">
            <input type="number" className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-[11px] font-black text-slate-800 dark:text-white" value={form.pieces} onChange={e=>setForm(f=>({...f,pieces:+e.target.value}))}/>
         </Field>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <Field label="Deployment Date" req>
+        <Field label="Scheduled Date" req>
            <input type="date" className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-5 py-4 text-[11px] font-black uppercase tracking-widest text-slate-800 dark:text-white" value={form.scheduledDate} onChange={e=>setForm(f=>({...f,scheduledDate:e.target.value}))}/>
         </Field>
         <Field label="Time Window">
@@ -429,7 +429,7 @@ function CreatePickupForm({ toast, onSaved, onClose }) {
         </Field>
       </div>
 
-      <Field label="Neural Notes (System Instruction)">
+      <Field label="Additional Notes">
          <textarea className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-[28px] px-5 py-4 text-[10px] font-black uppercase tracking-tight text-slate-700 dark:text-white min-h-[80px]" rows={2} value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/>
       </Field>
 
@@ -441,7 +441,7 @@ function CreatePickupForm({ toast, onSaved, onClose }) {
           className="flex-[2] py-5 bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-[24px] shadow-xl shadow-slate-900/10 active:scale-95 transition-all flex items-center justify-center gap-3"
         >
           {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Package size={16} />}
-          {saving ? 'Synchronizing…' : 'Execute Engagement'}
+          {saving ? 'Saving...' : 'Schedule Pickup'}
         </button>
       </div>
     </div>

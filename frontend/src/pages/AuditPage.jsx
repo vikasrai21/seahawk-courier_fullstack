@@ -16,7 +16,7 @@ export default function AuditPage() {
     <div className="p-6">
       <PageHeader
         title="Audit Logs"
-        subtitle="Track user and system actions with cleaner visibility into who changed what and when."
+        subtitle="Track user and system actions."
         icon={Shield}
       />
 

@@ -1,6 +1,9 @@
 // src/config/index.js — Validated config, fails fast on missing secrets
 'use strict';
-if (process.env.NODE_ENV !== 'production') require('dotenv').config();
+if (process.env.NODE_ENV !== 'production') {
+  const path = require('path');
+  require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+}
 
 function required(key, minLen = 0) {
   const val = process.env[key];

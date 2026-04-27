@@ -20,13 +20,13 @@ export default function PortalHeroSection({
   onSync,
 }) {
   return (
-    <section className="client-page-intro client-premium-card relative overflow-hidden p-5 md:p-6">
-      <div className="portal-hero-glow" />
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+    <section className="client-page-intro client-premium-card relative overflow-hidden px-4 py-3 md:px-5 md:py-4 mb-4">
+      <div className="portal-hero-glow opacity-50 scale-75" />
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <div className="client-page-eyebrow">Command Center</div>
-          <h1 className="mt-2 text-2xl font-black text-slate-950 dark:text-slate-100 md:text-[2rem]">Shipment Operations Overview</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600 dark:text-slate-300">
+          <div className="client-page-eyebrow text-[10px] mb-0.5">Command Center</div>
+          <h1 className="text-xl font-black text-slate-950 dark:text-slate-100 md:text-2xl">Shipment Operations Overview</h1>
+          <p className="mt-1 max-w-2xl text-[13px] leading-snug text-slate-500 dark:text-slate-400">
             Focused home view for shipment health, immediate attention items, and live movement.
           </p>
         </div>

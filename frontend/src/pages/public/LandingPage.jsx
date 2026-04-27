@@ -229,7 +229,7 @@ function RateCalculator() {
             </div>
           </div>
           <div className="calc-card rev d1">
-            <div className="calc-head"><h3>Shipping Rate Calculator</h3><small>SeaHawk Rate Card v10 · FSC 25% · GST 18%</small></div>
+            <div className="calc-head"><h3>Transparent B2B Pricing Engine</h3><small>Rate Card 2025 · FSC 25% · GST 18%</small></div>
             <div className="calc-body">
               <div className="fg-grid" style={{ gap: 13 }}>
                 <div className="fg">
@@ -511,7 +511,7 @@ export default function LandingPage() {
                 <h1 className="hero-h1">Precision B2B Logistics<br /><em>for Growing Brands</em><br /></h1>
                 <p className="hero-p">From same-day Delhi NCR deliveries to international shipments across 220+ countries. Get the reach of a giant, with the dedicated support of a boutique logistics partner.</p>
                 <div className="hero-trust">
-                  {['19,000+ PIN Codes (100% India)','220+ Countries','< 15 Min Support Response','Real-Time Tracking'].map(t => (
+                  {['17,000+ PIN Codes (100% India)','220+ Countries','Same-day Support','Real-Time Tracking'].map(t => (
                     <div key={t} className="t-chip"><span className="chk">✓</span>{t}</div>
                   ))}
                 </div>
@@ -520,7 +520,7 @@ export default function LandingPage() {
                   <Link to="/track" className="btn btn-ghost-w btn-lg">🔍 Track Shipment</Link>
                 </div>
                 <div className="hero-mini-stats rev d1">
-                  {[{t:98.4,dur:2000,l:'On-Time Delivery',sup:'%'},{t:19000,dur:1800,l:'PIN Codes Covered',sup:'+'},{t:220,dur:1600,l:'Countries',sup:'+'},{t:20,dur:1400,l:'Years Experience',sup:'+'}].map(({t,dur,l,sup}) => (
+                  {[{t:98,dur:2000,l:'Order Accuracy',sup:'%'},{t:17000,dur:1800,l:'PIN Codes Covered',sup:'+'},{t:220,dur:1600,l:'Countries',sup:'+'},{t:20,dur:1400,l:'Years Experience',sup:'+'}].map(({t,dur,l,sup}) => (
                     <div key={l} className="hms">
                       <div className="hms-n"><span className="count" data-t={t} data-dur={dur}>0</span><sup>{sup || '+'}</sup></div>
                       <div className="hms-l">{l}</div>
@@ -539,7 +539,7 @@ export default function LandingPage() {
         {/* ── TICKER ── */}
         <div className="ticker">
           <div className="ticker-track">
-            {['Same Day Express Delivery','International Air Courier','220+ Countries & Territories','Bulk & LTL Surface Freight','Real-Time Shipment Tracking','Fully Insured Deliveries','B2B Corporate Logistics','19,000+ PIN Codes Covered','Dedicated Account Managers'].flatMap((t, i) => [
+            {['Same Day Express Delivery','International Air Courier','220+ Countries & Territories','Bulk & LTL Surface Freight','Real-Time Shipment Tracking','Fully Insured Deliveries','B2B Corporate Logistics','17,000+ PIN Codes Covered','Dedicated Account Managers'].flatMap((t, i) => [
               <span key={`t${i}`} className="tick-item">{t}</span>,
               <span key={`s${i}`} className="tick-sep" />,
             ])}
@@ -550,7 +550,7 @@ export default function LandingPage() {
         <section id="stats-band">
           <div className="wrap">
             <div className="stats-grid">
-              {[{icon:<ShieldCheck size={28}/>,t:98,dur:2800,l:'On-Time Delivery Rate',sup:'%'},{icon:<MapPin size={28}/>,t:19000,dur:2500,l:'PIN Codes Covered',sup:'+'},{icon:<Building2 size={28}/>,t:800,dur:2000,l:'Cities in India',sup:'+'},{icon:<Globe2 size={28}/>,t:220,dur:1800,l:'Countries Served',sup:'+'},{icon:<Clock size={28}/>,t:20,dur:1500,l:'Years of Excellence',sup:'+'}].map(({icon,t,dur,l,sup},i) => (
+              {[{icon:<ShieldCheck size={28}/>,t:98,dur:2800,l:'Order Accuracy Rate',sup:'%'},{icon:<MapPin size={28}/>,t:17000,dur:2500,l:'PIN Codes Covered',sup:'+'},{icon:<Globe2 size={28}/>,t:220,dur:1800,l:'Countries Served',sup:'+'},{icon:<Clock size={28}/>,t:20,dur:1500,l:'Years of Excellence',sup:'+'}].map(({icon,t,dur,l,sup},i) => (
                 <div key={l} className={`stat-block rev${i > 0 ? ` d${i}` : ''}`}>
                   <div className="stat-icon-wrap" style={{ color: 'var(--navy)' }}>{icon}</div>
                   <div className="stat-number"><span className="count" data-t={t} data-dur={dur}>0</span><sup>{sup || '+'}</sup></div>
@@ -578,7 +578,7 @@ export default function LandingPage() {
                 ))}
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
-                {['✓ Free Doorstep Pickup','✓ Real-Time Tracking','✓ GST Invoicing','✓ 19,000+ PIN Codes','✓ Dedicated Manager'].map(t => (
+                {['✓ Free Doorstep Pickup','✓ Real-Time Tracking','✓ GST Invoicing','✓ 17,000+ PIN Codes','✓ Dedicated Manager'].map(t => (
                   <div key={t} style={{ padding: '6px 14px', background: '#fff', border: '1.5px solid var(--border-l)', borderRadius: 40, fontSize: '.73rem', fontWeight: 700, color: 'var(--ink-2)' }}>{t}</div>
                 ))}
               </div>
@@ -614,7 +614,7 @@ export default function LandingPage() {
                 {icon:<Globe2 size={24} color="var(--navy)"/>,t:'International Courier',d:'Documents and parcels to 220+ countries via DHL, FedEx, Aramex and our own global partner network across 8 international zones.',note:'🌍 USA · UK · UAE · Australia · 220+ Countries',link:'#calculator',cta:'Calculate rate →'},
                 {icon:<Truck size={24} color="var(--navy)"/>,t:'Surface & LTL Cargo',d:'Cost-effective road freight for heavy consignments. LTL road express connecting 800+ cities pan-India at competitive rates.',note:'📦 Pan-India · Up to 500 kg per consignment',link:'/contact',cta:'Contact us →'},
                 {icon:<Building2 size={24} color="var(--navy)"/>,t:'B2B Logistics',d:'Custom rate contracts, dedicated account manager, monthly invoicing and full client portal access for enterprise shippers.',note:'💼 Custom rates · Volume discounts available',link:'/services#b2b',cta:'Open an account →'},
-                {icon:<ShieldCheck size={24} color="var(--navy)"/>,t:'Insured Shipments',d:"Full declared-value insurance for electronics, jewellery, fragile goods and high-value items at just 5% premium.",note:'🔒 5% premium · Hassle-free claims process',link:'#calculator',cta:'Calculate cost →'},
+                {icon:<ShieldCheck size={24} color="var(--navy)"/>,t:'Insured Shipments',d:"Full declared-value insurance for electronics, jewellery, fragile goods and high-value items at 0.2% premium (min ₹50).",note:'🔒 Hassle-free claims process',link:'#calculator',cta:'Calculate cost →'},
                 {icon:<FileText size={24} color="var(--navy)"/>,t:'Document Courier',d:'Secure delivery of legal documents, passports, bank documents and diplomatic mail — handled with absolute care.',note:'🗂️ Domestic · International · Diplomatic Mail',link:'/contact',cta:'Enquire now →'},
               ].map(({icon,t,d,note,link,cta},i) => (
                 <div key={t} className={`svc-card rev${i > 0 ? ` d${(i % 3) || ''}` : ''}`}>
@@ -641,10 +641,10 @@ export default function LandingPage() {
             <div className="sec-head" style={{ marginBottom: 36 }}>
               <div className="pill pill-orange rev">Our Reach</div>
               <h2 className="h-display rev d1">Coverage Across <span>India &amp; The World</span></h2>
-              <p className="t-lead rev d2" style={{ margin: '0 auto' }}>Every PIN code in India. 180+ countries worldwide. Real shipments, real routes, every day.</p>
+              <p className="t-lead rev d2" style={{ margin: '0 auto' }}>Every PIN code in India. 220+ countries worldwide. Real shipments, real routes, every day.</p>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 28 }} className="rev d1">
-              {[{t:35000,c:'var(--navy)',bg:'var(--navy-faint)',brd:'var(--navy-pale)',l:'PIN Codes'},{t:800,c:'var(--orange)',bg:'var(--orange-bg)',brd:'var(--orange-brd)',l:'Indian Cities'},{t:180,c:'var(--navy)',bg:'var(--navy-faint)',brd:'var(--navy-pale)',l:'Countries'},{t:6,c:'var(--green)',bg:'var(--green-bg)',brd:'#a7f3d0',l:'Continents'}].map(({t,c,bg,brd,l}) => (
+              {[{t:17000,c:'var(--navy)',bg:'var(--navy-faint)',brd:'var(--navy-pale)',l:'PIN Codes'},{t:800,c:'var(--orange)',bg:'var(--orange-bg)',brd:'var(--orange-brd)',l:'Indian Cities'},{t:220,c:'var(--navy)',bg:'var(--navy-faint)',brd:'var(--navy-pale)',l:'Countries'},{t:6,c:'var(--green)',bg:'var(--green-bg)',brd:'#a7f3d0',l:'Continents'}].map(({t,c,bg,brd,l}) => (
                 <div key={l} style={{ textAlign: 'center', padding: 16, background: bg, borderRadius: 'var(--r-lg)', border: `1.5px solid ${brd}` }}>
                   <div style={{ fontFamily: 'inherit', fontSize: '1.7rem', fontWeight: 900, color: c }}><span className="count" data-t={t}>0</span>+</div>
                   <div style={{ fontSize: '.68rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.5, color: c }}>{l}</div>

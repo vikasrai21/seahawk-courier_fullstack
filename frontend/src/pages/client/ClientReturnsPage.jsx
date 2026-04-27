@@ -10,7 +10,7 @@ const STATUS_CONFIG = {
   PICKUP_BOOKED:       { label: 'Pickup Booked',      color: 'indigo',  icon: Truck },
   IN_TRANSIT:          { label: 'In Transit',         color: 'violet',  icon: Truck },
   RECEIVED:            { label: 'Received',           color: 'emerald', icon: CheckCircle2 },
-  RETURNED_TO_CLIENT:  { label: 'Returned to Client', color: 'green',   icon: CheckCircle2 },
+  RETURNED_TO_CLIENT:  { label: 'Returned',           color: 'green',   icon: CheckCircle2 },
   REJECTED:            { label: 'Rejected',           color: 'red',     icon: XCircle },
 };
 

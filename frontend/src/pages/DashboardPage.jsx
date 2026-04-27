@@ -123,7 +123,7 @@ function SmartCommandBar({ user }) {
           <Zap size={14} className="text-amber-500" />
           <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Quick Actions</span>
         </div>
-        <span className="text-[10px] text-slate-400">Signed in as <strong className="text-slate-600 dark:text-slate-300">{user?.name || 'Team'}</strong></span>
+        <span className="text-[10px] text-slate-400">Signed in as <strong className="text-slate-600 dark:text-slate-300">{user?.name || 'Staff'}</strong></span>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {COMMANDS.map((cmd) => (
@@ -271,7 +271,7 @@ export default function DashboardPage() {
         <div className="client-premium-main portal-visual-upgrade">
           <PageHeader
             title="Command Center"
-            subtitle="Real-time business intelligence, performance analytics, and operational insights."
+            subtitle="Your business at a glance."
             icon={LayoutDashboard}
             actions={
               <div className="flex items-center gap-3">

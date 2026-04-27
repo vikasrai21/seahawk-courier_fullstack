@@ -11,7 +11,7 @@ const pColor = m => m > 30 ? 'text-green-700' : m > 15 ? 'text-amber-600' : m > 
 const STATUS_CONFIG = {
   QUOTED:  { label:'Quoted',  color:'bg-blue-100 text-blue-700'   },
   BOOKED:  { label:'Booked',  color:'bg-green-100 text-green-700' },
-  LOST:    { label:'Lost',    color:'bg-red-100 text-red-600'     },
+  LOST:    { label:'Not Converted',    color:'bg-red-100 text-red-600'     },
   EXPIRED: { label:'Expired', color:'bg-gray-100 text-gray-500'   },
 };
 
@@ -186,7 +186,7 @@ ${q.notes ? `<p><strong>Notes:</strong> ${q.notes}</p>` : ''}
                             </button>
                             <button onClick={() => updateStatus(q.id, 'LOST')} disabled={isUpdating}
                               className="text-[9px] bg-red-100 hover:bg-red-200 text-red-700 px-1.5 py-0.5 rounded font-bold disabled:opacity-50">
-                              Lost
+                              Not Converted
                             </button>
                           </>
                         )}
