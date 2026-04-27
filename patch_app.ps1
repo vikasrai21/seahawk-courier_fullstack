@@ -1,0 +1,4 @@
+$content = Get-Content "c:\Users\hp\OneDrive\Desktop\seahawk-full_stack\frontend\src\App.jsx"
+$content = $content -replace "const AnalyticsPage = lazy\(\(\) => import\('\./pages/AnalyticsPage'\)\);", "const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));`nconst AdminPnLDashboard = lazy(() => import('./pages/AdminPnLDashboard'));"
+$content = $content -replace '<Route path="/analytics" element={<PrivateRoute ownerOnly>{withToast\(AnalyticsPage\)}</PrivateRoute>} />', '<Route path="/analytics" element={<PrivateRoute ownerOnly>{withToast(AnalyticsPage)}</PrivateRoute>} />`n                      <Route path="/pnl" element={<PrivateRoute ownerOnly>{withToast(AdminPnLDashboard)}</PrivateRoute>} />'
+Set-Content "c:\Users\hp\OneDrive\Desktop\seahawk-full_stack\frontend\src\App.jsx" $content

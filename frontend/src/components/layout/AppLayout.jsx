@@ -40,6 +40,7 @@ const navGroups = [
       { to: '/app/agent',     label: 'HawkAI Agent',        icon: Bot, badge: 'NEW', roles: ['OWNER'] },
       { to: '/app/analytics', label: 'Analytics',           icon: BarChart2, roles: ['OWNER'] },
       { to: '/app/pnl',       label: 'P&L Control Room',    icon: Activity, badge: 'PRO', roles: ['OWNER'] },
+      { to: '/app/client-health', label: 'Client Health',  icon: ShieldAlert, roles: ['OWNER'] },
       { to: '/app/entry',     label: 'New Entry',           icon: PlusCircle, accent: true },
       { to: '/app/import',    label: 'Import',              icon: FileUp, isSecondary: true },
     ],

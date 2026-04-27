@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useDebounce } from '../hooks/useDebounce';
 import { EmptyState } from '../components/ui/EmptyState';
-import { AlertTriangle, RefreshCw, ChevronRight, Search } from 'lucide-react';
+import { AlertTriangle, RefreshCw, ChevronRight, Search, MessageCircle } from 'lucide-react';
 import api from '../services/api';
 import { Modal } from '../components/ui/Modal';
 
@@ -27,6 +27,49 @@ const ACTION_LABELS = {
 };
 
 const fmt = (v) => ACTION_LABELS[v] || { label: v, color:'gray' };
+
+/* ── WhatsApp message builder ──────────────────────────────────────────── */
+function buildWhatsAppMessage(ndr) {
+  const consignee = ndr.shipment?.consignee || 'Customer';
+  const awb = ndr.awb || '';
+  const reason = ndr.reason || 'delivery issue';
+  const destination = ndr.shipment?.destination || '';
+  const courier = ndr.shipment?.courier || '';
+  const attempt = ndr.attemptNo || 1;
+  const trackUrl = `${window.location.origin}/track/${encodeURIComponent(awb)}`;
+
+  return (
+    `Hi ${consignee},\n\n` +
+    `Your Sea Hawk shipment *${awb}*${courier ? ` (via ${courier})` : ''} could not be delivered.\n\n` +
+    `📋 *Reason:* ${reason}\n` +
+    `📍 *Destination:* ${destination}\n` +
+    `🔄 *Attempt:* #${attempt}\n\n` +
+    `When would you be available for re-delivery? Please reply with a convenient date and time.\n\n` +
+    `🔗 Track here: ${trackUrl}\n\n` +
+    `— Sea Hawk Courier & Cargo`
+  );
+}
+
+function getConsigneePhone(ndr) {
+  // Try to extract phone from shipment data
+  const phone = ndr.shipment?.phone || ndr.shipment?.consigneePhone || ndr.shipment?.mobile || '';
+  // Clean to digits only, ensure it has country code
+  const cleaned = phone.replace(/\D/g, '');
+  if (!cleaned) return '';
+  // If it starts with 91 and is 12 digits, or 10 digits (Indian mobile)
+  if (cleaned.length === 10) return '91' + cleaned;
+  if (cleaned.length === 12 && cleaned.startsWith('91')) return cleaned;
+  return cleaned;
+}
+
+function openWhatsApp(ndr) {
+  const phone = getConsigneePhone(ndr);
+  const msg = encodeURIComponent(buildWhatsAppMessage(ndr));
+  const url = phone
+    ? `https://wa.me/${phone}?text=${msg}`
+    : `https://wa.me/?text=${msg}`;
+  window.open(url, '_blank');
+}
 
 export default function NDRPage({ toast }) {
   const [ndrs,       setNdrs]       = useState([]);
@@ -168,6 +211,14 @@ export default function NDRPage({ toast }) {
                   {new Date(n.createdAt).toLocaleDateString('en-IN',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}
                 </p>
               </div>
+              {/* Inline WhatsApp quick-action */}
+              <button
+                title="Resolve via WhatsApp"
+                onClick={(e) => { e.stopPropagation(); openWhatsApp(n); }}
+                className="p-2 rounded-lg bg-green-50 text-green-600 hover:bg-green-100 hover:text-green-700 border border-green-200 transition-all shrink-0 mt-1"
+              >
+                <MessageCircle className="w-4 h-4" />
+              </button>
               <ChevronRight className="w-4 h-4 text-gray-300 shrink-0 mt-3"/>
             </div>
           );
@@ -187,36 +238,48 @@ export default function NDRPage({ toast }) {
               )}
             </div>
 
-            <div className="space-y-1">
-              <label className="form-label">Action *</label>
-              <select className="input" value={actionForm.action} onChange={e => setActionForm(f=>({...f,action:e.target.value}))}>
-                <option value="">— Select action —</option>
-                <option value="REATTEMPT">🔄 Reattempt Delivery</option>
-                <option value="UPDATE_ADDRESS">📍 Update Delivery Address</option>
-                <option value="RTO">↩️ Return to Origin (RTO)</option>
-                <option value="RESOLVED">✅ Mark Resolved</option>
-              </select>
-            </div>
+            {/* ── WhatsApp Resolve Button ── */}
+            <button
+              onClick={() => openWhatsApp(selected)}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold text-sm hover:from-green-600 hover:to-emerald-700 transition-all shadow-md hover:shadow-lg active:scale-[0.98]"
+            >
+              <MessageCircle className="w-4 h-4" />
+              Resolve via WhatsApp
+            </button>
+            <p className="text-[10px] text-center text-gray-400 -mt-2">Opens WhatsApp Web with pre-filled message to consignee — zero cost</p>
 
-            {actionForm.action === 'UPDATE_ADDRESS' && (
+            <div className="border-t border-gray-100 pt-4 space-y-3">
               <div className="space-y-1">
-                <label className="form-label">New Delivery Address *</label>
-                <textarea className="input" rows={3} placeholder="Full corrected address…"
-                  value={actionForm.newAddress} onChange={e => setActionForm(f=>({...f,newAddress:e.target.value}))}/>
+                <label className="form-label">Action *</label>
+                <select className="input" value={actionForm.action} onChange={e => setActionForm(f=>({...f,action:e.target.value}))}>
+                  <option value="">— Select action —</option>
+                  <option value="REATTEMPT">🔄 Reattempt Delivery</option>
+                  <option value="UPDATE_ADDRESS">📍 Update Delivery Address</option>
+                  <option value="RTO">↩️ Return to Origin (RTO)</option>
+                  <option value="RESOLVED">✅ Mark Resolved</option>
+                </select>
               </div>
-            )}
 
-            <div className="space-y-1">
-              <label className="form-label">Notes</label>
-              <textarea className="input" rows={2} placeholder="Optional notes for the team…"
-                value={actionForm.notes} onChange={e => setActionForm(f=>({...f,notes:e.target.value}))}/>
-            </div>
+              {actionForm.action === 'UPDATE_ADDRESS' && (
+                <div className="space-y-1">
+                  <label className="form-label">New Delivery Address *</label>
+                  <textarea className="input" rows={3} placeholder="Full corrected address…"
+                    value={actionForm.newAddress} onChange={e => setActionForm(f=>({...f,newAddress:e.target.value}))}/>
+                </div>
+              )}
 
-            <div className="flex gap-2 pt-2">
-              <button onClick={() => setSelected(null)} className="btn-secondary flex-1">Cancel</button>
-              <button onClick={saveAction} disabled={saving} className="btn-primary flex-1">
-                {saving ? 'Saving…' : 'Save Action'}
-              </button>
+              <div className="space-y-1">
+                <label className="form-label">Notes</label>
+                <textarea className="input" rows={2} placeholder="Optional notes for the team…"
+                  value={actionForm.notes} onChange={e => setActionForm(f=>({...f,notes:e.target.value}))}/>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button onClick={() => setSelected(null)} className="btn-secondary flex-1">Cancel</button>
+                <button onClick={saveAction} disabled={saving} className="btn-primary flex-1">
+                  {saving ? 'Saving…' : 'Save Action'}
+                </button>
+              </div>
             </div>
           </div>
         </Modal>

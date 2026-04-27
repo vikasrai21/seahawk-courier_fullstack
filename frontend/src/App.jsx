@@ -69,6 +69,7 @@ const PickupSchedulerPage = lazy(() => import('./pages/PickupSchedulerPage'));
 const WalletPage = lazy(() => import('./pages/WalletPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
 const AdminPnLDashboard = lazy(() => import('./pages/AdminPnLDashboard'));
+const ClientHealthMatrixPage = lazy(() => import('./pages/ClientHealthMatrixPage'));
 const SupportTicketsPage = lazy(() => import('./pages/SupportTicketsPage'));
 const OwnerAuditPage = lazy(() => import('./pages/OwnerAuditPage'));
 const MobileScannerPage = lazy(() => import('./pages/MobileScannerPage'));
@@ -230,8 +231,9 @@ function AppRoutes() {
                       <Route path="/profile" element={withToast(ProfilePage)} />
                       <Route path="/shipments" element={withToast(ShipmentDashboardPage)} />
                       <Route path="/wallet" element={<PrivateRoute ownerOnly>{withToast(WalletPage)}</PrivateRoute>} />
-                      <Route path="/analytics" element={<PrivateRoute ownerOnly>{withToast(AnalyticsPage)}</PrivateRoute>} />`n                      <Route path="/pnl" element={<PrivateRoute ownerOnly>{withToast(AdminPnLDashboard)}</PrivateRoute>} />
+                      <Route path="/analytics" element={<PrivateRoute ownerOnly>{withToast(AnalyticsPage)}</PrivateRoute>} />
                       <Route path="/pnl" element={<PrivateRoute ownerOnly>{withToast(AdminPnLDashboard)}</PrivateRoute>} />
+                      <Route path="/client-health" element={<PrivateRoute ownerOnly>{withToast(ClientHealthMatrixPage)}</PrivateRoute>} />
                       <Route path="/agent" element={<PrivateRoute ownerOnly>{withToast(OwnerAgentPage)}</PrivateRoute>} />
                       <Route path="/notifications" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(NotificationCenterPage)}</PrivateRoute>} />
                       <Route path="/ndr" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(NDRPage)}</PrivateRoute>} />
