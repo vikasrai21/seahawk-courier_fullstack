@@ -6,6 +6,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Install openssl for Prisma native engine support on Alpine
+RUN apk add --no-cache openssl
+
 # Install production deps
 COPY package*.json ./
 RUN npm ci --only=production --silent
