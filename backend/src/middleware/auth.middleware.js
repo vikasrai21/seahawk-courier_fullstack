@@ -5,8 +5,25 @@ const prisma = require('../config/prisma');
 const R      = require('../utils/response');
 const { isOwnerUser } = require('../utils/owner');
 
-const authUserCache = new Map();
 const AUTH_USER_TTL_MS = 30_000;
+const AUTH_CACHE_MAX = 500;
+const authUserCache = new Map();
+
+function lruSet(key, value) {
+  if (authUserCache.has(key)) authUserCache.delete(key);
+  else if (authUserCache.size >= AUTH_CACHE_MAX) {
+    authUserCache.delete(authUserCache.keys().next().value);
+  }
+  authUserCache.set(key, value);
+}
+
+function lruGet(key) {
+  if (!authUserCache.has(key)) return undefined;
+  const val = authUserCache.get(key);
+  authUserCache.delete(key);
+  authUserCache.set(key, val);
+  return val;
+}
 
 function ownerCanBypass(allowed = []) {
   const roles = Array.isArray(allowed) ? allowed : [allowed];
@@ -25,7 +42,7 @@ const protect = async (req, res, next) => {
     if (!token) return R.unauthorized(res, 'Authentication required.');
     const decoded = jwt.verify(token, config.jwt.secret);
     const cacheKey = `${decoded.id}:${decoded.iat || ''}`;
-    const cached = authUserCache.get(cacheKey);
+    const cached = lruGet(cacheKey);
     let user = cached && cached.expiresAt > Date.now() ? cached.user : null;
     if (!user) {
       user = await prisma.user.findUnique({
@@ -46,7 +63,7 @@ const protect = async (req, res, next) => {
           },
         },
       });
-      if (user) authUserCache.set(cacheKey, { user, expiresAt: Date.now() + AUTH_USER_TTL_MS });
+      if (user) lruSet(cacheKey, { user, expiresAt: Date.now() + AUTH_USER_TTL_MS });
     }
     if (!user)        return R.unauthorized(res, 'User no longer exists.');
     if (!user.active) return R.unauthorized(res, 'Account is deactivated. Contact admin.');

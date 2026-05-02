@@ -67,8 +67,11 @@ function buildFilters({ client, courier, status, filter, dateFrom, dateTo, q, en
   if (status)  where.status = status;
   if (filter === 'sla_breach') {
     where.status = 'InTransit';
+    // Use the most permissive SLA (express = 2 days) so all breached shipments are caught.
+    // The frontend can further filter by service type if needed.
+    const minSlaDays = 2;
     const slaDaysAgo = new Date();
-    slaDaysAgo.setDate(slaDaysAgo.getDate() - 7); // SLA threshold (e.g. 7 days)
+    slaDaysAgo.setDate(slaDaysAgo.getDate() - minSlaDays);
     where.createdAt = { lt: slaDaysAgo };
   }
   if (dateFrom || dateTo) { where.date = {}; if (dateFrom) where.date.gte = dateFrom; if (dateTo) where.date.lte = dateTo; }
@@ -211,6 +214,7 @@ async function simulateShipment(data = {}) {
         courier,
         service,
         weight: Number.isFinite(weight) ? weight : 0,
+        zone: data.zone || data.destinationZone || undefined,
       }).catch(() => null)
     : null;
   const amount = Number(data.amount || 0) > 0 ? Number(data.amount) : Number(contractPrice?.total || 0);
@@ -262,6 +266,7 @@ async function create(data, userId) {
         courier: data.courier || '',
         service: data.service || 'Standard',
         weight: parseFloat(data.weight) || 0,
+        zone: data.zone || data.destinationZone || undefined,
       })
     : null;
 
@@ -558,8 +563,11 @@ async function bulkImport(shipments, userId) {
 
   // Insert new shipments in one transaction batch
   if (newShipmentsData.length > 0) {
-    const createPromises = newShipmentsData.map(data => prisma.shipment.create({ data }));
-    const createdShipments = await prisma.$transaction(createPromises);
+    await prisma.shipment.createMany({ data: newShipmentsData, skipDuplicates: true });
+    const createdShipments = await prisma.shipment.findMany({
+      where: { awb: { in: newShipmentsData.map(s => s.awb) } },
+      select: { id: true, awb: true, clientCode: true, courier: true, status: true }
+    });
     
     // Emit socket events
     createdShipments.forEach(s => emitShipmentCreated(s));
@@ -649,7 +657,33 @@ async function getMonthlyStats(year, month) {
 
   const from = `${year}-${String(month).padStart(2,'0')}-01`;
   const to   = `${year}-${String(month).padStart(2,'0')}-${new Date(year,month,0).getDate()}`;
-  const rows = await prisma.shipment.findMany({ where: { date: { gte: from, lte: to }, environment: 'production' }, select: { date: true, clientCode: true, courier: true, status: true, amount: true, weight: true } });
+  const [byDate, byCourier, byStatus, byClient] = await Promise.all([
+    prisma.shipment.groupBy({
+      by: ['date'],
+      where: { date: { gte: from, lte: to }, environment: 'production' },
+      _count: { id: true },
+      _sum: { amount: true, weight: true },
+      orderBy: { date: 'asc' },
+    }),
+    prisma.shipment.groupBy({
+      by: ['courier'],
+      where: { date: { gte: from, lte: to }, environment: 'production', courier: { not: '' } },
+      _count: { id: true },
+      _sum: { amount: true },
+    }),
+    prisma.shipment.groupBy({
+      by: ['status'],
+      where: { date: { gte: from, lte: to }, environment: 'production' },
+      _count: { id: true },
+    }),
+    prisma.shipment.groupBy({
+      by: ['clientCode'],
+      where: { date: { gte: from, lte: to }, environment: 'production' },
+      _count: { id: true },
+      _sum: { amount: true },
+    }),
+  ]);
+  const rows = { byDate, byCourier, byStatus, byClient };
   
   if (redis?.status === 'ready') redis.setex(cacheKey, 3600, JSON.stringify(rows)).catch(() => {});
   return rows;

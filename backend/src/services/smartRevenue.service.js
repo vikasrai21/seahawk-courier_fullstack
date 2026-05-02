@@ -548,12 +548,18 @@ async function getSummary(dateFrom, dateTo) {
   // Always use the canonical shipments table
   const tableName = 'shipments';
 
-  // Fetch ALL shipments for the range
-  const rows = await prisma.$queryRawUnsafe(
-    `SELECT date, destination, pincode, weight, courier, service, amount
-     FROM ${tableName}
-     ${dateFrom || dateTo ? `WHERE ${dateFrom ? `date >= '${dateFrom}'` : '1=1'} ${dateTo ? `AND date <= '${dateTo}'` : ''}` : ''}
-     ORDER BY date ASC, id ASC`
+  const { Prisma } = require('@prisma/client');
+  const conditions = [];
+  if (dateFrom) conditions.push(Prisma.sql`date >= ${dateFrom}`);
+  if (dateTo)   conditions.push(Prisma.sql`date <= ${dateTo}`);
+  const whereClause = conditions.length
+    ? Prisma.sql`WHERE ${Prisma.join(conditions, ' AND ')}`
+    : Prisma.sql``;
+  const rows = await prisma.$queryRaw(
+    Prisma.sql`SELECT date, destination, pincode, weight, courier, service, amount
+               FROM shipments ${whereClause}
+               ORDER BY date ASC, id ASC
+               LIMIT 50000`
   );
 
   let calculatedRevenue = 0;

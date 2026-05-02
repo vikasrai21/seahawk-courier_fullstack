@@ -403,9 +403,9 @@ const FLOWS = {
     executor: async (params) => {
       const year = new Date().getFullYear();
       const month = parseInt(params.month);
-      const rows = await shipmentService.getMonthlyStats(year, month);
-      const total = Array.isArray(rows) ? rows.length : 0;
-      const revenue = Array.isArray(rows) ? rows.reduce((s, r) => s + toNum(r.amount), 0) : 0;
+      const stats = await shipmentService.getMonthlyStats(year, month);
+      const total = stats.byDate ? stats.byDate.reduce((s, r) => s + (r._count?.id || 0), 0) : 0;
+      const revenue = stats.byDate ? stats.byDate.reduce((s, r) => s + toNum(r._sum?.amount), 0) : 0;
       return { success: true, message: `## 📊 Monthly Stats: ${year}-${String(month).padStart(2,'0')}\n| Metric | Value |\n|---|---|\n| Total Shipments | **${total}** |\n| Total Revenue | **₹${revenue.toLocaleString()}** |` };
     },
   },

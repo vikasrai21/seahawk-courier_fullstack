@@ -217,7 +217,7 @@ model ShipmentImportRow {
   phone       String?
   pincode     String?
   weight      Float     @default(0)
-  amount      Float     @default(0)
+  amount      Decimal   @default(0) @db.Decimal(12,2)
   courier     String?
   department  String?
   service     String    @default("Standard")

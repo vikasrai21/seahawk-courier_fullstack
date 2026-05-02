@@ -63,7 +63,7 @@ export default function MonthlyReportPage({ toast }) {
   const now  = new Date();
   const [year,  setYear]  = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [rows,  setRows]  = useState([]);
+  const [stats, setStats] = useState({ byDate: [], byCourier: [], byStatus: [], byClient: [] });
   const [loading, setLoading] = useState(false);
   const [clientFilter] = useState('');
   const [showWA, setShowWA] = useState(false);
@@ -72,90 +72,74 @@ export default function MonthlyReportPage({ toast }) {
   const load = async () => {
     setLoading(true);
     try {
-      const pad = String(month).padStart(2, '0');
-      const from = `${year}-${pad}-01`;
-      const daysInMonth = new Date(year, month, 0).getDate();
-      const to = `${year}-${pad}-${daysInMonth}`;
-      
-      // Attempt stats endpoint first
-      try {
-         const res = await api.get(`/shipments/stats/monthly?year=${year}&month=${month}`);
-         if (res.data?.length) {
-           setRows(res.data);
-           setLoading(false);
-           return;
-         }
-      } catch(e) { /* fallback to direct fetch */ }
-
-      const res = await api.get(`/shipments?dateFrom=${from}&dateTo=${to}&limit=5000`);
-      const data = res.data?.shipments || res.data || [];
-      setRows(Array.isArray(data) ? data : []);
+      const res = await api.get(`/shipments/stats/monthly?year=${year}&month=${month}`);
+      if (res.data && res.data.byDate) {
+        setStats(res.data);
+      } else {
+        setStats({ byDate: [], byCourier: [], byStatus: [], byClient: [] });
+      }
     } catch (err) {
       toast?.(err.message, 'error');
-      setRows([]);
+      setStats({ byDate: [], byCourier: [], byStatus: [], byClient: [] });
     }
     finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, [year, month]);
 
-  const filtered     = clientFilter ? rows.filter(r => r.clientCode === clientFilter) : rows;
-  const totalRevenue = filtered.reduce((a,r) => a+(r.amount||0), 0);
-  const totalWeight  = filtered.reduce((a,r) => a+(r.weight||0), 0);
-  const clientCodes  = [...new Set(rows.map(r => r.clientCode))].filter(Boolean);
+  const totalCount = stats.byDate?.reduce((a,r) => a + (r._count?.id || 0), 0) || 0;
+  const totalRevenue = stats.byClient?.reduce((a,r) => a + (Number(r._sum?.amount)||0), 0) || 0;
+  const totalWeight  = stats.byDate?.reduce((a,r) => a + (Number(r._sum?.weight)||0), 0) || 0;
+  const clientCodes  = (stats.byClient || []).map(r => r.clientCode).filter(Boolean);
   const monthName    = `${months[month-1]} ${year}`;
 
-  const byClient = useMemo(() => filtered.reduce((acc,r) => {
-    if (!acc[r.clientCode]) acc[r.clientCode] = { count:0, amount:0, weight:0 };
-    acc[r.clientCode].count++;
-    acc[r.clientCode].amount += r.amount||0;
-    acc[r.clientCode].weight += r.weight||0;
-    return acc;
-  }, {}), [filtered]);
-
-  const byDay = useMemo(() => filtered.reduce((acc,r) => {
-    const d = r.date || 'Unknown';
-    if (!acc[d]) acc[d] = { count:0, amount:0 };
-    acc[d].count++;
-    acc[d].amount += r.amount||0;
-    return acc;
-  }, {}), [filtered]);
-
-  // Chart data
   const dailyChartData = useMemo(() =>
-    Object.entries(byDay)
-      .sort((a,b) => a[0].localeCompare(b[0]))
-      .map(([date, d]) => ({ date: date.slice(-2), count: d.count, revenue: d.amount })),
-    [byDay]
+    (stats.byDate || [])
+      .sort((a,b) => String(a.date).localeCompare(String(b.date)))
+      .map(d => ({ date: String(d.date).slice(-2), count: d._count?.id || 0, revenue: Number(d._sum?.amount || 0) })),
+    [stats.byDate]
   );
 
   const clientChartData = useMemo(() =>
-    Object.entries(byClient)
-      .sort((a,b) => b[1].amount - a[1].amount)
+    (stats.byClient || [])
+      .sort((a,b) => Number(b._sum?.amount || 0) - Number(a._sum?.amount || 0))
       .slice(0, 8)
-      .map(([code, d]) => {
-        const info = clients?.find(c => c.code === code);
-        return { name: info?.company?.substring(0, 15) || code, revenue: d.amount, count: d.count };
+      .map(d => {
+        const info = clients?.find(c => c.code === d.clientCode);
+        return { name: info?.company?.substring(0, 15) || d.clientCode, revenue: Number(d._sum?.amount || 0), count: d._count?.id || 0 };
       }),
-    [byClient, clients]
+    [stats.byClient, clients]
   );
 
-  const deliveredCount = filtered.filter(r => r.status === 'Delivered').length;
-  const deliveryRate = filtered.length > 0 ? ((deliveredCount / filtered.length) * 100) : 0;
+  const deliveredObj = (stats.byStatus || []).find(r => r.status === 'Delivered');
+  const deliveredCount = deliveredObj ? deliveredObj._count?.id : 0;
+  const deliveryRate = totalCount > 0 ? ((deliveredCount / totalCount) * 100) : 0;
 
-  const handleSendWA = (clientCode) => {
-    const data   = clientCode ? rows.filter(r => r.clientCode === clientCode) : filtered;
-    const client = clientCode ? clients?.find(c => c.code === clientCode) : null;
-    const phone  = client?.whatsapp || client?.phone || '';
-    if (clientCode && !phone) { toast?.('No communication node found for this client.', 'error'); setShowWA(false); return; }
+  const handleSendWA = async (clientCode) => {
+    try {
+      const pad = String(month).padStart(2, '0');
+      const from = `${year}-${pad}-01`;
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const to = `${year}-${pad}-${daysInMonth}`;
+      
+      const res = await api.get(`/shipments?dateFrom=${from}&dateTo=${to}&limit=5000`);
+      const allRows = res.data?.shipments || res.data || [];
+      const data = clientCode ? allRows.filter(r => r.clientCode === clientCode) : allRows;
+      
+      const client = clientCode ? clients?.find(c => c.code === clientCode) : null;
+      const phone  = client?.whatsapp || client?.phone || '';
+      if (clientCode && !phone) { toast?.('No communication node found for this client.', 'error'); setShowWA(false); return; }
 
-    const result = sendWhatsAppReport({
-      rows: data, client, phoneRaw: phone,
-      dateLabel: monthName, reportType: 'Monthly Intelligence Report',
-    });
-    setShowWA(false);
-    if (result.error) { toast?.(result.error, 'error'); return; }
-    toast?.('Report Sent Successfully ✓', 'success');
+      const result = sendWhatsAppReport({
+        rows: data, client, phoneRaw: phone,
+        dateLabel: monthName, reportType: 'Monthly Intelligence Report',
+      });
+      setShowWA(false);
+      if (result.error) { toast?.(result.error, 'error'); return; }
+      toast?.('Report Sent Successfully ✓', 'success');
+    } catch(err) {
+      toast?.('Failed to generate WA report', 'error');
+    }
   };
 
   const years = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
@@ -234,15 +218,15 @@ export default function MonthlyReportPage({ toast }) {
         />
       </div>
 
-      {loading ? <PageLoader /> : filtered.length === 0 ? (
+      {loading ? <PageLoader /> : totalCount === 0 ? (
         <EmptyState icon="📭" title={`No activities in ${monthName}`} description="Select another period or adjust filters." />
       ) : (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
           
           {/* KPI Dashboard Strip */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <KPI label="Monthly Volume" value={fmtNum(filtered.length)} icon={Package} accent="#3b82f6" sub={`${monthName} Period`}  />
-            {isOwner && <KPI label="Total Revenue" value={fmt(totalRevenue)} icon={TrendingUp} accent="#10b981" sub={`Avg ${fmt(totalRevenue/(filtered.length||1))}/sh`} />}
+            <KPI label="Monthly Volume" value={fmtNum(totalCount)} icon={Package} accent="#3b82f6" sub={`${monthName} Period`}  />
+            {isOwner && <KPI label="Total Revenue" value={fmt(totalRevenue)} icon={TrendingUp} accent="#10b981" sub={`Avg ${fmt(totalRevenue/(totalCount||1))}/sh`} />}
             <KPI label="Tonnage Managed" value={`${fmtNum(totalWeight)} kg`} icon={Box} accent="#8b5cf6" sub={`High Density Transit`} />
             <KPI label="Fulfillment Rate" value={`${deliveryRate.toFixed(1)}%`} icon={Download} accent="#f59e0b" sub="Successful Deliveries" />
           </div>
@@ -280,7 +264,7 @@ export default function MonthlyReportPage({ toast }) {
                   <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 800, fill: '#94a3b8' }} dy={10} />
                   <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fontWeight: 800, fill: '#94a3b8' }} />
                   <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(59,130,246,0.05)', radius: 8 }} />
-                  <Bar dataKey="count" name="Shipments" fill="url(#barGrad)" radius={[8, 8, 4, 4]} barSize={filtered.length > 500 ? 12 : 24} />
+                  <Bar dataKey="count" name="Shipments" fill="url(#barGrad)" radius={[8, 8, 4, 4]} barSize={totalCount > 500 ? 12 : 24} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -363,7 +347,8 @@ export default function MonthlyReportPage({ toast }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {Object.entries(byClient).sort((a,b) => b[1].amount - a[1].amount).map(([code, d]) => {
+                    {(stats.byClient || []).sort((a,b) => Number(b._sum?.amount||0) - Number(a._sum?.amount||0)).map((d) => {
+                      const code = d.clientCode;
                       const info = clients?.find(c => c.code === code);
                       return (
                         <tr key={code} className="table-row group">
@@ -377,16 +362,16 @@ export default function MonthlyReportPage({ toast }) {
                             <div className="text-[10px] text-slate-400 uppercase tracking-tight">{info?.city || 'Local Territory'}</div>
                           </td>
                           <td className="p-4 text-right">
-                             <div className="text-sm font-black text-slate-700 dark:text-slate-300 tabular-nums">{fmtNum(d.count)}</div>
+                             <div className="text-sm font-black text-slate-700 dark:text-slate-300 tabular-nums">{fmtNum(d._count?.id || 0)}</div>
                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Units</div>
                           </td>
                           <td className="p-4 text-right">
-                             <div className="text-sm font-black text-slate-700 dark:text-slate-300 tabular-nums">{d.weight.toFixed(1)}</div>
+                             <div className="text-sm font-black text-slate-700 dark:text-slate-300 tabular-nums">{Number(d._sum?.weight || 0).toFixed(1)}</div>
                              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Kilograms</div>
                           </td>
                           {isOwner && (
                             <td className="p-4 text-right">
-                               <div className="text-sm font-black text-emerald-600 tabular-nums">{fmt(d.amount)}</div>
+                               <div className="text-sm font-black text-emerald-600 tabular-nums">{fmt(Number(d._sum?.amount || 0))}</div>
                                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Realized</div>
                             </td>
                           )}
