@@ -40,6 +40,14 @@ function getRange(range, customFrom, customTo) {
     start.setDate(1);
     return { dateFrom: toDateString(start), dateTo: toDateString(end), label: 'this month' };
   }
+  if (range.startsWith('month_')) {
+    const [_, ym] = range.split('_');
+    const [y, m] = ym.split('-');
+    const mStart = new Date(y, m - 1, 1);
+    const mEnd = new Date(y, m, 0); // last day of month
+    // If it's the current month, end date shouldn't go into future ideally, but toDateString of mEnd is fine
+    return { dateFrom: toDateString(mStart), dateTo: toDateString(mEnd), label: mStart.toLocaleString('default', { month: 'long', year: 'numeric' }) };
+  }
   if (range === 'custom' && customFrom && customTo) {
     return { dateFrom: customFrom, dateTo: customTo, label: `${customFrom} to ${customTo}` };
   }
@@ -75,24 +83,54 @@ function isLikelyMobileBrowser() {
 }
 
 function Filters({ range, onRangeChange, customFrom, customTo, onCustomFromChange, onCustomToChange }) {
+  const monthOptions = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - i);
+    const val = `month_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const label = d.toLocaleString('default', { month: 'short', year: 'numeric' });
+    return { val, label };
+  });
+
   return (
     <div className="card-compact animate-in">
       <div className="flex flex-wrap items-center gap-3">
         <div className="section-eyebrow">Date Range</div>
         <div className="flex flex-wrap gap-2">
-          {RANGE_OPTIONS.map((option) => (
-            <button
-              key={option.key}
-              onClick={() => onRangeChange(option.key)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition pressable ${
-                range === option.key 
-                  ? 'bg-slate-900 text-white shadow-[0_10px_20px_rgba(15,23,42,0.14)] dark:bg-gradient-to-r dark:from-orange-500 dark:to-amber-500 dark:shadow-[0_10px_20px_rgba(249,115,22,0.2)]' 
-                  : 'bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-700 dark:bg-[rgba(99,130,191,0.08)] dark:text-slate-400 dark:hover:bg-[rgba(249,115,22,0.1)] dark:hover:text-orange-300'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
+          {RANGE_OPTIONS.map((option) => {
+            if (option.key === 'this_month') {
+              const isMonthSelected = range.startsWith('month_') || range === 'this_month';
+              return (
+                <select
+                  key="month_selector"
+                  className={`rounded-full px-4 py-2 text-sm font-semibold outline-none transition cursor-pointer ${
+                    isMonthSelected
+                      ? 'bg-slate-900 text-white shadow-[0_10px_20px_rgba(15,23,42,0.14)] dark:bg-gradient-to-r dark:from-orange-500 dark:to-amber-500 dark:shadow-[0_10px_20px_rgba(249,115,22,0.2)]' 
+                      : 'bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-700 dark:bg-[rgba(99,130,191,0.08)] dark:text-slate-400 dark:hover:bg-[rgba(249,115,22,0.1)] dark:hover:text-orange-300'
+                  }`}
+                  value={isMonthSelected ? (range === 'this_month' ? monthOptions[0].val : range) : ''}
+                  onChange={(e) => onRangeChange(e.target.value)}
+                >
+                  <option value="" disabled className="text-gray-900 dark:text-white bg-white dark:bg-slate-800">Select Month...</option>
+                  {monthOptions.map(m => (
+                    <option key={m.val} value={m.val} className="text-gray-900 dark:text-white bg-white dark:bg-slate-800">{m.label}</option>
+                  ))}
+                </select>
+              );
+            }
+            return (
+              <button
+                key={option.key}
+                onClick={() => onRangeChange(option.key)}
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition pressable ${
+                  range === option.key 
+                    ? 'bg-slate-900 text-white shadow-[0_10px_20px_rgba(15,23,42,0.14)] dark:bg-gradient-to-r dark:from-orange-500 dark:to-amber-500 dark:shadow-[0_10px_20px_rgba(249,115,22,0.2)]' 
+                    : 'bg-slate-100 text-slate-600 hover:bg-amber-50 hover:text-amber-700 dark:bg-[rgba(99,130,191,0.08)] dark:text-slate-400 dark:hover:bg-[rgba(249,115,22,0.1)] dark:hover:text-orange-300'
+                }`}
+              >
+                {option.label}
+              </button>
+            );
+          })}
         </div>
         {range === 'custom' && (
           <div className="ml-auto flex flex-wrap items-center gap-2">
