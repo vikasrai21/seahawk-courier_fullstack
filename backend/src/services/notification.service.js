@@ -92,6 +92,13 @@ function buildMovementEmailPayload({ status, awb, consignee, company }) {
       html: `<p>Dear <strong>${company}</strong>,</p><p>Shipment AWB <strong>${awb}</strong>${consignee ? ` for <strong>${consignee}</strong>` : ''} is out for delivery.</p><p><a href="${trackUrl}">Track shipment</a></p><p>— Sea Hawk Courier</p>`,
     };
   }
+  if (status === 'NDR' || status === 'Failed') {
+    return {
+      subject: `Delivery Attention Required — AWB ${awb}`,
+      text: `Dear ${company},\n\nDelivery for AWB ${awb} (${consignee || 'Consignee'}) needs attention. Please share updated delivery instructions.\nTrack: ${trackUrl}\n\n— Sea Hawk Courier`,
+      html: `<p>Dear <strong>${company}</strong>,</p><p>Delivery for AWB <strong>${awb}</strong>${consignee ? ` for <strong>${consignee}</strong>` : ''} needs attention.</p><p>Please share updated delivery instructions or contact support.</p><p><a href="${trackUrl}">Track shipment</a></p><p>— Sea Hawk Courier</p>`,
+    };
+  }
   return {
     subject: `Delivered — AWB ${awb}`,
     text: `Dear ${company},\n\nShipment AWB ${awb} (${consignee || 'Consignee'}) has been delivered.\nTrack: ${trackUrl}\n\nFor support: ${supportPhone}\n\n— Sea Hawk Courier`,
@@ -166,13 +173,6 @@ async function sendEmail({ to, subject, html, text }) {
   } catch (err) {
     logger.error('Email failed', { to, subject, error: err.message });
     return { sent: false, error: err.message };
-  }
-  if (status === 'NDR' || status === 'Failed') {
-    return {
-      subject: `Delivery Attention Required — AWB ${awb}`,
-      text: `Dear ${company},\n\nDelivery for AWB ${awb} (${consignee || 'Consignee'}) needs attention. Please share updated delivery instructions.\nTrack: ${trackUrl}\n\n— Sea Hawk Courier`,
-      html: `<p>Dear <strong>${company}</strong>,</p><p>Delivery for AWB <strong>${awb}</strong>${consignee ? ` for <strong>${consignee}</strong>` : ''} needs attention.</p><p>Please share updated delivery instructions or contact support.</p><p><a href="${trackUrl}">Track shipment</a></p><p>— Sea Hawk Courier</p>`,
-    };
   }
 }
 

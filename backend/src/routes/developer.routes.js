@@ -10,6 +10,26 @@ const { fetchWithRetry } = require('../utils/httpRetry');
 const integrationIngestService = require('../services/integration-ingest.service');
 const webhookDispatch = require('../services/webhook-dispatch.service');
 const sandboxSimulation = require('../services/sandboxSimulation.service');
+const dns = require('dns').promises;
+const { isIP } = require('net');
+
+async function isSafeUrl(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    const hostname = u.hostname;
+    // Block direct IP private ranges
+    if (isIP(hostname)) {
+      if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|169\.254\.|::1|fc|fd)/.test(hostname)) {
+        return false;
+      }
+    }
+    // Resolve DNS and check resolved IPs
+    const addresses = await dns.lookup(hostname, { all: true }).catch(() => []);
+    return !addresses.some(({ address }) =>
+      /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|169\.254\.)/.test(address)
+    );
+  } catch { return false; }
+}
 
 router.use(authenticate);
 
@@ -266,7 +286,17 @@ router.post('/keys/:id/rotate', asyncHandler(async (req, res) => {
   });
   if (!key) return R.notFound(res, 'API key');
 
-  const rawToken = 'shk_live_' + crypto.randomBytes(24).toString('base64url');
+  const client = await prisma.client.findUnique({
+    where: { code: clientCode },
+    select: { brandSettings: true },
+  });
+  const policies = client?.brandSettings?.integrationKeyPolicies || {};
+  const existingPolicy = policies[String(id)] || {};
+  const mode = String(existingPolicy.mode || 'live').toLowerCase() === 'sandbox' 
+    ? 'sandbox' 
+    : 'live';
+  const tokenPrefix = mode === 'sandbox' ? 'sk_test_' : 'sk_live_';
+  const rawToken = tokenPrefix + crypto.randomBytes(24).toString('base64url');
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
   await prisma.clientApiKey.update({
@@ -628,6 +658,12 @@ router.post('/integrations/connectors/:provider/test', asyncHandler(async (req, 
 
   const probePath = String(req.body?.path || cfg.orderPullPath || '/').trim() || '/';
   const target = `${baseUrl.replace(/\/+$/, '')}/${probePath.replace(/^\/+/, '')}`;
+
+  // ── SSRF protection: block private/reserved IPs ──────────────────────────
+  if (!await isSafeUrl(target)) {
+    return R.badRequest(res, 'Connector URL resolves to a private/reserved IP address.');
+  }
+
   const headers = {};
   const authType = String(cfg.authType || 'none').trim().toLowerCase();
   if (authType === 'api_key' && cfg?.credentials?.apiKey) headers[String(cfg.credentials.headerName || 'x-api-key')] = String(cfg.credentials.apiKey);
@@ -702,14 +738,17 @@ router.get('/integrations/dead-letters', asyncHandler(async (req, res) => {
   });
   if (!matchedKey) return R.forbidden(res, 'No active API key with webhooks:read scope.');
   const limit = Math.min(100, Math.max(10, parseInt(req.query?.limit, 10) || 50));
-  const rows = await prisma.jobQueue.findMany({
+  const filtered = await prisma.jobQueue.findMany({
     where: {
       type: 'INTEGRATION_DEAD_LETTER',
+      payload: {
+        path: ['clientCode'],
+        equals: clientCode,
+      },
     },
     orderBy: { createdAt: 'desc' },
-    take: Math.max(200, limit),
+    take: limit,
   });
-  const filtered = rows.filter((row) => String(row?.payload?.clientCode || '').toUpperCase() === clientCode).slice(0, limit);
   R.ok(res, filtered.map((row) => ({ ...row, payload: redactSensitive(row.payload || {}) })));
 }));
 
@@ -920,12 +959,14 @@ router.get('/integrations/diagnostics', asyncHandler(async (req, res) => {
       select: { action: true, newValue: true, createdAt: true, entityId: true },
     }),
     prisma.client.findUnique({ where: { code: clientCode }, select: { brandSettings: true } }),
-    prisma.jobQueue.findMany({
+    prisma.jobQueue.count({
       where: {
         type: 'INTEGRATION_DEAD_LETTER',
+        payload: {
+          path: ['clientCode'],
+          equals: clientCode,
+        },
       },
-      select: { payload: true },
-      take: 2000,
     }),
     prisma.auditLog.count({
       where: {
@@ -948,7 +989,7 @@ router.get('/integrations/diagnostics', asyncHandler(async (req, res) => {
     acc[provider] = (acc[provider] || 0) + 1;
     return acc;
   }, {});
-  const dlqCount = dlqRows.filter((row) => String(row?.payload?.clientCode || '').toUpperCase() === clientCode).length;
+  const dlqCount = dlqRows;
 
   const policies = client?.brandSettings?.integrationKeyPolicies || {};
   const keys = await prisma.clientApiKey.findMany({

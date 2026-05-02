@@ -20,6 +20,12 @@ const ndrService       = require('../services/ndr.service');
 const prisma           = require('../config/prisma');
 const logger           = require('./logger');
 
+// Helper: safely convert Prisma Decimal to number
+function toNum(val) {
+  if (val === null || val === undefined) return 0;
+  return typeof val === 'object' ? Number(val.toString()) : Number(val);
+}
+
 // ── Validators ──────────────────────────────────────────────────────────────
 const validators = {
   clientCode: (v) => /^[A-Z][A-Z0-9]{1,9}$/i.test(String(v || '').trim()),
@@ -153,7 +159,7 @@ const FLOWS = {
     confirmBeforeExecute: false,
     executor: async (params) => {
       const client = await walletService.getWallet(params.clientCode.toUpperCase());
-      return { success: true, message: `💰 **${client.code}** (${client.company})\nWallet Balance: **₹${client.walletBalance.toFixed(2)}**` };
+      return { success: true, message: `💰 **${client.code}** (${client.company})\nWallet Balance: **₹${toNum(client.walletBalance).toFixed(2)}**` };
     },
   },
 
@@ -257,7 +263,7 @@ const FLOWS = {
         prisma.shipment.aggregate({ where: { date }, _sum: { amount: true } }),
       ]);
       const courierRows = byCourier.map(r => `| ${r.courier || 'Unknown'} | ${r._count.id} |`).join('\n');
-      return { success: true, message: `## 📋 Daily Report: ${date}\n| Metric | Value |\n|---|---|\n| Total Shipments | **${count}** |\n| Total Revenue | **₹${(revenue._sum?.amount || 0).toLocaleString()}** |\n\n### By Courier\n| Courier | Count |\n|---|---|\n${courierRows || '| _None_ | 0 |'}` };
+      return { success: true, message: `## 📋 Daily Report: ${date}\n| Metric | Value |\n|---|---|\n| Total Shipments | **${count}** |\n| Total Revenue | **₹${toNum(revenue._sum?.amount).toLocaleString()}** |\n\n### By Courier\n| Courier | Count |\n|---|---|\n${courierRows || '| _None_ | 0 |'}` };
     },
   },
 
@@ -311,8 +317,8 @@ const FLOWS = {
     confirmBeforeExecute: false,
     executor: async (params) => {
       const data = await clientService.getClientStats(params.clientCode.toUpperCase());
-      const rows = (data.byStatus || []).map(r => `| ${r.status} | ${r._count.id} | ₹${(r._sum.amount||0).toLocaleString()} |`).join('\n');
-      return { success: true, message: `## 📊 Client: ${data.client.company} (${data.client.code})\n| Metric | Value |\n|---|---|\n| Total Shipments | **${data.stats.total}** |\n| Total Revenue | **₹${data.stats.amount.toLocaleString()}** |\n| Total Weight | **${data.stats.weight} kg** |\n| Wallet | **₹${data.client.walletBalance}** |\n\n### By Status\n| Status | Count | Amount |\n|---|---|---|\n${rows || '| - | 0 | ₹0 |'}` };
+      const rows = (data.byStatus || []).map(r => `| ${r.status} | ${r._count.id} | ₹${toNum(r._sum.amount).toLocaleString()} |`).join('\n');
+      return { success: true, message: `## 📊 Client: ${data.client.company} (${data.client.code})\n| Metric | Value |\n|---|---|\n| Total Shipments | **${data.stats.total}** |\n| Total Revenue | **₹${toNum(data.stats.amount).toLocaleString()}** |\n| Total Weight | **${data.stats.weight} kg** |\n| Wallet | **₹${toNum(data.client.walletBalance)}** |\n\n### By Status\n| Status | Count | Amount |\n|---|---|---|\n${rows || '| - | 0 | ₹0 |'}` };
     },
   },
 
@@ -326,7 +332,7 @@ const FLOWS = {
     executor: async () => {
       const clients = await clientService.getAll();
       if (!clients.length) return { success: true, message: '📋 No clients found.' };
-      const rows = clients.slice(0, 20).map(c => `| ${c.code} | ${c.company} | ₹${c.walletBalance.toFixed(0)} | ${c.active ? '✅' : '❌'} |`).join('\n');
+      const rows = clients.slice(0, 20).map(c => `| ${c.code} | ${c.company} | ₹${toNum(c.walletBalance).toFixed(0)} | ${c.active ? '✅' : '❌'} |`).join('\n');
       return { success: true, message: `## 👥 Clients (${clients.length})\n| Code | Company | Wallet | Active |\n|---|---|---|---|\n${rows}${clients.length > 20 ? `\n_...and ${clients.length - 20} more_` : ''}` };
     },
   },
@@ -399,7 +405,7 @@ const FLOWS = {
       const month = parseInt(params.month);
       const rows = await shipmentService.getMonthlyStats(year, month);
       const total = Array.isArray(rows) ? rows.length : 0;
-      const revenue = Array.isArray(rows) ? rows.reduce((s, r) => s + (r.amount || 0), 0) : 0;
+      const revenue = Array.isArray(rows) ? rows.reduce((s, r) => s + toNum(r.amount), 0) : 0;
       return { success: true, message: `## 📊 Monthly Stats: ${year}-${String(month).padStart(2,'0')}\n| Metric | Value |\n|---|---|\n| Total Shipments | **${total}** |\n| Total Revenue | **₹${revenue.toLocaleString()}** |` };
     },
   },
@@ -460,9 +466,9 @@ const FLOWS = {
     confirmBeforeExecute: false,
     executor: async (params) => {
       const { wallet, txns, total } = await walletService.getTransactions(params.clientCode.toUpperCase(), { limit: 10 });
-      if (!txns.length) return { success: true, message: `💰 **${wallet.code}** — Balance: ₹${wallet.walletBalance}\nNo transactions yet.` };
+      if (!txns.length) return { success: true, message: `💰 **${wallet.code}** — Balance: ₹${toNum(wallet.walletBalance)}\nNo transactions yet.` };
       const rows = txns.map(t => `| ${t.type} | ₹${t.amount} | ₹${t.balance} | ${t.description || '-'} |`).join('\n');
-      return { success: true, message: `## 💰 Wallet: ${wallet.code} (₹${wallet.walletBalance})\n| Type | Amount | Balance | Note |\n|---|---|---|---|\n${rows}\n_${total} total transactions_` };
+      return { success: true, message: `## 💰 Wallet: ${wallet.code} (₹${toNum(wallet.walletBalance)})\n| Type | Amount | Balance | Note |\n|---|---|---|---|\n${rows}\n_${total} total transactions_` };
     },
   },
 
@@ -476,7 +482,7 @@ const FLOWS = {
     executor: async () => {
       const clients = await prisma.client.findMany({ where: { walletBalance: { lt: 0 } }, orderBy: { walletBalance: 'asc' }, select: { code: true, company: true, walletBalance: true } });
       if (!clients.length) return { success: true, message: '✅ No clients with negative balance!' };
-      const rows = clients.map(c => `| ${c.code} | ${c.company} | ₹${c.walletBalance.toFixed(2)} |`).join('\n');
+      const rows = clients.map(c => `| ${c.code} | ${c.company} | ₹${toNum(c.walletBalance).toFixed(2)} |`).join('\n');
       return { success: true, message: `## ⚠️ Negative Wallets (${clients.length})\n| Code | Company | Balance |\n|---|---|---|\n${rows}` };
     },
   },

@@ -45,7 +45,7 @@ async function fetchWithRetry(url, init = {}, options = {}) {
   } = options;
 
   let host = 'unknown';
-  try { host = new URL(url).host; } catch {}
+  try { host = new URL(url).host; } catch (e) { /* ignore invalid url */ }
   const circuit = getCircuit(host);
 
   if (circuit.state === 'OPEN') {

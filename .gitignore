@@ -72,3 +72,11 @@ RATE CARDS/
 /*.pdf
 
 .env.test
+
+# Real data files — NEVER commit PII/financial data
+*.csv
+bulk_import_result*.json
+consignees_destinations.json
+test-results.json
+tmp/*.json
+tmp/*.dump

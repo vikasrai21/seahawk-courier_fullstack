@@ -33,7 +33,6 @@ cspDirectives.connectSrc = [
 cspDirectives['script-src'] = [
   ...new Set([
     ...(cspDirectives['script-src'] || ["'self'"]),
-    "'unsafe-eval'",
     "'wasm-unsafe-eval'",
   ]),
 ];

@@ -32,8 +32,9 @@ exports.checkMargins = async () => {
       // For this implementation, we will simulate a true cost lookup based on weight and courier.
       // E.g., baseline cost = 40/kg * weight
       const trueCost = 40 * Math.max(0.5, shipment.weight);
+      const sellAmount = Number(shipment.amount) || 0;
       
-      if (shipment.amount < trueCost) {
+      if (sellAmount < trueCost) {
         anomalies++;
         
         // Flag it in the database
@@ -43,12 +44,12 @@ exports.checkMargins = async () => {
             marginAlert: true,
             riskFactors: [
                ...(shipment.riskFactors ? (Array.isArray(shipment.riskFactors) ? shipment.riskFactors : JSON.parse(shipment.riskFactors)) : []),
-               `NEGATIVE MARGIN: Selling @ ₹${shipment.amount}, Cost @ ₹${trueCost}`
+               `NEGATIVE MARGIN: Selling @ ₹${sellAmount}, Cost @ ₹${trueCost}`
             ]
           }
         });
 
-        logger.warn(`Anomaly detected: Shipment ${shipment.awb} has a negative margin (Sell: ${shipment.amount}, Cost: ${trueCost})`);
+        logger.warn(`Anomaly detected: Shipment ${shipment.awb} has a negative margin (Sell: ${sellAmount}, Cost: ${trueCost})`);
       }
     }
 

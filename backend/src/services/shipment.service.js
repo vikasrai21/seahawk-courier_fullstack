@@ -300,7 +300,7 @@ async function create(data, userId) {
           select: { walletBalance: true },
         });
         if (!client) throw new AppError(`Client not found: ${payload.clientCode}`, 404);
-        throw new AppError(`Insufficient wallet balance (available: ₹${client.walletBalance.toFixed(2)}, required: ₹${Number(payload.amount).toFixed(2)})`, 400);
+        throw new AppError(`Insufficient wallet balance (available: ₹${toNumber(client.walletBalance).toFixed(2)}, required: ₹${Number(payload.amount).toFixed(2)})`, 400);
       }
 
       // Fetch updated balance for the transaction record

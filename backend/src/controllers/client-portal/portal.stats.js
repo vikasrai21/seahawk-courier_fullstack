@@ -486,9 +486,9 @@ module.exports = {
 
 
 exports.exportShipments = async (req, res) => {
-  const code = await shared.resolveClientCode(req);
+  const code = await resolveClientCode(req);
   const { range = '90d', status, search } = req.query;
-  const { startDate, endDate } = shared.parseRange(range);
+  const { startStr: startDate, endStr: endDate } = parseRange({ range });
 
   const baseWhere = {
     clientCode: code,

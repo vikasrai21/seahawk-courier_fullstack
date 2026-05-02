@@ -878,7 +878,7 @@ async function chat({ message, history = [], sessionId = 'default', debug = fals
         };
       }
 
-      const nextOptional = (flow.optionalFields || []).find(f => !session.collectedParams.hasOwnProperty(f.key));
+      const nextOptional = (flow.optionalFields || []).find(f => !(f.key in session.collectedParams));
       if (nextOptional) {
         sessionManager.updateSession(sessionId, { pendingField: nextOptional.key });
         return {
@@ -977,7 +977,7 @@ async function chat({ message, history = [], sessionId = 'default', debug = fals
       const firstMissing = flow.requiredFields.find(f => !newSession.collectedParams[f.key]);
       if (!firstMissing) {
         // All required already provided! Check optionals or go to confirm
-        const nextOpt = (flow.optionalFields || []).find(f => !newSession.collectedParams.hasOwnProperty(f.key));
+        const nextOpt = (flow.optionalFields || []).find(f => !(f.key in newSession.collectedParams));
         if (nextOpt) {
           sessionManager.updateSession(sessionId, { pendingField: nextOpt.key });
           return { reply: `${flow.description}...\n\n${nextOpt.prompt}`, suggestions: ['Skip'], snapshot };

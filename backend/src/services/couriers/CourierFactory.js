@@ -43,10 +43,15 @@ function numericValue(...values) {
   return null;
 }
 
+/**
+ * Accepts weight in kilograms only.
+ * Callers must pass kg. The >50 heuristic has been removed
+ * because it misidentifies 51kg as 0.051kg.
+ */
 function normalizeWeightKg(value) {
   const num = numericValue(value);
   if (!num) return null;
-  return num > 50 ? Number((num / 1000).toFixed(3)) : num;
+  return num;
 }
 
 function compactShipmentDetails(details) {
