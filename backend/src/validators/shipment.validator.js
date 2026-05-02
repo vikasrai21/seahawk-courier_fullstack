@@ -12,7 +12,7 @@ const shipmentSchema = z.object({
   awb:         z.string().min(1, 'AWB is required').trim(),
   consignee:   optStr.default(''),
   destination: optStr.default(''),
-  weight:      z.coerce.number().min(0).default(0),
+  weight:      z.coerce.number().positive().max(1000, 'Weight must be in kg and cannot exceed 1000kg'),
   amount:      z.coerce.number().min(0).default(0),
   courier:     optStr.default(''),
   department:  optStr.default(''),

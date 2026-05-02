@@ -13,6 +13,11 @@ function normalizeKey(value) {
   return String(value || '').trim().toLowerCase().replace(/\s+/g, '');
 }
 
+function toNumber(val) {
+  if (val === null || val === undefined) return 0;
+  return typeof val === 'object' ? Number(val.toString()) : Number(val);
+}
+
 function normalizeMode(value) {
   const key = normalizeKey(value);
   if (key.includes('premium') || key.includes('priority')) return 'premium';
@@ -31,10 +36,15 @@ function normalizeZone(value) {
   return key && ZONES.includes(key) ? key : 'local';
 }
 
+/**
+ * Accepts weight in kilograms only.
+ * Callers must pass kg. The >50 heuristic has been removed
+ * because it misidentifies 51kg as 0.051kg.
+ */
 function normalizeWeightKg(weight) {
   const n = Number(weight || 0);
   if (!Number.isFinite(n) || n <= 0) return 0;
-  return n > 50 ? n / 1000 : n;
+  return n;
 }
 
 function getWeightSlab(weight) {
@@ -126,8 +136,8 @@ function calculateMatrixPrice(match, weight, options = {}) {
   const slab = WEIGHT_SLABS.find((item) => item.key === rule.weightSlab);
   const excessKg = slab?.maxKg === Infinity ? Math.max(0, kg - slab.minKg) : 0;
   const freight = Number(rule.rate || 0) + excessKg * Number(rule.perKgRate || 0);
-  const base = Math.max(freight + Number(rule.baseCharge || 0), Number(rule.minCharge || match.minCharge || 0));
-  const fuel = base * (Number(match.fuelSurcharge || 0) / 100);
+  const base = Math.max(freight + Number(rule.baseCharge || 0), Number(rule.minCharge || toNumber(match.minCharge) || 0));
+  const fuel = base * (toNumber(match.fuelSurcharge) / 100);
   const subtotal = base + fuel;
   const gst = subtotal * (Number(match.gstPercent || 18) / 100);
   const total = subtotal + gst;
@@ -164,8 +174,8 @@ function calculateSimplePrice(match, weight, options = {}) {
   );
   if (!rule) return null;
 
-  const base = Math.max(Number(rule.rate || 0) + Number(rule.baseCharge || 0), Number(rule.minCharge || match.minCharge || 0));
-  const fuel = base * (Number(match.fuelSurcharge || 0) / 100);
+  const base = Math.max(Number(rule.rate || 0) + Number(rule.baseCharge || 0), Number(rule.minCharge || toNumber(match.minCharge) || 0));
+  const fuel = base * (toNumber(match.fuelSurcharge) / 100);
   const subtotal = base + fuel;
   const gst = subtotal * (Number(match.gstPercent || 18) / 100);
   const total = subtotal + gst;
@@ -198,12 +208,12 @@ function calculatePriceFromContract(match, weight, options = {}) {
   if (matrixPrice) return matrixPrice;
 
   let base = 0;
-  if (match.pricingType === 'PER_KG') base = normalizeWeightKg(weight) * match.baseRate;
-  else if (match.pricingType === 'FLAT') base = match.baseRate;
-  else if (match.pricingType === 'PER_SHIPMENT') base = match.baseRate;
+  if (match.pricingType === 'PER_KG') base = normalizeWeightKg(weight) * toNumber(match.baseRate);
+  else if (match.pricingType === 'FLAT') base = toNumber(match.baseRate);
+  else if (match.pricingType === 'PER_SHIPMENT') base = toNumber(match.baseRate);
 
-  base = Math.max(base + Number(match.baseCharge || 0), match.minCharge);
-  const fuel = base * (match.fuelSurcharge / 100);
+  base = Math.max(base + toNumber(match.baseCharge), toNumber(match.minCharge));
+  const fuel = base * (toNumber(match.fuelSurcharge) / 100);
   const subtotal = base + fuel;
   const gst = subtotal * (match.gstPercent / 100);
   const total = subtotal + gst;

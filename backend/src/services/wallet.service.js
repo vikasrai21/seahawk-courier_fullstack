@@ -3,8 +3,13 @@
 const prisma = require('../config/prisma');
 const { AppError } = require('../middleware/errorHandler');
 
+function toNumber(val) {
+  if (val === null || val === undefined) return 0;
+  return typeof val === 'object' ? Number(val.toString()) : Number(val);
+}
+
 function parseAmount(amount) {
-  const value = Number(amount);
+  const value = toNumber(amount);
   if (!Number.isFinite(value) || value <= 0) {
     throw new AppError('Amount must be a valid positive number.', 400);
   }
@@ -22,7 +27,7 @@ async function getWallet(clientCode) {
 
 async function getBalance(clientCode) {
   const client = await getWallet(clientCode);
-  return client.walletBalance;
+  return toNumber(client.walletBalance);
 }
 
 async function getTransactions(clientCode, { page = 1, limit = 30 } = {}) {
@@ -129,7 +134,7 @@ async function debit({ clientCode, amount, description, reference }) {
         select: { walletBalance: true },
       });
       if (!client) throw new Error(`Client not found: ${clientCode}`);
-      throw new Error(`Insufficient wallet balance (available: ₹${client.walletBalance.toFixed(2)}, required: ₹${safeAmount.toFixed(2)})`);
+      throw new Error(`Insufficient wallet balance (available: ₹${toNumber(client.walletBalance).toFixed(2)}, required: ₹${safeAmount.toFixed(2)})`);
     }
 
     const updated = await tx.client.findUnique({
@@ -155,7 +160,7 @@ async function debit({ clientCode, amount, description, reference }) {
 
 // ── Adjust (admin correction) ─────────────────────────────────────────────
 async function adjust({ clientCode, amount, description }) {
-  const safeAmount = Number(amount);
+  const safeAmount = toNumber(amount);
   if (!Number.isFinite(safeAmount) || safeAmount === 0) {
     throw new AppError('Adjustment amount must be non-zero.', 400);
   }

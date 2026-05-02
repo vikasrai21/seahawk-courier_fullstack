@@ -7,6 +7,11 @@ const COMPANY = {
   hsnCode: '996812',
 };
 
+function toNumber(val) {
+  if (val === null || val === undefined) return 0;
+  return typeof val === 'object' ? Number(val.toString()) : Number(val);
+}
+
 // Auto-generate invoice number: INV-YYYY-NNN
 async function generateInvoiceNo(db = prisma) {
   const year  = new Date().getFullYear();
@@ -37,7 +42,7 @@ async function create({ clientCode, fromDate, toDate, gstPercent = 18, notes }, 
   if (!shipments.length) throw new AppError('No unbilled shipments found for this date range.', 400);
 
   const invoiceNo = await generateInvoiceNo(db);
-  const subtotal  = shipments.reduce((a, s) => a + (s.amount || 0), 0);
+  const subtotal  = shipments.reduce((a, s) => a + (toNumber(s.amount) || 0), 0);
   
   // Dynamic Tax Split Calculation
   const companyState = '06'; // Haryana
@@ -73,9 +78,9 @@ async function create({ clientCode, fromDate, toDate, gstPercent = 18, notes }, 
           destination:  s.destination || '',
           courier:      s.courier || '',
           weight:       s.weight,
-          baseAmount:   s.amount,
+          baseAmount:   toNumber(s.amount),
           fuelSurcharge:0,
-          amount:       s.amount,
+          amount:       toNumber(s.amount),
         })),
       },
     },
@@ -124,7 +129,7 @@ async function remove(id, db = prisma) {
 }
 
 function getTaxBreakdown(invoice, client) {
-  const gstAmount = Number(invoice?.gstAmount || 0);
+  const gstAmount = toNumber(invoice?.gstAmount);
   const gstPercent = Number(invoice?.gstPercent || 18);
   const companyStateCode = String(COMPANY.gstin || '').slice(0, 2);
   const clientStateCode = String(client?.gst || '').slice(0, 2);
@@ -162,9 +167,9 @@ function buildExportRows(invoice) {
     destination: item.destination || '',
     courier: item.courier || '',
     weightKg: Number(((item.weight || 0) / 1000).toFixed(3)),
-    taxableAmount: Number(item.baseAmount || item.amount || 0),
-    fuelSurcharge: Number(item.fuelSurcharge || 0),
-    lineAmount: Number(item.amount || 0),
+    taxableAmount: toNumber(item.baseAmount) || toNumber(item.amount) || 0,
+    fuelSurcharge: toNumber(item.fuelSurcharge),
+    lineAmount: toNumber(item.amount),
     hsnCode: COMPANY.hsnCode,
   }));
 }
@@ -180,9 +185,9 @@ function generateInvoiceCsv(invoice) {
     ['Client GSTIN', invoice.client?.gst || ''],
     ['Company GSTIN', COMPANY.gstin],
     ['HSN/SAC', COMPANY.hsnCode],
-    ['Taxable Amount', Number(invoice.subtotal || 0).toFixed(2)],
+    ['Taxable Amount', toNumber(invoice.subtotal).toFixed(2)],
     ...tax.components.map((item) => [item.label, Number(item.amount || 0).toFixed(2)]),
-    ['Total', Number(invoice.total || 0).toFixed(2)],
+    ['Total', toNumber(invoice.total).toFixed(2)],
     [],
     ['Sr No', 'Date', 'AWB', 'Consignee', 'Destination', 'Courier', 'Weight (kg)', 'Taxable Amount', 'Fuel Surcharge', 'Line Amount', 'HSN/SAC'],
     ...rows.map((row) => [
@@ -225,9 +230,9 @@ function generateInvoiceExcelHtml(invoice) {
     ['Client GSTIN', invoice.client?.gst || ''],
     ['Company GSTIN', COMPANY.gstin],
     ['HSN/SAC', COMPANY.hsnCode],
-    ['Taxable Amount', Number(invoice.subtotal || 0).toFixed(2)],
+    ['Taxable Amount', toNumber(invoice.subtotal).toFixed(2)],
     ...tax.components.map((item) => [item.label, Number(item.amount || 0).toFixed(2)]),
-    ['Total', Number(invoice.total || 0).toFixed(2)],
+    ['Total', toNumber(invoice.total).toFixed(2)],
   ];
 
   return `<!DOCTYPE html>

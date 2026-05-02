@@ -20,6 +20,24 @@ if (env === 'production' && !process.env.CORS_ORIGIN?.trim()) {
   throw new Error('[CONFIG] CORS_ORIGIN must be configured in production');
 }
 
+if (env === 'production') {
+  const { getOwnerEmails } = require('../utils/owner');
+  if (!getOwnerEmails().length) {
+    throw new Error(
+      '[CONFIG] OWNER_EMAILS must be set in production. ' +
+      'Example: OWNER_EMAILS=you@yourdomain.com'
+    );
+  }
+}
+
+if (env === 'production' && !process.env.REDIS_URL) {
+  console.warn(
+    '[WARN] REDIS_URL is not set. Rate limiting, caching, and ' +
+    'job queues will use in-memory fallbacks — not safe for ' +
+    'multi-pod deployments.'
+  );
+}
+
 module.exports = {
   env,
   isProd:  env === 'production',

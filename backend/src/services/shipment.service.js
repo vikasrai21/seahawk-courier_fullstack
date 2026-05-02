@@ -23,6 +23,11 @@ const TRACKABLE_COURIERS = new Set(['Delhivery', 'Trackon', 'DTDC', 'BlueDart', 
 const TERMINAL_STATUSES = new Set(['Delivered', 'RTO', 'Cancelled']);
 const PLACEHOLDER_TEXT = new Set(['', 'UNKNOWN', 'MISC', 'NA', 'N/A', 'NULL']);
 
+function toNumber(val) {
+  if (val === null || val === undefined) return 0;
+  return typeof val === 'object' ? Number(val.toString()) : Number(val);
+}
+
 const clearCache = () => {
   if (redis?.status === 'ready') {
     redis.del('stats:today', 'stats:monthly').catch(e => logger.warn(`[Redis] Clear cache failed: ${e.message}`));
@@ -91,7 +96,7 @@ async function getAll(filters = {}, page = 1, limit = 50, includeDetails = false
     const cached = await cache.get(cacheKey);
     if (cached) return cached;
   }
-  const [total, shipments, aggregates, deliveredCount, inTransitCount, rtoCount] = await Promise.all([
+  const [total, shipments, aggregates, statusGroups] = await Promise.all([
     prisma.shipment.count({ where }),
     prisma.shipment.findMany({
       where,
@@ -156,18 +161,28 @@ async function getAll(filters = {}, page = 1, limit = 50, includeDetails = false
       where,
       _sum: { amount: true, weight: true },
     }),
-    prisma.shipment.count({ where: { ...where, status: 'Delivered' } }),
-    prisma.shipment.count({ where: { ...where, status: 'InTransit' } }),
-    prisma.shipment.count({ where: { ...where, status: 'RTO' } }),
+    prisma.shipment.groupBy({
+      by: ['status'],
+      where,
+      _count: { _all: true },
+    }),
   ]);
+  const statusCounts = statusGroups.reduce((acc, g) => {
+    acc[g.status] = g._count._all;
+    return acc;
+  }, {});
+  const deliveredCount = statusCounts['Delivered'] || 0;
+  const inTransitCount = statusCounts['InTransit'] || 0;
+  const rtoCount       = statusCounts['RTO'] || 0;
+
   const stats = {
     count: total,
-    totalAmount: aggregates._sum.amount || 0,
-    totalWeight: aggregates._sum.weight || 0,
+    totalAmount: toNumber(aggregates._sum.amount),
+    totalWeight: toNumber(aggregates._sum.weight),
     delivered: deliveredCount,
     inTransit: inTransitCount,
     rto: rtoCount,
-    revenue: aggregates._sum.amount || 0, // Aliased for frontend compatibility
+    revenue: toNumber(aggregates._sum.amount), // Aliased for frontend compatibility
   };
   const enrichedShipments = shipments.map(s => {
     const sla = slaDaysFor(s.service);
@@ -238,16 +253,19 @@ async function getById(id) {
 async function create(data, userId) {
   const today = new Date().toISOString().split('T')[0];
   const risk = await riskAnalysis.analyzeShipment(data);
-  const shipment = await prisma.$transaction(async (tx) => {
-    const contractPrice = (!Number(data.amount || 0) && data.clientCode)
-      ? await contractSvc.calculatePrice({
-          clientCode: data.clientCode,
-          courier: data.courier || '',
-          service: data.service || 'Standard',
-          weight: parseFloat(data.weight) || 0,
-        })
-      : null;
 
+  // Read contract price BEFORE transaction to avoid holding 
+  // a connection unnecessarily during the lookup
+  const contractPrice = (!Number(data.amount || 0) && data.clientCode)
+    ? await contractSvc.calculatePrice({
+        clientCode: data.clientCode,
+        courier: data.courier || '',
+        service: data.service || 'Standard',
+        weight: parseFloat(data.weight) || 0,
+      })
+    : null;
+
+  const shipment = await prisma.$transaction(async (tx) => {
     const payload = {
       ...data,
       awb: normalizeAwb(data.awb),
@@ -610,7 +628,7 @@ async function getTodayStats() {
     prisma.shipment.findMany({ where: prodFilter, orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, awb: true, clientCode: true, courier: true, status: true, amount: true, createdAt: true } }),
   ]);
   const totals = summary.reduce((acc, row) => {
-    acc.total += row._count.id; acc.amount += row._sum.amount || 0; acc.weight += row._sum.weight || 0;
+    acc.total += row._count.id; acc.amount += toNumber(row._sum.amount); acc.weight += toNumber(row._sum.weight);
     if (row.status === 'Delivered') acc.delivered++;
     if (['InTransit','Booked','OutForDelivery'].includes(row.status)) acc.inTransit++;
     return acc;

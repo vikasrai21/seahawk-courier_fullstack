@@ -55,6 +55,7 @@
     "node-nlp": "^5.0.0-alpha.5",
     "nodemailer": "^8.0.5",
     "pdfkit": "^0.14.0",
+    "rate-limit-redis": "^4.3.1",
     "razorpay": "^2.9.2",
     "socket.io": "^4.8.3",
     "string-similarity": "^4.0.4",

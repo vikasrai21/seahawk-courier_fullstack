@@ -1,5 +1,6 @@
 'use strict';
 
+const logger = require('./logger');
 const { TK_EXP, TK_SFC, TK_AIR, TK_PT } = require('../rates/trackon');
 const { DL_STD, DL_EXP } = require('../rates/delhivery');
 const { DTDC_D71, DTDC_V71, DTDC_P7X, DTDC_EXP, DTDC_DSFC, DTDC_DAIR } = require('../rates/dtdc');
@@ -15,8 +16,8 @@ function stateToZones(state = '', district = '', city = '') {
   const d = district.toLowerCase().trim();
   const c = city.toLowerCase().trim();
 
-  const Z = (trackon, trackon_sfc, trackon_air, delhivery, b2b, dtdc, bd, bd_air, bd_sfc, gec, ltl, pt, seahawkZone) =>
-    ({ trackon, trackon_sfc, trackon_air, delhivery, b2b, dtdc, bd, bd_air, bd_sfc, gec, ltl, pt, seahawkZone });
+  const Z = (trackon, trackon_sfc, trackon_air, delhivery, b2b, dtdc, bd, bd_air, bd_sfc, gec, ltl, pt, seahawkZone, zoneMatched = true) =>
+    ({ trackon, trackon_sfc, trackon_air, delhivery, b2b, dtdc, bd, bd_air, bd_sfc, gec, ltl, pt, seahawkZone, zoneMatched });
 
   if (s === 'delhi' || s.includes('new delhi')) return Z('delhi', 'delhi', 'roi_air', 'A', 'N1', 'local', 'local', 'metros_air', 'local_sfc', 'north_i', 'n1', 'city', 'Delhi & NCR');
 
@@ -96,7 +97,17 @@ function stateToZones(state = '', district = '', city = '') {
 
   if (s.includes('kerala')) return Z('south_west', 'roi_sfc', 'roi_air', 'D', 'S2', 'roi_b', 'roi', 'roi_air', 'roi_sfc', 'south_iii', 's3', 'roi', 'Rest of India');
 
-  return Z('south_west', 'roi_sfc', 'roi_air', 'D', 'N1', 'roi_a', 'roi', 'roi_air', 'roi_sfc', 'north_ii', 'n2', 'roi', 'Rest of India');
+  logger.warn('[RateEngine] Zone fallback triggered', {
+    state, district, city,
+    fallback: 'south_west / Rest of India',
+    note: 'Check if state name is spelled correctly',
+  });
+  return Z('south_west', 'roi_sfc', 'roi_air', 'D', 'N1', 'roi_a', 'roi', 'roi_air', 'roi_sfc', 'north_ii', 'n2', 'roi', 'Rest of India', false);
+}
+
+function checkZoneConfidence(state, district, city) {
+  const zone = stateToZones(state, district, city);
+  return { zone, confident: zone.zoneMatched !== false };
 }
 
 function ptZone(tkZone) {
@@ -344,4 +355,5 @@ module.exports = {
   RATE_VALIDITY,
   COURIER_TO_PARTNER,
   getRateAge,
+  checkZoneConfidence,
 };

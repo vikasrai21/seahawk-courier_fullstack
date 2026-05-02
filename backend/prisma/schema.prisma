@@ -83,7 +83,7 @@ model Client {
   address       String?
   notes         String?
   active        Boolean             @default(true)
-  walletBalance Float               @default(0) @map("wallet_balance")
+  walletBalance Decimal             @default(0) @map("wallet_balance") @db.Decimal(12,2)
   createdAt     DateTime            @default(now()) @map("created_at")
   updatedAt     DateTime            @updatedAt @map("updated_at")
   shipments     Shipment[]
@@ -130,10 +130,10 @@ model Contract {
   courier       String?
   service       String?
   pricingType   String   @default("PER_KG") @map("pricing_type")
-  baseRate      Float    @default(0) @map("base_rate")
-  baseCharge    Float    @default(0) @map("base_charge")
-  minCharge     Float    @default(0) @map("min_charge")
-  fuelSurcharge Float    @default(0) @map("fuel_surcharge")
+  baseRate      Decimal  @default(0) @map("base_rate") @db.Decimal(12,2)
+  baseCharge    Decimal  @default(0) @map("base_charge") @db.Decimal(12,2)
+  minCharge     Decimal  @default(0) @map("min_charge") @db.Decimal(12,2)
+  fuelSurcharge Decimal  @default(0) @map("fuel_surcharge") @db.Decimal(12,2)
   gstPercent    Float    @default(18) @map("gst_percent")
   pricingRules  Json?    @map("pricing_rules")
   validFrom     String?  @map("valid_from")
@@ -159,9 +159,9 @@ model Shipment {
   phone          String?
   pincode        String?
   weight         Float               @default(0)
-  amount         Float               @default(0)
-  cost           Float?              @default(0)
-  profit         Float?              @default(0)
+  amount         Decimal             @default(0) @db.Decimal(12,2)
+  cost           Decimal?            @default(0) @db.Decimal(12,2)
+  profit         Decimal?            @default(0) @db.Decimal(12,2)
   courier        String?
   department     String?
   service        String              @default("Standard")
@@ -318,10 +318,10 @@ model PickupRequest {
   deliveryState    String?   @map("delivery_state")
   deliveryCountry  String    @default("India") @map("delivery_country")
   packageType      String    @default("Parcel") @map("package_type")
-  weightGrams      Float     @default(0) @map("weight_grams")
+  weightGrams      Decimal   @default(0) @map("weight_grams") @db.Decimal(12,2)
   pieces           Int       @default(1)
   service          String    @default("Standard")
-  declaredValue    Float?    @map("declared_value")
+  declaredValue    Decimal?  @map("declared_value") @db.Decimal(12,2)
   notes            String?
   source           String    @default("PORTAL")
   preferredCarrier String?   @map("preferred_carrier")
@@ -347,8 +347,8 @@ model WalletTransaction {
   clientCode  String   @map("client_code") @db.VarChar(20)
   userId      Int?     @map("user_id")
   type        String
-  amount      Float
-  balance     Float
+  amount      Decimal  @db.Decimal(12,2)
+  balance     Decimal  @db.Decimal(12,2)
   description String
   reference   String?
   paymentMode String?  @map("payment_mode")
@@ -368,13 +368,13 @@ model Invoice {
   clientCode String        @map("client_code") @db.VarChar(20)
   fromDate   String        @map("from_date")
   toDate     String        @map("to_date")
-  subtotal   Float         @default(0)
+  subtotal   Decimal       @default(0) @db.Decimal(12,2)
   gstPercent Float         @default(18) @map("gst_percent")
-  gstAmount  Float         @default(0) @map("gst_amount")
-  cgstAmount Float         @default(0) @map("cgst_amount")
-  sgstAmount Float         @default(0) @map("sgst_amount")
-  igstAmount Float         @default(0) @map("igst_amount")
-  total      Float         @default(0)
+  gstAmount  Decimal       @default(0) @map("gst_amount") @db.Decimal(12,2)
+  cgstAmount Decimal       @default(0) @map("cgst_amount") @db.Decimal(12,2)
+  sgstAmount Decimal       @default(0) @map("sgst_amount") @db.Decimal(12,2)
+  igstAmount Decimal       @default(0) @map("igst_amount") @db.Decimal(12,2)
+  total      Decimal       @default(0) @db.Decimal(12,2)
   status     String        @default("DRAFT")
   notes      String?
   pdfUrl     String?       @map("pdf_url")
@@ -399,9 +399,9 @@ model InvoiceItem {
   destination   String?
   courier       String?
   weight        Float    @default(0)
-  baseAmount    Float    @default(0) @map("base_amount")
-  fuelSurcharge Float    @default(0) @map("fuel_surcharge")
-  amount        Float    @default(0)
+  baseAmount    Decimal  @default(0) @map("base_amount") @db.Decimal(12,2)
+  fuelSurcharge Decimal  @default(0) @map("fuel_surcharge") @db.Decimal(12,2)
+  amount        Decimal  @default(0) @db.Decimal(12,2)
   invoice       Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   shipment      Shipment @relation(fields: [shipmentId], references: [id])
 
@@ -440,10 +440,10 @@ model Quote {
   weight      Float
   courier     String
   courierMode String   @map("courier_mode")
-  costTotal   Float    @map("cost_total")
-  sellTotal   Float    @map("sell_total")
-  profit      Float
-  margin      Float
+  costTotal   Decimal  @map("cost_total") @db.Decimal(12,2)
+  sellTotal   Decimal  @map("sell_total") @db.Decimal(12,2)
+  profit      Decimal  @db.Decimal(12,2)
+  margin      Decimal  @db.Decimal(12,2)
   notes       String?
   status      String   @default("QUOTED")
   validUntil  String?  @map("valid_until")
@@ -487,9 +487,9 @@ model CourierInvoiceItem {
   date             String
   destination      String?
   weight           Float          @default(0)
-  billedAmount     Float          @default(0) @map("billed_amount")
-  calculatedAmount Float?         @default(0) @map("calculated_amount")
-  discrepancy      Float?         @default(0)
+  billedAmount     Decimal        @default(0) @map("billed_amount") @db.Decimal(12,2)
+  calculatedAmount Decimal?       @default(0) @map("calculated_amount") @db.Decimal(12,2)
+  discrepancy      Decimal?       @default(0) @db.Decimal(12,2)
   status           String         @default("OK")
   notes            String?
   courierInvoice   CourierInvoice @relation(fields: [courierInvoiceId], references: [id], onDelete: Cascade)
@@ -505,8 +505,8 @@ model MarginRule {
   courier      String?
   zone         String?
   shipType     String?  @map("ship_type")
-  minMarginPct Float    @map("min_margin_pct")
-  minProfitAbs Float?   @map("min_profit_abs")
+  minMarginPct Decimal  @map("min_margin_pct") @db.Decimal(12,2)
+  minProfitAbs Decimal? @map("min_profit_abs") @db.Decimal(12,2)
   active       Boolean  @default(true)
   createdAt    DateTime @default(now()) @map("created_at")
 
