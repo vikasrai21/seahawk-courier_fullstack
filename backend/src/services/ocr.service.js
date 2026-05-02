@@ -69,6 +69,19 @@ function sanitizeFieldValue(value = '') {
     .trim();
 }
 
+/**
+ * Strip placeholder strings like "UNKNOWN", "N/A", "NA" that AI models
+ * sometimes return when they cannot read a field. Return empty string so
+ * these are treated as "not extracted" rather than a real value.
+ */
+function cleanOcrPlaceholder(value = '') {
+  const v = String(value || '').trim();
+  if (!v) return '';
+  const upper = v.toUpperCase();
+  if (upper === 'UNKNOWN' || upper === 'N/A' || upper === 'NA' || upper === 'NOT VISIBLE' || upper === 'NOT FOUND' || upper === 'NONE') return '';
+  return v;
+}
+
 function stripTrailingContactNoise(value = '') {
   return String(value || '')
     .replace(/\b(?:pin(?:\s*code)?|zip)\b.*$/i, '')
@@ -297,6 +310,12 @@ function enhanceParsedDetails(parsed = {}, knownAwb = '') {
     ...parsed,
     awb: sanitizeAwbToken(parsed.awb || knownAwb || ''),
     rawText,
+    // Strip AI placeholder values like "UNKNOWN", "N/A" so they are treated
+    // as "not extracted" rather than real data that overwrites the UI defaults.
+    consignee: cleanOcrPlaceholder(parsed.consignee || ''),
+    destination: cleanOcrPlaceholder(parsed.destination || ''),
+    clientName: cleanOcrPlaceholder(parsed.clientName || ''),
+    senderCompany: cleanOcrPlaceholder(parsed.senderCompany || ''),
   };
 
   // Normalize numeric fields.
@@ -927,4 +946,3 @@ exports.extractShipmentFromImage = async (base64Data, mimeType, options = {}) =>
   // No Gemini API key — pure local
   return extractWithLocal(base64Data, mimeType, options);
 };
-

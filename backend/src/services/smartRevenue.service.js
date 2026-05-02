@@ -673,11 +673,10 @@ async function getDetails(dateFrom, dateTo, page = 1, limit = 10, search = '') {
     ...params
   );
 
-  // Calculate rate for each row
-  const details = [];
-  for (const row of rows) {
+  // Calculate rate for each row — parallelized to avoid sequential N+1 await chain
+  const details = await Promise.all(rows.map(async (row) => {
     const result = await calcShipmentRate(row);
-    details.push({
+    return {
       id: row.id,
       date: row.date,
       clientCode: row.clientCode,
@@ -699,8 +698,8 @@ async function getDetails(dateFrom, dateTo, page = 1, limit = 10, search = '') {
       base: result.base || 0,
       fsc: result.fsc || 0,
       gst: result.gst || 0,
-    });
-  }
+    };
+  }));
 
   // Page-level calculated totals
   const pageCalculatedTotal = rnd(details.reduce((s, d) => s + d.calculatedAmount, 0));

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+﻿import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import api from '../services/api';
@@ -157,10 +157,28 @@ const playTone = (freq, duration, type = 'sine') => {
 };
 
 const playSuccessBeep = () => { playTone(880, 0.12); setTimeout(() => playTone(1100, 0.10), 130); };
-const playHardwareBeep = () => { 
-  playTone(2700, 0.08, 'square'); 
-  setTimeout(() => playTone(3100, 0.05, 'square'), 60); 
-}; // Ultra-sharp piercing Zebra-style double chirp
+const playHardwareBeep = () => {
+  // Realistic industrial barcode scanner beep:
+  // Sharp attack, fast decay, high-pitched square wave — like a Zebra/Honeywell scanner
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(3800, ctx.currentTime);
+    osc.frequency.setValueAtTime(3200, ctx.currentTime + 0.04);
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.18, ctx.currentTime + 0.005); // sharp attack
+    gain.gain.setValueAtTime(0.18, ctx.currentTime + 0.055);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.13); // fast decay
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.14);
+  } catch (err) {
+    logNonCriticalScannerError('playHardwareBeep', err);
+  }
+};
 const playCaptureBeep = () => playTone(600, 0.08);
 const playErrorBeep = () => playTone(200, 0.25, 'sawtooth');
 
@@ -189,9 +207,9 @@ const isProbablySecureContextForCamera = () => {
 
 // â”€â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const theme = {
-  bg: '#FAFBFD',
+  bg: '#F0F4FF',
   surface: '#FFFFFF',
-  border: 'rgba(0,0,0,0.06)',
+  border: 'rgba(0,0,0,0.07)',
   text: '#111827',
   muted: '#6B7280',
   mutedLight: '#9CA3AF',
@@ -203,6 +221,8 @@ const theme = {
   warningLight: '#FFFBEB',
   error: '#DC2626',
   errorLight: '#FEF2F2',
+  accent: '#7C3AED',
+  accentLight: '#F5F3FF',
 };
 
 const css = `
@@ -410,27 +430,30 @@ const css = `
 .card {
   background: ${theme.surface}; border: 1px solid ${theme.border};
   border-radius: 16px; padding: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  box-shadow: 0 2px 10px rgba(79,70,229,0.07);
 }
 
 /* â”€â”€ Buttons â”€â”€ */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   padding: 14px 24px; border-radius: 12px; border: none;
-  font-family: inherit; font-size: 0.9rem; font-weight: 600;
+  font-family: inherit; font-size: 0.9rem; font-weight: 700;
   cursor: pointer; transition: all 0.2s;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  letter-spacing: 0.01em;
 }
-.btn:active { transform: scale(0.97); }
+.btn:active { transform: scale(0.96); }
 .btn-primary {
-  background: linear-gradient(135deg, #4F46E5, #6366F1);
+  background: linear-gradient(135deg, #4F46E5, #7C3AED);
   color: white;
 }
-.btn-primary:hover { box-shadow: 0 4px 14px rgba(79,70,229,0.35); }
+.btn-primary:hover { box-shadow: 0 6px 20px rgba(79,70,229,0.4); }
 .btn-success {
   background: linear-gradient(135deg, #059669, #10B981);
   color: white;
+  box-shadow: 0 4px 16px rgba(5,150,105,0.3);
 }
+.btn-success:hover { box-shadow: 0 6px 22px rgba(5,150,105,0.45); }
 .btn-outline {
   background: ${theme.surface}; border: 1.5px solid ${theme.border};
   color: ${theme.text};
@@ -470,12 +493,14 @@ const css = `
   background: ${theme.surface}; border: 1px solid ${theme.border};
   border-left-width: 4px; border-left-style: solid; border-left-color: transparent;
   border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  transition: box-shadow 0.2s;
 }
 .field-card.conf-high { border-left-color: ${theme.success}; }
 .field-card.conf-med { border-left-color: ${theme.warning}; }
 .field-card.conf-low { border-left-color: ${theme.error}; }
-.field-card.warning { border-color: ${theme.warning}; background: ${theme.warningLight}; border-left-color: ${theme.warning}; }
-.field-card.error-field { border-color: ${theme.error}; background: ${theme.errorLight}; border-left-color: ${theme.error}; }
+.field-card.warning { border-color: ${theme.warning}; background: ${theme.warningLight}; border-left-color: ${theme.warning}; box-shadow: 0 2px 8px rgba(217,119,6,0.1); }
+.field-card.error-field { border-color: ${theme.error}; background: ${theme.errorLight}; border-left-color: ${theme.error}; box-shadow: 0 2px 8px rgba(220,38,38,0.1); }
 .field-label {
   font-size: 0.65rem; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.05em;
@@ -513,7 +538,7 @@ const css = `
 .source-pincode { background: ${theme.successLight}; color: ${theme.success}; }
 
 .review-header {
-  background: linear-gradient(135deg, #0F172A, #1E293B);
+  background: linear-gradient(135deg, #1E1B4B, #312E81);
   color: #F8FAFC;
   border-bottom: 1px solid #334155;
   padding: 14px 20px 12px;
@@ -664,7 +689,7 @@ const css = `
 .home-root {
   display: flex; flex-direction: column;
   min-height: 100dvh; overflow-y: auto;
-  background: #F8FAFC;
+  background: linear-gradient(160deg, #EEF2FF 0%, #F0F4FF 60%, #F5F3FF 100%);
 }
 .home-header {
   background: linear-gradient(135deg, #FFFFFF 0%, #F1F5F9 100%);
@@ -743,7 +768,7 @@ const css = `
 .home-scan-ring2 { animation-delay: 0.8s; }
 .home-scan-btn {
   width: 104px; height: 104px; border-radius: 50%;
-  background: linear-gradient(145deg, #4F46E5, #6366F1);
+  background: linear-gradient(145deg, #4F46E5, #7C3AED);
   border: none; cursor: pointer; touch-action: manipulation;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
   box-shadow: 0 8px 36px rgba(79,70,229,0.35), 0 0 0 6px rgba(79,70,229,0.12);
@@ -1001,13 +1026,16 @@ export default function MobileScannerPage({ standalone = false }) {
 
   // ── Session date (for batch scanning across dates) ──
   const [sessionDate, setSessionDate] = useState(() => {
+    const todayIso = new Date().toISOString().slice(0, 10);
     try {
       const saved = localStorage.getItem('seahawk_scanner_session_date');
-      if (saved && ISO_DATE_REGEX.test(saved)) return saved;
+      // Only restore a saved date if it IS today — never carry over yesterday's date
+      if (saved && ISO_DATE_REGEX.test(saved) && saved === todayIso) return saved;
     } catch (err) {
       logNonCriticalScannerError('read session date', err);
     }
-    return new Date().toISOString().slice(0, 10);
+    // Always start fresh with today's date
+    return todayIso;
   });
 
   // ——— Refs ———
@@ -1163,6 +1191,28 @@ export default function MobileScannerPage({ standalone = false }) {
     const t = setInterval(() => setSessionDuration(fmtDuration(Date.now() - sessionCtx.startedAt)), 30000);
     return () => clearInterval(t);
   }, [sessionCtx.startedAt]);
+
+  // Auto-advance sessionDate when the clock rolls past midnight so the date
+  // chip always reflects the actual current calendar day.
+  useEffect(() => {
+    const msUntilMidnight = () => {
+      const now = new Date();
+      const midnight = new Date(now);
+      midnight.setHours(24, 0, 0, 0);
+      return midnight - now;
+    };
+    let timer;
+    const scheduleReset = () => {
+      timer = setTimeout(() => {
+        const todayIso = new Date().toISOString().slice(0, 10);
+        setSessionDate(todayIso);
+        try { localStorage.setItem('seahawk_scanner_session_date', todayIso); } catch (_) {}
+        scheduleReset(); // schedule for the next midnight
+      }, msUntilMidnight() + 500);
+    };
+    scheduleReset();
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     scannedAwbsRef.current = sessionCtx.scannedAwbs instanceof Set ? sessionCtx.scannedAwbs : new Set();
@@ -1464,10 +1514,14 @@ export default function MobileScannerPage({ standalone = false }) {
     const suggestedClientCode = normalizeClientCode(data.clientCode || '');
     const effectiveClientCode = normalizeClientCode(stickyClientCode || suggestedClientCode);
     setReviewData(data);
+    const stripUnknown = (v) => {
+      const s = String(v || '').trim().toUpperCase();
+      return (s === 'UNKNOWN' || s === 'N/A' || s === 'NA' || s === 'NONE') ? '' : String(v || '').trim();
+    };
     setReviewForm({
       clientCode: effectiveClientCode,
-      consignee: data.consignee || '',
-      destination: data.destination || '',
+      consignee: stripUnknown(data.consignee),
+      destination: stripUnknown(data.destination),
       pincode: data.pincode || '',
       weight: data.weight || 0,
       amount: data.amount || 0,
@@ -3403,9 +3457,16 @@ export default function MobileScannerPage({ standalone = false }) {
                   <div className="review-title">REVIEW EXTRACTION</div>
                   <div className="mono review-awb">{reviewData?.awb || lockedAwb}</div>
                 </div>
-                {intelligence?.learnedFieldCount > 0 && (
-                  <div className="source-badge source-learned">AI {intelligence.learnedFieldCount} auto-corrected</div>
-                )}
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {intelligence?.learnedFieldCount > 0 && (
+                    <div className="source-badge source-learned">AI {intelligence.learnedFieldCount} auto-corrected</div>
+                  )}
+                  {reviewConfidence.score === 0 && (
+                    <div style={{ fontSize: '0.62rem', background: 'rgba(220,38,38,0.18)', color: '#FCA5A5', padding: '3px 8px', borderRadius: 6, fontWeight: 700 }}>
+                      OCR could not read label — fill fields manually
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="review-meta-row">
                 <span className={`review-confidence ${reviewConfidence.level}`}>
@@ -3427,7 +3488,7 @@ export default function MobileScannerPage({ standalone = false }) {
                 </span>
               </div>
             </div>
-            <div className="scroll-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div className="scroll-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'linear-gradient(180deg, #F0F4FF 0%, #F5F3FF 100%)' }}>
               {/* Client */}
               <div className={`field-card ${(fieldConfidence.clientCode?.confidence || 0) < 0.55 ? 'warning' : ''}`}>
                 <div className={confDotClass(fieldConfidence.clientCode?.confidence || 0)} />
@@ -3543,7 +3604,15 @@ export default function MobileScannerPage({ standalone = false }) {
 
             {/* Action buttons */}
             <div style={{ padding: '12px 20px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: 10 }}>
-              <button className="btn btn-outline" style={{ flex: 1 }} onClick={resetForNextScan}>
+              <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => {
+                // In standalone mode, navigate forces a clean re-mount which avoids
+                // the blank-screen glitch caused by batched state resets in resetForNextScan.
+                if (isStandalone) {
+                  navigate('/scan-mobile');
+                  return;
+                }
+                resetForNextScan();
+              }}>
                 <X size={16} /> Skip
               </button>
               <button data-testid="approve-save-btn" className="btn btn-success btn-lg" style={{ flex: 2 }} onClick={submitApproval} disabled={step === STEPS.APPROVING}>

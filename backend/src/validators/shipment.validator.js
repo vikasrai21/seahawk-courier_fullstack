@@ -80,7 +80,7 @@ const importSchema = z.object({
     // Status from Excel is intentionally ignored; import always starts as Booked.
     status:      z.union([z.string(), z.number(), z.null(), z.undefined()]).transform(() => ''),
     remarks:     z.union([z.string(), z.number(), z.null(), z.undefined()]).transform(v => String(v || '')).default(''),
-  })).min(1, 'No shipments provided'),
+  })).min(1, 'No shipments provided').max(2000, 'Maximum 2000 shipments per import batch'),
 });
 
 // Fix: Accept null values from DB on edit

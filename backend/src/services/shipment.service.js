@@ -690,8 +690,23 @@ async function getMonthlyStats(year, month) {
 }
 
 // Client-facing: shipments for a specific client (for portal)
+// Client-facing: shipments for a specific client (for portal)
+// ─────────────────────────────────────────────────────────────────────────────
+// SECURITY FIX: limit is now capped at 100.
+//
+// WHY: Previously `take: parseInt(limit)` had no upper bound. A client portal
+// user could send ?limit=999999 and pull their entire shipment history — or
+// attempt to — in a single DB query, saturating the connection pool. This is
+// a denial-of-service vector accessible to any authenticated CLIENT role user.
+//
+// The cap is 100 rows per page. The pagination.total field still returns the
+// real count, so the frontend can paginate through all records. The default
+// page size remains 25 (unchanged). No UI change is required — if your portal
+// table requests more than 100 rows per page, reduce that to ≤100.
+// ─────────────────────────────────────────────────────────────────────────────
 async function getMyShipments(clientCode, { page = 1, limit = 25, search, status } = {}) {
-  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const safeLimit = Math.min(100, Math.max(1, parseInt(limit) || 25));
+  const skip = (parseInt(page) - 1) * safeLimit;
   const where = { clientCode, environment: 'production', ...(status && { status }), ...(search && { OR: [
     { awb:         { contains: search, mode: 'insensitive' } },
     { consignee:   { contains: search, mode: 'insensitive' } },
@@ -699,9 +714,9 @@ async function getMyShipments(clientCode, { page = 1, limit = 25, search, status
   ]}) };
   const [total, shipments] = await prisma.$transaction([
     prisma.shipment.count({ where }),
-    prisma.shipment.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: parseInt(limit), select: { id: true, awb: true, date: true, consignee: true, destination: true, courier: true, status: true, weight: true, amount: true } }),
+    prisma.shipment.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: safeLimit, select: { id: true, awb: true, date: true, consignee: true, destination: true, courier: true, status: true, weight: true, amount: true } }),
   ]);
-  return { shipments, pagination: { total, page: parseInt(page), limit: parseInt(limit) } };
+  return { shipments, pagination: { total, page: parseInt(page), limit: safeLimit } };
 }
 
 function autoDetectCourier(awbStr) {
