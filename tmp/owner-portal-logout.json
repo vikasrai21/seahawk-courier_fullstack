@@ -1,0 +1,13 @@
+{
+  "results": [
+    {
+      "feature": "Authentication - UI logout",
+      "status": "FAIL",
+      "issue": "page.waitForURL: Timeout 15000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation until \"load\"\n  navigated to \"http://127.0.0.1:5174/\"\n============================================================",
+      "severity": "Medium",
+      "evidence": {
+        "url": "http://127.0.0.1:5174/"
+      }
+    }
+  ]
+}

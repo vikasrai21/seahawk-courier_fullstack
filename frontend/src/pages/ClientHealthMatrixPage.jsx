@@ -1,18 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
-import { 
-  HeartPulse, 
-  ShieldAlert, 
-  TrendingUp, 
+import {
+  HeartPulse,
+  ShieldAlert,
+  TrendingUp,
   RefreshCw,
   Search,
-  Filter,
   CheckCircle2,
   AlertTriangle,
   XOctagon,
   ArrowRight
 } from 'lucide-react';
 import api from '../services/api';
-import { PageHeader } from '../components/ui/PageHeader';
 import { useNavigate } from 'react-router-dom';
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
@@ -57,18 +55,18 @@ export default function ClientHealthMatrixPage({ toast }) {
   });
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 selection:bg-rose-500/30">
+    <div className="min-h-screen selection:bg-rose-500/30">
       <div className="max-w-7xl mx-auto px-4 py-8 space-y-8">
         
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-800 pb-6">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-6">
           <div>
             <div className="flex items-center gap-2 text-rose-500 mb-2">
               <HeartPulse size={18} className="animate-pulse" />
               <span className="text-[10px] font-black uppercase tracking-[0.3em]">Owner Intelligence</span>
             </div>
-            <h1 className="text-3xl font-black text-white tracking-tight">Client Health Matrix</h1>
-            <p className="text-sm font-medium text-slate-400 mt-1">Algorithmic risk scoring based on RTO bleed and margin performance (30D)</p>
+            <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Client Health Matrix</h1>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1">Algorithmic risk scoring based on RTO bleed and margin performance (30D)</p>
           </div>
           
           <div className="flex items-center gap-3">
@@ -90,13 +88,13 @@ export default function ClientHealthMatrixPage({ toast }) {
                   className="w-full bg-slate-900/50 border border-slate-800 rounded-2xl py-3 pl-10 pr-4 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/50 transition-all"
                 />
             </div>
-            <div className="flex bg-slate-900/50 p-1 rounded-2xl border border-slate-800 overflow-x-auto max-w-full hide-scrollbar">
+            <div className="flex bg-white dark:bg-slate-900/50 p-1 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-x-auto max-w-full hide-scrollbar">
                 {['ALL', 'A', 'B', 'C', 'D', 'F'].map(g => (
                     <button
                         key={g}
                         onClick={() => setFilter(g)}
                         className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${
-                            filter === g ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'
+                            filter === g ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'
                         }`}
                     >
                         Grade {g === 'ALL' ? 's' : g}
@@ -114,14 +112,13 @@ export default function ClientHealthMatrixPage({ toast }) {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
              {filtered.map(client => {
                 const conf = getGradeConfig(client.grade);
-                const Icon = conf.icon;
                 return (
-                    <div key={client.code} className={`bg-slate-900/40 border ${conf.border} rounded-[24px] p-6 relative overflow-hidden group hover:bg-slate-900/80 transition-colors`}>
+                    <div key={client.code} className={`bg-white dark:bg-slate-900/40 border ${conf.border} rounded-[24px] p-6 relative overflow-hidden group hover:bg-slate-50 dark:hover:bg-slate-900/80 transition-colors`}>
                         <div className={`absolute top-0 right-0 w-32 h-32 blur-[60px] ${conf.bg} opacity-50 group-hover:opacity-100 transition-opacity duration-500`} />
                         
                         <div className="flex justify-between items-start mb-6 relative z-10">
                             <div>
-                                <h3 className="text-lg font-black text-white truncate w-40" title={client.company}>{client.company}</h3>
+                                <h3 className="text-lg font-black text-slate-900 dark:text-white truncate w-40" title={client.company}>{client.company}</h3>
                                 <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{client.code}</p>
                             </div>
                             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl font-black ${conf.bg} ${conf.color} border ${conf.border} shadow-inner`}>
@@ -132,7 +129,13 @@ export default function ClientHealthMatrixPage({ toast }) {
                         <div className="space-y-4 relative z-10">
                             <div className="flex justify-between items-center">
                                 <span className="text-xs font-bold text-slate-400">Volume (30D)</span>
-                                <span className="text-sm font-black text-white">{client.volume30d.toLocaleString()}</span>
+                                <span className="text-sm font-black text-slate-900 dark:text-white">{client.volume30d.toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                <span className="text-xs font-bold text-slate-400">Delivery Rate</span>
+                                <span className={`text-sm font-black tabular-nums ${(client.deliveryRate || 0) > 80 ? 'text-emerald-500' : (client.deliveryRate || 0) > 60 ? 'text-amber-500' : 'text-red-400'}`}>
+                                    {fmtPct(client.deliveryRate || (client.volume30d > 0 ? ((client.volume30d - (client.rtoCount || 0)) / client.volume30d * 100) : 0))}
+                                </span>
                             </div>
                             <div className="flex justify-between items-center">
                                 <span className="text-xs font-bold text-slate-400">RTO Risk</span>
@@ -142,13 +145,13 @@ export default function ClientHealthMatrixPage({ toast }) {
                             </div>
                             <div className="flex justify-between items-center">
                                 <span className="text-xs font-bold text-slate-400">Margin</span>
-                                <span className={`text-sm font-black tabular-nums ${client.marginPct < 10 ? 'text-red-400' : 'text-emerald-400'}`}>
+                                <span className={`text-sm font-black tabular-nums ${client.marginPct < 10 ? 'text-red-400' : 'text-emerald-500'}`}>
                                     {fmtPct(client.marginPct)}
                                 </span>
                             </div>
                             <div className="pt-4 border-t border-slate-800/50 flex justify-between items-center">
                                 <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                                    Wallet: <span className="text-white">{fmt(client.walletBalance)}</span>
+                                    Wallet: <span className="text-slate-900 dark:text-white">{fmt(client.walletBalance)}</span>
                                 </div>
                                 <button 
                                   onClick={() => navigate(`/app/contracts?client=${client.code}`)}

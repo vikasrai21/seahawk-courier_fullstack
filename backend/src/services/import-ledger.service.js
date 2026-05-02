@@ -145,6 +145,56 @@ async function insertRow(row) {
   );
 }
 
+async function insertRowsBulk(rows) {
+  if (!rows || rows.length === 0) return;
+  await ensureTable();
+
+  // Create value placeholders like ($1, $2, ...), ($23, $24, ...)
+  const values = [];
+  const params = [];
+  let paramIdx = 1;
+
+  for (const row of rows) {
+    values.push(`($${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++})`);
+    
+    params.push(
+      row.batchKey,
+      row.sourceFile || null,
+      row.sourceSheet || null,
+      row.rowNo ?? null,
+      row.date,
+      row.clientCode,
+      row.awb,
+      row.consignee || null,
+      row.destination || null,
+      row.phone || null,
+      row.pincode || null,
+      Number(row.weight || 0),
+      Number(row.amount || 0),
+      row.courier || null,
+      row.department || null,
+      row.service || 'Standard',
+      row.status || 'Booked',
+      row.ndrStatus || null,
+      row.remarks || null,
+      !!row.autoPriced,
+      row.shipmentId || null,
+      row.createdById || null
+    );
+  }
+
+  const query = `
+    INSERT INTO shipment_import_rows (
+      batch_key, source_file, source_sheet, row_no, date, client_code, awb,
+      consignee, destination, phone, pincode, weight, amount, courier,
+      department, service, status, ndr_status, remarks, auto_priced,
+      shipment_id, created_by_id
+    ) VALUES ${values.join(', ')}
+  `;
+
+  await prisma.$executeRawUnsafe(query, ...params);
+}
+
 async function listRows(filters = {}, page = 1, limit = 50) {
   await ensureTable();
 
@@ -277,6 +327,7 @@ module.exports = {
   aggregate,
   groupBy,
   insertRow,
+  insertRowsBulk,
   listRows,
   getSummary,
   findByAwb,

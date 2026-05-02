@@ -137,12 +137,13 @@ describe('auth.middleware', () => {
       expect(next).toHaveBeenCalled();
     });
 
-    it('allows ADMIN role (backward compat)', () => {
+    it('denies ADMIN role without owner identity', () => {
       const req = createReq({ user: { isOwner: false, role: 'ADMIN' } });
       const res = createRes();
       const next = vi.fn();
       authMiddleware.ownerOnly(req, res, next);
-      expect(next).toHaveBeenCalled();
+      expect(responseUtil.forbidden).toHaveBeenCalledWith(res, 'Owner access required.');
+      expect(next).not.toHaveBeenCalled();
     });
 
     it('denies STAFF role', () => {

@@ -7,10 +7,10 @@ describe('Reconciliation End-to-End Integration Tests', () => {
   let jwtToken;
   let createdInvoiceId;
   const testUser = {
-    name: 'Recon E2E Admin',
+    name: 'Recon E2E Owner',
     email: 'recon-e2e@seahawkcourier.in',
     password: 'AdminPass123!',
-    role: 'ADMIN',
+    role: 'OWNER',
   };
 
   beforeAll(async () => {

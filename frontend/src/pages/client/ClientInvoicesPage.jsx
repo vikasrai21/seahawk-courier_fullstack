@@ -129,6 +129,7 @@ export default function ClientInvoicesPage({ toast }) {
   const openCount = invoices.length - paidCount;
 
   return (
+    <>
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7faff_0%,#eef4fd_100%)]">
       <header className="client-premium-header px-6 py-4">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
@@ -380,6 +381,7 @@ export default function ClientInvoicesPage({ toast }) {
         </div>
       )}
     </div>
+    </>
   );
 }
 

@@ -329,6 +329,14 @@ router.post('/integrations/ecommerce/:provider/:clientCode', integrationLimiter,
 
   const providedKey = String(req.get('x-api-key') || req.query?.key || '').trim();
   if (!providedKey) return res.status(401).json({ success: false, message: 'x-api-key required.' });
+  req.environment = providedKey.startsWith('sk_test_') ? 'sandbox' : 'production';
+  req.useMockCouriers = req.environment === 'sandbox';
+  logger.info(`[ENV] ${req.environment} route hit`, {
+    path: req.originalUrl,
+    method: req.method,
+    provider,
+    clientCode,
+  });
   const providedHash = crypto.createHash('sha256').update(providedKey).digest('hex');
 
   const [client, apiKey] = await Promise.all([
@@ -357,7 +365,10 @@ router.post('/integrations/ecommerce/:provider/:clientCode', integrationLimiter,
     return res.status(403).json({ success: false, message: 'API key scope does not allow order creation.', code: 'MISSING_SCOPE' });
   }
 
-  const mode = String(keyPolicy?.mode || 'live').toLowerCase() === 'sandbox' ? 'sandbox' : 'live';
+  const policyMode = String(keyPolicy?.mode || '').trim().toLowerCase();
+  const mode = policyMode === 'sandbox' || providedKey.startsWith('sk_test_') ? 'sandbox' : 'live';
+  req.environment = mode === 'sandbox' ? 'sandbox' : 'production';
+  req.useMockCouriers = mode === 'sandbox';
   const body = req.body || {};
   const requestId = req.requestId || null;
   const explicitIdempotencyKey = String(req.get('idempotency-key') || req.get('x-idempotency-key') || '').trim() || null;

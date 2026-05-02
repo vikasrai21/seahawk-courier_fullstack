@@ -51,9 +51,9 @@ module.exports = {
 
   cookie: {
     secure:   env === 'production',
-    // FIX: 'strict' blocks the cookie on page reload — use 'none' for production
-    // 'none' requires secure:true (which is already set in production above)
-    sameSite: env === 'production' ? 'none' : 'lax',
+    // 'none' is required for cross-origin portal access (e.g., separate frontend domain).
+    // Set COOKIE_SAME_SITE=lax when frontend and backend share the same origin for stronger CSRF protection.
+    sameSite: optional('COOKIE_SAME_SITE', env === 'production' ? 'none' : 'lax'),
     maxAge:   30 * 24 * 60 * 60 * 1000,
   },
 
@@ -147,6 +147,10 @@ module.exports = {
 
   integrations: {
     syncApiKey: optional('INTEGRATION_SYNC_API_KEY'),
+  },
+
+  runtime: {
+    sandboxEnabled: optional('SANDBOX_API_ENABLED', 'true') !== 'false',
   },
 
   operations: {

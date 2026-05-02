@@ -25,6 +25,7 @@ const actorFromReq = (req) => ({
 
 router.get('/stats', protect, clientOnly, asyncHandler(portalStats.stats));
 router.get('/shipments', protect, clientOnly, asyncHandler(portalStats.shipments));
+router.get('/shipments/export', protect, clientOnly, asyncHandler(portalStats.exportShipments));
 router.get('/shipments/:id', protect, clientOnly, asyncHandler(portalStats.shipmentDetail));
 router.get('/tracking/:awb', protect, clientOnly, asyncHandler(portalStats.trackingDetail));
 router.get('/performance', protect, clientOnly, asyncHandler(portalStats.performance));
@@ -41,11 +42,11 @@ router.post('/wallet/auto-topup/trigger', protect, clientOnly, asyncHandler(port
 router.get('/wallet/ledger-export', protect, clientOnly, asyncHandler(portalWallet.monthlyLedgerExport));
 
 router.get('/invoices', protect, clientOnly, asyncHandler(portalInvoices.list));
+router.get('/invoices/monthly-export', protect, clientOnly, asyncHandler(portalInvoices.monthlyExport));
 router.get('/invoices/:id', protect, clientOnly, asyncHandler(portalInvoices.detail));
 router.get('/invoices/:id/pdf', protect, clientOnly, asyncHandler(portalInvoices.pdfDownload));
 router.get('/invoices/:id/export.csv', protect, clientOnly, asyncHandler(portalInvoices.exportCsv));
 router.get('/invoices/:id/export.xls', protect, clientOnly, asyncHandler(portalInvoices.exportExcel));
-router.get('/invoices/monthly-export', protect, clientOnly, asyncHandler(portalInvoices.monthlyExport));
 
 router.get('/map/shipments', protect, clientOnly, asyncHandler(portalMap.mapShipments));
 router.get('/rto-intelligence', protect, clientOnly, asyncHandler(portalMap.rtoIntelligence));

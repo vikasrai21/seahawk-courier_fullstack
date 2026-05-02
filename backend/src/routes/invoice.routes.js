@@ -26,7 +26,7 @@ router.get('/:id/pdf', async (req, res) => {
   try {
     const invoice = await prisma.invoice.findUnique({
       where:   { id: parseInt(req.params.id) },
-      include: { client: true, items: { orderBy: { date: 'asc' } } },
+      include: { client: true, items: { orderBy: { date: 'asc' }, include: { shipment: { select: { status: true, updatedAt: true } } } } },
     });
     if (!invoice) return R.error(res, 'Invoice not found', 404);
 
@@ -53,7 +53,7 @@ router.post('/:id/send-email', requireRole('ADMIN', 'STAFF', 'OPS_MANAGER'), asy
   try {
     const invoice = await prisma.invoice.findUnique({
       where:   { id: parseInt(req.params.id) },
-      include: { client: true, items: { orderBy: { date: 'asc' } } },
+      include: { client: true, items: { orderBy: { date: 'asc' }, include: { shipment: { select: { status: true, updatedAt: true } } } } },
     });
     if (!invoice) return R.error(res, 'Invoice not found', 404);
 

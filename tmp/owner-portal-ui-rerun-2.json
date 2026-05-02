@@ -1,0 +1,55 @@
+{
+  "summary": {
+    "total": 4,
+    "pass": 1,
+    "fail": 3,
+    "partial": 0
+  },
+  "results": [
+    {
+      "feature": "Shipment Management - UI search reflects backend",
+      "status": "FAIL",
+      "issue": "Created AWB not visible in search/table",
+      "severity": "Critical",
+      "evidence": {
+        "awb": "QAUI044793SHIP"
+      }
+    },
+    {
+      "feature": "UI/UX Consistency - navigation and pages",
+      "status": "FAIL",
+      "issue": "Broken/errored pages found",
+      "severity": "Critical",
+      "evidence": {
+        "broken": [
+          {
+            "target": "/app/track",
+            "status": 200,
+            "text": "Seahawk\nCOURIER & CARGO\nDashboard\nOperations\nNew Entry\nImport\n\nSHIPMENTS\n\nScan AWB\nNEW\nShipments\nPen"
+          }
+        ]
+      }
+    },
+    {
+      "feature": "Error Handling - invalid login message",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {}
+    },
+    {
+      "feature": "UI/UX Consistency - console errors",
+      "status": "FAIL",
+      "issue": "Console/page errors observed",
+      "severity": "Medium",
+      "evidence": {
+        "count": 3,
+        "sample": [
+          "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+          "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+          "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+        ]
+      }
+    }
+  ]
+}

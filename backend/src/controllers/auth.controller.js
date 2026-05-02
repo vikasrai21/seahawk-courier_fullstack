@@ -39,7 +39,7 @@ const login = asyncHandler(async (req, res) => {
 
 const refresh = asyncHandler(async (req, res) => {
   const token = req.cookies?.refreshToken;
-  if (!token) return R.unauthorized(res, 'No refresh token.');
+  if (!token) return res.status(401).json({ success: false, code: 'NO_REFRESH_TOKEN', message: 'No refresh token.' });
   const result = await authService.refreshAccessToken(token);
   if (result.refreshToken) {
     const cookieOpts = req.cookies?.refreshPersist === '1' ? refreshCookieOpts : refreshSessionCookieOpts;

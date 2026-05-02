@@ -73,14 +73,23 @@ describe('shipment.service', () => {
   // ── getAll ──────────────────────────────────────────────────────
   describe('getAll', () => {
     it('returns paginated shipments', async () => {
-      mockPrisma.$transaction.mockResolvedValue([100, [{ id: 1, awb: 'AWB001' }]]);
+      mockPrisma.shipment.count
+        .mockResolvedValueOnce(100)
+        .mockResolvedValueOnce(40)
+        .mockResolvedValueOnce(25)
+        .mockResolvedValueOnce(3);
+      mockPrisma.shipment.findMany.mockResolvedValue([{ id: 1, awb: 'AWB001' }]);
+      mockPrisma.shipment.aggregate.mockResolvedValue({ _sum: { amount: 1200, weight: 15 } });
       const result = await shipmentService.getAll({}, 1, 50);
       expect(result.total).toBe(100);
       expect(result.shipments).toHaveLength(1);
+      expect(result.stats.revenue).toBe(1200);
     });
 
     it('clamps page and limit to safe values', async () => {
-      mockPrisma.$transaction.mockResolvedValue([0, []]);
+      mockPrisma.shipment.count.mockResolvedValue(0);
+      mockPrisma.shipment.findMany.mockResolvedValue([]);
+      mockPrisma.shipment.aggregate.mockResolvedValue({ _sum: { amount: 0, weight: 0 } });
       const result = await shipmentService.getAll({}, -5, 9999);
       expect(result).toHaveProperty('shipments');
     });

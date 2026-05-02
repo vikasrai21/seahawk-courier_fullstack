@@ -24,10 +24,49 @@ function StatCard({ label, value, icon: Icon, color }) {
   );
 }
 
+function ClientPicker({ clientSearch, setClientSearch, filteredClients, selectClient }) {
+  return (
+    <div style={{ position: 'relative' }}>
+      <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--shk-text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4, display: 'block' }}>Client</label>
+      <Search size={14} style={{ position: 'absolute', left: 12, top: 34, color: 'var(--shk-text-dim)' }} />
+      <input
+        value={clientSearch}
+        onChange={e => setClientSearch(e.target.value)}
+        placeholder="Search client name or code..."
+        style={{ width: '100%', padding: '10px 14px 10px 34px', borderRadius: 10, border: '1px solid var(--shk-border)', background: 'var(--shk-bg)', fontSize: 13, color: 'var(--shk-text)', outline: 'none', fontWeight: 600 }}
+      />
+      {clientSearch && filteredClients.length > 0 && (
+        <div style={{ position: 'absolute', zIndex: 20, left: 0, right: 0, top: '100%', marginTop: 6, border: '1px solid var(--shk-border)', background: 'var(--shk-surface)', borderRadius: 12, overflow: 'hidden', boxShadow: '0 16px 40px rgba(15,23,42,0.18)' }}>
+          {filteredClients.map(client => (
+            <button key={client.code} type="button" onClick={() => selectClient(client)} style={{ width: '100%', textAlign: 'left', padding: '10px 12px', border: 0, borderBottom: '1px solid var(--shk-border)', background: 'transparent', cursor: 'pointer' }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--shk-text)' }}>{client.company || client.code}</div>
+              <div style={{ fontSize: 11, color: 'var(--shk-text-dim)' }}>{client.code}</div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DestinationPreview({ client }) {
+  return (
+    <div style={{ padding: 12, borderRadius: 12, border: '1px solid rgba(245,158,11,0.18)', background: 'rgba(245,158,11,0.06)' }}>
+      <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--shk-text)', marginBottom: 6 }}>Sending to:</div>
+      <div style={{ display: 'grid', gap: 4, fontSize: 12, color: 'var(--shk-text-mid)' }}>
+        <div><Mail size={13} style={{ display: 'inline', marginRight: 6, color: '#3b82f6' }} />Email: {client?.email || 'Not configured'}</div>
+        <div><MessageCircle size={13} style={{ display: 'inline', marginRight: 6, color: '#25d366' }} />WhatsApp: {client?.whatsapp || client?.phone || 'Not configured'}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function NotificationCenterPage({ toast }) {
   const [tab, setTab] = useState('send');
   const [stats, setStats] = useState(null);
   const [history, setHistory] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [clientSearch, setClientSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
 
@@ -44,11 +83,22 @@ export default function NotificationCenterPage({ toast }) {
   // History filters
   const [filterClient, setFilterClient] = useState('');
   const [filterChannel, setFilterChannel] = useState('');
+  const selectedClient = clients.find(c => c.code === clientCode) || null;
+  const filteredClients = clients
+    .filter(c => `${c.company || ''} ${c.code || ''}`.toLowerCase().includes(clientSearch.toLowerCase()))
+    .slice(0, 12);
 
   const loadStats = useCallback(async () => {
     try {
       const res = await api.get('/notifications/stats');
-      setStats(res.data?.data || {});
+      setStats(res.data || res || {});
+    } catch { /* ignore */ }
+  }, []);
+
+  const loadClients = useCallback(async () => {
+    try {
+      const res = await api.get('/clients');
+      setClients(res.data || res || []);
     } catch { /* ignore */ }
   }, []);
 
@@ -60,12 +110,12 @@ export default function NotificationCenterPage({ toast }) {
       if (filterChannel) params.set('channel', filterChannel);
       params.set('limit', '50');
       const res = await api.get(`/notifications/history?${params}`);
-      setHistory(res.data?.data || []);
+      setHistory(res.data || res || []);
     } catch { toast?.('Failed to load history', 'error'); }
     finally { setLoading(false); }
   }, [filterClient, filterChannel, toast]);
 
-  useEffect(() => { loadStats(); }, [loadStats]);
+  useEffect(() => { loadStats(); loadClients(); }, [loadStats, loadClients]);
   useEffect(() => { if (tab === 'history') loadHistory(); }, [tab, loadHistory]);
 
   const handleSend = async () => {
@@ -90,10 +140,16 @@ export default function NotificationCenterPage({ toast }) {
         toast?.(res.data?.message || 'Notification sent!', 'success');
         loadStats();
         setAwb(''); setClientCode('');
+        setClientSearch('');
       }
     } catch (err) {
       toast?.(err.response?.data?.message || 'Failed to send', 'error');
     } finally { setSending(false); }
+  };
+
+  const selectClient = (client) => {
+    setClientCode(client.code);
+    setClientSearch(`${client.company || client.code} (${client.code})`);
   };
 
   return (
@@ -195,12 +251,8 @@ export default function NotificationCenterPage({ toast }) {
 
               {sendMode === 'digest' && (
                 <>
-                  <div>
-                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--shk-text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4, display: 'block' }}>Client Code</label>
-                    <input value={clientCode} onChange={e => setClientCode(e.target.value.toUpperCase())} placeholder="e.g. ABC"
-                      style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid var(--shk-border)', background: 'var(--shk-bg)', fontSize: 13, color: 'var(--shk-text)', outline: 'none', fontWeight: 600 }}
-                    />
-                  </div>
+                  <ClientPicker {...{ clientSearch, setClientSearch, filteredClients, selectClient }} />
+                  <DestinationPreview client={selectedClient} />
                   <div>
                     <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--shk-text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4, display: 'block' }}>Date</label>
                     <input type="date" value={date} onChange={e => setDate(e.target.value)}
@@ -212,12 +264,8 @@ export default function NotificationCenterPage({ toast }) {
 
               {sendMode === 'bulk' && (
                 <>
-                  <div>
-                    <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--shk-text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4, display: 'block' }}>Client Code</label>
-                    <input value={clientCode} onChange={e => setClientCode(e.target.value.toUpperCase())} placeholder="e.g. ABC"
-                      style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px solid var(--shk-border)', background: 'var(--shk-bg)', fontSize: 13, color: 'var(--shk-text)', outline: 'none', fontWeight: 600 }}
-                    />
-                  </div>
+                  <ClientPicker {...{ clientSearch, setClientSearch, filteredClients, selectClient }} />
+                  <DestinationPreview client={selectedClient} />
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <div>
                       <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--shk-text-dim)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 4, display: 'block' }}>From</label>

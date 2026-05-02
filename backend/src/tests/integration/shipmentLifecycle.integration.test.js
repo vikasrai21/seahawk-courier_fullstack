@@ -145,7 +145,7 @@ describe('Shipment Lifecycle Integration', () => {
       .send({ status: 'Delivered' });
 
     // Should reject updates to terminal shipment
-    expect(lockRes.status).toBe(500);
+    expect(lockRes.status).toBe(400);
     expect(lockRes.body.message).toContain('Invalid status transition');
   });
 });

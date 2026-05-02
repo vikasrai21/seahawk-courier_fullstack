@@ -1,0 +1,9 @@
+const fs=require('fs');
+let c=fs.readFileSync('frontend/src/pages/ShipmentDashboardPage.jsx','utf8');
+c=c.replace("import { useState, useEffect, useCallback, useRef } from 'react';", "import { useState, useEffect, useCallback, useRef } from 'react';\nimport { useSearchParams, useNavigate } from 'react-router-dom';");
+c=c.replace("export default function ShipmentDashboardPage({ toast }) {\r\n  const { isAdmin, hasRole } = useAuth();", "export default function ShipmentDashboardPage({ toast }) {\n  const [searchParams] = useSearchParams();\n  const navigate = useNavigate();\n  const { isAdmin, hasRole } = useAuth();");
+c=c.replace("export default function ShipmentDashboardPage({ toast }) {\n  const { isAdmin, hasRole } = useAuth();", "export default function ShipmentDashboardPage({ toast }) {\n  const [searchParams] = useSearchParams();\n  const navigate = useNavigate();\n  const { isAdmin, hasRole } = useAuth();");
+c=c.replace("search: '', courier: '', status: '', clientCode: '', dateFrom: '', dateTo: '',", "search: searchParams.get('q') || searchParams.get('search') || '', courier: searchParams.get('courier') || '', status: searchParams.get('status') || '', clientCode: searchParams.get('client') || searchParams.get('clientCode') || '', dateFrom: searchParams.get('dateFrom') || searchParams.get('date_from') || '', dateTo: searchParams.get('dateTo') || searchParams.get('date_to') || '', filter: searchParams.get('filter') || '',");
+c=c.replace("...(filters.dateTo     && { dateTo:      filters.dateTo }),", "...(filters.dateTo     && { dateTo:      filters.dateTo }),\n        ...(filters.filter     && { filter:      filters.filter }),");
+c=c.replace("filters.dateTo, sortBy", "filters.dateTo, filters.filter, sortBy");
+fs.writeFileSync('frontend/src/pages/ShipmentDashboardPage.jsx',c);

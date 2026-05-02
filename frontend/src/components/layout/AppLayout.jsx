@@ -10,7 +10,7 @@ import {
   LogOut, UserCircle, Menu, X, ChevronRight, FileText,
   Receipt, ScrollText, Calculator, Activity, Layers,
   CreditCard, GitCompare, Shield, Settings2, MessageCircle,
-  Sun, Moon, ScanLine, Bell, RotateCcw, Bot, Send
+  Sun, Moon, ScanLine, Bell, RotateCcw, Bot, Send, Bug
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { usePWA } from '../../hooks/usePWA';
@@ -93,6 +93,7 @@ const navGroups = [
 
 const adminItems = [
   { to: '/app/users',      label: 'Users',           icon: UserCircle, isSecondary: true, roles: ['OWNER', 'ADMIN'] },
+  { to: '/app/sandbox-runs', label: 'Sandbox Runs',  icon: Bug, isSecondary: true, roles: ['OWNER', 'ADMIN'] },
   { to: '/app/audit-logs', label: 'Audit Logs',      icon: ShieldAlert, isSecondary: true, roles: ['ADMIN'] },
   { to: '/app/rate-mgmt',  label: 'Rate Management', icon: Settings2, isSecondary: true, roles: ['ADMIN'] },
 ];
@@ -296,6 +297,7 @@ function SidebarContent({ onClose }) {
         </button>
 
         <button
+          aria-label="Sign out"
           onClick={handleLogout}
           style={{
             width: '100%', display: 'flex', alignItems: 'center', gap: 8,

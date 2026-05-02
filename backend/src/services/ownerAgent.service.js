@@ -234,6 +234,37 @@ async function getSnapshot() {
   return { activeShipments, pendingNDRs, todayBookings, todayRevenue, negativeWallets, todayShipments };
 }
 
+function devDebugEnabled(debug) {
+  return Boolean(debug) && process.env.NODE_ENV !== 'production';
+}
+
+async function findShipmentByAwb(awb, extraSelect = {}) {
+  const cleaned = String(awb || '').trim().toUpperCase();
+  if (!cleaned) return null;
+  const select = {
+    awb: true,
+    courier: true,
+    status: true,
+    consignee: true,
+    destination: true,
+    date: true,
+    weight: true,
+    clientCode: true,
+    amount: true,
+    ...extraSelect,
+  };
+  return prisma.shipment.findFirst({
+    where: {
+      OR: [
+        { awb: { equals: cleaned, mode: 'insensitive' } },
+        { awb: { contains: cleaned, mode: 'insensitive' } },
+      ],
+    },
+    orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+    select,
+  });
+}
+
 const nlp = require('../utils/agentNlp');
 nlp.initNlp().catch(err => logger.error(`[HawkAI] Failed to init NLP: ${err.message}`));
 
@@ -365,11 +396,24 @@ async function resolveAction(action) {
       case ACTION_TYPES.TRACK_SHIPMENT: {
         const awb = action.params?.awb;
         if (!awb) return { error: 'No AWB provided' };
-        const shipment = await prisma.shipment.findFirst({
-          where: { awb: { contains: awb, mode: 'insensitive' } },
-          select: { awb: true, courier: true, status: true, consignee: true, destination: true, date: true, weight: true, clientCode: true, amount: true },
-        });
-        const courier = shipment?.courier || 'Trackon';
+        const shipment = await findShipmentByAwb(awb);
+        if (!shipment) {
+          return {
+            shipment: null,
+            tracking: null,
+            error: `No real shipment found for AWB ${awb}. I did not query courier tracking because the local AWB mapping is missing.`,
+            fallback: 'LOCAL_SHIPMENT_REQUIRED',
+          };
+        }
+        const courier = shipment.courier;
+        if (!courier) {
+          return {
+            shipment,
+            tracking: null,
+            error: `Shipment ${shipment.awb} has no courier mapped. Please update the shipment courier before live tracking.`,
+            fallback: 'COURIER_MISSING',
+          };
+        }
         try {
           const tracking = await fetchTracking(courier, awb, { bypassCache: true });
           // Learn from this tracking
@@ -388,17 +432,14 @@ async function resolveAction(action) {
             },
           };
         } catch (err) {
-          return { shipment, tracking: null, error: `Tracking failed: ${err.message}` };
+          return { shipment, tracking: null, error: `Tracking failed: ${err.message}`, fallback: 'LOCAL_SHIPMENT_RETURNED' };
         }
       }
 
       case ACTION_TYPES.LOOKUP_SHIPMENT: {
         const awb = action.params?.awb;
         if (!awb) return { error: 'No AWB provided' };
-        const found = await prisma.shipment.findFirst({
-          where: { awb: { contains: awb, mode: 'insensitive' } },
-          select: { awb: true, courier: true, status: true, consignee: true, destination: true, date: true, weight: true, amount: true, clientCode: true, pincode: true, phone: true, remarks: true },
-        });
+        const found = await findShipmentByAwb(awb, { pincode: true, phone: true, remarks: true });
         if (!found) return { error: `No shipment found with AWB ${awb}` };
         return { shipment: found };
       }
@@ -742,10 +783,11 @@ const LEGACY_INTENTS = [
   'intent.audit.bill',
 ];
 
-async function chat({ message, history = [], sessionId = 'default' }) {
+async function chat({ message, history = [], sessionId = 'default', debug = false }) {
   const snapshot = await getSnapshot();
   const msg = String(message || '').trim();
   const lowerMsg = msg.toLowerCase();
+  const includeDebug = devDebugEnabled(debug);
 
   // ── Step 0: Handle "cancel" at any time ─────────────────────────────────
   if (/^(cancel|stop|nevermind|abort|exit)$/i.test(msg)) {
@@ -983,22 +1025,28 @@ async function chat({ message, history = [], sessionId = 'default' }) {
     intent.confidence = nlpResult.confidence;
     intent.requiresConfirmation = false;
 
-    const data = await resolveAction(intent);
-    const response = buildReply(intent, data, snapshot);
+      const data = await resolveAction(intent);
+      const response = buildReply(intent, data, snapshot);
 
-    return {
-      reply: response.reply,
-      action: intent,
-      data,
-      suggestions: response.suggestions || [],
-      requiresConfirmation: response.requiresConfirmation || false,
-      snapshot,
+      return {
+        reply: response.reply,
+        action: intent,
+        data,
+        ...(includeDebug && { debug: { path: 'legacy-intent', actionType: intent.type, dataSource: 'prisma-live' } }),
+        suggestions: response.suggestions || [],
+        requiresConfirmation: response.requiresConfirmation || false,
+        snapshot,
     };
   }
 
   // ── Hybrid LLM Fallback ──────────────────────────────────────────────────
   if (genAI) {
     try {
+      const liveShipments = await prisma.shipment.findMany({
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        take: 6,
+        select: { awb: true, status: true, clientCode: true, courier: true, destination: true, date: true, amount: true },
+      }).catch(() => []);
       const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
       const prompt = `You are HawkAI, the internal Enterprise Owner Command Center Agent for Seahawk Logistics.
 You communicate securely with the Owner of the company. Keep your answer brief, highly analytical, responsive, and professional. Use markdown formatting. Do not hallucinate shipments.
@@ -1009,6 +1057,9 @@ Current System Snapshot:
 - Revenue Today: ${snapshot.todayRevenue}
 - Pending NDRs: ${snapshot.pendingNDRs}
 - Clients with Negative Wallets: ${snapshot.negativeWallets}
+
+Live Shipment Sample (authoritative, latest first):
+${liveShipments.map((s) => `- ${s.awb}: ${s.status}, ${s.clientCode}, ${s.courier || 'Unmapped courier'}, ${s.destination || 'No destination'}, ${s.date}, ₹${s.amount || 0}`).join('\n') || '- No shipment rows available'}
 
 Conversation History (Latest):
 ${history.map(h => `${h.role}: ${h.text}`).join('\n')}
@@ -1022,6 +1073,7 @@ Owner Request: ${msg}`;
         reply: text,
         suggestions: ['Show overview', 'Daily report'],
         requiresConfirmation: false,
+        ...(includeDebug && { debug: { path: 'gemini-fallback', dataSource: 'snapshot-only', snapshot } }),
         snapshot,
       };
     } catch (err) {
@@ -1034,6 +1086,7 @@ Owner Request: ${msg}`;
     reply: "🤔 I understood parts of that but couldn't map it to an action. Try being more specific, like: **create client ABC** or **track AWB 123456**.",
     suggestions: ['Show overview', 'Create client', 'Daily report'],
     requiresConfirmation: false,
+    ...(includeDebug && { debug: { path: 'native-fallback', dataSource: 'none' } }),
     snapshot,
   };
 }

@@ -101,10 +101,19 @@ async function compareRates({ weightKg, zone, shipType = 'standard', isInternati
   if (!weight || weight <= 0) throw new Error('Invalid weight');
   if (!zone) throw new Error('Zone is required');
 
+  // Fetch dynamic rates from database
+  const activeVersions = await prisma.rateVersion.findMany({ where: { active: true } });
+  const dynamicRates = { ...CARRIER_RATES };
+  for (const rv of activeVersions) {
+    if (rv.dataJson && rv.dataJson.modes && rv.dataJson.zones) {
+      dynamicRates[rv.courier] = rv.dataJson;
+    }
+  }
+
   const results = [];
   const gst = 0.18;
 
-  for (const [carrierName, carrierDef] of Object.entries(CARRIER_RATES)) {
+  for (const [carrierName, carrierDef] of Object.entries(dynamicRates)) {
     // Skip domestic carriers for international and vice versa
     if (isInternational && !['FedEx', 'DHL'].includes(carrierName)) continue;
     if (!isInternational && ['FedEx', 'DHL'].includes(carrierName)) continue;

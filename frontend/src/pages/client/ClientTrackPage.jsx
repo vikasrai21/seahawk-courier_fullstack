@@ -3,10 +3,11 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import { formatStatusLabel, normalizeStatus } from '../../components/ui/StatusBadge';
-import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
+
+import { Package, MapPin, Truck, Navigation, CheckCircle2, Copy, Check } from 'lucide-react';
 
 const STATUS_STEPS = ['Booked', 'PickedUp', 'InTransit', 'OutForDelivery', 'Delivered'];
-const STEP_ICONS = ['📦', '🤝', '🚛', '🏍️', '✅'];
+const STEP_ICONS = [Package, MapPin, Truck, Navigation, CheckCircle2];
 
 const pick = (obj, ...keys) => {
   for (const key of keys) {
@@ -22,6 +23,20 @@ export default function ClientTrackPage({ toast }) {
   const [result, setResult]   = useState(null);
   const [loading, setLoading] = useState(false);
   const [animate, setAnimate] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const copyTrackingLink = async () => {
+    if (!result?.shipment?.awb) return;
+    try {
+      const link = `${window.location.origin}/track?awb=${result.shipment.awb}`;
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      toast?.('Tracking link copied to clipboard', 'success');
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast?.('Failed to copy link', 'error');
+    }
+  };
 
   useEffect(() => {
     const prefillAwb = String(searchParams.get('awb') || '').trim();
@@ -74,12 +89,12 @@ export default function ClientTrackPage({ toast }) {
   return (
     <div className="min-h-full">
       <div className="client-premium-main max-w-3xl">
-        <ClientPortalPageIntro
-          eyebrow="Single Track"
-          title="Track Shipment"
-          description="Enter an AWB to inspect the full journey with milestone state and timeline."
-          badges={[awb ? `AWB ${awb}` : 'Enter an AWB', result?.shipment?.status || 'Waiting', `${result?.events?.length || 0} events`]}
-        />
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Single Track</h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Enter an AWB to inspect the full journey with milestone state and timeline.</p>
+          </div>
+        </div>
 
         {/* ── Search Bar ── */}
         <div className="flex gap-2">
@@ -108,9 +123,18 @@ export default function ClientTrackPage({ toast }) {
 
             {/* ── Header ── */}
             <div className="flex items-start justify-between">
-              <div>
-                <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">AWB</div>
-                <div className="font-mono font-bold text-lg text-slate-900 dark:text-white">{result.shipment?.awb}</div>
+              <div className="flex items-center gap-3">
+                <div>
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500">AWB</div>
+                  <div className="font-mono font-bold text-lg text-slate-900 dark:text-white">{result.shipment?.awb}</div>
+                </div>
+                <button
+                  onClick={copyTrackingLink}
+                  className="mt-3.5 p-1.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-400 hover:text-sky-600 hover:border-sky-300 dark:hover:text-sky-400 dark:hover:border-sky-500/50 transition-all shadow-sm"
+                  title="Copy Tracking Link"
+                >
+                  {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+                </button>
               </div>
               <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1.5 rounded-full border ${
                 isRTO ? 'bg-rose-500/10 text-rose-500 border-rose-500/20' :
@@ -169,7 +193,10 @@ export default function ClientTrackPage({ toast }) {
                             transition: `all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) ${delay}`,
                           }}
                         >
-                          {isActive ? STEP_ICONS[i] : i + 1}
+                          {isActive ? (() => {
+                            const Icon = STEP_ICONS[i];
+                            return <Icon size={18} strokeWidth={2.5} />;
+                          })() : i + 1}
                         </div>
                         <span
                           className={`text-[10px] font-black uppercase tracking-wider text-center max-w-[80px] leading-tight ${

@@ -34,7 +34,7 @@ function globalErrorHandler(err, req, res, _next) {
     message: err.message,
     userId:  req.user?.id,
     ip:      req.ip,
-    stack:   err.isOperational ? undefined : err.stack, // Only log stack for unexpected errors
+    stack:   err.stack, // Always log stack for better debugging
   });
 
   // ── Prisma known errors ──────────────────────────────────────────────
@@ -45,9 +45,9 @@ function globalErrorHandler(err, req, res, _next) {
 
   // ── JWT errors ───────────────────────────────────────────────────────
   if (err.name === 'JsonWebTokenError')
-    return res.status(401).json({ success: false, message: 'Invalid token. Please log in again.', incidentId: req.requestId });
+    return res.status(401).json({ success: false, code: 'TOKEN_INVALID', message: 'Invalid token. Please log in again.', incidentId: req.requestId });
   if (err.name === 'TokenExpiredError')
-    return res.status(401).json({ success: false, message: 'Session expired. Please log in again.', incidentId: req.requestId });
+    return res.status(401).json({ success: false, code: 'TOKEN_EXPIRED', message: 'Session expired. Please log in again.', incidentId: req.requestId });
 
   // ── Zod validation errors ─────────────────────────────────────────────
   if (err.name === 'ZodError')

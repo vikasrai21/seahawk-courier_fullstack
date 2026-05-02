@@ -1,0 +1,29 @@
+01:22:38 [[34mdebug[39m]: [34mQuery: SELECT "public"."shipments"."id", "public"."shipments"."date", "public"."shipments"."client_code", "public"."shipments"."awb", "public"."shipments"."consignee", "public"."shipments"."destination", "public"."shipments"."phone", "public"."shipments"."pincode", "public"."shipments"."weight", "public"."shipments"."amount", "public"."shipments"."cost", "public"."shipments"."profit", "public"."shipments"."courier", "public"."shipments"."department", "public"."shipments"."service", "public"."shipments"."status", "public"."shipments"."ndr_status", "public"."shipments"."remarks", "public"."shipments"."label_url", "public"."shipments"."environment", "public"."shipments"."sandbox_run_id", "public"."shipments"."source_platform", "public"."shipments"."simulation_state", "public"."shipments"."risk_score", "public"."shipments"."risk_factors", "public"."shipments"."margin_alert", "public"."shipments"."created_by_id", "public"."shipments"."updated_by_id", "public"."shipments"."created_at", "public"."shipments"."updated_at" FROM "public"."shipments" WHERE 1=1 ORDER BY "public"."shipments"."created_at" DESC LIMIT $1 OFFSET $2 — 573ms[39m
+01:22:39 [[34mdebug[39m]: [34mQuery: SELECT COUNT(*) FROM (SELECT "public"."shipments"."id" FROM "public"."shipments" WHERE "public"."shipments"."date" = $1 OFFSET $2) AS "sub" — 568ms[39m
+01:22:39 [[34mdebug[39m]: [34mQuery: SELECT COUNT(*) FROM (SELECT "public"."shipments"."id" FROM "public"."shipments" WHERE "public"."shipments"."date" >= $1 OFFSET $2) AS "sub" — 570ms[39m
+01:22:40 [[34mdebug[39m]: [34mQuery: SELECT COUNT(*) FROM (SELECT "public"."shipments"."id" FROM "public"."shipments" WHERE ("public"."shipments"."status" = $1 AND "public"."shipments"."date" >= $2) OFFSET $3) AS "sub" — 569ms[39m
+{
+  "results": [
+    {
+      "feature": "Dashboard - metrics match backend",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "api": {
+          "todayShipments": 19,
+          "totalShipments": 794,
+          "deliveredCount": 606
+        },
+        "db": {
+          "todayShipments": 19,
+          "monthTotal": 794,
+          "monthDelivered": 606
+        },
+        "today": "2026-04-29",
+        "monthStart": "2026-04-01",
+        "responseMs": 2381
+      }
+    }
+  ]
+}

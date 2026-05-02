@@ -50,12 +50,12 @@ export default function ClientRateCalculatorPage({ toast }) {
   return (
     <div className="min-h-full">
       <div className="client-premium-main max-w-6xl">
-        <ClientPortalPageIntro
-          eyebrow="Rate Calculator"
-          title="Estimate your contracted courier rates instantly with weight-aware pricing and surcharge visibility."
-          description="These estimates use the contracts visible to your client account, including fuel, GST, and any base-charge logic already configured."
-          badges={['Contract-backed rates', `${contracts.length} active contracts`, `${estimates.length} estimates shown`]}
-        />
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Estimate your contracted courier rates instantly with weight-aware pricing and surcharge visibility.</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">These estimates use the contracts visible to your client account, including fuel, GST, and any base-charge logic already configured.</p>
+        </div>
+      </div>
         <div className="client-premium-card p-5">
           <div className="flex flex-wrap items-end gap-3">
             <div className="min-w-[180px]">

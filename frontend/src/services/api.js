@@ -41,8 +41,8 @@ export function setUnauthorizedHandler(handler) {
 }
 
 const api = axios.create({
-  baseURL:     import.meta.env.VITE_API_URL || '/api',
-  timeout:     45_000,
+  baseURL:     import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || '/api',
+  timeout:     10000,
   withCredentials: true,
 });
 
@@ -60,6 +60,15 @@ api.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
   if (csrf) config.headers['x-csrf-token'] = csrf;
+  
+  // Initialize retry count if missing
+  config._retryCount = config._retryCount || 0;
+  
+  // Log request (frontend logging)
+  if (import.meta.env.DEV) {
+    console.log(`[API Req] ${config.method?.toUpperCase()} ${config.url}`);
+  }
+  
   return config;
 });
 
@@ -77,7 +86,26 @@ api.interceptors.response.use(
 
   async (error) => {
     const original = error.config;
-    const status   = error.response?.status;
+    
+    // Check if it's a network error or timeout (no response from server)
+    if (!error.response && original) {
+      if (original._retryCount < 2) {
+        original._retryCount++;
+        console.warn(`[API] Network error. Retrying ${original._retryCount}/2 for ${original.url}...`);
+        return new Promise((resolve) => setTimeout(resolve, 1000 * original._retryCount))
+          .then(() => api(original));
+      }
+      
+      console.error(`[API] Network error max retries reached for ${original.url}`, error);
+      return Promise.reject({
+        type: "NETWORK",
+        message: "Unable to reach server. Check connection or server status.",
+        status: 0,
+        incidentId: null
+      });
+    }
+
+    const status = error.response?.status;
 
     if (original.url?.includes('/auth/refresh') || original.url?.includes('/auth/login')) {
       return Promise.reject(normalizeError(error));
@@ -101,7 +129,7 @@ api.interceptors.response.use(
         // Refresh call — uses cookie auth, so must include CSRF header
         const csrf = getCookie('csrf_token');
         const res = await axios.post(
-          `${import.meta.env.VITE_API_URL || '/api'}/auth/refresh`,
+          `${import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || '/api'}/auth/refresh`,
           {},
           {
             withCredentials: true,
@@ -127,14 +155,27 @@ api.interceptors.response.use(
       }
     }
 
+    // Log the error
+    console.error(`[API Err] ${original.method?.toUpperCase()} ${original.url} -> ${status}`, error.response?.data);
+
     return Promise.reject(normalizeError(error));
   }
 );
 
 function normalizeError(err) {
+  if (!err.response) {
+    return {
+      type: "NETWORK",
+      message: "Unable to reach server. Check connection or server status.",
+      status: 0,
+      incidentId: null
+    };
+  }
+  
   const incidentId = err.response?.data?.incidentId || err.response?.headers?.['x-request-id'] || null;
   return {
-    message: err.response?.data?.message || err.message || 'Network error',
+    type: "API",
+    message: err.response?.data?.message || err.message || 'Request failed',
     status:  err.response?.status,
     errors:  err.response?.data?.errors,
     incidentId,

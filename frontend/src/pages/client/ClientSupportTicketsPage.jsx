@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { LifeBuoy, MessageSquareText, Send, TimerReset } from 'lucide-react';
 import api from '../../services/api';
 import { PageLoader } from '../../components/ui/Loading';
-import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 function PriorityPill({ priority }) {
   const tone = {
@@ -69,42 +67,31 @@ export default function ClientSupportTicketsPage({ toast }) {
   return (
     <div className="min-h-full pb-10">
       <div className="mx-auto client-premium-main">
-        <ClientPortalPageIntro
-          eyebrow="Client Help Desk"
-          title="Resolve issues and track support conversations."
-          description="Open the latest thread, review status updates in context, and respond without breaking your operational flow."
-          badges={[`${tickets.length} conversations`, active?.ticketNo ? `Active ${active.ticketNo}` : 'No ticket selected', 'Threaded updates']}
-          actions={(
-            <>
-              <Link to="/portal" className="client-action-btn-secondary">
-                Back to portal
-              </Link>
-              <Link to="/portal/shipments" className="client-action-btn-primary">
-                Review shipments first
-              </Link>
-            </>
-          )}
-          aside={(
-            <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-              <div className="client-page-metric">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="client-page-metric-label">Open conversations</span>
-                  <LifeBuoy size={16} className="text-orange-500" />
-                </div>
-                <div className="client-page-metric-value">{tickets.length}</div>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Each ticket keeps its replies and operational updates in one place.</p>
-              </div>
-              <div className="client-page-metric">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="client-page-metric-label">Reply state</span>
-                  <MessageSquareText size={16} className="text-sky-500" />
-                </div>
-                <div className="mt-2 text-base font-black text-slate-950 dark:text-white">{reply.trim() ? 'Draft ready' : 'No draft yet'}</div>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Select a ticket and add context before sending your response.</p>
-              </div>
+        <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">Resolve issues and track support conversations.</h1>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Open the latest thread, review status updates in context, and respond without breaking your operational flow.</p>
+          </div>
+        </div>
+
+        <div className="mb-5 grid gap-3 sm:grid-cols-2">
+          <div className="client-page-metric">
+            <div className="flex items-center justify-between gap-3">
+              <span className="client-page-metric-label">Open conversations</span>
+              <LifeBuoy size={16} className="text-orange-500" />
             </div>
-          )}
-        />
+            <div className="client-page-metric-value">{tickets.length}</div>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Each ticket keeps its replies and operational updates in one place.</p>
+          </div>
+          <div className="client-page-metric">
+            <div className="flex items-center justify-between gap-3">
+              <span className="client-page-metric-label">Reply state</span>
+              <MessageSquareText size={16} className="text-sky-500" />
+            </div>
+            <div className="mt-2 text-base font-black text-slate-950 dark:text-white">{reply.trim() ? 'Draft ready' : 'No draft yet'}</div>
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Select a ticket and add context before sending your response.</p>
+          </div>
+        </div>
 
         <section className="grid grid-cols-1 gap-5 lg:grid-cols-[360px,minmax(0,1fr)]">
           <div className="client-section-card overflow-hidden p-0">

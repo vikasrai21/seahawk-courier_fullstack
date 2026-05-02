@@ -4,7 +4,24 @@ const prisma = require('../../config/prisma');
 const carrier = require('../../services/carrier.service');
 const R = require('../../utils/response');
 const cache = require('../../utils/cache');
+const logger = require('../../utils/logger');
 const { resolveClientCode, parseRange, normaliseAwbs, fmtDate } = require('./shared');
+
+function portalHandler(name, fn) {
+  return async (req, res) => {
+    try {
+      return await fn(req, res);
+    } catch (err) {
+      logger.error(`Client portal ${name} failed`, {
+        requestId: req.requestId,
+        userId: req.user?.id,
+        message: err.message,
+        code: err.code,
+      });
+      return R.error(res, 'Client portal data is temporarily unavailable. Please try again.', 500);
+    }
+  };
+}
 
 async function stats(req, res) {
   const clientCode = await resolveClientCode(req);
@@ -12,21 +29,17 @@ async function stats(req, res) {
 
   const { startStr, endStr, range } = parseRange(req.query);
   const baseWhere = { clientCode, date: { gte: startStr, lte: endStr } };
-  const statusWhere = (statuses) => ({ ...baseWhere, status: { in: statuses } });
 
   const cacheKey = `portal:stats:${clientCode}:${startStr}:${endStr}`;
   const cached = await cache.get(cacheKey);
   if (cached) return R.ok(res, cached);
 
-  const [total, booked, inTransit, outForDelivery, delivered, rto, ndr, exception, trendRows, recentShipments] = await Promise.all([
-    prisma.shipment.count({ where: baseWhere }),
-    prisma.shipment.count({ where: statusWhere(['Booked']) }),
-    prisma.shipment.count({ where: statusWhere(['InTransit']) }),
-    prisma.shipment.count({ where: statusWhere(['OutForDelivery']) }),
-    prisma.shipment.count({ where: statusWhere(['Delivered']) }),
-    prisma.shipment.count({ where: statusWhere(['RTO']) }),
-    prisma.shipment.count({ where: statusWhere(['NDR']) }),
-    prisma.shipment.count({ where: statusWhere(['Delayed', 'NDR', 'RTO']) }),
+  const [statusGroups, trendRows, recentShipments] = await Promise.all([
+    prisma.shipment.groupBy({
+      by: ['status'],
+      where: baseWhere,
+      _count: { id: true },
+    }),
     prisma.shipment.groupBy({
       by: ['date'],
       where: baseWhere,
@@ -41,6 +54,22 @@ async function stats(req, res) {
       select: { awb: true, status: true, destination: true, updatedAt: true },
     }),
   ]);
+
+  let total = 0, booked = 0, inTransit = 0, outForDelivery = 0;
+  let delivered = 0, rto = 0, ndr = 0, delayed = 0;
+
+  for (const group of statusGroups) {
+    const count = group._count.id;
+    total += count;
+    if (group.status === 'Booked') booked += count;
+    else if (group.status === 'InTransit') inTransit += count;
+    else if (group.status === 'OutForDelivery') outForDelivery += count;
+    else if (group.status === 'Delivered') delivered += count;
+    else if (group.status === 'RTO') rto += count;
+    else if (group.status === 'NDR') ndr += count;
+    else if (group.status === 'Delayed') delayed += count;
+  }
+  const exception = delayed + ndr + rto;
 
   const otifWindowRows = await prisma.shipment.findMany({
     where: baseWhere,
@@ -148,6 +177,15 @@ async function stats(req, res) {
   R.ok(res, responsePayload);
 }
 
+
+function slaDaysFor(service) {
+  const s = String(service || '').toLowerCase();
+  if (s.includes('express')) return 2;
+  if (s.includes('priority')) return 3;
+  if (s.includes('standard')) return 4;
+  return 5;
+}
+
 async function shipments(req, res) {
   const clientCode = await resolveClientCode(req);
   if (!clientCode) return R.notFound(res, 'Client profile not found.');
@@ -193,7 +231,16 @@ async function shipments(req, res) {
     }),
   ]);
 
-  R.ok(res, { shipments: shipmentsList, pagination: { total, page: safePage, limit: safeLimit }, range: { from: startStr, to: endStr } });
+  const enrichedShipments = shipmentsList.map(s => {
+    const sla = slaDaysFor(s.service);
+    const d = new Date(s.date);
+    if (!isNaN(d.getTime())) {
+      d.setDate(d.getDate() + sla);
+      return { ...s, eta: d.toISOString().split('T')[0] };
+    }
+    return s;
+  });
+  R.ok(res, { shipments: enrichedShipments, pagination: { total, page: safePage, limit: safeLimit }, range: { from: startStr, to: endStr } });
 }
 
 async function shipmentDetail(req, res) {
@@ -228,6 +275,12 @@ async function shipmentDetail(req, res) {
   });
 
   if (!shipment) return R.notFound(res, 'Shipment not found.');
+  const sla = slaDaysFor(shipment.service);
+  const d = new Date(shipment.date);
+  if (!isNaN(d.getTime())) {
+    d.setDate(d.getDate() + sla);
+    shipment.eta = d.toISOString().split('T')[0];
+  }
   R.ok(res, shipment);
 }
 
@@ -421,4 +474,56 @@ async function syncTracking(req, res) {
   });
 }
 
-module.exports = { stats, shipments, shipmentDetail, trackingDetail, performance, bulkTrack, syncTracking };
+module.exports = {
+  stats: portalHandler('stats', stats),
+  shipments: portalHandler('shipments', shipments),
+  shipmentDetail: portalHandler('shipmentDetail', shipmentDetail),
+  trackingDetail: portalHandler('trackingDetail', trackingDetail),
+  performance: portalHandler('performance', performance),
+  bulkTrack: portalHandler('bulkTrack', bulkTrack),
+  syncTracking: portalHandler('syncTracking', syncTracking),
+};
+
+
+exports.exportShipments = async (req, res) => {
+  const code = await shared.resolveClientCode(req);
+  const { range = '90d', status, search } = req.query;
+  const { startDate, endDate } = shared.parseRange(range);
+
+  const baseWhere = {
+    clientCode: code,
+    date: { gte: startDate, lte: endDate },
+  };
+
+  if (status) baseWhere.status = status;
+  if (search) {
+    baseWhere.OR = [
+      { awb: { contains: search, mode: 'insensitive' } },
+      { consignee: { contains: search, mode: 'insensitive' } },
+      { destination: { contains: search, mode: 'insensitive' } },
+    ];
+  }
+
+  const shipments = await prisma.shipment.findMany({
+    where: baseWhere,
+    orderBy: { date: 'desc' },
+  });
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename=client_shipments.csv');
+  const headers = ['Date', 'AWB', 'Consignee', 'Destination', 'Courier', 'Weight', 'Amount', 'Status'];
+  const csvRows = [headers.join(',')];
+  for (const s of shipments) {
+    csvRows.push([
+      `"${s.date || ''}"`,
+      `"${s.awb || ''}"`,
+      `"${(s.consignee || '').replace(/"/g, '""')}"`,
+      `"${(s.destination || '').replace(/"/g, '""')}"`,
+      `"${s.courier || ''}"`,
+      s.weight || 0,
+      s.amount || 0,
+      `"${s.status || ''}"`,
+    ].join(','));
+  }
+  res.send(csvRows.join('\n'));
+};

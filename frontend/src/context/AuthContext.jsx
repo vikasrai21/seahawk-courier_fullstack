@@ -26,6 +26,23 @@ export function AuthProvider({ children }) {
         // Fall through to refresh if the stored token is invalid/expired.
       }
 
+      const shouldAttemptRefresh = (() => {
+        try {
+          return window.localStorage.getItem('shk_remember') === '1';
+        } catch {
+          return false;
+        }
+      })();
+
+      if (!shouldAttemptRefresh) {
+        if (!cancelled) {
+          clearSession();
+          setUser(null);
+          setLoading(false);
+        }
+        return;
+      }
+
       try {
         const meRes = await refreshSession();
         if (!cancelled) setUser(meRes.data);

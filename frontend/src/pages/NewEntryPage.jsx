@@ -27,11 +27,41 @@ export default function NewEntryPage({ toast }) {
   const [flash,   setFlash]   = useState(null);
   const [pinLoading, setPinLoading] = useState(false);
   const [touched, setTouched] = useState({});
+  const [rateContext, setRateContext] = useState(null);
   const awbRef = useRef();
 
   useEffect(() => {
     api.get('/clients').then(r => setClients(r.data || [])).catch(() => undefined);
     loadRecent();
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search || '');
+    const destination = params.get('destination') || '';
+    const pincode = params.get('pincode') || '';
+    const weight = params.get('weight') || '';
+    const amount = params.get('amount') || '';
+    const courier = params.get('courier') || '';
+    const courierMode = params.get('courierMode') || '';
+    const quoteSource = params.get('quoteSource') || '';
+    const margin = params.get('margin') || '';
+    const profit = params.get('profit') || '';
+    const serviceability = params.get('serviceability') || '';
+    const rateDecision = params.get('rateDecision') || '';
+
+    if (!destination && !pincode && !weight && !amount && !courier) return;
+
+    setForm((current) => ({
+      ...current,
+      destination: destination ? destination.toUpperCase() : current.destination,
+      pincode: pincode || current.pincode,
+      weight: weight || current.weight,
+      amount: amount || current.amount,
+      courier: courier || current.courier,
+      service: courierMode.toLowerCase().includes('priority') || courier.toLowerCase().includes('priority') ? 'Priority' : current.service,
+      remarks: rateDecision ? `RATE: ${rateDecision}`.toUpperCase() : current.remarks,
+    }));
+    setRateContext({ courier, courierMode, quoteSource, margin, profit, serviceability, rateDecision, amount, weight, destination, pincode });
   }, []);
 
   const loadRecent = async () => {
@@ -45,6 +75,7 @@ export default function NewEntryPage({ toast }) {
 
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
   const handleBlur = (k) => setTouched(t => ({...t, [k]: true}));
+  const courierOptions = form.courier && !COURIERS.includes(form.courier) ? [form.courier, ...COURIERS] : COURIERS;
 
   // ── Pincode Auto-fill ───────────────────────────────────────────────────
   useEffect(() => {
@@ -128,6 +159,19 @@ export default function NewEntryPage({ toast }) {
         }
       />
 
+      {rateContext && (
+        <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm font-bold text-slate-700 shadow-sm dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-slate-200">
+          <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+            <span>
+              Rate calculator quote loaded: <strong className="text-slate-950 dark:text-white">{rateContext.courier}</strong> · {fmt(rateContext.amount)} · {rateContext.weight} kg · {rateContext.destination}
+            </span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {rateContext.serviceability || 'Serviceability'} · Profit {fmt(rateContext.profit)} · Margin {Number(rateContext.margin || 0).toFixed(1)}%
+            </span>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={save} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-sm overflow-hidden group/form transition-all hover:shadow-md">
         {/* Step 1: Core Identity */}
         <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-slate-100 dark:divide-slate-800 border-b border-slate-100 dark:border-slate-800">
@@ -189,7 +233,7 @@ export default function NewEntryPage({ toast }) {
               onChange={e => set('courier', e.target.value)}
               onKeyDown={e => handleKeyDown(e, 'weight')}>
               <option value="">— Select —</option>
-              {COURIERS.map(c => <option key={c}>{c}</option>)}
+              {courierOptions.map(c => <option key={c}>{c}</option>)}
             </select>
           </FieldCell>
         </div>

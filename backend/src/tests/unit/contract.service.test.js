@@ -55,6 +55,35 @@ describe('contract.service', () => {
     });
   });
 
+  it('calculatePriceFromContract supports simple zone and mode rules', async () => {
+    const contractService = await loadService();
+    const price = contractService.calculatePriceFromContract({
+      id: 10,
+      name: 'Simple',
+      pricingType: 'SIMPLE',
+      fuelSurcharge: 10,
+      gstPercent: 18,
+      pricingRules: {
+        type: 'simple',
+        rules: [
+          { zone: 'local', rate: 38 },
+          { zone: 'roi', mode: 'air', rate: 82 },
+        ],
+      },
+    }, 1, { zone: 'roi', mode: 'air' });
+
+    expect(price).toMatchObject({
+      contractId: 10,
+      pricingType: 'SIMPLE',
+      zone: 'roi',
+      mode: 'air',
+      base: 82,
+      fuelSurcharge: 8.2,
+      gst: 16.24,
+      total: 106.44,
+    });
+  });
+
   it('getActiveContractsByClientCodes normalizes client codes and groups results', async () => {
     const contractService = await loadService();
     prismaMock.contract.findMany.mockResolvedValue([

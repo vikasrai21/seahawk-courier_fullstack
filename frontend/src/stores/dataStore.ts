@@ -84,12 +84,12 @@ export const useDataStore = create<DataState>((set, get) => ({
     if (!force && cached && Date.now() - cached.loadedAt < 30_000) {
       return { shipments: cached.rows, meta: cached.meta };
     }
-    const response = await api.get('/shipments', { params: query });
-    const payload = response.data || {};
-    const rows = payload.shipments || payload.data || payload || [];
+    const response: any = await api.get('/shipments', { params: query });
+    const root = response.pagination ? response : (response.data || response);
+    const rows = Array.isArray(root.data) ? root.data : (root.shipments || (Array.isArray(root) ? root : []));
     const meta = {
-      pagination: payload.pagination || null,
-      stats: payload.stats || null,
+      pagination: root.pagination || null,
+      stats: root.stats || null,
     };
     const loadedAt = Date.now();
     set((state) => ({

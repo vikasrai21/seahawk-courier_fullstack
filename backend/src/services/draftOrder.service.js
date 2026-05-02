@@ -29,6 +29,10 @@ const create = async (data, userId) => {
       pincode,
       weight: parseFloat(weight),
       status: 'PENDING',
+      environment: data.environment || 'production',
+      sandboxRunId: data.sandboxRunId || null,
+      sourcePlatform: data.sourcePlatform || null,
+      simulationState: data.simulationState || undefined,
     },
   });
   return draft;

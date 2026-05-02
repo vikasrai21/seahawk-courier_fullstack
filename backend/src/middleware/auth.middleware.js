@@ -5,6 +5,9 @@ const prisma = require('../config/prisma');
 const R      = require('../utils/response');
 const { isOwnerUser } = require('../utils/owner');
 
+const authUserCache = new Map();
+const AUTH_USER_TTL_MS = 30_000;
+
 function ownerCanBypass(allowed = []) {
   const roles = Array.isArray(allowed) ? allowed : [allowed];
   return roles.some((role) => role !== 'CLIENT');
@@ -21,24 +24,30 @@ const protect = async (req, res, next) => {
     }
     if (!token) return R.unauthorized(res, 'Authentication required.');
     const decoded = jwt.verify(token, config.jwt.secret);
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.id },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        branch: true,
-        phone: true,
-        active: true,
-        clientProfile: { 
-          select: { 
-            clientCode: true,
-            client: { select: { walletBalance: true } }
-          } 
+    const cacheKey = `${decoded.id}:${decoded.iat || ''}`;
+    const cached = authUserCache.get(cacheKey);
+    let user = cached && cached.expiresAt > Date.now() ? cached.user : null;
+    if (!user) {
+      user = await prisma.user.findUnique({
+        where: { id: decoded.id },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          branch: true,
+          phone: true,
+          active: true,
+          clientProfile: { 
+            select: { 
+              clientCode: true,
+              client: { select: { walletBalance: true } }
+            } 
+          },
         },
-      },
-    });
+      });
+      if (user) authUserCache.set(cacheKey, { user, expiresAt: Date.now() + AUTH_USER_TTL_MS });
+    }
     if (!user)        return R.unauthorized(res, 'User no longer exists.');
     if (!user.active) return R.unauthorized(res, 'Account is deactivated. Contact admin.');
     req.user = {
@@ -82,8 +91,7 @@ const staffOnly      = requireOwnerOrRole('ADMIN', 'OPS_MANAGER', 'STAFF');
 
 const ownerOnly = (req, res, next) => {
   if (!req.user) return R.unauthorized(res);
-  // OWNER role is the highest privilege; ADMINs also allowed for backward compat
-  if (!req.user.isOwner && !['OWNER', 'ADMIN'].includes(req.user.role)) {
+  if (!req.user.isOwner && req.user.role !== 'OWNER') {
     return R.forbidden(res, 'Owner access required.');
   }
   next();

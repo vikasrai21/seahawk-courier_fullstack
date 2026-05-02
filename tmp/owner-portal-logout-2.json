@@ -1,0 +1,12 @@
+{
+  "results": [
+    {
+      "feature": "Authentication - UI logout",
+      "status": "PASS",
+      "evidence": {
+        "url": "http://127.0.0.1:5174/login",
+        "landingAfterClick": "/"
+      }
+    }
+  ]
+}

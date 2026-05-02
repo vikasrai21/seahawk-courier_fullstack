@@ -8,7 +8,13 @@ import {
   Zap,
   ArrowUpRight,
   Filter,
-  Boxes
+  Boxes,
+  Download,
+  Calendar,
+  RefreshCw,
+  Clock,
+  AlertTriangle,
+  RotateCcw
 } from 'lucide-react';
 import api from '../../services/api';
 import { StatusBadge } from '../../components/ui/StatusBadge';
@@ -16,7 +22,6 @@ import { PageLoader } from '../../components/ui/Loading';
 import { useDebounce } from '../../hooks/useDebounce';
 import TimelineModal from '../../components/shipments/TimelineModal';
 import { useSocket } from '../../context/SocketContext';
-import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 export default function ClientShipmentsPage({ toast }) {
   const navigate = useNavigate();
@@ -25,31 +30,62 @@ export default function ClientShipmentsPage({ toast }) {
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(25);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState(searchParams.get('status') || '');
+  const [range, setRange] = useState(searchParams.get('range') || 'custom');
+  const [dateFrom, setDateFrom] = useState(searchParams.get('date_from') || '');
+  const [dateTo, setDateTo] = useState(searchParams.get('date_to') || '');
   const [selectedShipment, setSelectedShipment] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [error, setError] = useState(null);
   const dSearch = useDebounce(search, 300);
   const { socket } = useSocket();
 
+  const exportToCSV = async () => {
+    try {
+      const p = new URLSearchParams({
+        range,
+        ...(dSearch && { search: dSearch }),
+        ...(status && { status }),
+        ...(dateFrom && { date_from: dateFrom }),
+        ...(dateTo && { date_to: dateTo })
+      });
+      const res = await api.get(`/portal/shipments/export?${p}`, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `client_shipments_${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+    } catch (err) {
+      toast?.('Export failed: ' + err.message, 'error');
+    }
+  };
+
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const p = new URLSearchParams({ 
         page, 
-        limit: 25, 
-        range: '90d', 
+        limit, 
+        range, 
         ...(dSearch && { search: dSearch }), 
-        ...(status && { status }) 
+        ...(status && { status }),
+        ...(dateFrom && { date_from: dateFrom }),
+        ...(dateTo && { date_to: dateTo })
       });
       const r = await api.get(`/portal/shipments?${p}`);
       setRows(r.data?.shipments || r.data || []);
       setTotal(r.data?.pagination?.total || 0);
+      setLastUpdated(new Date());
     } catch (e) {
+      setError(e.message || 'Failed to load shipments');
       toast?.(e.message, 'error');
     } finally {
       setLoading(false);
     }
-  }, [page, dSearch, status, toast]);
+  }, [page, limit, dSearch, status, range, dateFrom, dateTo, toast]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -68,99 +104,88 @@ export default function ClientShipmentsPage({ toast }) {
   return (
     <div className="min-h-full pb-12">
       <div className="mx-auto client-premium-main animate-in fade-in duration-700">
-        <ClientPortalPageIntro
-          eyebrow="Shipment List"
-          title="Track, filter, and update shipments from one clear screen."
-          description="Search by AWB, consignee, or destination, filter by status, and open tracking quickly."
-          badges={['Last 90 days', 'Live refresh', `${total} filtered shipments`]}
-          actions={(
-            <>
-              <button type="button" onClick={() => load()} className="client-action-btn-primary">
-                Refresh list
+        {/* Page Header & Actions */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Shipments</h1>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {lastUpdated && (
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                <Clock size={11} /> {lastUpdated.toLocaleTimeString()}
+              </span>
+            )}
+            {(search || status || dateFrom || dateTo) && (
+              <button type="button" onClick={() => { setSearch(''); setStatus(''); setDateFrom(''); setDateTo(''); setPage(1); }} className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-amber-600 hover:bg-amber-100 transition-all text-[10px] font-black uppercase tracking-widest">
+                <RotateCcw size={12} /> Reset
               </button>
-              <button type="button" onClick={() => navigate('/portal/bulk-track')} className="client-action-btn-secondary">
-                Open bulk track
-              </button>
-            </>
-          )}
-          aside={(
-            <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
-              <div className="client-page-metric">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="client-page-metric-label">Filtered volume</span>
-                  <Boxes size={16} className="text-sky-500" />
-                </div>
-                <div className="client-page-metric-value">{total}</div>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Shipments matching your current search and status filters.</p>
-              </div>
-              <div className="client-page-metric">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="client-page-metric-label">Query state</span>
-                  <Filter size={16} className="text-orange-500" />
-                </div>
-                <div className="mt-2 text-base font-black text-slate-950 dark:text-white">{status || 'All statuses'}</div>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{dSearch ? `Searching for "${dSearch}"` : 'No search term applied yet.'}</p>
-              </div>
+            )}
+            <button type="button" onClick={exportToCSV} className="client-action-btn-secondary flex items-center gap-2">
+              <Download size={14} /> Export CSV
+            </button>
+            <button type="button" onClick={() => load()} className="client-action-btn-secondary flex items-center gap-2">
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh
+            </button>
+            <button type="button" onClick={() => navigate('/portal/bulk-track')} className="client-action-btn-primary flex items-center gap-2">
+              <Boxes size={14} /> Bulk Track
+            </button>
+          </div>
+        </div>
+
+        {/* Filter Toolbar */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 mb-6 shadow-sm">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex-1 min-w-[240px] relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <input 
+                className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl pl-9 pr-4 py-2 text-sm font-semibold placeholder:text-slate-400 focus:ring-2 focus:ring-sky-500/20 outline-none transition-all dark:text-white"
+                placeholder="Search AWB, consignee, destination..." 
+                value={search} 
+                onChange={(e) => { setSearch(e.target.value); setPage(1); }} 
+              />
             </div>
-          )}
-        />
+            
+            <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-1">
+               <input 
+                 type="date"
+                 className="bg-transparent border-none text-sm font-semibold text-slate-600 dark:text-slate-300 py-1 px-2 outline-none w-[130px] focus:ring-0" 
+                 value={dateFrom} 
+                 onChange={(e) => { setDateFrom(e.target.value); setRange('custom'); setPage(1); }}
+               />
+               <span className="text-slate-300 dark:text-slate-600 text-xs font-black">—</span>
+               <input 
+                 type="date"
+                 className="bg-transparent border-none text-sm font-semibold text-slate-600 dark:text-slate-300 py-1 px-2 outline-none w-[130px] focus:ring-0" 
+                 value={dateTo} 
+                 onChange={(e) => { setDateTo(e.target.value); setRange('custom'); setPage(1); }}
+               />
+            </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-           <div className="lg:col-span-8 space-y-4">
-              <div className="client-filter-shell relative overflow-hidden group">
-                 <div className="absolute right-0 top-0 w-64 h-64 bg-blue-500/10 blur-[90px] pointer-events-none group-hover:bg-blue-500/20 transition-all duration-1000" />
-                 <div className="flex flex-col md:flex-row items-center gap-6 relative z-10">
-                    <div className="flex-1 w-full">
-                       <div className="relative">
-                          <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-300 dark:text-white" />
-                          <input 
-                            className="client-filter-input py-4 pl-11 pr-4" 
-                            placeholder="Search AWB, consignee, destination..." 
-                            value={search} 
-                            onChange={(e) => { setSearch(e.target.value); setPage(1); }} 
-                          />
-                       </div>
-                    </div>
-                    <div className="w-full md:w-56">
-                       <select 
-                         className="client-filter-input appearance-none px-4 py-4 uppercase tracking-[0.16em] text-slate-200" 
-                         value={status} 
-                         onChange={(e) => { setStatus(e.target.value); setPage(1); }}
-                       >
-                          <option value="" className="bg-slate-900">All Statuses</option>
-                          {['Booked', 'InTransit', 'OutForDelivery', 'Delivered', 'Delayed', 'RTO'].map(s => (
-                            <option key={s} value={s} className="bg-slate-900">{s.toUpperCase()}</option>
-                          ))}
-                       </select>
-                    </div>
-                 </div>
-              </div>
-           </div>
-
-           <div className="lg:col-span-4 h-full">
-              <div className="client-section-card flex h-full flex-col justify-between gap-4 text-center">
-                 <div className="flex items-center justify-center gap-3 mb-2">
-                    <Zap size={18} className="text-blue-500 animate-pulse" />
-                    <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 dark:text-slate-100">Quick Snapshot</span>
-                 </div>
-                 <div className="text-5xl font-black text-slate-900 dark:text-white tabular-nums tracking-tighter mb-2">{total}</div>
-                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-100">Filtered shipments</p>
-                 <div className="rounded-2xl border border-slate-200/80 bg-slate-50/80 px-4 py-3 text-left dark:border-slate-700 dark:bg-slate-900/70">
-                   <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">Best next step</p>
-                   <p className="mt-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                     {total ? 'Open a row to inspect its journey or jump into live tracking for an exception.' : 'Widen filters or search by a specific AWB to bring shipments into view.'}
-                   </p>
-                 </div>
-              </div>
-           </div>
+            <select 
+              className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 outline-none focus:ring-2 focus:ring-sky-500/20 transition-all min-w-[160px]"
+              value={status} 
+              onChange={(e) => { setStatus(e.target.value); setPage(1); }}
+            >
+              <option value="">All Statuses</option>
+              {['Booked', 'PickedUp', 'InTransit', 'OutForDelivery', 'Delivered', 'Delayed', 'NDR', 'RTO', 'Failed', 'Cancelled'].map(s => (
+                <option key={s} value={s}>{s.toUpperCase()}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="space-y-4">
            {rows.length === 0 && !loading ? (
               <div className="client-section-card border-dashed p-16 text-center md:p-24">
                 <Package size={48} className="mx-auto text-slate-200 mb-6" />
-                <h3 className="text-xl font-black text-slate-800 dark:text-white mb-2 tracking-tight">No shipments match this view yet</h3>
-                <p className="mx-auto max-w-sm text-sm leading-relaxed text-slate-500 dark:text-slate-100">Adjust your filters, try a different AWB or consignee search, or move to bulk tracking for a wider scan.</p>
+                <h3 className="text-xl font-black text-slate-800 dark:text-white mb-2 tracking-tight">No shipments match current filters</h3>
+                <p className="mx-auto max-w-sm text-sm leading-relaxed text-slate-500 dark:text-slate-100 mb-4">Adjust your date range, status filter, or search term to bring shipments into view.</p>
+                <button 
+                  onClick={() => { setSearch(''); setStatus(''); setDateFrom(''); setDateTo(''); setPage(1); }}
+                  className="client-action-btn-secondary"
+                >
+                  Reset all filters
+                </button>
              </div>
            ) : (
               <div className="client-data-table">
@@ -168,7 +193,7 @@ export default function ClientShipmentsPage({ toast }) {
                    <table className="w-full min-w-[1000px] text-sm">
                       <thead>
                           <tr>
-                            {['Date', 'AWB', 'Consignee', 'Destination', 'Courier', 'Status', 'Action'].map(h => (
+                            {['Date', 'AWB', 'Consignee', 'Destination', 'Courier', 'ETA', 'Status', 'Action'].map(h => (
                                <th key={h}>{h}</th>
                             ))}
                          </tr>
@@ -205,6 +230,16 @@ export default function ClientShipmentsPage({ toast }) {
                                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-600 dark:text-slate-100">{s.courier || '-'}</span>
                                  </div>
                               </td>
+                              <td>
+                                <span className={`text-[10px] font-bold tabular-nums px-2 py-1 rounded-lg ${
+                                  s.eta && !['Delivered','RTO','Cancelled'].includes(s.status) && new Date(s.eta) < new Date()
+                                    ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400'
+                                    : 'text-slate-500 dark:text-slate-400'
+                                }`}>
+                                  {s.eta && !['Delivered','RTO','Cancelled'].includes(s.status) && new Date(s.eta) < new Date() && <AlertTriangle size={10} className="inline mr-1 -mt-0.5" />}
+                                  {s.eta ? new Date(s.eta).toLocaleDateString('en-GB', { day:'2-digit', month:'short' }) : '-'}
+                                </span>
+                              </td>
                               <td><StatusBadge status={s.status} /></td>
                                <td>
                                   <button
@@ -229,14 +264,27 @@ export default function ClientShipmentsPage({ toast }) {
            )}
         </div>
 
-        {total > 25 && (
-          <div className="flex items-center justify-between px-2">
-             <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-100">
-                Showing {((page - 1) * 25) + 1} to {Math.min(page * 25, total)} of {total}
+        {(total > 0) && (
+          <div className="flex flex-wrap items-center justify-between gap-4 px-2">
+             <div className="flex items-center gap-4 text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-100">
+                <span>Showing {((page - 1) * limit) + 1} to {Math.min(page * limit, total)} of {total}</span>
+                <select 
+                  className="bg-transparent border border-slate-200 dark:border-slate-700 rounded px-2 py-1 focus:outline-none"
+                  value={limit}
+                  onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }}
+                >
+                  <option value="25">25 per page</option>
+                  <option value="50">50 per page</option>
+                  <option value="100">100 per page</option>
+                </select>
              </div>
-             <div className="flex gap-2">
-                <button onClick={() => setPage((p) => p - 1)} disabled={page === 1} className="client-action-btn-secondary px-5 py-2 text-[10px] uppercase tracking-[0.16em] disabled:translate-y-0 disabled:opacity-30">Previous</button>
-                <button onClick={() => setPage((p) => p + 1)} disabled={page * 25 >= total} className="client-action-btn-secondary px-5 py-2 text-[10px] uppercase tracking-[0.16em] disabled:translate-y-0 disabled:opacity-30">Next</button>
+             <div className="flex items-center gap-1.5">
+                <button onClick={() => setPage(1)} disabled={page === 1} className="client-action-btn-secondary px-3 py-2 text-[10px] disabled:opacity-30">First</button>
+                <button onClick={() => setPage((p) => p - 1)} disabled={page === 1} className="client-action-btn-secondary px-3 py-2 text-[10px] disabled:opacity-30">Prev</button>
+                <div className="px-3 py-1 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-black">
+                  {page} / {Math.ceil(total / limit) || 1}
+                </div>
+                <button onClick={() => setPage((p) => p + 1)} disabled={page * limit >= total} className="client-action-btn-secondary px-3 py-2 text-[10px] disabled:opacity-30">Next</button>
              </div>
           </div>
         )}

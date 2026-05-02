@@ -48,9 +48,9 @@ function hasScope(policy, requiredScope) {
   return scopes.includes('*') || scopes.includes(requiredScope);
 }
 
-function idempotencyCacheKey({ clientCode, provider, orderId, explicitIdempotencyKey, body }) {
+function idempotencyCacheKey({ clientCode, provider, orderId, explicitIdempotencyKey, body, mode = 'live' }) {
   const payloadHash = crypto.createHash('sha256').update(JSON.stringify(body || {})).digest('hex').slice(0, 24);
-  const seed = String(explicitIdempotencyKey || `${clientCode}:${provider}:${orderId}:${payloadHash}`);
+  const seed = String(explicitIdempotencyKey || `${mode}:${clientCode}:${provider}:${orderId}:${payloadHash}`);
   const hash = crypto.createHash('sha256').update(seed).digest('hex');
   return `integration:idemp:${hash}`;
 }
@@ -73,6 +73,8 @@ async function ingestOrder({
   if (!cfg?.enabled) {
     throw makeError(403, `${provider} integration is disabled for this client.`, 'PROVIDER_DISABLED');
   }
+  const keyPolicy = getKeyPolicy(client?.brandSettings, apiKey?.id);
+  const mode = String(keyPolicy.mode || 'live').toLowerCase() === 'sandbox' ? 'sandbox' : 'live';
 
   const orderId = pickFirst(
     getByPath(body, cfg?.mappings?.referenceId),
@@ -122,6 +124,7 @@ async function ingestOrder({
     orderId: String(orderId),
     explicitIdempotencyKey,
     body,
+    mode,
   });
   const seen = await cache.get(idemKey);
   if (seen) {
@@ -129,7 +132,12 @@ async function ingestOrder({
   }
 
   const dup = await prisma.draftOrder.findFirst({
-    where: { clientCode, referenceId: String(orderId), status: { in: ['PENDING', 'FULFILLED'] } },
+    where: {
+      clientCode,
+      referenceId: String(orderId),
+      status: { in: ['PENDING', 'FULFILLED'] },
+      environment: mode === 'sandbox' ? 'sandbox' : 'production',
+    },
     select: { id: true, status: true },
   });
   if (dup) {
@@ -154,6 +162,15 @@ async function ingestOrder({
     phone: phone || null,
     pincode: pincode || null,
     weight: Number.isFinite(weight) && weight > 0 ? weight : Number(cfg?.defaultWeightKg || 0.5),
+    environment: mode === 'sandbox' ? 'sandbox' : 'production',
+    sandboxRunId: mode === 'sandbox' ? `ING-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}` : null,
+    sourcePlatform: mode === 'sandbox' ? provider : null,
+    simulationState: mode === 'sandbox' ? {
+      phase: 'ORDER_RECEIVED',
+      provider,
+      rawPayload: body,
+      requestId: requestId || null,
+    } : undefined,
   });
 
   await cache.set(idemKey, { seenAt: new Date().toISOString(), draftId: draft.id }, config.webhooks.idempotencyTtlSeconds);
@@ -165,12 +182,13 @@ async function ingestOrder({
 
   await prisma.auditLog.create({
     data: {
-      action: 'INTEGRATION_DRAFT_CREATED',
+      action: mode === 'sandbox' ? 'INTEGRATION_SANDBOX_ACCEPTED' : 'INTEGRATION_DRAFT_CREATED',
       entity: 'INTEGRATION_WEBHOOK',
       entityId: `${clientCode}:${provider}:${orderId}`,
       newValue: {
         provider,
         apiKeyName: apiKey.name,
+        mode,
         draftId: draft.id,
         referenceId: draft.referenceId,
         requestId: requestId || null,

@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
-import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 function Toggle({ checked, onChange, icon, label, hint, sample }) {
   return (
@@ -174,26 +173,16 @@ export default function ClientNotificationsPage({ toast }) {
   };
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7faff_0%,#eef4fd_100%)]">
-      <header className="client-premium-header px-6 py-4">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Link to="/portal" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-500 transition hover:text-slate-700">← Portal</Link>
-            <div>
-              <div className="text-sm font-black text-slate-900">Notification Preferences</div>
-              <div className="text-xs font-semibold uppercase tracking-[0.12em] text-orange-500">Alert Controls</div>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-full">
+      
 
       <div className="mx-auto max-w-6xl p-6 space-y-6">
-        <ClientPortalPageIntro
-          eyebrow="Notification Controls"
-          title="Choose which shipment moments deserve attention and keep alert fatigue under control."
-          description="Tune WhatsApp, email, journeys, and template defaults in one place so your team gets the right operational signal at the right time."
-          badges={['WhatsApp and email', prefs.whatsapp.delivered ? 'Delivery alerts on' : 'Delivery alerts off', prefs.email.ndr ? 'NDR emails on' : 'NDR emails off']}
-        />
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Choose which shipment moments deserve attention and keep alert fatigue under control.</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Tune WhatsApp, email, journeys, and template defaults in one place so your team gets the right operational signal at the right time.</p>
+        </div>
+      </div>
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.08fr)_320px]">
           <div className="overflow-hidden rounded-[28px] border border-slate-200/60 bg-[linear-gradient(145deg,#fffaf5_0%,#ffffff_70%)] p-6 shadow-[0_22px_44px_-30px_rgba(194,65,12,0.35)]">
             <div className="inline-flex rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-orange-600">

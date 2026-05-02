@@ -113,7 +113,7 @@ describe('Developer Hub End-to-End Integration Tests', () => {
 
     expect(keyRes.status).toBe(200);
     expect(keyRes.body.success).toBe(true);
-    expect(keyRes.body.data.token).toMatch(/^shk_live_/);
+    expect(keyRes.body.data.token).toMatch(/^sk_live_/);
     keyId = keyRes.body.data.id;
     apiToken = keyRes.body.data.token;
 

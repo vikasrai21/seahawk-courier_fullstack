@@ -5,7 +5,7 @@ const prisma = require('../config/prisma');
 const logger = require('./logger');
 const config = require('../config');
 const { cleanupExpiredTokens } = require('../services/auth.service');
-const { syncTrackingEvents } = require('../services/carrier.service');
+const { syncTrackingEvents, normalizeCourierName } = require('../services/carrier.service');
 const returnService = require('../services/return.service');
 const geocode = require('../services/geocode.service');
 const integrationIngestSvc = require('../services/integration-ingest.service');
@@ -29,7 +29,8 @@ async function syncTracking() {
       if (!shipment.awb || !shipment.courier) continue;
 
       try {
-        await syncTrackingEvents(shipment.id, shipment.awb, shipment.courier);
+        const courier = normalizeCourierName(shipment.courier);
+        await syncTrackingEvents(shipment.id, shipment.awb, courier);
         synced += 1;
       } catch (err) {
         failed += 1;
@@ -37,6 +38,7 @@ async function syncTracking() {
           shipmentId: shipment.id,
           awb: shipment.awb,
           courier: shipment.courier,
+          resolvedCourier: normalizeCourierName(shipment.courier),
           error: err.message,
         });
       }

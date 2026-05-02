@@ -238,6 +238,17 @@ describe('Client Portal E2E Tests — /api/portal', () => {
     expect(res.body.success).toBe(false);
   });
 
+  it('serves monthly invoice export through the dedicated route', async () => {
+    const res = await request(app)
+      .get('/api/portal/invoices/monthly-export?month=2026-04&format=csv')
+      .set('Authorization', `Bearer ${clientJwtToken}`);
+
+    expect(res.status).toBe(200);
+    expect(String(res.headers['content-type'] || '')).toContain('text/csv');
+    expect(String(res.text || '')).toContain(ownInvoice.invoiceNo);
+    expect(String(res.text || '')).toContain(ownShipment.awb);
+  });
+
   it('preserves existing notification-center settings when updating branding', async () => {
     const res = await request(app)
       .post('/api/portal/branding')

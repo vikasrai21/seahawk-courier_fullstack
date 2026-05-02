@@ -5,6 +5,7 @@ const stateMachine = require('../services/stateMachine');
 const { auditLog } = require('../utils/audit');
 const R = require('../utils/response');
 const { asyncHandler } = require('../middleware/errorHandler');
+const prisma = require('../config/prisma');
 
 const getAll = asyncHandler(async (req, res) => {
   const {
@@ -12,30 +13,39 @@ const getAll = asyncHandler(async (req, res) => {
     clientCode,
     courier,
     status,
+    filter,
     date_from,
     dateFrom,
     date_to,
     dateTo,
     q,
     search,
+    sortBy,
+    sortDir,
+    includeDetails,
+    details,
     page = 1,
     limit = 50,
   } = req.query;
   const pageNum = Math.max(1, parseInt(page, 10) || 1);
   const limitNum = Math.min(5000, Math.max(10, parseInt(limit, 10) || 50));
-  const { shipments, total } = await svc.getAll(
+  const { shipments, total, stats } = await svc.getAll(
     {
       client: client || clientCode,
       courier,
       status,
+      filter,
       dateFrom: date_from || dateFrom,
       dateTo: date_to || dateTo,
       q: q || search,
+      sortBy,
+      sortDir,
     },
     pageNum,
-    limitNum
+    limitNum,
+    includeDetails === '1' || includeDetails === 'true' || details === '1' || details === 'true'
   );
-  R.paginated(res, shipments, total, pageNum, limitNum);
+  R.paginated(res, shipments, total, pageNum, limitNum, 'Success', stats);
 });
 
 const getOne = asyncHandler(async (req, res) => {
@@ -44,6 +54,10 @@ const getOne = asyncHandler(async (req, res) => {
 });
 
 const create = asyncHandler(async (req, res) => {
+  if (req.query?.dryRun === '1' || req.query?.dryRun === 'true') {
+    const simulation = await svc.simulateShipment(req.body);
+    return R.ok(res, { dryRun: true, simulation }, 'Shipment dry run completed');
+  }
   const s = await svc.create(req.body, req.user?.id);
   await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'CREATE', entity: 'SHIPMENT', entityId: s.id, newValue: s, ip: req.ip });
   R.created(res, s, 'Shipment created');
@@ -61,6 +75,22 @@ const patchStatus = asyncHandler(async (req, res) => {
   const s   = await svc.updateStatus(req.params.id, req.body.status, req.user?.id);
   await auditLog({ userId: req.user?.id, userEmail: req.user?.email, action: 'STATUS_CHANGE', entity: 'SHIPMENT', entityId: s.id, oldValue: { status: old.status }, newValue: { status: s.status }, ip: req.ip });
   R.ok(res, s);
+});
+
+const manualStatus = asyncHandler(async (req, res) => {
+  const old = await svc.getById(req.params.id);
+  const s   = await svc.forceUpdateStatus(req.params.id, req.body.status, req.user?.id, req.body.note);
+  await auditLog({
+    userId: req.user?.id,
+    userEmail: req.user?.email,
+    action: 'MANUAL_STATUS_OVERRIDE',
+    entity: 'SHIPMENT',
+    entityId: s.id,
+    oldValue: { status: old.status },
+    newValue: { status: s.status, note: req.body.note || '' },
+    ip: req.ip,
+  });
+  R.ok(res, s, 'Shipment status manually updated');
 });
 
 const remove = asyncHandler(async (req, res) => {
@@ -441,7 +471,76 @@ const scanMobile = asyncHandler(async (req, res) => {
   R.ok(res, resultPayload, 'Mobile scan processed successfully');
 });
 
-module.exports = { getAll, getOne, create, update, patchStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getValidStatuses, deleteShipment: remove,
+
+// ── CSV formula injection guard ──────────────────────────────────────────────
+// Prevents cells starting with =, +, -, @, \t, \r from being interpreted as
+// formulas by Excel/Sheets. Prefixes with a tab character to neutralise.
+function sanitizeCsvCell(value) {
+  const str = String(value ?? '').replace(/"/g, '""');
+  if (/^[=+\-@\t\r]/.test(str)) return `\t${str}`;
+  return str;
+}
+
+const exportShipments = asyncHandler(async (req, res) => {
+  const {
+    client, clientCode, courier, status, filter, date_from, dateFrom, date_to, dateTo, q, search, sortBy, sortDir
+  } = req.query;
+  
+  const where = svc.buildFilters({
+    client: client || clientCode,
+    courier,
+    status,
+    filter,
+    dateFrom: date_from || dateFrom,
+    dateTo: date_to || dateTo,
+    q: q || search,
+  });
+  
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename=shipments_export.csv');
+  
+  const headers = ['Date', 'AWB', 'Consignee', 'Destination', 'Courier', 'Weight', 'Amount', 'Status'];
+  res.write(headers.join(',') + '\n');
+  
+  const BATCH_SIZE = 1000;
+  let skip = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    const shipments = await prisma.shipment.findMany({
+      where,
+      skip,
+      take: BATCH_SIZE,
+      orderBy: { id: 'desc' },
+      select: {
+        date: true, awb: true, consignee: true, destination: true, courier: true, weight: true, amount: true, status: true
+      }
+    });
+
+    if (shipments.length === 0) {
+      hasMore = false;
+      break;
+    }
+
+    const csvRows = shipments.map(s => [
+      `"${sanitizeCsvCell(s.date)}"`,
+      `"${sanitizeCsvCell(s.awb)}"`,
+      `"${sanitizeCsvCell(s.consignee)}"`,
+      `"${sanitizeCsvCell(s.destination)}"`,
+      `"${sanitizeCsvCell(s.courier)}"`,
+      s.weight || 0,
+      s.amount || 0,
+      `"${sanitizeCsvCell(s.status)}"`,
+    ].join(','));
+
+    res.write(csvRows.join('\n') + '\n');
+    skip += BATCH_SIZE;
+  }
+  
+  res.end();
+});
+
+module.exports = { exportShipments,  getAll, getOne, create, update, patchStatus, manualStatus, remove, bulkImport, getTodayStats, getMonthlyStats, getValidStatuses, deleteShipment: remove,
   getImportLedger,
   scanAwb,
   scanAwbBulk,

@@ -330,7 +330,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          <DashboardAlerts actions={actions} rtoAlerts={rtoAlerts} />
+          <DashboardAlerts actions={actions} rtoAlerts={rtoAlerts} navigate={navigate} />
 
           {loading ? (
             <div className="space-y-5">

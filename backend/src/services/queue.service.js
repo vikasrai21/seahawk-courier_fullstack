@@ -205,12 +205,13 @@ async function _runNotification({ type, shipmentId, clientCode: _clientCode, dat
     if (shipmentId) {
       const s = await prisma.shipment.findUnique({ where: { id: shipmentId }, include: { client: true } });
       if (!s) return;
-      if (type === 'SHIPMENT_BOOKED') {
-        await notify.sendWelcomeEmail(s.client, 'Your portal password'); // Example for booking
-      } else {
-        // Use the centralized status change notifier
-        await notify.notifyStatusChange(s);
-      }
+      const eventByType = {
+        SHIPMENT_BOOKED: 'booked',
+        OUT_FOR_DELIVERY: 'ofd',
+        DELIVERED: 'delivered',
+        NDR: 'ndr',
+      };
+      await notify.notifyShipmentEvent(s, eventByType[type] || data?.event);
     }
   } catch (err) {
     logger.error(`Notification job failed: ${err.message}`);

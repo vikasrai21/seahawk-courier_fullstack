@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import { Modal } from '../../components/ui/Modal';
-import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 const ACTION_OPTIONS = [
   { value: 'REATTEMPT', label: 'Request reattempt' },
@@ -91,26 +90,14 @@ export default function ClientNDRPage({ toast }) {
   };
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7faff_0%,#eef4fd_100%)]">
-      <header className="client-premium-header px-6 py-4">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Link to="/portal" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-500 transition hover:text-slate-700">← Portal</Link>
-            <div>
-              <div className="text-sm font-black text-slate-900">NDR Self-Service</div>
-              <div className="text-xs font-semibold uppercase tracking-[0.12em] text-orange-500">NDR Management</div>
-            </div>
-          </div>
-        </div>
-      </header>
-
+    <div className="min-h-full">
       <div className="mx-auto client-premium-main">
-        <ClientPortalPageIntro
-          eyebrow="Delivery Exceptions"
-          title="Review and resolve failed deliveries."
-          description="Send the next instruction to operations from one focused queue."
-          badges={[`${items.length} open cases`, selected ? `Viewing ${selected.shipment?.awb || 'case'}` : 'Queue ready', loading ? 'Refreshing queue' : 'Queue loaded']}
-        />
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Review and resolve failed deliveries.</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Send the next instruction to operations from one focused queue.</p>
+        </div>
+      </div>
 
 
         {loading ? (
@@ -197,4 +184,3 @@ export default function ClientNDRPage({ toast }) {
     </div>
   );
 }
-

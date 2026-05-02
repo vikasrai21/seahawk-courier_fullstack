@@ -90,7 +90,7 @@ export default function DashboardAlerts({ actions, rtoAlerts, navigate }) {
           title="SLA Breach Risk"
           description={`${actions.overdueShipments} shipments past expected delivery`}
           badge={actions.overdueShipments}
-          onClick={() => navigate?.('/pending?filter=Delayed')}
+          onClick={() => navigate?.('/app/shipments?filter=sla_breach')}
         />
       )}
 
@@ -102,7 +102,7 @@ export default function DashboardAlerts({ actions, rtoAlerts, navigate }) {
           title="RTO Heatmap Alert"
           description={`${rtoAlerts[0].courier} reporting ${rtoAlerts[0].rate}% failure rate`}
           badge="High Risk"
-          onClick={() => navigate?.('/analytics')}
+          onClick={() => navigate?.('/app/analytics')}
         />
       )}
 
@@ -114,7 +114,7 @@ export default function DashboardAlerts({ actions, rtoAlerts, navigate }) {
           title="Actionable NDRs"
           description="Consignee issues requiring urgent resolution"
           badge={actions.pendingNDRs}
-          onClick={() => navigate?.('/pending?filter=OutForDelivery')}
+          onClick={() => navigate?.('/app/ndr')}
         />
       )}
 
@@ -126,7 +126,7 @@ export default function DashboardAlerts({ actions, rtoAlerts, navigate }) {
           title="Pickup Volume"
           description={`${actions.todayPickups} assigned for carrier pickup today`}
           badge={actions.todayPickups}
-          onClick={() => navigate?.('/pending?filter=Booked')}
+          onClick={() => navigate?.('/app/pickups')}
         />
       )}
     </div>

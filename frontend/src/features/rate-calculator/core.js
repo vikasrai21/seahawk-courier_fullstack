@@ -837,20 +837,6 @@ const CLR = {
   purple: 'bg-purple-100 border-purple-300 text-purple-800',
 };
 
-const CITY_LIST = [
-  { label: 'Delhi', state: 'Delhi', district: 'Delhi', city: 'delhi' },
-  { label: 'Gurgaon / Gurugram', state: 'Haryana', district: 'Gurugram', city: 'gurgaon' },
-  { label: 'Noida', state: 'Uttar Pradesh', district: 'Gautam Buddha Nagar', city: 'noida' },
-  { label: 'Faridabad', state: 'Haryana', district: 'Faridabad', city: 'faridabad' },
-  { label: 'Ghaziabad', state: 'Uttar Pradesh', district: 'Ghaziabad', city: 'ghaziabad' },
-  { label: 'Ahmedabad', state: 'Gujarat', district: 'Ahmedabad', city: 'ahmedabad' },
-  { label: 'Mumbai', state: 'Maharashtra', district: 'Mumbai', city: 'mumbai' },
-  { label: 'Bangalore', state: 'Karnataka', district: 'Bengaluru', city: 'bangalore' },
-  { label: 'Kolkata', state: 'West Bengal', district: 'Kolkata', city: 'kolkata' },
-  { label: 'Chennai', state: 'Tamil Nadu', district: 'Chennai', city: 'chennai' },
-  { label: 'Hyderabad', state: 'Telangana', district: 'Hyderabad', city: 'hyderabad' },
-];
-
 const WEIGHT_POINTS = [0.25, 0.5, 1, 2, 3, 5, 10, 15, 20, 25, 50, 100];
 
-export { stateToZones, proposalSell, courierCost, COURIERS, COURIER_GROUPS, CITY_LIST, CLR, fmt, fmtI, fmtP, pColor, WEIGHT_POINTS, rnd };
+export { stateToZones, proposalSell, courierCost, COURIERS, COURIER_GROUPS, CLR, fmt, fmtI, fmtP, pColor, WEIGHT_POINTS, rnd };

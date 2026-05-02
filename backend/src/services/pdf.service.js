@@ -348,6 +348,135 @@ async function generateInvoicePDF(invoice, items, client) {
 
   return new Promise((resolve, reject) => {
     const chunks = [];
+    const doc = new PDFDocument({ size: "A4", margin: 42, bufferPages: true });
+    doc.on("data", (c) => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const pageM = 42;
+    const W = doc.page.width;
+    const H = doc.page.height;
+    const contentW = W - pageM * 2;
+    const delivered = items.filter((item) => item.shipment?.status === "Delivered").length;
+    const rto = items.filter((item) => ["RTO", "RTODelivered"].includes(item.shipment?.status)).length;
+    const baseCharges = items.reduce((sum, item) => sum + Number(item.baseAmount || item.amount || 0), 0);
+    const fuelCharges = items.reduce((sum, item) => sum + Number(item.fuelSurcharge || 0), 0);
+
+    const title = (text, y, sub = "") => {
+      doc.font("Helvetica-Bold").fontSize(22).fillColor(BRAND.slate900).text(text, pageM, y);
+      if (sub) doc.font("Helvetica").fontSize(9).fillColor(BRAND.slate500).text(sub, pageM, y + 28);
+    };
+    const header = (label) => {
+      doc.rect(0, 0, W, 72).fill(BRAND.navy);
+      drawLogo(doc, pageM, 15, 42, 42);
+      doc.font("Helvetica-Bold").fontSize(14).fillColor(BRAND.white).text(COMPANY.name, pageM + 52, 18);
+      doc.font("Helvetica").fontSize(8).fillColor("#cbd5e1").text(`${COMPANY.gstin} | ${COMPANY.phone} | ${COMPANY.email}`, pageM + 52, 38);
+      doc.font("Helvetica-Bold").fontSize(10).fillColor(BRAND.white).text(label, pageM, 54, { width: contentW, align: "right" });
+    };
+    const keyValue = (label, value, x, y, width = 160) => {
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(BRAND.slate500).text(label, x, y);
+      doc.font("Helvetica-Bold").fontSize(12).fillColor(BRAND.slate900).text(value || "-", x, y + 12, { width });
+    };
+    const metric = (label, value, x, y, w, color = BRAND.slate900) => {
+      drawRoundedCard(doc, x, y, w, 68, 10, BRAND.white, BRAND.slate200);
+      doc.font("Helvetica-Bold").fontSize(8).fillColor(BRAND.slate500).text(label, x + 12, y + 12, { width: w - 24 });
+      doc.font("Helvetica-Bold").fontSize(20).fillColor(color).text(value, x + 12, y + 30, { width: w - 24 });
+    };
+    const moneyRow = (label, value, y, strong = false) => {
+      doc.font(strong ? "Helvetica-Bold" : "Helvetica").fontSize(strong ? 12 : 10).fillColor(strong ? BRAND.slate900 : BRAND.slate700).text(label, pageM + 260, y, { width: 150 });
+      doc.font("Helvetica-Bold").fontSize(strong ? 12 : 10).fillColor(strong ? BRAND.orange : BRAND.slate900).text(fmtMoney(value), pageM + 410, y, { width: 92, align: "right" });
+    };
+
+    // Page 1: Summary
+    header("PAGE 1 / SUMMARY");
+    title("Tax Invoice Summary", 104, `Invoice ${invoice.invoiceNo || "DRAFT"} | ${invoice.fromDate || "-"} to ${invoice.toDate || "-"}`);
+    keyValue("BILL TO", client?.company || invoice.clientCode, pageM, 156, 240);
+    keyValue("CLIENT GSTIN", client?.gst || "Unregistered", pageM, 198, 240);
+    keyValue("ADDRESS", client?.address || "-", pageM, 240, 260);
+    keyValue("INVOICE DATE", fmtDate(invoice.createdAt || new Date()), pageM + 330, 156);
+    keyValue("PLACE OF SUPPLY", tax.placeOfSupply || "-", pageM + 330, 198);
+    keyValue("TAX STRUCTURE", tax.label, pageM + 330, 240);
+
+    const metricY = 320;
+    metric("TOTAL SHIPMENTS", String(items.length), pageM, metricY, 116, BRAND.navy);
+    metric("DELIVERED", String(delivered), pageM + 130, metricY, 116, "#059669");
+    metric("RTO", String(rto), pageM + 260, metricY, 116, "#e11d48");
+    metric("TOTAL AMOUNT", fmtMoney(total), pageM + 390, metricY, 120, BRAND.orange);
+
+    drawRoundedCard(doc, pageM, 430, contentW, 112, 12, "#f8fafc", BRAND.slate200);
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(BRAND.slate900).text("Amount in words", pageM + 16, 448);
+    doc.font("Helvetica").fontSize(10).fillColor(BRAND.slate700).text(amountInWords(total), pageM + 16, 470, { width: contentW - 32, lineGap: 3 });
+    doc.font("Helvetica").fontSize(9).fillColor(BRAND.slate500).text(invoice.notes || "Payment due as per agreed credit terms.", pageM + 16, 510, { width: contentW - 32 });
+
+    // Page 2: Billing breakdown
+    doc.addPage();
+    header("PAGE 2 / BILLING BREAKDOWN");
+    title("Billing Breakdown", 104, "Charges are right-aligned and split into freight, surcharge and GST components.");
+    drawRoundedCard(doc, pageM + 240, 166, 270, 188, 12, BRAND.white, BRAND.slate200);
+    moneyRow("Base charges", baseCharges, 190);
+    moneyRow("Fuel surcharge", fuelCharges, 218);
+    moneyRow("Taxable subtotal", subtotal, 246);
+    tax.components.forEach((component, index) => moneyRow(component.label, component.amount, 274 + index * 28));
+    doc.moveTo(pageM + 260, 322).lineTo(pageM + 502, 322).strokeColor(BRAND.slate200).stroke();
+    moneyRow("Invoice total", total, 336, true);
+
+    drawRoundedCard(doc, pageM, 166, 206, 188, 12, "#f8fafc", BRAND.slate200);
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(BRAND.slate900).text("Billing metadata", pageM + 14, 186);
+    [
+      ["HSN/SAC", COMPANY.hsnCode],
+      ["Company GSTIN", COMPANY.gstin],
+      ["Client", client?.company || invoice.clientCode],
+      ["Status", invoice.status || "DRAFT"],
+    ].forEach(([label, value], index) => keyValue(label, value, pageM + 14, 214 + index * 32, 176));
+
+    // Page 3+: Shipment table
+    doc.addPage();
+    header("PAGE 3+ / SHIPMENT LEDGER");
+    title("Shipment Ledger", 104, "AWB-level billing details.");
+    const cols = [
+      { label: "#", x: pageM, w: 28, align: "center" },
+      { label: "AWB", x: pageM + 32, w: 92 },
+      { label: "Destination", x: pageM + 128, w: 118 },
+      { label: "Weight", x: pageM + 250, w: 58, align: "right" },
+      { label: "Status", x: pageM + 314, w: 76 },
+      { label: "Amount", x: pageM + 400, w: 110, align: "right" },
+    ];
+    const drawLedgerHead = (y) => {
+      doc.rect(pageM, y, contentW, 26).fill(BRAND.navy);
+      cols.forEach((col) => doc.font("Helvetica-Bold").fontSize(7.5).fillColor(BRAND.white).text(col.label, col.x + 4, y + 9, { width: col.w - 8, align: col.align || "left" }));
+      return y + 32;
+    };
+    let y = drawLedgerHead(158);
+    items.forEach((item, index) => {
+      if (y > H - 76) {
+        doc.addPage();
+        header("PAGE 3+ / SHIPMENT LEDGER");
+        y = drawLedgerHead(104);
+      }
+      doc.rect(pageM, y - 5, contentW, 30).fill(index % 2 ? "#ffffff" : "#f8fafc");
+      const row = [
+        String(index + 1),
+        item.awb || "-",
+        item.destination || "-",
+        `${Number(item.weight || 0).toFixed(2)}`,
+        item.shipment?.status || "-",
+        fmtMoney(item.amount || 0),
+      ];
+      cols.forEach((col, colIndex) => doc.font(colIndex === 1 || colIndex === 5 ? "Helvetica-Bold" : "Helvetica").fontSize(8.5).fillColor(BRAND.slate900).text(row[colIndex], col.x + 4, y + 4, { width: col.w - 8, align: col.align || "left" }));
+      y += 30;
+    });
+
+    const range = doc.bufferedPageRange();
+    for (let i = range.start; i < range.start + range.count; i++) {
+      doc.switchToPage(i);
+      doc.font("Helvetica").fontSize(8).fillColor(BRAND.slate500).text(`Generated ${new Date().toLocaleString("en-IN")} | Page ${i + 1} of ${range.count}`, pageM, H - 28, { width: contentW, align: "center" });
+    }
+
+    doc.end();
+  });
+
+  return new Promise((resolve, reject) => {
+    const chunks = [];
     const doc = new PDFDocument({ size: "A4", margin: 40, bufferPages: true });
 
     doc.on("data", (c) => chunks.push(c));

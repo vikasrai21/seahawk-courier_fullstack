@@ -8,7 +8,27 @@ async function getClientCode(userId) {
 }
 
 async function resolveClientCode(req, source = req.query) {
-  if (req.user.isOwner || req.user.role === 'ADMIN') return String(source?.clientCode || '').trim() || null;
+  if (req.user.isOwner || req.user.role === 'ADMIN') {
+    const requested = String(source?.clientCode || '').trim();
+    if (!requested) return null;
+    const normalized = requested.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const direct = await prisma.client.findFirst({
+      where: {
+        OR: [
+          { code: { equals: requested.toUpperCase() } },
+          { normalizedName: { equals: normalized } },
+        ],
+      },
+      select: { code: true },
+    });
+    if (direct?.code) return direct.code;
+    const clients = await prisma.client.findMany({ select: { code: true, company: true } });
+    const alias = clients.find((client) => (
+      String(client.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '') === normalized ||
+      String(client.company || '').toUpperCase().replace(/[^A-Z0-9]/g, '') === normalized
+    ));
+    return alias?.code || requested.toUpperCase();
+  }
   return req.user.clientCode || await getClientCode(req.user.id);
 }
 

@@ -22,6 +22,7 @@ const { bulkStatusSchema } = require("../validators/ops.validator");
 const adminAssistant = require("../services/adminAssistant.service");
 const ownerAgent = require("../services/ownerAgent.service");
 const pdfService = require("../services/pdf.service");
+const cache = require("../utils/cache");
 
 router.use(protect);
 
@@ -30,10 +31,10 @@ router.use(protect);
 // POST /api/ops/agent/chat — HawkAI enterprise agent chat
 router.post("/agent/chat", ownerOnly, async (req, res) => {
   try {
-    const { message, history = [] } = req.body;
+    const { message, history = [], debug = false } = req.body;
     if (!message?.trim()) return R.error(res, "message is required", 400);
     if (message.length > 2000) return R.error(res, "message too long", 400);
-    const result = await ownerAgent.chat({ message: message.trim(), history });
+    const result = await ownerAgent.chat({ message: message.trim(), history, debug });
     R.ok(res, result);
   } catch (err) {
     logger.error(`[HawkAI] Chat error: ${err.message}`);
@@ -208,7 +209,12 @@ router.post("/bulk-status", validate(bulkStatusSchema), async (req, res) => {
       }
       const canonicalStatus = stateMachine.normalizeStatus(status);
 
-      stateMachine.assertValidTransition(shipment.status, canonicalStatus);
+      try {
+        stateMachine.assertValidTransition(shipment.status, canonicalStatus);
+      } catch (err) {
+        err.status = 400;
+        throw err;
+      }
 
       if (stateMachine.normalizeStatus(shipment.status) === canonicalStatus) {
         updated++;
@@ -691,9 +697,13 @@ router.get(
 // ── GET /api/ops/dashboard — consolidated analytics with intelligence ─────
 router.get("/dashboard", async (req, res) => {
   try {
+    const cached = await cache.get("ops:dashboard:v2");
+    if (cached) return R.ok(res, cached);
+
     let now = new Date();
     // Intelligent Date Anchor: Use latest shipment date if we are in a demo/inactive state
     const latestShipment = await prisma.shipment.findFirst({
+      select: { date: true },
       orderBy: { createdAt: "desc" },
     });
     if (latestShipment && latestShipment.date) {
@@ -897,6 +907,7 @@ router.get("/dashboard", async (req, res) => {
       },
     };
 
+    await cache.set("ops:dashboard:v2", responseData, 30).catch(() => {});
     R.ok(res, responseData);
   } catch (err) {
     logger.error(`Dashboard error: ${err.message}`);

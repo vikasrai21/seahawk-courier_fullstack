@@ -1,6 +1,6 @@
 const { z } = require('zod');
 
-const STATUSES = ['Booked','PickedUp','InTransit','OutForDelivery','Delivered','Delayed','RTO','RTODelivered','Cancelled'];
+const STATUSES = ['Booked','PickedUp','InTransit','OutForDelivery','Delivered','Failed','NDR','Delayed','RTO','RTODelivered','Cancelled'];
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
 // Helper: coerce null/undefined to empty string
@@ -22,7 +22,10 @@ const shipmentSchema = z.object({
 });
 
 const updateShipmentSchema = shipmentSchema.partial();
-const statusUpdateSchema   = z.object({ status: z.enum(STATUSES) });
+const statusUpdateSchema   = z.object({
+  status: z.enum(STATUSES),
+  note: optStr.optional(),
+});
 const sessionContextSchema = z.object({
   sessionDate: z.string().regex(dateRegex).optional(),
   dominantClient: z.string().trim().min(1).optional(),
@@ -92,18 +95,30 @@ const clientSchema = z.object({
   address:   optStr.default(''),
   notes:     optStr.default(''),
   active:    z.boolean().optional().default(true),
+  notificationConfig: z.any().optional(),
 });
 
 const contractSchema = z.object({
+  id:           z.coerce.number().int().positive().optional(),
   clientCode:   z.string().min(1).transform(v => v.toUpperCase()),
   name:         z.string().min(1, 'Contract name required'),
   courier:      optStr.optional(),
   service:      optStr.optional(),
-  pricingType:  z.enum(['PER_KG','FLAT','PER_SHIPMENT']).default('PER_KG'),
+  pricingType:  z.enum(['PER_KG','FLAT','PER_SHIPMENT','MATRIX']).default('PER_KG'),
   baseRate:     z.coerce.number().min(0).default(0),
+  baseCharge:   z.coerce.number().min(0).default(0),
   minCharge:    z.coerce.number().min(0).default(0),
   fuelSurcharge:z.coerce.number().min(0).default(0),
   gstPercent:   z.coerce.number().min(0).default(18),
+  pricingRules: z.array(z.object({
+    mode: z.string().min(1),
+    zone: z.string().min(1),
+    weightSlab: z.string().min(1),
+    rate: z.coerce.number().min(0).default(0),
+    minCharge: z.coerce.number().min(0).default(0),
+    baseCharge: z.coerce.number().min(0).default(0),
+    perKgRate: z.coerce.number().min(0).default(0),
+  })).optional().default([]),
   validFrom:    optStr.optional(),
   validTo:      optStr.optional(),
   active:       z.boolean().optional().default(true),

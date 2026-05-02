@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import api from "../../services/api";
-import ClientPortalPageIntro from "../../components/client/ClientPortalPageIntro";
 
 export default function ClientDeveloperHubPage({ toast }) {
   const [loading, setLoading] = useState(true);
@@ -403,16 +402,12 @@ export default function ClientDeveloperHubPage({ toast }) {
   return (
     <div className="min-h-full">
       <main className="client-premium-main max-w-6xl">
-        <ClientPortalPageIntro
-          eyebrow="Developer Hub"
-          title="Manage client API keys, connector settings, webhook replays, and integration diagnostics from one engineering workspace."
-          description="This hub is where your technical team can provision access, inspect event flows, replay payloads, and validate connector health without leaving the portal."
-          badges={[
-            "API key management",
-            `${keys.length} keys`,
-            `${deadLetters.length} dead letters`,
-          ]}
-        />
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Manage client API keys, connector settings, webhook replays, and integration diagnostics from one engineering workspace.</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">This hub is where your technical team can provision access, inspect event flows, replay payloads, and validate connector health without leaving the portal.</p>
+        </div>
+      </div>
         <section className="client-premium-card p-5">
           <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
             Create API Key

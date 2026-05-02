@@ -1,0 +1,331 @@
+01:13:16 [[34mdebug[39m]: [34mQuery: SELECT COUNT(*) FROM (SELECT "public"."shipments"."id" FROM "public"."shipments" WHERE "public"."shipments"."awb"::text LIKE $1 OFFSET $2) AS "sub" — 575ms[39m
+01:13:21 [[34mdebug[39m]: [34mQuery: SELECT "public"."shipments"."id", "public"."shipments"."date", "public"."shipments"."client_code", "public"."shipments"."awb", "public"."shipments"."consignee", "public"."shipments"."destination", "public"."shipments"."phone", "public"."shipments"."pincode", "public"."shipments"."weight", "public"."shipments"."amount", "public"."shipments"."cost", "public"."shipments"."profit", "public"."shipments"."courier", "public"."shipments"."department", "public"."shipments"."service", "public"."shipments"."status", "public"."shipments"."ndr_status", "public"."shipments"."remarks", "public"."shipments"."label_url", "public"."shipments"."environment", "public"."shipments"."sandbox_run_id", "public"."shipments"."source_platform", "public"."shipments"."simulation_state", "public"."shipments"."risk_score", "public"."shipments"."risk_factors", "public"."shipments"."margin_alert", "public"."shipments"."created_by_id", "public"."shipments"."updated_by_id", "public"."shipments"."created_at", "public"."shipments"."updated_at" FROM "public"."shipments" WHERE ("public"."shipments"."awb" = $1 AND 1=1) LIMIT $2 OFFSET $3 — 571ms[39m
+01:13:25 [[34mdebug[39m]: [34mQuery: SELECT "public"."shipments"."id", "public"."shipments"."date", "public"."shipments"."client_code", "public"."shipments"."awb", "public"."shipments"."consignee", "public"."shipments"."destination", "public"."shipments"."phone", "public"."shipments"."pincode", "public"."shipments"."weight", "public"."shipments"."amount", "public"."shipments"."cost", "public"."shipments"."profit", "public"."shipments"."courier", "public"."shipments"."department", "public"."shipments"."service", "public"."shipments"."status", "public"."shipments"."ndr_status", "public"."shipments"."remarks", "public"."shipments"."label_url", "public"."shipments"."environment", "public"."shipments"."sandbox_run_id", "public"."shipments"."source_platform", "public"."shipments"."simulation_state", "public"."shipments"."risk_score", "public"."shipments"."risk_factors", "public"."shipments"."margin_alert", "public"."shipments"."created_by_id", "public"."shipments"."updated_by_id", "public"."shipments"."created_at", "public"."shipments"."updated_at" FROM "public"."shipments" WHERE ("public"."shipments"."awb" = $1 AND 1=1) LIMIT $2 OFFSET $3 — 305ms[39m
+01:14:07 [[34mdebug[39m]: [34mQuery: SELECT 1 — 285ms[39m
+01:14:07 [[34mdebug[39m]: [34mQuery: SELECT "public"."shipments"."id", "public"."shipments"."date", "public"."shipments"."client_code", "public"."shipments"."awb", "public"."shipments"."consignee", "public"."shipments"."destination", "public"."shipments"."phone", "public"."shipments"."pincode", "public"."shipments"."weight", "public"."shipments"."amount", "public"."shipments"."cost", "public"."shipments"."profit", "public"."shipments"."courier", "public"."shipments"."department", "public"."shipments"."service", "public"."shipments"."status", "public"."shipments"."ndr_status", "public"."shipments"."remarks", "public"."shipments"."label_url", "public"."shipments"."environment", "public"."shipments"."sandbox_run_id", "public"."shipments"."source_platform", "public"."shipments"."simulation_state", "public"."shipments"."risk_score", "public"."shipments"."risk_factors", "public"."shipments"."margin_alert", "public"."shipments"."created_by_id", "public"."shipments"."updated_by_id", "public"."shipments"."created_at", "public"."shipments"."updated_at" FROM "public"."shipments" WHERE ("public"."shipments"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3 — 574ms[39m
+01:14:08 [[34mdebug[39m]: [34mQuery: SELECT "public"."tracking_events"."id", "public"."tracking_events"."shipment_id", "public"."tracking_events"."awb", "public"."tracking_events"."status", "public"."tracking_events"."location", "public"."tracking_events"."description", "public"."tracking_events"."timestamp", "public"."tracking_events"."source", "public"."tracking_events"."raw_data" FROM "public"."tracking_events" WHERE "public"."tracking_events"."shipment_id" IN ($1) OFFSET $2 — 573ms[39m
+01:14:17 [[34mdebug[39m]: [34mQuery: SELECT "public"."shipments"."id", "public"."shipments"."date", "public"."shipments"."client_code", "public"."shipments"."awb", "public"."shipments"."consignee", "public"."shipments"."destination", "public"."shipments"."phone", "public"."shipments"."pincode", "public"."shipments"."weight", "public"."shipments"."amount", "public"."shipments"."cost", "public"."shipments"."profit", "public"."shipments"."courier", "public"."shipments"."department", "public"."shipments"."service", "public"."shipments"."status", "public"."shipments"."ndr_status", "public"."shipments"."remarks", "public"."shipments"."label_url", "public"."shipments"."environment", "public"."shipments"."sandbox_run_id", "public"."shipments"."source_platform", "public"."shipments"."simulation_state", "public"."shipments"."risk_score", "public"."shipments"."risk_factors", "public"."shipments"."margin_alert", "public"."shipments"."created_by_id", "public"."shipments"."updated_by_id", "public"."shipments"."created_at", "public"."shipments"."updated_at" FROM "public"."shipments" WHERE ("public"."shipments"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3 — 293ms[39m
+01:14:24 [[34mdebug[39m]: [34mQuery: SELECT 1 — 316ms[39m
+01:14:24 [[34mdebug[39m]: [34mQuery: SELECT "public"."shipments"."id", "public"."shipments"."date", "public"."shipments"."client_code", "public"."shipments"."awb", "public"."shipments"."consignee", "public"."shipments"."destination", "public"."shipments"."phone", "public"."shipments"."pincode", "public"."shipments"."weight", "public"."shipments"."amount", "public"."shipments"."cost", "public"."shipments"."profit", "public"."shipments"."courier", "public"."shipments"."department", "public"."shipments"."service", "public"."shipments"."status", "public"."shipments"."ndr_status", "public"."shipments"."remarks", "public"."shipments"."label_url", "public"."shipments"."environment", "public"."shipments"."sandbox_run_id", "public"."shipments"."source_platform", "public"."shipments"."simulation_state", "public"."shipments"."risk_score", "public"."shipments"."risk_factors", "public"."shipments"."margin_alert", "public"."shipments"."created_by_id", "public"."shipments"."updated_by_id", "public"."shipments"."created_at", "public"."shipments"."updated_at" FROM "public"."shipments" WHERE ("public"."shipments"."awb" = $1 AND 1=1) LIMIT $2 OFFSET $3 — 307ms[39m
+01:14:25 [[34mdebug[39m]: [34mQuery: SELECT "public"."ndr_events"."id", "public"."ndr_events"."shipment_id", "public"."ndr_events"."awb", "public"."ndr_events"."reason", "public"."ndr_events"."description", "public"."ndr_events"."attempt_no", "public"."ndr_events"."action", "public"."ndr_events"."new_address", "public"."ndr_events"."resolved_at", "public"."ndr_events"."created_at", "public"."ndr_events"."updated_at" FROM "public"."ndr_events" WHERE "public"."ndr_events"."shipment_id" IN ($1) OFFSET $2 — 577ms[39m
+01:14:45 [[34mdebug[39m]: [34mQuery: SELECT 1 — 295ms[39m
+01:14:45 [[34mdebug[39m]: [34mQuery: SELECT COUNT(*) FROM (SELECT "public"."shipments"."id" FROM "public"."shipments" WHERE ("public"."shipments"."client_code" = $1 AND "public"."shipments"."status" = $2) OFFSET $3) AS "sub" — 589ms[39m
+01:14:46 [[34mdebug[39m]: [34mQuery: SELECT COUNT(*) FROM (SELECT "public"."shipments"."id" FROM "public"."shipments" WHERE ("public"."shipments"."environment" = $1 AND "public"."shipments"."awb"::text LIKE $2) OFFSET $3) AS "sub" — 592ms[39m
+01:14:52 [[34mdebug[39m]: [34mQuery: SELECT "public"."shipments"."id", "public"."shipments"."date", "public"."shipments"."client_code", "public"."shipments"."awb", "public"."shipments"."consignee", "public"."shipments"."destination", "public"."shipments"."phone", "public"."shipments"."pincode", "public"."shipments"."weight", "public"."shipments"."amount", "public"."shipments"."cost", "public"."shipments"."profit", "public"."shipments"."courier", "public"."shipments"."department", "public"."shipments"."service", "public"."shipments"."status", "public"."shipments"."ndr_status", "public"."shipments"."remarks", "public"."shipments"."label_url", "public"."shipments"."environment", "public"."shipments"."sandbox_run_id", "public"."shipments"."source_platform", "public"."shipments"."simulation_state", "public"."shipments"."risk_score", "public"."shipments"."risk_factors", "public"."shipments"."margin_alert", "public"."shipments"."created_by_id", "public"."shipments"."updated_by_id", "public"."shipments"."created_at", "public"."shipments"."updated_at" FROM "public"."shipments" WHERE ("public"."shipments"."awb" = $1 AND 1=1) LIMIT $2 OFFSET $3 — 287ms[39m
+01:14:52 [[34mdebug[39m]: [34mQuery: SELECT COUNT(*) FROM (SELECT "public"."shipments"."id" FROM "public"."shipments" WHERE ("public"."shipments"."environment" = $1 AND "public"."shipments"."awb"::text LIKE $2) OFFSET $3) AS "sub" — 315ms[39m
+01:14:53 [[34mdebug[39m]: [34mQuery: SELECT "public"."clients"."id", "public"."clients"."brand_settings" FROM "public"."clients" WHERE ("public"."clients"."code" = $1 AND 1=1) LIMIT $2 OFFSET $3 — 607ms[39m
+01:15:10 [[34mdebug[39m]: [34mQuery: SELECT 1 — 284ms[39m
+01:15:11 [[34mdebug[39m]: [34mQuery: SELECT "public"."draft_orders"."id", "public"."draft_orders"."client_code", "public"."draft_orders"."reference_id", "public"."draft_orders"."consignee", "public"."draft_orders"."destination", "public"."draft_orders"."phone", "public"."draft_orders"."pincode", "public"."draft_orders"."weight", "public"."draft_orders"."status", "public"."draft_orders"."shipment_id", "public"."draft_orders"."environment", "public"."draft_orders"."sandbox_run_id", "public"."draft_orders"."source_platform", "public"."draft_orders"."simulation_state", "public"."draft_orders"."created_at", "public"."draft_orders"."updated_at" FROM "public"."draft_orders" WHERE ("public"."draft_orders"."id" = $1 AND 1=1) LIMIT $2 OFFSET $3 — 578ms[39m
+01:15:17 [[34mdebug[39m]: [34mQuery: SELECT COUNT(*) FROM (SELECT "public"."draft_orders"."id" FROM "public"."draft_orders" WHERE "public"."draft_orders"."reference_id" = $1 OFFSET $2) AS "sub" — 607ms[39m
+01:15:18 [[34mdebug[39m]: [34mQuery: SELECT COUNT(*) FROM (SELECT "public"."draft_orders"."id" FROM "public"."draft_orders" WHERE "public"."draft_orders"."reference_id" = $1 OFFSET $2) AS "sub" — 288ms[39m
+01:15:18 [[34mdebug[39m]: [34mQuery: UPDATE "public"."clients" SET "brand_settings" = $1, "updated_at" = $2 WHERE ("public"."clients"."code" = $3 AND 1=1) RETURNING "public"."clients"."id", "public"."clients"."code", "public"."clients"."company", "public"."clients"."contact", "public"."clients"."phone", "public"."clients"."whatsapp", "public"."clients"."email", "public"."clients"."gst", "public"."clients"."address", "public"."clients"."notes", "public"."clients"."active", "public"."clients"."wallet_balance", "public"."clients"."created_at", "public"."clients"."updated_at", "public"."clients"."auto_topup_rule", "public"."clients"."brand_settings" — 576ms[39m
+01:15:22 [[34mdebug[39m]: [34mQuery: SELECT COUNT(*) FROM (SELECT "public"."shipments"."id" FROM "public"."shipments" WHERE "public"."shipments"."awb"::text LIKE $1 OFFSET $2) AS "sub" — 297ms[39m
+{
+  "run": "QA91787344",
+  "client": "SAMPLE",
+  "created": {
+    "shipments": [
+      2895,
+      2896,
+      2897,
+      2898,
+      2899
+    ],
+    "ndrs": [],
+    "apiKeys": [
+      7,
+      8
+    ],
+    "drafts": [
+      13
+    ],
+    "sandboxRunIds": []
+  },
+  "summary": {
+    "total": 24,
+    "pass": 18,
+    "fail": 6,
+    "partial": 0
+  },
+  "results": [
+    {
+      "feature": "Authentication - API login",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "user": "admin@seahawk.com",
+        "role": "ADMIN",
+        "responseMs": 2668
+      }
+    },
+    {
+      "feature": "Authentication - session /me",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "responseMs": 1176
+      }
+    },
+    {
+      "feature": "Shipment Creation - live API",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "awb": "QA91787344LIVE",
+        "storedStatus": "Booked",
+        "responseMs": 4577
+      }
+    },
+    {
+      "feature": "Shipment Creation - invalid input handling",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "status": 400,
+        "message": "Validation failed.",
+        "errors": [
+          {
+            "field": "awb",
+            "message": "AWB is required"
+          },
+          {
+            "field": "weight",
+            "message": "Number must be greater than or equal to 0"
+          }
+        ]
+      }
+    },
+    {
+      "feature": "Shipment Creation - dry run",
+      "status": "FAIL",
+      "issue": "dryRun query still created a production shipment; no dry-run contract exists.",
+      "severity": "Critical",
+      "evidence": {
+        "status": 201,
+        "stored": true
+      }
+    },
+    {
+      "feature": "Shipment Management - direct Booked to In Transit",
+      "status": "FAIL",
+      "issue": "Expected guard rejection, got 500",
+      "severity": "Medium",
+      "evidence": {
+        "status": 500,
+        "message": "Invalid status transition: \"Booked\" → \"In Transit\". Allowed: Picked Up, Cancelled"
+      }
+    },
+    {
+      "feature": "Shipment Management - status lifecycle",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "awb": "QA91787344FLOW",
+        "finalStatus": "Delivered",
+        "trackingEvents": 4
+      }
+    },
+    {
+      "feature": "Shipment Management - manual update and override",
+      "status": "FAIL",
+      "issue": "{\"success\":false,\"message\":\"svc.forceUpdateStatus is not a function\",\"incidentId\":\"e96896ef-17c4-4b8e-81c4-67b1be3e7a8f\",\"stack\":\"TypeError: svc.forceUpdateStatus is not a function\\n    at C:\\\\Users\\\\hp\\\\OneDrive\\\\Desktop\\\\seahawk-full_stack\\\\backend\\\\src\\\\controllers\\\\shipment.controller.js:74:25\"}",
+      "severity": "Critical",
+      "evidence": {
+        "awb": "QA91787344MANUAL",
+        "status": "Booked",
+        "destination": "MUMBAI"
+      }
+    },
+    {
+      "feature": "Shipment Management - NDR to RTO handling",
+      "status": "FAIL",
+      "issue": "{\"success\":false,\"message\":\"notify.ndrAlert is not a function\"}",
+      "severity": "Critical",
+      "evidence": {
+        "awb": "QA91787344NDR",
+        "shipmentStatus": "Failed",
+        "ndrStatus": "PENDING",
+        "events": 1
+      }
+    },
+    {
+      "feature": "Filters & Search - client/date/status/search",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "returned": 1,
+        "total": 1,
+        "awb": "QA91787344FLOW"
+      }
+    },
+    {
+      "feature": "Filters & Search - pagination",
+      "status": "PASS",
+      "issue": "",
+      "severity": "Medium",
+      "evidence": {
+        "page1Total": 5,
+        "page1Rows": 5,
+        "page2Rows": 0
+      }
+    },
+    {
+      "feature": "Export Functionality - filtered CSV full dataset",
+      "status": "PASS",
+      "issue": "CSV rows 1 did not equal DB count 1",
+      "severity": "",
+      "evidence": {
+        "csvRows": 1,
+        "dbRows": 1,
+        "includesQaAwb": true
+      }
+    },
+    {
+      "feature": "Sandbox vs Production - data separation",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "sandboxAwb": "SBX1888872558",
+        "sandboxEnvironment": "sandbox",
+        "productionBefore": 5,
+        "productionAfter": 5
+      }
+    },
+    {
+      "feature": "API Integration - external order without CSRF cookie",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "status": 201
+      }
+    },
+    {
+      "feature": "API Integration - ecommerce order creates draft",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "draftId": 13,
+        "referenceId": "QA91787344-ORDER-1",
+        "environment": "production"
+      }
+    },
+    {
+      "feature": "API Integration - idempotency replay",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "status": 200,
+        "duplicate": true
+      }
+    },
+    {
+      "feature": "Sandbox vs Production - API key mode separation",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "status": 202,
+        "draftBefore": 0,
+        "draftAfter": 0
+      }
+    },
+    {
+      "feature": "API Integration - tracking timeline consistency",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "awb": "QA91787344FLOW",
+        "status": "Delivered",
+        "events": 4
+      }
+    },
+    {
+      "feature": "Backend Data Integrity - QA records persisted",
+      "status": "PASS",
+      "issue": "",
+      "severity": "Critical",
+      "evidence": {
+        "before": 0,
+        "after": 5,
+        "runPrefix": "QA91787344"
+      }
+    },
+    {
+      "feature": "Authentication - UI login redirect",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "url": "http://127.0.0.1:5174/app"
+      }
+    },
+    {
+      "feature": "Authentication - UI session persists after reload",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "url": "http://127.0.0.1:5174/app"
+      }
+    },
+    {
+      "feature": "UI automation flow",
+      "status": "FAIL",
+      "issue": "locator.selectOption: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#clientCode')\u001b[22m\n",
+      "severity": "Critical",
+      "evidence": {
+        "url": "http://127.0.0.1:5174/login"
+      }
+    },
+    {
+      "feature": "Performance - API response time",
+      "status": "FAIL",
+      "issue": "One or more core APIs exceeded 2s or returned 5xx.",
+      "severity": "Medium",
+      "evidence": {
+        "timings": [
+          {
+            "endpoint": "/api/health",
+            "status": 200,
+            "ms": 900
+          },
+          {
+            "endpoint": "/api/shipments?limit=25",
+            "status": 200,
+            "ms": 7205
+          },
+          {
+            "endpoint": "/api/ops/dashboard",
+            "status": 200,
+            "ms": 4962
+          },
+          {
+            "endpoint": "/api/analytics/overview",
+            "status": 200,
+            "ms": 1760
+          }
+        ]
+      }
+    },
+    {
+      "feature": "Performance - UI login page load",
+      "status": "PASS",
+      "issue": "",
+      "severity": "",
+      "evidence": {
+        "ms": 475
+      }
+    }
+  ]
+}

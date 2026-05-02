@@ -28,12 +28,32 @@ function isRetryableError(err) {
   return false;
 }
 
+const circuits = new Map();
+
+function getCircuit(host) {
+  if (!circuits.has(host)) {
+    circuits.set(host, { failures: 0, state: 'CLOSED', nextAttempt: 0 });
+  }
+  return circuits.get(host);
+}
+
 async function fetchWithRetry(url, init = {}, options = {}) {
   const {
     attempts = 3,
     timeoutMs = 10000,
     baseDelayMs = 300,
   } = options;
+
+  let host = 'unknown';
+  try { host = new URL(url).host; } catch {}
+  const circuit = getCircuit(host);
+
+  if (circuit.state === 'OPEN') {
+    if (Date.now() < circuit.nextAttempt) {
+      throw new Error(`Circuit breaker OPEN for ${host} - skipping request to prevent cascading failure`);
+    }
+    circuit.state = 'HALF_OPEN';
+  }
 
   let lastError = null;
 
@@ -52,11 +72,26 @@ async function fetchWithRetry(url, init = {}, options = {}) {
         throw err;
       }
 
+      // Success resets circuit
+      if (circuit.state !== 'CLOSED') {
+        circuit.failures = 0;
+        circuit.state = 'CLOSED';
+      }
+
       return response;
     } catch (err) {
       lastError = err;
       if (attempt >= attempts - 1 || !isRetryableError(err)) break;
       await sleep(backoffMs(attempt, baseDelayMs));
+    }
+  }
+
+  // Final failure updates circuit
+  if (isRetryableError(lastError)) {
+    circuit.failures += 1;
+    if (circuit.failures >= 5) {
+      circuit.state = 'OPEN';
+      circuit.nextAttempt = Date.now() + 60000; // Open for 60 seconds
     }
   }
 

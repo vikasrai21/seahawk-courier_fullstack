@@ -28,6 +28,8 @@ const clearCache = () => {
     redis.del('stats:today', 'stats:monthly').catch(e => logger.warn(`[Redis] Clear cache failed: ${e.message}`));
   }
   cache.delByPrefix('analytics:').catch(e => logger.warn(`[Cache] Analytics clear failed: ${e.message}`));
+  cache.delByPrefix('ops:dashboard:').catch(e => logger.warn(`[Cache] Ops dashboard clear failed: ${e.message}`));
+  cache.delByPrefix('shipments:list:').catch(e => logger.warn(`[Cache] Shipment list clear failed: ${e.message}`));
 };
 
 const COURIERS = {
@@ -42,11 +44,28 @@ function resolveEnqueueTrackingSync() {
   return null;
 }
 
-function buildFilters({ client, courier, status, dateFrom, dateTo, q }) {
+
+function slaDaysFor(service) {
+  const s = String(service || '').toLowerCase();
+  if (s.includes('express')) return 2;
+  if (s.includes('priority')) return 3;
+  if (s.includes('standard')) return 4;
+  return 5;
+}
+
+function buildFilters({ client, courier, status, filter, dateFrom, dateTo, q, environment }) {
   const where = {};
+  // ── Sandbox isolation: exclude sandbox shipments from production queries ───
+  where.environment = environment || 'production';
   if (client)  where.clientCode = client;
   if (courier) where.courier = { contains: courier, mode: 'insensitive' };
   if (status)  where.status = status;
+  if (filter === 'sla_breach') {
+    where.status = 'InTransit';
+    const slaDaysAgo = new Date();
+    slaDaysAgo.setDate(slaDaysAgo.getDate() - 7); // SLA threshold (e.g. 7 days)
+    where.createdAt = { lt: slaDaysAgo };
+  }
   if (dateFrom || dateTo) { where.date = {}; if (dateFrom) where.date.gte = dateFrom; if (dateTo) where.date.lte = dateTo; }
   if (q) {
     const rawQuery = String(q || '').trim();
@@ -62,12 +81,17 @@ function buildFilters({ client, courier, status, dateFrom, dateTo, q }) {
   return where;
 }
 
-async function getAll(filters = {}, page = 1, limit = 50) {
+async function getAll(filters = {}, page = 1, limit = 50, includeDetails = false) {
   const safePage = Math.max(1, parseInt(page, 10) || 1);
   const safeLimit = Math.min(5000, Math.max(10, parseInt(limit, 10) || 50));
   const where = buildFilters(filters);
   const skip  = (safePage - 1) * safeLimit;
-  const [total, shipments] = await prisma.$transaction([
+  const cacheKey = includeDetails ? null : `shipments:list:v2:${JSON.stringify({ filters, safePage, safeLimit })}`;
+  if (cacheKey) {
+    const cached = await cache.get(cacheKey);
+    if (cached) return cached;
+  }
+  const [total, shipments, aggregates, deliveredCount, inTransitCount, rtoCount] = await Promise.all([
     prisma.shipment.count({ where }),
     prisma.shipment.findMany({
       where,
@@ -93,41 +117,113 @@ async function getAll(filters = {}, page = 1, limit = 50) {
         remarks: true,
         createdAt: true,
         updatedAt: true,
-        trackingEvents: {
-          orderBy: { timestamp: 'desc' },
-          take: 3,
-          select: {
-            id: true,
-            status: true,
-            location: true,
-            description: true,
-            timestamp: true,
-            rawData: true,
+        ...(includeDetails ? {
+          trackingEvents: {
+            orderBy: { timestamp: 'desc' },
+            take: 3,
+            select: {
+              id: true,
+              status: true,
+              location: true,
+              description: true,
+              timestamp: true,
+              rawData: true,
+            },
           },
-        },
-        ndrEvents: {
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          select: {
-            id: true,
-            reason: true,
-            description: true,
-            attemptNo: true,
-            action: true,
-            createdAt: true,
+          ndrEvents: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: {
+              id: true,
+              reason: true,
+              description: true,
+              attemptNo: true,
+              action: true,
+              createdAt: true,
+            },
           },
-        },
-        _count: {
-          select: {
-            ndrEvents: true,
+          _count: {
+            select: {
+              ndrEvents: true,
+            },
           },
-        },
+        } : {}),
         client: { select: { company: true } },
         createdBy: { select: { name: true } },
       },
     }),
+    prisma.shipment.aggregate({
+      where,
+      _sum: { amount: true, weight: true },
+    }),
+    prisma.shipment.count({ where: { ...where, status: 'Delivered' } }),
+    prisma.shipment.count({ where: { ...where, status: 'InTransit' } }),
+    prisma.shipment.count({ where: { ...where, status: 'RTO' } }),
   ]);
-  return { shipments, total };
+  const stats = {
+    count: total,
+    totalAmount: aggregates._sum.amount || 0,
+    totalWeight: aggregates._sum.weight || 0,
+    delivered: deliveredCount,
+    inTransit: inTransitCount,
+    rto: rtoCount,
+    revenue: aggregates._sum.amount || 0, // Aliased for frontend compatibility
+  };
+  const enrichedShipments = shipments.map(s => {
+    const sla = slaDaysFor(s.service);
+    const d = new Date(s.date);
+    if (!isNaN(d.getTime())) {
+      d.setDate(d.getDate() + sla);
+      return { ...s, eta: d.toISOString().split('T')[0] };
+    }
+    return s;
+  });
+  const result = { shipments: enrichedShipments, total, stats };
+  if (cacheKey) await cache.set(cacheKey, result, 30).catch(e => logger.warn(`[Cache] Shipment list set failed: ${e.message}`));
+  return result;
+}
+
+async function simulateShipment(data = {}) {
+  const today = new Date().toISOString().split('T')[0];
+  const awb = normalizeAwb(data.awb);
+  const clientCode = String(data.clientCode || '').trim().toUpperCase();
+  const weight = Number(data.weight || 0);
+  const service = String(data.service || 'Standard');
+  const courier = String(data.courier || '').trim() || autoDetectCourier(awb);
+  const contractPrice = (!Number(data.amount || 0) && clientCode)
+    ? await contractSvc.calculatePrice({
+        clientCode,
+        courier,
+        service,
+        weight: Number.isFinite(weight) ? weight : 0,
+      }).catch(() => null)
+    : null;
+  const amount = Number(data.amount || 0) > 0 ? Number(data.amount) : Number(contractPrice?.total || 0);
+  const risk = await riskAnalysis.analyzeShipment(data).catch(() => ({ score: 0, factors: [] }));
+  const d = new Date(data.date || today);
+  if (!isNaN(d.getTime())) d.setDate(d.getDate() + slaDaysFor(service));
+
+  return {
+    wouldCreate: true,
+    wouldDebitWallet: amount > 0,
+    shipment: {
+      date: data.date || today,
+      clientCode,
+      awb,
+      consignee: String(data.consignee || '').toUpperCase(),
+      destination: String(data.destination || '').toUpperCase(),
+      weight: Number.isFinite(weight) ? weight : 0,
+      amount,
+      courier,
+      department: String(data.department || ''),
+      service,
+      status: 'Booked',
+      eta: !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : null,
+      remarks: data.remarks || (contractPrice ? `AUTO_PRICED:${contractPrice.contractName}` : ''),
+      riskScore: risk?.score || 0,
+      riskFactors: risk?.factors || [],
+    },
+  };
 }
 
 async function getById(id) {
@@ -168,26 +264,39 @@ async function create(data, userId) {
     };
 
     if ((payload.amount || 0) > 0) {
-      const client = await tx.client.findUnique({
-        where: { code: payload.clientCode },
-        select: { walletBalance: true },
+      // ── Atomic wallet debit: prevents race condition / double-debit ──────
+      // Uses updateMany with WHERE balance >= amount so the check + decrement
+      // happen in a single atomic DB operation (no TOCTOU gap).
+      const debitResult = await tx.client.updateMany({
+        where: {
+          code: payload.clientCode,
+          walletBalance: { gte: payload.amount },
+        },
+        data: { walletBalance: { decrement: payload.amount } },
       });
-      if (!client) throw new AppError(`Client not found: ${payload.clientCode}`, 404);
-      if (client.walletBalance < payload.amount) {
+
+      if (debitResult.count === 0) {
+        // Debit failed — either client doesn't exist or insufficient balance
+        const client = await tx.client.findUnique({
+          where: { code: payload.clientCode },
+          select: { walletBalance: true },
+        });
+        if (!client) throw new AppError(`Client not found: ${payload.clientCode}`, 404);
         throw new AppError(`Insufficient wallet balance (available: ₹${client.walletBalance.toFixed(2)}, required: ₹${Number(payload.amount).toFixed(2)})`, 400);
       }
 
-      const newBalance = client.walletBalance - payload.amount;
-      await tx.client.update({
+      // Fetch updated balance for the transaction record
+      const updatedClient = await tx.client.findUnique({
         where: { code: payload.clientCode },
-        data: { walletBalance: { decrement: payload.amount } },
+        select: { walletBalance: true },
       });
+
       await tx.walletTransaction.create({
         data: {
           clientCode: payload.clientCode,
           type: 'DEBIT',
           amount: payload.amount,
-          balance: newBalance,
+          balance: updatedClient.walletBalance,
           description: `Shipment — AWB ${payload.awb}`,
           reference: payload.awb,
           paymentMode: 'WALLET',
@@ -206,6 +315,8 @@ async function create(data, userId) {
   });
 
   emitShipmentCreated(shipment);
+  try { await queueSvc.enqueueNotification('SHIPMENT_BOOKED', { shipmentId: shipment.id }); }
+  catch (e) { logger.warn(`[Notify] Booking notification enqueue failed: ${e.message}`); }
   return shipment;
 }
 
@@ -223,7 +334,13 @@ async function update(id, data, userId) {
 async function updateStatus(id, newStatus, userId) {
   const shipment = await getById(id);
   const canonicalStatus = normalizeStatus(newStatus);
-  if (stateMachine.assertValidTransition) stateMachine.assertValidTransition(shipment.status, canonicalStatus);
+  if (stateMachine.assertValidTransition) {
+    try {
+      stateMachine.assertValidTransition(shipment.status, canonicalStatus);
+    } catch (err) {
+      throw new AppError(err.message, 400);
+    }
+  }
 
   if (normalizeStatus(shipment.status) === canonicalStatus) {
     return shipment;
@@ -254,14 +371,69 @@ async function updateStatus(id, newStatus, userId) {
     } catch (e) { logger.warn(`[Wallet] Refund failed: ${e.message}`); }
   }
 
-  // ── Fire WhatsApp + email notifications ────────────────────────────────
-  try { await notify.notifyStatusChange({ ...updated, status: canonicalStatus }); }
-  catch (e) { logger.warn(`[Notify] Status notification failed: ${e.message}`); }
+  // ── Fire WhatsApp + email notifications asynchronously ─────────────────
+  try {
+    const eventType = canonicalStatus === 'OutForDelivery'
+      ? 'OUT_FOR_DELIVERY'
+      : canonicalStatus === 'Delivered'
+        ? 'DELIVERED'
+        : (canonicalStatus === 'NDR' || canonicalStatus === 'Failed') ? 'NDR' : null;
+    if (eventType) await queueSvc.enqueueNotification(eventType, { shipmentId: updated.id });
+    else await notify.notifyStatusChange({ ...updated, status: canonicalStatus });
+  }
+  catch (e) { logger.warn(`[Notify] Status notification enqueue failed: ${e.message}`); }
 
   // POD email on delivery
   if (canonicalStatus === 'Delivered') {
     try { await notify.sendPODEmail(updated, updated.labelUrl); }
     catch (e) { logger.warn(`[Notify] POD email failed: ${e.message}`); }
+  }
+
+  clearCache();
+  emitShipmentStatusUpdated(updated);
+  return updated;
+}
+
+async function forceUpdateStatus(id, newStatus, userId, note = '') {
+  const shipment = await getById(id);
+  const canonicalStatus = normalizeStatus(newStatus);
+
+  if (normalizeStatus(shipment.status) === canonicalStatus) {
+    return shipment;
+  }
+
+  const updated = await prisma.shipment.update({
+    where: { id: parseInt(id, 10) },
+    data: {
+      status: canonicalStatus,
+      updatedById: userId || null,
+      remarks: [shipment.remarks, note ? `MANUAL_OVERRIDE:${note}` : 'MANUAL_OVERRIDE']
+        .filter(Boolean)
+        .join(' | '),
+    },
+    include: { client: { select: { company: true, phone: true, email: true } } },
+  });
+
+  await prisma.trackingEvent.create({
+    data: {
+      shipmentId: parseInt(id, 10),
+      awb: updated.awb,
+      status: canonicalStatus,
+      description: note ? `Manual override: ${note}` : `Manual override to ${canonicalStatus}`,
+      timestamp: new Date(),
+      source: 'MANUAL',
+    },
+  }).catch((e) => logger.warn(`[Tracking] Manual override event log failed: ${e.message}`));
+
+  if (stateMachine.shouldRefund && stateMachine.shouldRefund(canonicalStatus) && shipment.amount > 0) {
+    try {
+      await walletSvc.creditShipmentRefund({
+        clientCode: shipment.clientCode,
+        awb: shipment.awb,
+        amount: shipment.amount,
+        reason: canonicalStatus,
+      });
+    } catch (e) { logger.warn(`[Wallet] Manual override refund failed: ${e.message}`); }
   }
 
   clearCache();
@@ -286,69 +458,121 @@ async function bulkImport(shipments, userId) {
   const clientCodes = [...new Set(shipments.map(s => (s.clientCode || 'MISC').toUpperCase()))];
   const contractsByClient = await contractSvc.getActiveContractsByClientCodes(clientCodes);
   for (const code of clientCodes) { await prisma.client.upsert({ where: { code }, create: { code, company: code }, update: {} }); }
+
+  // Extract AWBs and pre-fetch existing shipments to avoid N+1 findUnique
+  const allAwbs = shipments.map(s => s.awb ? normalizeAwb(s.awb) : null).filter(Boolean);
+  const existingList = await prisma.shipment.findMany({
+    where: { awb: { in: allAwbs } },
+    select: { id: true, awb: true, courier: true, status: true }
+  });
+  const existingMap = new Map(existingList.map(e => [e.awb, e]));
+
+  const newShipmentsData = [];
+  const ledgerRows = [];
+  const processedAwbs = new Set(); // Prevent duplicates within the same import payload
+
   for (let index = 0; index < shipments.length; index++) {
     const s = shipments[index];
     if (!s.awb || String(s.awb).trim() === '') { errors.push({ awb: '(empty)', error: 'No AWB' }); continue; }
     const awb = normalizeAwb(s.awb);
-    try {
-      const clientCode = (s.clientCode || 'MISC').toUpperCase();
-      const amount = parseFloat(s.amount) || 0;
-      const weight = parseFloat(s.weight) || 0;
-      const normalizedCourier = String(s.courier || '').trim() || autoDetectCourier(awb);
-      const contractPrice = amount > 0
-        ? null
-        : contractSvc.calculatePriceFromContract(
-            contractSvc.selectBestContract(contractsByClient[clientCode] || [], {
-              courier: normalizedCourier,
-              service: String(s.service || 'Standard'),
-            }),
-            weight
-          );
-      const finalAmount = amount > 0 ? amount : Number(contractPrice?.total || 0);
-      if (contractPrice) autoPriced++;
-      const normalizedStatus = normalizeStatus('Booked');
-      const existing = await prisma.shipment.findUnique({ where: { awb } });
+    
+    // Skip if AWB is duplicated within the same import file
+    if (processedAwbs.has(awb)) { duplicates++; continue; }
+    processedAwbs.add(awb);
 
-      let operationalShipment = existing;
-      if (!existing) {
-        operationalShipment = await prisma.shipment.create({ data: { awb, clientCode, date: s.date || today, consignee: String(s.consignee || '').toUpperCase(), destination: String(s.destination || '').toUpperCase(), weight, amount: finalAmount, courier: normalizedCourier, department: String(s.department || ''), service: String(s.service || 'Standard'), status: normalizedStatus, remarks: String(s.remarks || (contractPrice ? `AUTO_PRICED:${contractPrice.contractName}` : '')), createdById: userId || null, updatedById: userId || null } });
-        emitShipmentCreated(operationalShipment);
-        operationalCreated++;
-      } else {
-        duplicates++;
-      }
+    const clientCode = (s.clientCode || 'MISC').toUpperCase();
+    const amount = parseFloat(s.amount) || 0;
+    const weight = parseFloat(s.weight) || 0;
+    const normalizedCourier = String(s.courier || '').trim() || autoDetectCourier(awb);
+    const contractPrice = amount > 0
+      ? null
+      : contractSvc.calculatePriceFromContract(
+          contractSvc.selectBestContract(contractsByClient[clientCode] || [], {
+            courier: normalizedCourier,
+            service: String(s.service || 'Standard'),
+          }),
+          weight
+        );
+    const finalAmount = amount > 0 ? amount : Number(contractPrice?.total || 0);
+    if (contractPrice) autoPriced++;
+    const normalizedStatus = normalizeStatus('Booked');
+    
+    const existing = existingMap.get(awb);
+    let shipmentId = existing?.id || null;
 
-      const effectiveCourier = String(operationalShipment?.courier || normalizedCourier || '').trim();
-      const effectiveStatus = String(operationalShipment?.status || normalizedStatus || '').trim();
-      if (operationalShipment?.id && TRACKABLE_COURIERS.has(effectiveCourier) && !TERMINAL_STATUSES.has(effectiveStatus)) {
-        trackingCandidates.push({ shipmentId: operationalShipment.id, awb, carrier: effectiveCourier });
-      }
-
-      await importLedger.insertRow({
-        batchKey,
-        rowNo: index + 1,
-        date: s.date || today,
-        clientCode,
-        awb,
+    if (!existing) {
+      newShipmentsData.push({
+        awb, clientCode, date: s.date || today,
         consignee: String(s.consignee || '').toUpperCase(),
         destination: String(s.destination || '').toUpperCase(),
-        phone: String(s.phone || ''),
-        pincode: String(s.pincode || ''),
-        weight,
-        amount: finalAmount,
-        courier: normalizedCourier,
-        department: String(s.department || ''),
-        service: String(s.service || 'Standard'),
+        weight, amount: finalAmount, courier: normalizedCourier,
+        department: String(s.department || ''), service: String(s.service || 'Standard'),
         status: normalizedStatus,
         remarks: String(s.remarks || (contractPrice ? `AUTO_PRICED:${contractPrice.contractName}` : '')),
-        autoPriced: !!contractPrice,
-        shipmentId: operationalShipment?.id || null,
-        createdById: userId || null,
+        createdById: userId || null, updatedById: userId || null
       });
+      operationalCreated++;
+    } else {
+      duplicates++;
+    }
 
-      imported++;
-    } catch (err) { if (err.code === 'P2002') duplicates++; else errors.push({ awb, error: err.message }); }
+    const effectiveCourier = String(existing?.courier || normalizedCourier || '').trim();
+    const effectiveStatus = String(existing?.status || normalizedStatus || '').trim();
+    
+    // We'll push tracking candidates after inserting, since we need the newly generated shipmentId
+    
+    ledgerRows.push({
+      batchKey, rowNo: index + 1, date: s.date || today, clientCode, awb,
+      consignee: String(s.consignee || '').toUpperCase(),
+      destination: String(s.destination || '').toUpperCase(),
+      phone: String(s.phone || ''), pincode: String(s.pincode || ''),
+      weight, amount: finalAmount, courier: normalizedCourier,
+      department: String(s.department || ''), service: String(s.service || 'Standard'),
+      status: normalizedStatus,
+      remarks: String(s.remarks || (contractPrice ? `AUTO_PRICED:${contractPrice.contractName}` : '')),
+      autoPriced: !!contractPrice,
+      shipmentId: existing?.id || null, // Will backfill for new ones later
+      createdById: userId || null,
+    });
+    
+    imported++;
   }
+
+  // Insert new shipments in one transaction batch
+  if (newShipmentsData.length > 0) {
+    const createPromises = newShipmentsData.map(data => prisma.shipment.create({ data }));
+    const createdShipments = await prisma.$transaction(createPromises);
+    
+    // Emit socket events
+    createdShipments.forEach(s => emitShipmentCreated(s));
+    
+    // Update ledger rows and tracking candidates with new IDs
+    const newIdMap = new Map(createdShipments.map(s => [s.awb, s.id]));
+    
+    for (const row of ledgerRows) {
+      if (!row.shipmentId && newIdMap.has(row.awb)) {
+        row.shipmentId = newIdMap.get(row.awb);
+      }
+      
+      const effectiveCourier = String(row.courier || '').trim();
+      const effectiveStatus = String(row.status || '').trim();
+      if (row.shipmentId && TRACKABLE_COURIERS.has(effectiveCourier) && !TERMINAL_STATUSES.has(effectiveStatus)) {
+        trackingCandidates.push({ shipmentId: row.shipmentId, awb: row.awb, carrier: effectiveCourier });
+      }
+    }
+  } else {
+    // For existing ones, populate tracking candidates
+    for (const row of ledgerRows) {
+      const effectiveCourier = String(row.courier || '').trim();
+      const effectiveStatus = String(row.status || '').trim();
+      if (row.shipmentId && TRACKABLE_COURIERS.has(effectiveCourier) && !TERMINAL_STATUSES.has(effectiveStatus)) {
+        trackingCandidates.push({ shipmentId: row.shipmentId, awb: row.awb, carrier: effectiveCourier });
+      }
+    }
+  }
+
+  // Bulk insert ledger rows
+  await importLedger.insertRowsBulk(ledgerRows);
   
   if (trackingCandidates.length > 0) {
       const uniqueCandidates = [...new Map(trackingCandidates.map((item) => [item.awb, item])).values()];
@@ -378,10 +602,12 @@ async function getTodayStats() {
     if (cached) return JSON.parse(cached);
   }
 
+  // ── Exclude sandbox shipments from production stats ─────────────────────
+  const prodFilter = { date: today, environment: 'production' };
   const [summary, byCourier, recentActivity] = await prisma.$transaction([
-    prisma.shipment.groupBy({ by: ['status'], where: { date: today }, _count: { id: true }, _sum: { amount: true, weight: true } }),
-    prisma.shipment.groupBy({ by: ['courier'], where: { date: today, courier: { not: '' } }, _count: { id: true }, orderBy: { _count: { id: 'desc' } } }),
-    prisma.shipment.findMany({ where: { date: today }, orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, awb: true, clientCode: true, courier: true, status: true, amount: true, createdAt: true } }),
+    prisma.shipment.groupBy({ by: ['status'], where: prodFilter, _count: { id: true }, _sum: { amount: true, weight: true } }),
+    prisma.shipment.groupBy({ by: ['courier'], where: { ...prodFilter, courier: { not: '' } }, _count: { id: true }, orderBy: { _count: { id: 'desc' } } }),
+    prisma.shipment.findMany({ where: prodFilter, orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, awb: true, clientCode: true, courier: true, status: true, amount: true, createdAt: true } }),
   ]);
   const totals = summary.reduce((acc, row) => {
     acc.total += row._count.id; acc.amount += row._sum.amount || 0; acc.weight += row._sum.weight || 0;
@@ -405,7 +631,7 @@ async function getMonthlyStats(year, month) {
 
   const from = `${year}-${String(month).padStart(2,'0')}-01`;
   const to   = `${year}-${String(month).padStart(2,'0')}-${new Date(year,month,0).getDate()}`;
-  const rows = await prisma.shipment.findMany({ where: { date: { gte: from, lte: to } }, select: { date: true, clientCode: true, courier: true, status: true, amount: true, weight: true } });
+  const rows = await prisma.shipment.findMany({ where: { date: { gte: from, lte: to }, environment: 'production' }, select: { date: true, clientCode: true, courier: true, status: true, amount: true, weight: true } });
   
   if (redis?.status === 'ready') redis.setex(cacheKey, 3600, JSON.stringify(rows)).catch(() => {});
   return rows;
@@ -414,7 +640,7 @@ async function getMonthlyStats(year, month) {
 // Client-facing: shipments for a specific client (for portal)
 async function getMyShipments(clientCode, { page = 1, limit = 25, search, status } = {}) {
   const skip = (parseInt(page) - 1) * parseInt(limit);
-  const where = { clientCode, ...(status && { status }), ...(search && { OR: [
+  const where = { clientCode, environment: 'production', ...(status && { status }), ...(search && { OR: [
     { awb:         { contains: search, mode: 'insensitive' } },
     { consignee:   { contains: search, mode: 'insensitive' } },
     { destination: { contains: search, mode: 'insensitive' } },
@@ -818,14 +1044,17 @@ async function scanAwbBulkAndUpdate(awbs, userId, courier = 'Delhivery', options
 module.exports = {
   getAll,
   getById,
+  simulateShipment,
   create,
   update,
   updateStatus,
+  forceUpdateStatus,
   remove,
   bulkImport,
   getTodayStats,
   getMonthlyStats,
   getMyShipments,
   scanAwbAndUpdate,
-  scanAwbBulkAndUpdate
+  scanAwbBulkAndUpdate,
+  buildFilters
 };

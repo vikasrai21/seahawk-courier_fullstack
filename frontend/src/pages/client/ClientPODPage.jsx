@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
-import ClientPortalPageIntro from '../../components/client/ClientPortalPageIntro';
 
 export default function ClientPODPage({ toast }) {
   const [pods, setPods] = useState([]);
@@ -23,26 +22,16 @@ export default function ClientPODPage({ toast }) {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7faff_0%,#eef4fd_100%)]">
-      <header className="client-premium-header px-6 py-4">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <Link to="/portal" className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-500 transition hover:text-slate-700">← Portal</Link>
-            <div>
-              <div className="text-sm font-black text-slate-900">Digital POD Viewer</div>
-              <div className="text-xs font-semibold uppercase tracking-[0.12em] text-orange-500">Delivery Proof Desk</div>
-            </div>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-full">
+      
 
       <div className="mx-auto client-premium-main">
-        <ClientPortalPageIntro
-          eyebrow="Proof of Delivery"
-          title="Review proof-of-delivery records."
-          description="See delivered rows with proof availability, open POD links faster, and verify final delivery place and time in one scrollable workspace."
-          badges={[`${pods.length} delivered records`, loading ? 'Loading evidence' : 'Evidence loaded']}
-        />
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Review proof-of-delivery records.</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">See delivered rows with proof availability, open POD links faster, and verify final delivery place and time in one scrollable workspace.</p>
+        </div>
+      </div>
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.12fr)_320px]">
           <div className="overflow-hidden rounded-[28px] border border-slate-200/60 bg-[linear-gradient(145deg,#eff6ff_0%,#ffffff_70%)] p-6 shadow-[0_22px_44px_-30px_rgba(37,99,235,0.25)]">
             <div className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.14em] text-sky-600">

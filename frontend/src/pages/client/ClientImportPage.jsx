@@ -82,17 +82,12 @@ export default function ClientImportPage({ toast }) {
   return (
     <div className="min-h-full">
       <div className="client-premium-main max-w-6xl">
-        <ClientPortalPageIntro
-          eyebrow="Order Import"
-          title="Upload spreadsheets, auto-map the columns, and bring bulk orders into the client workspace safely."
-          description="Shopify exports and basic CSV sheets work best. We detect common headers, preview the normalized rows, and then import them into your client account only."
-          badges={['Excel and CSV', `${rows.length} rows staged`, `${result?.imported || 0} rows saved`]}
-          actions={(
-            <button className="client-action-btn-primary" onClick={importRows} disabled={loading || !rows.length}>
-              {loading ? 'Importing…' : `Import ${rows.length || 0} orders`}
-            </button>
-          )}
-        />
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Upload spreadsheets, auto-map the columns, and bring bulk orders into the client workspace safely.</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Shopify exports and basic CSV sheets work best. We detect common headers, preview the normalized rows, and then import them into your client account only.</p>
+        </div>
+      </div>
         <div className="client-premium-card p-5">
           <h1 className="font-bold text-slate-900 dark:text-white">Upload Excel / CSV</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Shopify exports and basic order sheets work best. We'll auto-map common columns and import them into your account only.</p>

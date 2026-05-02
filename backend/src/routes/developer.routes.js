@@ -9,6 +9,7 @@ const integrationIngestSvc = require('../services/integration-ingest.service');
 const { fetchWithRetry } = require('../utils/httpRetry');
 const integrationIngestService = require('../services/integration-ingest.service');
 const webhookDispatch = require('../services/webhook-dispatch.service');
+const sandboxSimulation = require('../services/sandboxSimulation.service');
 
 router.use(authenticate);
 
@@ -208,7 +209,9 @@ router.post('/keys', asyncHandler(async (req, res) => {
     return res.status(403).json({ success: false, message: 'Maximum 5 active API keys allowed.' });
   }
 
-  const rawToken = 'shk_live_' + crypto.randomBytes(24).toString('base64url');
+  const mode = String(req.body?.mode || 'live').toLowerCase() === 'sandbox' ? 'sandbox' : 'live';
+  const tokenPrefix = mode === 'sandbox' ? 'sk_test_' : 'sk_live_';
+  const rawToken = tokenPrefix + crypto.randomBytes(24).toString('base64url');
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
   const key = await prisma.clientApiKey.create({
@@ -219,7 +222,6 @@ router.post('/keys', asyncHandler(async (req, res) => {
     }
   });
 
-  const mode = String(req.body?.mode || 'live').toLowerCase() === 'sandbox' ? 'sandbox' : 'live';
   const requestedScopes = parseScopes(req.body?.scopes);
   const scopes = requestedScopes.length ? requestedScopes : ['orders:create'];
   await upsertKeyPolicy(clientCode, key.id, { scopes, mode });
@@ -1019,6 +1021,28 @@ router.get('/integrations/diagnostics', asyncHandler(async (req, res) => {
       'Replay dead-letter events from the developer hub after fixing mapping issues.',
     ],
   });
+}));
+
+// GET /api/portal/developer/sandbox/dashboard
+router.get('/sandbox/dashboard', asyncHandler(async (req, res) => {
+  const clientCode = resolveClientCode(req);
+  if (!clientCode) return R.badRequest(res, 'clientCode is required');
+  const dashboard = await sandboxSimulation.getDashboard({ clientCode, limit: req.query?.limit });
+  R.ok(res, dashboard);
+}));
+
+// POST /api/portal/developer/sandbox/bulk-orders
+router.post('/sandbox/bulk-orders', asyncHandler(async (req, res) => {
+  const clientCode = resolveClientCode(req);
+  if (!clientCode) return R.badRequest(res, 'clientCode is required');
+  const result = await sandboxSimulation.bulkGenerate({
+    clientCode,
+    count: req.body?.count,
+    platformType: req.body?.platformType || req.body?.platform,
+    createShipments: req.body?.createShipments === true,
+    userId: req.user?.id || null,
+  });
+  R.created(res, result, 'Sandbox bulk generation completed.');
 }));
 
 // ── Outbound Webhooks Management ──────────────────────────────────────────

@@ -1,5 +1,5 @@
 // Sea Hawk Service Worker — offline support + background sync
-const CACHE_NAME  = 'seahawk-v2';
+const CACHE_NAME  = 'seahawk-v3';
 const STATIC_URLS = [
   '/',
   '/app',
@@ -25,7 +25,7 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// ── Fetch: network-first for API, cache-first for static assets ───────────
+// ── Fetch: network-first for API/navigation/versioned assets ───────────────
 self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
@@ -41,7 +41,25 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: cache-first
+  // JS/CSS assets: network-first so deployments never stay stale
+  const isVersionedAsset = url.pathname.startsWith('/assets/')
+    || /\.(js|mjs|css)$/.test(url.pathname);
+  if (isVersionedAsset) {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          if (response && response.status === 200 && response.type === 'basic') {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // Other static assets: cache-first
   event.respondWith(
     caches.match(request).then(cached => {
       if (cached) return cached;

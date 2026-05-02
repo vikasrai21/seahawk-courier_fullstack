@@ -63,6 +63,9 @@ function buildMovementWhatsAppMessage(status, awb, options = {}) {
   if (status === 'OutForDelivery') {
     return `🚚 Your shipment (AWB: ${awb}) is out for delivery today. Please be available to receive it.\n\nTrack: ${trackUrl}\n\n— Sea Hawk Courier`;
   }
+  if (status === 'NDR' || status === 'Failed') {
+    return `⚠️ Delivery needs attention for AWB ${awb}. Please share updated delivery instructions with Sea Hawk Courier.\n\nTrack: ${trackUrl}\n\nFor support: ${supportPhone}`;
+  }
   return `✅ Your shipment (AWB: ${awb}) has been delivered successfully. Thank you for choosing Sea Hawk Courier!\n\nFor any queries call: ${supportPhone}`;
 }
 
@@ -110,16 +113,22 @@ async function getClientNotificationPreferences(clientCode) {
       }),
       prisma.client.findUnique({
         where: { code: String(clientCode).toUpperCase() },
-        select: { brandSettings: true },
+        select: { brandSettings: true, notificationConfig: true, email: true, whatsapp: true },
       }),
     ]);
     const center = client?.brandSettings?.notificationCenter && typeof client.brandSettings.notificationCenter === 'object'
       ? client.brandSettings.notificationCenter
       : {};
     const prefs = latest?.newValue && typeof latest.newValue === 'object' ? latest.newValue : null;
+    const configPrefs = client?.notificationConfig && typeof client.notificationConfig === 'object'
+      ? client.notificationConfig
+      : {};
+    const flatEvents = configPrefs.notifications || {};
     return {
-      whatsapp: { ...DEFAULT_PREFS.whatsapp, ...(center?.whatsapp || {}), ...(prefs?.whatsapp || {}) },
-      email: { ...DEFAULT_PREFS.email, ...(center?.email || {}), ...(prefs?.email || {}) },
+      emailAddress: configPrefs.email || client?.email || '',
+      whatsappNumber: configPrefs.whatsapp || client?.whatsapp || '',
+      whatsapp: { ...DEFAULT_PREFS.whatsapp, booked: !!flatEvents.booked, outForDelivery: !!flatEvents.ofd, delivered: !!flatEvents.delivered, ndr: !!flatEvents.ndr, ...(center?.whatsapp || {}), ...(configPrefs.whatsappEvents || {}), ...(prefs?.whatsapp || {}) },
+      email: { ...DEFAULT_PREFS.email, booked: !!flatEvents.booked, outForDelivery: !!flatEvents.ofd, delivered: !!flatEvents.delivered, ndr: !!flatEvents.ndr, ...(center?.email || {}), ...(configPrefs.emailEvents || {}), ...(prefs?.email || {}) },
       templates: {
         sms: { ...(center?.templates?.sms || {}) },
         email: { ...(center?.templates?.email || {}) },
@@ -149,20 +158,29 @@ function getTransporter() {
 
 async function sendEmail({ to, subject, html, text }) {
   const t = getTransporter();
-  if (!t) { logger.warn('Email skipped — SMTP not configured'); return; }
+  if (!t) { logger.warn('Email skipped — SMTP not configured'); return { skipped: true, error: 'SMTP not configured' }; }
   try {
-    await t.sendMail({ from: config.email.from, to, subject, html, text });
+    const result = await t.sendMail({ from: config.email.from, to, subject, html, text });
     logger.info(`Email sent to ${to}: ${subject}`);
+    return { sent: true, messageId: result?.messageId };
   } catch (err) {
     logger.error('Email failed', { to, subject, error: err.message });
+    return { sent: false, error: err.message };
+  }
+  if (status === 'NDR' || status === 'Failed') {
+    return {
+      subject: `Delivery Attention Required — AWB ${awb}`,
+      text: `Dear ${company},\n\nDelivery for AWB ${awb} (${consignee || 'Consignee'}) needs attention. Please share updated delivery instructions.\nTrack: ${trackUrl}\n\n— Sea Hawk Courier`,
+      html: `<p>Dear <strong>${company}</strong>,</p><p>Delivery for AWB <strong>${awb}</strong>${consignee ? ` for <strong>${consignee}</strong>` : ''} needs attention.</p><p>Please share updated delivery instructions or contact support.</p><p><a href="${trackUrl}">Track shipment</a></p><p>— Sea Hawk Courier</p>`,
+    };
   }
 }
 
 // ── WhatsApp via Meta Cloud API ────────────────────────────────────────────
-async function sendWhatsApp(phone, message) {
+async function sendWhatsApp(phone, message, options = {}) {
   if (!config.whatsapp.token || !config.whatsapp.phoneId) {
     logger.warn('WhatsApp skipped — WHATSAPP_TOKEN or WHATSAPP_PHONE_ID not configured');
-    return;
+    return { skipped: true, error: 'WhatsApp not configured' };
   }
   const cleaned = phone.replace(/\D/g, '');
   const to = cleaned.startsWith('91') ? cleaned : `91${cleaned}`;
@@ -179,16 +197,74 @@ async function sendWhatsApp(phone, message) {
       { headers: { Authorization: `Bearer ${config.whatsapp.token}`, 'Content-Type': 'application/json' } }
     );
     // Log to DB
-    await prisma.notification.create({
-      data: { channel: 'WHATSAPP', to, template: 'TEXT', message, status: 'SENT', provider: 'META', sentAt: new Date() },
-    });
+    if (options.log !== false) {
+      await prisma.notification.create({
+        data: { channel: 'WHATSAPP', to, template: 'TEXT', message, status: 'SENT', provider: 'META', sentAt: new Date() },
+      });
+    }
     logger.info(`WhatsApp sent to ${to}`);
+    return { sent: true, to };
   } catch (err) {
     logger.error('WhatsApp failed', { to, error: err.message });
-    await prisma.notification.create({
-      data: { channel: 'WHATSAPP', to, template: 'TEXT', message, status: 'FAILED', error: err.message },
-    });
+    if (options.log !== false) {
+      await prisma.notification.create({
+        data: { channel: 'WHATSAPP', to, template: 'TEXT', message, status: 'FAILED', error: err.message },
+      });
+    }
+    return { sent: false, error: err.message, to };
   }
+}
+
+function eventFromStatus(status) {
+  if (status === 'Booked') return 'booked';
+  if (status === 'OutForDelivery') return 'ofd';
+  if (status === 'Delivered') return 'delivered';
+  if (status === 'NDR' || status === 'Failed') return 'ndr';
+  return null;
+}
+
+async function notifyShipmentEvent(shipment, event = eventFromStatus(shipment?.status)) {
+  if (!shipment || !event) return { skipped: true, reason: 'Unsupported event' };
+  const client = shipment.client || await prisma.client.findUnique({
+    where: { code: shipment.clientCode },
+    select: { company: true, email: true, whatsapp: true, phone: true, notificationConfig: true, brandSettings: true },
+  });
+  if (!client) return { skipped: true, reason: 'Client not found' };
+
+  const statusByEvent = { booked: 'Booked', ofd: 'OutForDelivery', delivered: 'Delivered', ndr: 'NDR' };
+  const status = statusByEvent[event] || shipment.status;
+  const prefs = await getClientNotificationPreferences(shipment.clientCode);
+  const emailTo = prefs.emailAddress || client.email;
+  const whatsappTo = prefs.whatsappNumber || client.whatsapp || client.phone || shipment.phone;
+  const results = [];
+
+  if (emailTo && prefs.email?.[event === 'ofd' ? 'outForDelivery' : event]) {
+    const payload = buildMovementEmailPayload({ status, awb: shipment.awb, consignee: shipment.consignee, company: client.company || 'Customer' });
+    const row = await prisma.notification.create({
+      data: { clientCode: shipment.clientCode, awb: shipment.awb, channel: 'EMAIL', to: emailTo, template: event.toUpperCase(), message: payload.subject, status: 'QUEUED' },
+    });
+    const sent = await sendEmail({ to: emailTo, subject: payload.subject, text: payload.text, html: payload.html });
+    await prisma.notification.update({
+      where: { id: row.id },
+      data: sent?.sent ? { status: 'SENT', sentAt: new Date(), providerRef: sent.messageId || null } : { status: 'FAILED', error: sent?.error || 'Email delivery skipped' },
+    });
+    results.push({ channel: 'EMAIL', ...sent });
+  }
+
+  if (whatsappTo && prefs.whatsapp?.[event === 'ofd' ? 'outForDelivery' : event]) {
+    const message = buildMovementWhatsAppMessage(status, shipment.awb, { consignee: shipment.consignee, brand: client.company || 'Sea Hawk Courier' });
+    const row = await prisma.notification.create({
+      data: { clientCode: shipment.clientCode, awb: shipment.awb, channel: 'WHATSAPP', to: whatsappTo, template: event.toUpperCase(), message, status: 'QUEUED' },
+    });
+    const sent = await sendWhatsApp(whatsappTo, message, { log: false });
+    await prisma.notification.update({
+      where: { id: row.id },
+      data: sent?.sent ? { status: 'SENT', sentAt: new Date(), provider: 'META' } : { status: 'FAILED', error: sent?.error || 'WhatsApp delivery skipped' },
+    });
+    results.push({ channel: 'WHATSAPP', ...sent });
+  }
+
+  return { success: true, event, results };
 }
 
 // ── Shipment status change notifications ───────────────────────────────────
@@ -333,6 +409,7 @@ async function sendOpsEscalationAlert({ clientCode, awb, ndrId, urgency, note })
 module.exports = {
   sendEmail,
   sendWhatsApp,
+  notifyShipmentEvent,
   notifyStatusChange,
   sendPODEmail,
   sendWelcomeEmail,

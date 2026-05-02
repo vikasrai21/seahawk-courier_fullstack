@@ -6,6 +6,7 @@ const prisma  = require('../config/prisma');
 const R       = require('../utils/response');
 const notify  = require('../services/notification.service');
 const { logAudit } = require('../utils/audit');
+const logger  = require('../utils/logger');
 
 /* ── GET /api/ndr  — list all NDR shipments ── */
 async function list(req, res) {
@@ -64,30 +65,39 @@ async function create(req, res) {
     });
     if (!shipment) return R.error(res, 'Shipment not found', 404);
 
-    // Create NDR event
-    const ndr = await prisma.nDREvent.create({
-      data: {
-        shipmentId:  shipment.id,
-        awb,
-        reason,
-        description: description || '',
-        attemptNo:   attemptNo || 1,
-        action:      'PENDING',
-      },
+    const ndr = await prisma.$transaction(async (tx) => {
+      const created = await tx.nDREvent.create({
+        data: {
+          shipmentId:  shipment.id,
+          awb,
+          reason,
+          description: description || '',
+          attemptNo:   attemptNo || 1,
+          action:      'PENDING',
+        },
+      });
+
+      await tx.shipment.update({
+        where: { awb },
+        data:  { status: 'Failed', ndrStatus: 'PENDING' },
+      });
+
+      return created;
     });
 
-    // Update shipment NDR status
-    await prisma.shipment.update({
-      where: { awb },
-      data:  { status: 'Failed', ndrStatus: 'PENDING' },
-    });
-
-    // Send notification to customer
-    await notify.ndrAlert(shipment, reason).catch(() => {});
+    try {
+      if (typeof notify.ndrAlert === 'function') {
+        await notify.ndrAlert(shipment, reason);
+      } else {
+        logger.warn('[NDR] Notification skipped: notify.ndrAlert is not configured');
+      }
+    } catch (err) {
+      logger.warn('[NDR] Notification failed after NDR was recorded', { awb, error: err.message });
+    }
 
     await logAudit({ req, action: 'NDR_CREATED', entity: 'Shipment', entityId: awb, newValue: { reason } });
 
-    return R.ok(res, ndr, 201);
+    return R.created(res, ndr, 'NDR recorded');
   } catch (err) {
     return R.error(res, err.message);
   }

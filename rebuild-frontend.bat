@@ -15,8 +15,16 @@ if %errorlevel% neq 0 (
     pause & exit /b 1
 )
 cd ..
+if exist "backend\public" rmdir /s /q "backend\public"
+xcopy /E /I /Y "frontend\dist" "backend\public\" >nul
+if %errorlevel% neq 0 (
+    echo.
+    echo  Sync failed! Could not copy frontend\dist to backend\public.
+    pause & exit /b 1
+)
 
 echo.
-echo  Done! Restart start-seahawk.bat to apply changes.
+echo  Done! Frontend rebuilt and synced to backend\public.
+echo  Restart start-seahawk.bat if server is already running.
 echo.
 pause

@@ -64,11 +64,11 @@ describe('Invoices E2E Tests — /api/invoices', () => {
       expect(res.body.success).toBe(true);
     });
 
-    it('ADMIN gets 200 (ownerOnly allows ADMIN for backward compat)', async () => {
+    it('ADMIN gets 403 for owner-only invoice data', async () => {
       const res = await request(app)
         .get('/api/invoices')
         .set('Authorization', `Bearer ${adminToken}`);
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(403);
     });
   });
 

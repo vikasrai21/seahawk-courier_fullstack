@@ -101,7 +101,13 @@ async function getAll(clientCode, db = prisma) {
 async function getById(id, db = prisma) {
   const inv = await db.invoice.findUnique({
     where: { id: parseInt(id) },
-    include: { client: true, items: { orderBy: { date: 'asc' } } },
+    include: {
+      client: true,
+      items: {
+        orderBy: { date: 'asc' },
+        include: { shipment: { select: { status: true, updatedAt: true } } },
+      },
+    },
   });
   if (!inv) throw new AppError('Invoice not found', 404);
   return inv;

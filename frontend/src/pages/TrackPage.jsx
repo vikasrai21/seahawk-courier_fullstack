@@ -155,15 +155,17 @@ export default function TrackPage({ toast }) {
   const load = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({ limit: 200 });
+      const params = new URLSearchParams({ limit: 200, includeDetails: '1' });
       if (awbQuery.trim()) params.set('q', awbQuery.trim());
       if (clientFilter) params.set('client', clientFilter);
       if (statusFilter) params.set('status', statusFilter);
       const res = await api.get(`/shipments?${params}`);
-      setShipments(res.data || []);
-      if (expandedAwb && !(res.data || []).some(s => s.awb === expandedAwb)) setExpandedAwb(null);
+      const rows = Array.isArray(res.data) ? res.data : (res.data?.shipments || res.shipments || []);
+      setShipments(rows);
+      if (expandedAwb && !rows.some(s => s.awb === expandedAwb)) setExpandedAwb(null);
     } catch (err) {
       toast?.(err.message, 'error');
+      setShipments([]);
     } finally {
       setLoading(false);
     }

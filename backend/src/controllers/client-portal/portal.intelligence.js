@@ -2,8 +2,10 @@
 
 const prisma = require('../../config/prisma');
 const R = require('../../utils/response');
+const logger = require('../../utils/logger');
 const { resolveClientCode, parseRange } = require('./shared');
 const { getMetricsSnapshot } = require('../../middleware/metrics.middleware');
+const contractSvc = require('../../services/contract.service');
 
 const FINAL_STATUSES = new Set(['Delivered', 'RTO', 'Cancelled']);
 
@@ -69,11 +71,85 @@ function classifyAgingBucket(ageDays) {
   return '11d+';
 }
 
+function normalizeCourier(value) {
+  return String(value || 'Unknown').trim() || 'Unknown';
+}
+
+function inferAvailableModes(contracts = []) {
+  const modes = new Set();
+  for (const contract of contracts) {
+    const rules = Array.isArray(contract.pricingRules)
+      ? contract.pricingRules
+      : (contract.pricingRules?.rules || []);
+    for (const rule of rules) {
+      if (rule.mode) modes.add(contractSvc.normalizeMode(rule.mode));
+    }
+    if (contract.service) modes.add(contractSvc.normalizeMode(contract.service));
+  }
+  return [...modes].filter(Boolean);
+}
+
+function buildCourierSuggestions(rows, contracts) {
+  const stats = new Map();
+  for (const row of rows) {
+    const courier = normalizeCourier(row.courier);
+    if (!stats.has(courier)) stats.set(courier, { courier, shipments: 0, delivered: 0, rto: 0, slaScore: 0, totalAmount: 0 });
+    const item = stats.get(courier);
+    item.shipments += 1;
+    item.totalAmount += Number(row.amount || 0);
+    if (row.status === 'Delivered') item.delivered += 1;
+    if (row.status === 'RTO') item.rto += 1;
+    const sla = slaDaysFor(row.service);
+    const age = toDays(Date.now() - new Date(row.date).getTime());
+    if (row.status === 'Delivered' && age <= sla) item.slaScore += 1;
+  }
+
+  const contractCouriers = new Set(contracts.map((c) => normalizeCourier(c.courier)).filter((c) => c !== 'Unknown'));
+  const ranked = [...stats.values()].map((item) => {
+    const rtoRate = item.shipments ? item.rto / item.shipments : 0;
+    const deliveryRate = item.shipments ? item.delivered / item.shipments : 0;
+    const slaRate = item.delivered ? item.slaScore / item.delivered : 0;
+    const avgCost = item.shipments ? item.totalAmount / item.shipments : 0;
+    const score = (deliveryRate * 42) + (slaRate * 28) - (rtoRate * 30) - Math.min(15, avgCost / 1000) + (contractCouriers.has(item.courier) ? 8 : 0);
+    return {
+      ...item,
+      rtoRate: Number((rtoRate * 100).toFixed(1)),
+      deliveryRate: Number((deliveryRate * 100).toFixed(1)),
+      slaRate: Number((slaRate * 100).toFixed(1)),
+      avgCost: Number(avgCost.toFixed(2)),
+      score: Number(score.toFixed(1)),
+    };
+  }).sort((a, b) => b.score - a.score);
+
+  const best = ranked[0] || null;
+  return {
+    bestCourier: best?.courier || null,
+    reason: best ? `Best balance of cost, SLA and ${best.shipments} historical shipments.` : 'No courier history yet.',
+    options: ranked.slice(0, 3),
+  };
+}
+
 function laneKey(destination) {
   const parts = String(destination || '').split(',');
   const city = String(parts[0] || '').trim() || 'UNKNOWN_CITY';
   const state = String(parts[1] || '').trim() || 'UNKNOWN_STATE';
   return `${city}|${state}`;
+}
+
+function portalHandler(name, fn) {
+  return async (req, res) => {
+    try {
+      return await fn(req, res);
+    } catch (err) {
+      logger.error(`Client portal ${name} failed`, {
+        requestId: req.requestId,
+        userId: req.user?.id,
+        message: err.message,
+        code: err.code,
+      });
+      return R.error(res, 'Client portal intelligence is temporarily unavailable. Please try again.', 500);
+    }
+  };
 }
 
 async function intelligence(req, res) {
@@ -84,28 +160,29 @@ async function intelligence(req, res) {
   const limit = Math.min(100, Math.max(10, parseInt(req.query?.limit, 10) || 40));
 
   const webhookWindowStart = new Date(Date.now() - (24 * 60 * 60 * 1000));
-  const [rows, queueStats, recentWebhookLogs] = await Promise.all([
-    prisma.shipment.findMany({
-      where: { clientCode, date: { gte: startStr, lte: endStr } },
-      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
-      take: 400,
-      include: { trackingEvents: { orderBy: { timestamp: 'desc' }, take: 1 } },
-    }),
-    prisma.jobQueue.groupBy({
-      by: ['status'],
-      _count: { id: true },
-    }),
-    prisma.auditLog.findMany({
-      where: {
-        entity: 'INTEGRATION_WEBHOOK',
-        entityId: { startsWith: `${clientCode}:` },
-        createdAt: { gte: webhookWindowStart },
-      },
-      select: { action: true, createdAt: true },
-      orderBy: { createdAt: 'desc' },
-      take: 400,
-    }),
-  ]);
+  const rows = await prisma.shipment.findMany({
+    where: { clientCode, date: { gte: startStr, lte: endStr } },
+    orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+    take: 400,
+    include: { trackingEvents: { orderBy: { timestamp: 'desc' }, take: 1 } },
+  });
+  const contracts = (await contractSvc.getByClient(clientCode)).filter((contract) => contract.active);
+
+  const queueStats = await prisma.jobQueue.groupBy({
+    by: ['status'],
+    _count: { id: true },
+  });
+
+  const recentWebhookLogs = await prisma.auditLog.findMany({
+    where: {
+      entity: 'INTEGRATION_WEBHOOK',
+      entityId: { startsWith: `${clientCode}:` },
+      createdAt: { gte: webhookWindowStart },
+    },
+    select: { action: true, createdAt: true },
+    orderBy: { createdAt: 'desc' },
+    take: 400,
+  });
 
   const now = Date.now();
   const intelligenceRows = rows.map((row) => {
@@ -121,6 +198,7 @@ async function intelligence(req, res) {
       status: row.status,
       destination: row.destination,
       courier: row.courier,
+      amount: row.amount,
       service: row.service,
       date: row.date,
       updatedAt: row.updatedAt,
@@ -151,6 +229,29 @@ async function intelligence(req, res) {
   if (summary.slaBreaches > 0) alerts.push(`${summary.slaBreaches} shipments are projected to miss SLA.`);
   if (summary.stuckInScan > 0) alerts.push(`${summary.stuckInScan} shipments appear stuck with no recent scans.`);
   if (summary.highRtoRisk > 0) alerts.push(`${summary.highRtoRisk} shipments carry high RTO probability.`);
+  const modes = inferAvailableModes(contracts);
+  const courierSuggestions = buildCourierSuggestions(intelligenceRows, contracts);
+  const smartSuggestions = [
+    courierSuggestions.bestCourier ? {
+      type: 'COURIER_RECOMMENDATION',
+      label: `Best courier: ${courierSuggestions.bestCourier}`,
+      detail: courierSuggestions.reason,
+      confidence: courierSuggestions.options[0]?.score || 0,
+    } : null,
+    modes.length === 1 ? {
+      type: 'MODE_CONTEXT',
+      label: `Only ${modes[0]} pricing exists`,
+      detail: `Auto-select ${modes[0]} for this client unless ops overrides it.`,
+      autoSelectMode: modes[0],
+      confidence: 95,
+    } : null,
+    summary.highRtoRisk > 0 ? {
+      type: 'RTO_RISK',
+      label: 'High RTO risk',
+      detail: `${summary.highRtoRisk} shipments need attention based on status, age and scan freshness.`,
+      confidence: 88,
+    } : null,
+  ].filter(Boolean);
 
   const predictiveDelays = flagged
     .filter((r) => !FINAL_STATUSES.has(r.status))
@@ -255,6 +356,8 @@ async function intelligence(req, res) {
   R.ok(res, {
     summary: { ...summary, healthScore },
     alerts,
+    smartSuggestions,
+    courierSuggestions,
     predictiveDelays,
     observability: {
       asOf: new Date().toISOString(),
@@ -299,4 +402,4 @@ async function intelligence(req, res) {
   });
 }
 
-module.exports = { intelligence };
+module.exports = { intelligence: portalHandler('intelligence', intelligence) };

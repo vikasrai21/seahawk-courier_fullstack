@@ -74,6 +74,7 @@ model Client {
   id            Int                 @id @default(autoincrement())
   code          String              @unique @db.VarChar(20)
   company       String
+  normalizedName String?            @map("normalized_name")
   contact       String?
   phone         String?
   whatsapp      String?
@@ -97,10 +98,12 @@ model Client {
   returnRequests  ReturnRequest[]
   autoTopupRule   Json?               @map("auto_topup_rule")
   brandSettings   Json?               @map("brand_settings")
+  notificationConfig Json?             @map("notification_config")
   apiKeys         ClientApiKey[]
   webhooks        ClientWebhook[]
 
   @@index([code])
+  @@index([normalizedName])
   @@map("clients")
 }
 
@@ -128,9 +131,11 @@ model Contract {
   service       String?
   pricingType   String   @default("PER_KG") @map("pricing_type")
   baseRate      Float    @default(0) @map("base_rate")
+  baseCharge    Float    @default(0) @map("base_charge")
   minCharge     Float    @default(0) @map("min_charge")
   fuelSurcharge Float    @default(0) @map("fuel_surcharge")
   gstPercent    Float    @default(18) @map("gst_percent")
+  pricingRules  Json?    @map("pricing_rules")
   validFrom     String?  @map("valid_from")
   validTo       String?  @map("valid_to")
   active        Boolean  @default(true)
@@ -164,6 +169,10 @@ model Shipment {
   ndrStatus      String?             @map("ndr_status")
   remarks        String?
   labelUrl       String?             @map("label_url")
+  environment    String              @default("production") @db.VarChar(20)
+  sandboxRunId   String?             @map("sandbox_run_id") @db.VarChar(50)
+  sourcePlatform String?             @map("source_platform") @db.VarChar(30)
+  simulationState Json?              @map("simulation_state")
   riskScore      Float?              @map("risk_score")
   riskFactors    Json?               @map("risk_factors")
   marginAlert    Boolean             @default(false) @map("margin_alert")
@@ -185,6 +194,9 @@ model Shipment {
   @@index([clientCode])
   @@index([status])
   @@index([courier])
+  @@index([environment])
+  @@index([sandboxRunId])
+  @@index([sourcePlatform])
   @@index([ndrStatus])
   @@index([date, clientCode])
   @@index([courier, status])
@@ -245,6 +257,30 @@ model TrackingEvent {
   @@index([awb])
   @@index([timestamp])
   @@map("tracking_events")
+}
+
+model SandboxRun {
+  id                Int      @id @default(autoincrement())
+  runId             String   @unique @map("run_id") @db.VarChar(50)
+  clientCode        String?  @map("client_code") @db.VarChar(20)
+  platformType      String?  @map("platform_type") @db.VarChar(30)
+  totalOrders       Int      @default(0) @map("total_orders")
+  totalShipments    Int      @default(0) @map("total_shipments")
+  failedOrders      Int      @default(0) @map("failed_orders")
+  status            String   @default("success") @db.VarChar(20)
+  orders            Json     @default("[]")
+  shipments         Json     @default("[]")
+  errors            Json     @default("[]")
+  statusProgression Json     @default("[]") @map("status_progression")
+  logs              Json     @default("[]")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([clientCode])
+  @@index([platformType])
+  @@index([status])
+  @@index([createdAt])
+  @@map("sandbox_runs")
 }
 
 model NDREvent {
@@ -569,6 +605,10 @@ model DraftOrder {
   weight      Float
   status      String   @default("PENDING")
   shipmentId  Int?     @unique @map("shipment_id")
+  environment String   @default("production") @db.VarChar(20)
+  sandboxRunId String? @map("sandbox_run_id") @db.VarChar(50)
+  sourcePlatform String? @map("source_platform") @db.VarChar(30)
+  simulationState Json? @map("simulation_state")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -577,6 +617,9 @@ model DraftOrder {
 
   @@index([clientCode])
   @@index([status])
+  @@index([environment])
+  @@index([sandboxRunId])
+  @@index([sourcePlatform])
   @@map("draft_orders")
 }
 

@@ -94,6 +94,31 @@ describe('Shipment End-to-End Integration Tests', () => {
     expect(dbRecord.destination).toBe('DELHI');
   });
 
+  it('POST /api/shipments?dryRun=1 -> simulates without writing to DB', async () => {
+    const awb = 'E2ETEST_DRY_' + Date.now();
+
+    const res = await request(app)
+      .post('/api/shipments?dryRun=1')
+      .set('Authorization', `Bearer ${jwtToken}`)
+      .send({
+        awb,
+        date: new Date().toISOString().split('T')[0],
+        clientCode: 'MISC',
+        consignee: 'Dry Run',
+        destination: 'DELHI',
+        weight: 0.5,
+        amount: 0,
+        courier: 'Delhivery',
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.dryRun).toBe(true);
+    expect(res.body.data.simulation.shipment.awb).toBe(awb);
+
+    const dbRecord = await prisma.shipment.findUnique({ where: { awb } });
+    expect(dbRecord).toBeNull();
+  });
+
   it('GET /api/shipments/:id -> fetches a single shipment by ID', async () => {
     // First create one
     const awb = 'E2ETEST_GET_' + Date.now();
@@ -147,6 +172,101 @@ describe('Shipment End-to-End Integration Tests', () => {
     expect(res.status).toBe(200);
     expect(res.body.data.consignee).toBe('AFTER UPDATE');
     expect(res.body.data.weight).toBe(2.5);
+  });
+
+  it('PATCH /api/shipments/:id/manual-status -> force updates status and writes tracking event', async () => {
+    const awb = 'E2ETEST_MANUAL_' + Date.now();
+    const created = await prisma.shipment.create({
+      data: {
+        awb,
+        date: new Date().toISOString().split('T')[0],
+        clientCode: 'MISC',
+        consignee: 'Manual Status',
+        destination: 'DELHI',
+        weight: 0.5,
+        amount: 0,
+        courier: 'Delhivery',
+        department: 'Operations',
+        service: 'Standard',
+        status: 'Booked',
+      },
+    });
+
+    const res = await request(app)
+      .patch(`/api/shipments/${created.id}/manual-status`)
+      .set('Authorization', `Bearer ${jwtToken}`)
+      .send({ status: 'RTO', note: 'regression test' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.status).toBe('RTO');
+
+    const dbRecord = await prisma.shipment.findUnique({
+      where: { id: created.id },
+      include: { trackingEvents: true },
+    });
+    expect(dbRecord.status).toBe('RTO');
+    expect(dbRecord.trackingEvents.some((event) => event.source === 'MANUAL' && event.status === 'RTO')).toBe(true);
+  });
+
+  it('PATCH /api/shipments/:id/status -> invalid transition returns 400, not 500', async () => {
+    const awb = 'E2ETEST_INVALID_' + Date.now();
+    const created = await prisma.shipment.create({
+      data: {
+        awb,
+        date: new Date().toISOString().split('T')[0],
+        clientCode: 'MISC',
+        consignee: 'Invalid Transition',
+        destination: 'DELHI',
+        weight: 0.5,
+        amount: 0,
+        courier: 'Delhivery',
+        department: 'Operations',
+        service: 'Standard',
+        status: 'Booked',
+      },
+    });
+
+    const res = await request(app)
+      .patch(`/api/shipments/${created.id}/status`)
+      .set('Authorization', `Bearer ${jwtToken}`)
+      .send({ status: 'InTransit' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.message).toMatch(/Invalid status transition/);
+  });
+
+  it('POST /api/ndr -> records NDR atomically even when notification hook is unavailable', async () => {
+    const awb = 'E2ETEST_NDR_' + Date.now();
+    await prisma.shipment.create({
+      data: {
+        awb,
+        date: new Date().toISOString().split('T')[0],
+        clientCode: 'MISC',
+        consignee: 'NDR Regression',
+        destination: 'DELHI',
+        weight: 0.5,
+        amount: 0,
+        courier: 'Delhivery',
+        department: 'Operations',
+        service: 'Standard',
+        status: 'Booked',
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/ndr')
+      .set('Authorization', `Bearer ${jwtToken}`)
+      .send({ awb, reason: 'Customer not available', attemptNo: 1 });
+
+    expect(res.status).toBe(201);
+
+    const dbRecord = await prisma.shipment.findUnique({
+      where: { awb },
+      include: { ndrEvents: true },
+    });
+    expect(dbRecord.status).toBe('Failed');
+    expect(dbRecord.ndrStatus).toBe('PENDING');
+    expect(dbRecord.ndrEvents).toHaveLength(1);
   });
 
   it('DELETE /api/shipments/:id -> deletes a shipment (ADMIN only)', async () => {

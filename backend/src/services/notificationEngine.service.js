@@ -229,19 +229,21 @@ async function sendShipmentUpdate(awbOrId, options = {}) {
   const client = shipment.client;
   const backlog = isBacklog(shipment.date);
   const prefs = await notify.getClientNotificationPreferences(shipment.clientCode);
+  const emailTo = prefs.emailAddress || client.email;
+  const whatsappTo = prefs.whatsappNumber || client.whatsapp || client.phone || shipment.phone;
   const results = { email: null, whatsapp: null };
 
   // Email
-  if (client.email && (options.forceEmail || prefs.email?.booked || prefs.email?.delivered)) {
+  if (emailTo && (options.forceEmail || prefs.email?.booked || prefs.email?.delivered)) {
     const { subject, html } = buildStatusUpdateEmail({ shipment, client, backlog });
     try {
-      await notify.sendEmail({ to: client.email, subject, html });
-      results.email = { sent: true, to: client.email };
+      await notify.sendEmail({ to: emailTo, subject, html });
+      results.email = { sent: true, to: emailTo };
       // Log to notifications table
       await prisma.notification.create({
         data: {
           clientCode: shipment.clientCode, awb: shipment.awb,
-          channel: 'EMAIL', to: client.email, template: 'STATUS_UPDATE',
+          channel: 'EMAIL', to: emailTo, template: 'STATUS_UPDATE',
           message: `${shipment.status} notification for ${shipment.awb}`,
           status: 'SENT', sentAt: new Date(),
         },
@@ -251,7 +253,7 @@ async function sendShipmentUpdate(awbOrId, options = {}) {
       await prisma.notification.create({
         data: {
           clientCode: shipment.clientCode, awb: shipment.awb,
-          channel: 'EMAIL', to: client.email, template: 'STATUS_UPDATE',
+          channel: 'EMAIL', to: emailTo, template: 'STATUS_UPDATE',
           message: `${shipment.status} notification for ${shipment.awb}`,
           status: 'FAILED', error: err.message,
         },
@@ -260,13 +262,12 @@ async function sendShipmentUpdate(awbOrId, options = {}) {
   }
 
   // WhatsApp
-  const whatsappPhone = client.whatsapp || client.phone || shipment.phone;
-  if (whatsappPhone && (options.forceWhatsapp || prefs.whatsapp?.booked || prefs.whatsapp?.delivered)) {
+  if (whatsappTo && (options.forceWhatsapp || prefs.whatsapp?.booked || prefs.whatsapp?.delivered)) {
     const dateNote = backlog ? ` (shipped on ${formatDate(shipment.date)})` : '';
     const msg = `📦 Shipment Update\n\nAWB: ${shipment.awb}\nStatus: ${shipment.status}${dateNote}\nDestination: ${shipment.destination || 'N/A'}\n\nTrack: ${appBaseUrl}/track/${encodeURIComponent(shipment.awb)}\n\n— Sea Hawk Courier`;
     try {
-      await notify.sendWhatsApp(whatsappPhone, msg);
-      results.whatsapp = { sent: true, to: whatsappPhone };
+      await notify.sendWhatsApp(whatsappTo, msg);
+      results.whatsapp = { sent: true, to: whatsappTo };
     } catch (err) {
       results.whatsapp = { sent: false, error: err.message };
     }
@@ -282,11 +283,14 @@ async function sendDailyDigest(clientCode, date) {
   const code = String(clientCode).toUpperCase();
   const client = await prisma.client.findUnique({
     where: { code },
-    select: { email: true, company: true, code: true },
+    select: { email: true, whatsapp: true, phone: true, company: true, code: true, notificationConfig: true, brandSettings: true },
   });
 
   if (!client) return { error: `Client not found: ${code}` };
-  if (!client.email) return { error: `No email for client ${code}` };
+  const prefs = await notify.getClientNotificationPreferences(code);
+  const emailTo = prefs.emailAddress || client.email;
+  const whatsappTo = prefs.whatsappNumber || client.whatsapp || client.phone;
+  if (!emailTo && !whatsappTo) return { error: `No email or WhatsApp for client ${code}` };
 
   const shipments = await prisma.shipment.findMany({
     where: { clientCode: code, date },
@@ -300,20 +304,23 @@ async function sendDailyDigest(clientCode, date) {
   const { subject, html } = buildDigestEmailHtml({ client, shipments, dateLabel, dateFrom: date, dateTo: date });
 
   try {
-    await notify.sendEmail({ to: client.email, subject, html });
+    if (emailTo) await notify.sendEmail({ to: emailTo, subject, html });
+    if (whatsappTo) {
+      await notify.sendWhatsApp(whatsappTo, `Shipment Summary | ${client.company || code}\n${dateLabel}\nShipments: ${shipments.length}\nTrack details: ${appBaseUrl}/portal/shipments`);
+    }
     // Log digest notification
-    await prisma.notification.create({
+    if (emailTo) await prisma.notification.create({
       data: {
-        clientCode: code, channel: 'EMAIL', to: client.email,
+        clientCode: code, channel: 'EMAIL', to: emailTo,
         template: 'DAILY_DIGEST', message: `Digest for ${date}: ${shipments.length} shipments`,
         status: 'SENT', sentAt: new Date(),
       },
     });
-    return { success: true, clientCode: code, date, shipmentCount: shipments.length, sentTo: client.email };
+    return { success: true, clientCode: code, date, shipmentCount: shipments.length, sentTo: { email: emailTo || null, whatsapp: whatsappTo || null } };
   } catch (err) {
-    await prisma.notification.create({
+    if (emailTo) await prisma.notification.create({
       data: {
-        clientCode: code, channel: 'EMAIL', to: client.email,
+        clientCode: code, channel: 'EMAIL', to: emailTo,
         template: 'DAILY_DIGEST', message: `Digest for ${date}: ${shipments.length} shipments`,
         status: 'FAILED', error: err.message,
       },
@@ -329,11 +336,14 @@ async function sendBulkDateUpdate(clientCode, dateFrom, dateTo) {
   const code = String(clientCode).toUpperCase();
   const client = await prisma.client.findUnique({
     where: { code },
-    select: { email: true, company: true, code: true },
+    select: { email: true, whatsapp: true, phone: true, company: true, code: true, notificationConfig: true, brandSettings: true },
   });
 
   if (!client) return { error: `Client not found: ${code}` };
-  if (!client.email) return { error: `No email for client ${code}` };
+  const prefs = await notify.getClientNotificationPreferences(code);
+  const emailTo = prefs.emailAddress || client.email;
+  const whatsappTo = prefs.whatsappNumber || client.whatsapp || client.phone;
+  if (!emailTo && !whatsappTo) return { error: `No email or WhatsApp for client ${code}` };
 
   const shipments = await prisma.shipment.findMany({
     where: { clientCode: code, date: { gte: dateFrom, lte: dateTo } },
@@ -347,15 +357,18 @@ async function sendBulkDateUpdate(clientCode, dateFrom, dateTo) {
   const { subject, html } = buildDigestEmailHtml({ client, shipments, dateLabel, dateFrom, dateTo });
 
   try {
-    await notify.sendEmail({ to: client.email, subject, html });
-    await prisma.notification.create({
+    if (emailTo) await notify.sendEmail({ to: emailTo, subject, html });
+    if (whatsappTo) {
+      await notify.sendWhatsApp(whatsappTo, `Shipment Summary | ${client.company || code}\n${dateLabel}\nShipments: ${shipments.length}\nTrack details: ${appBaseUrl}/portal/shipments`);
+    }
+    if (emailTo) await prisma.notification.create({
       data: {
-        clientCode: code, channel: 'EMAIL', to: client.email,
+        clientCode: code, channel: 'EMAIL', to: emailTo,
         template: 'BULK_UPDATE', message: `Bulk update ${dateFrom} to ${dateTo}: ${shipments.length} shipments`,
         status: 'SENT', sentAt: new Date(),
       },
     });
-    return { success: true, clientCode: code, dateFrom, dateTo, shipmentCount: shipments.length, sentTo: client.email };
+    return { success: true, clientCode: code, dateFrom, dateTo, shipmentCount: shipments.length, sentTo: { email: emailTo || null, whatsapp: whatsappTo || null } };
   } catch (err) {
     return { error: err.message };
   }

@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   Search, Filter, Download, RefreshCw, ChevronLeft, ChevronRight,
   Eye, Edit2, Trash2, Plus, Package, TrendingUp, CheckCircle2,
-  Monitor, Zap, Activity
+  Monitor, Zap, Activity, Clock, AlertTriangle, RotateCcw
 } from 'lucide-react';
 import api from '../services/api';
 import { StatusBadge } from '../components/ui/StatusBadge';
@@ -20,18 +21,23 @@ const fmt     = n => `₹${Number(n||0).toLocaleString('en-IN')}`;
 const fmtWt   = n => `${Number(n||0).toFixed(3)} kg`;
 
 const COURIERS = ['Delhivery','DTDC','Trackon','BlueDart','FedEx','DHL','Other'];
-const STATUSES = ['Booked','InTransit','OutForDelivery','Delivered','Delayed','RTO','Cancelled'];
+const STATUSES = ['Booked','PickedUp','InTransit','OutForDelivery','Delivered','NDR','RTO','Failed','Cancelled'];
 
 export default function ShipmentDashboardPage({ toast }) {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { isAdmin, hasRole } = useAuth();
   const [rows,       setRows]       = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [total,      setTotal]      = useState(0);
   const [stats,      setStats]      = useState(null);
   const [page,       setPage]       = useState(1);
-  const pageSize = 25;
+  const [pageSize,   setPageSize]   = useState(25);
+  const [exporting,  setExporting]  = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [error,      setError]      = useState(null);
   const [filters,    setFilters]    = useState({
-    search: '', courier: '', status: '', clientCode: '', dateFrom: '', dateTo: '',
+    search: searchParams.get('q') || searchParams.get('search') || '', courier: searchParams.get('courier') || '', status: searchParams.get('status') || '', clientCode: searchParams.get('client') || searchParams.get('clientCode') || '', dateFrom: searchParams.get('dateFrom') || searchParams.get('date_from') || '', dateTo: searchParams.get('dateTo') || searchParams.get('date_to') || '', filter: searchParams.get('filter') || '',
   });
   const [sortBy,     setSortBy]     = useState('createdAt');
   const [sortDir,    setSortDir]    = useState('desc');
@@ -54,6 +60,7 @@ export default function ShipmentDashboardPage({ toast }) {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const p = new URLSearchParams({
         page, limit: pageSize, sortBy, sortDir,
@@ -63,17 +70,20 @@ export default function ShipmentDashboardPage({ toast }) {
         ...(filters.clientCode && { clientCode:  filters.clientCode }),
         ...(filters.dateFrom   && { dateFrom:    filters.dateFrom }),
         ...(filters.dateTo     && { dateTo:      filters.dateTo }),
+        ...(filters.filter     && { filter:      filters.filter }),
       });
-      const { shipments, meta } = await fetchShipments(Object.fromEntries(p.entries()), false);
+      const { shipments, meta } = await fetchShipments(Object.fromEntries(p.entries()), true);
       setRows(shipments || []);
       setTotal(meta?.pagination?.total || 0);
       setStats(meta?.stats || null);
+      setLastUpdated(new Date());
     } catch (err) {
+      setError(err.message || 'Failed to load shipments');
       toast?.(err.message, 'error');
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, debouncedSearch, filters.courier, filters.status, filters.clientCode, filters.dateFrom, filters.dateTo, sortBy, sortDir, fetchShipments, toast]);
+  }, [page, pageSize, debouncedSearch, filters.courier, filters.status, filters.clientCode, filters.dateFrom, filters.dateTo, filters.filter, sortBy, sortDir, fetchShipments, toast]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetchClients({ limit: 200 }).catch(() => {}); }, [fetchClients]);
@@ -89,8 +99,13 @@ export default function ShipmentDashboardPage({ toast }) {
   }, [socket, load]);
 
   const setFilter = (k, v) => { setFilters(f => ({ ...f, [k]: v })); setPage(1); };
+  const resetFilters = () => { setFilters({ search:'', courier:'', status:'', clientCode:'', dateFrom:'', dateTo:'', filter:'' }); setPage(1); };
   const hasFilters = Object.values(filters).some(Boolean);
   const pages = Math.max(1, Math.ceil(total / pageSize));
+  const isSlaBreach = (s) => {
+    if (!s.eta || ['Delivered','RTO','Cancelled'].includes(s.status)) return false;
+    return new Date(s.eta) < new Date();
+  };
 
   const sort = (col) => {
     if (sortBy === col) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
@@ -124,15 +139,30 @@ export default function ShipmentDashboardPage({ toast }) {
     finally { setEditLoading(false); }
   };
 
-  const exportCSV = () => {
-    const header = ['AWB','Date','Client','Consignee','Destination','Courier','Weight','Amount','Status'];
-    const lines = [header, ...rows.map(s => [
-      s.awb, s.date, s.clientCode, s.consignee||'', s.destination||'',
-      s.courier||'', s.weight, s.amount, s.status,
-    ])].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(','));
-    const blob = new Blob([lines.join('\n')], { type:'text/csv' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = `shipments-${new Date().toISOString().slice(0,10)}.csv`; a.click();
+  const exportCSV = async () => {
+    setExporting(true);
+    try {
+      const p = new URLSearchParams({
+        sortBy, sortDir,
+        ...(debouncedSearch       && { search:     debouncedSearch }),
+        ...(filters.courier    && { courier:     filters.courier }),
+        ...(filters.status     && { status:      filters.status }),
+        ...(filters.clientCode && { clientCode:  filters.clientCode }),
+        ...(filters.dateFrom   && { dateFrom:    filters.dateFrom }),
+        ...(filters.dateTo     && { dateTo:      filters.dateTo }),
+        ...(filters.filter     && { filter:      filters.filter }),
+      });
+      const res = await api.get(`/shipments/export?${p}`, { responseType: 'blob' });
+      const blob = new Blob([res.data], { type: 'text/csv' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `shipments-${new Date().toISOString().slice(0,10)}.csv`;
+      a.click();
+    } catch (err) {
+      toast?.('Export failed: ' + err.message, 'error');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const Th = ({ col, label, align='left' }) => (
@@ -151,12 +181,22 @@ export default function ShipmentDashboardPage({ toast }) {
         subtitle={`${total.toLocaleString()} shipments in your operations list.`}
         icon={Monitor}
         actions={
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap items-center">
+            {lastUpdated && (
+              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                <Clock size={11} /> Updated {lastUpdated.toLocaleTimeString()}
+              </span>
+            )}
+            {hasFilters && (
+              <button onClick={resetFilters} className="flex items-center gap-1.5 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl text-amber-600 hover:bg-amber-100 transition-all text-[10px] font-black uppercase tracking-widest">
+                <RotateCcw size={13} /> Reset
+              </button>
+            )}
             <button onClick={load} className="p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-slate-600 transition-all">
               <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
             </button>
-            <button onClick={exportCSV} className="hidden sm:flex items-center gap-2 p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-slate-600 transition-all font-black text-[10px] uppercase tracking-widest">
-              <Download size={16} /> Export Delta
+            <button onClick={exportCSV} disabled={exporting} className="hidden sm:flex items-center gap-2 p-2.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl text-slate-400 hover:text-slate-600 transition-all font-black text-[10px] uppercase tracking-widest disabled:opacity-50">
+              <Download size={16} className={exporting ? 'animate-pulse' : ''} /> {exporting ? 'Exporting...' : 'Export'}
             </button>
             {canEdit && (
               <button onClick={() => setEditShip({})} className="px-5 py-2.5 bg-slate-900 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-2xl shadow-xl shadow-slate-900/10 flex items-center gap-2 hover:bg-black transition-all active:scale-95">
@@ -167,27 +207,27 @@ export default function ShipmentDashboardPage({ toast }) {
         }
       />
 
-      {/* Analytics Strip */}
-      {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { label:'Total Shipments', val: stats.count?.toLocaleString() || total.toLocaleString(), icon: Package, color:'blue' },
-            { label:'Total Revenue', val: fmt(stats.totalAmount), icon: TrendingUp, color:'emerald' },
-            { label:'Total Weight', val: fmtWt(stats.totalWeight), icon: Zap, color:'purple' },
-            { label:'Delivered', val: Number(stats.delivered ?? rows.filter(r => r.status === 'Delivered').length).toLocaleString(), icon: CheckCircle2, color:'emerald' },
-          ].map(({ label, val, icon: Icon, color }) => (
-            <div key={label} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 flex items-center gap-4 shadow-sm hover:shadow-md transition-shadow group">
-               <div className={`w-10 h-10 rounded-xl bg-${color}-500/10 text-${color}-500 flex items-center justify-center shrink-0 border border-${color}-500/20 group-hover:scale-110 transition-transform`}>
-                  <Icon size={18} />
-               </div>
-               <div>
-                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 leading-none mb-1">{label}</p>
-                  <p className="text-xl font-black text-slate-800 dark:text-white tabular-nums">{val}</p>
-               </div>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Analytics Strip — always show (use total as fallback when stats not loaded) */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {[
+          { label:'Total', val: (stats?.count ?? total).toLocaleString(), icon: Package, bg:'bg-blue-500/10', text:'text-blue-500', border:'border-blue-500/20', click: () => resetFilters() },
+          { label:'Delivered', val: (stats?.delivered ?? 0).toLocaleString(), icon: CheckCircle2, bg:'bg-emerald-500/10', text:'text-emerald-500', border:'border-emerald-500/20', click: () => setFilter('status','Delivered') },
+          { label:'In Transit', val: (stats?.inTransit ?? 0).toLocaleString(), icon: Activity, bg:'bg-sky-500/10', text:'text-sky-500', border:'border-sky-500/20', click: () => setFilter('status','InTransit') },
+          { label:'RTO', val: (stats?.rto ?? 0).toLocaleString(), icon: AlertTriangle, bg:'bg-rose-500/10', text:'text-rose-500', border:'border-rose-500/20', click: () => setFilter('status','RTO') },
+          { label:'Revenue', val: fmt(stats?.totalAmount || 0), icon: TrendingUp, bg:'bg-emerald-500/10', text:'text-emerald-500', border:'border-emerald-500/20', click: null },
+          { label:'Weight', val: fmtWt(stats?.totalWeight || 0), icon: Zap, bg:'bg-purple-500/10', text:'text-purple-500', border:'border-purple-500/20', click: null },
+        ].map(({ label, val, icon: Icon, bg, text, border, click }) => (
+          <div key={label} onClick={click} className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex items-center gap-3 shadow-sm hover:shadow-md transition-all group ${click ? 'cursor-pointer hover:-translate-y-0.5' : ''}`}>
+             <div className={`w-9 h-9 rounded-xl ${bg} ${text} flex items-center justify-center shrink-0 border ${border} group-hover:scale-110 transition-transform`}>
+                <Icon size={16} />
+             </div>
+             <div>
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 leading-none mb-0.5">{label}</p>
+                <p className="text-lg font-black text-slate-800 dark:text-white tabular-nums leading-none">{val}</p>
+             </div>
+          </div>
+        ))}
+      </div>
 
       {/* High-Velocity Command Bar */}
       <div className="bg-white dark:bg-slate-900 rounded-[32px] border border-slate-200 dark:border-slate-800 shadow-sm p-4">
@@ -196,7 +236,7 @@ export default function ShipmentDashboardPage({ toast }) {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               ref={searchRef}
-              className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl pl-11 pr-4 py-3.5 text-xs font-black uppercase tracking-widest text-slate-700 dark:text-white placeholder:text-slate-200 focus:ring-2 focus:ring-blue-500/10 transition-all font-mono"
+              className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl pl-11 pr-4 py-3.5 text-xs font-black uppercase tracking-widest text-slate-700 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500/10 transition-all font-mono"
               placeholder="Search AWB, consignee, destination..."
               value={filters.search}
               onChange={e => setFilter('search', e.target.value)}
@@ -254,6 +294,8 @@ export default function ShipmentDashboardPage({ toast }) {
             icon="📦"
             title="No shipments found"
             message={hasFilters ? 'No shipment matches the selected filters.' : 'No shipment has been added yet.'}
+            action={hasFilters ? 'Clear Filters' : canEdit ? 'New Shipment' : undefined}
+            onAction={() => hasFilters ? resetFilters() : canEdit ? setEditShip({}) : undefined}
           />
         ) : (
           <table className="w-full whitespace-nowrap border-collapse">
@@ -265,15 +307,18 @@ export default function ShipmentDashboardPage({ toast }) {
                 <Th col="consignee" label="Consignee" />
                 <Th col="destination" label="Destination" />
                 <Th col="courier" label="Courier" />
-                <Th col="weight" label="Weight (KG)" align="right" />
+                <Th col="weight" label="Weight" align="right" />
                 <Th col="amount" label="Amount (₹)" align="right" />
+                <Th col="eta" label="ETA" align="center" />
                 <Th col="status" label="Status" align="center" />
                 <Th col="actions" label="Action" align="right" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-              {rows.map(s => (
-                <tr key={s.id} className="group hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-all duration-300">
+              {rows.map(s => {
+                const breached = isSlaBreach(s);
+                return (
+                <tr key={s.id} className={`group hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-all duration-300 ${breached ? 'bg-rose-50/40 dark:bg-rose-900/5' : ''}`}>
                   <td className="p-4">
                     <div className="font-mono text-[13px] font-black text-slate-900 dark:text-white tracking-tight">{s.awb}</div>
                     <div className="text-[9px] font-bold text-slate-400 mt-1 flex items-center gap-1.5 uppercase tracking-widest leading-none">
@@ -297,6 +342,16 @@ export default function ShipmentDashboardPage({ toast }) {
                   <td className="p-4 text-right font-black text-[11px] text-slate-400 tabular-nums">{fmtWt(s.weight)}</td>
                   <td className="p-4 text-right font-black text-[13px] text-slate-900 dark:text-white tabular-nums">{fmt(s.amount)}</td>
                   <td className="p-4 text-center">
+                    {s.eta ? (
+                      <span className={`text-[10px] font-black tabular-nums px-2 py-1 rounded-lg ${breached ? 'bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400' : 'text-slate-500'}`}>
+                        {breached && <AlertTriangle size={10} className="inline mr-1 -mt-0.5" />}
+                        {new Date(s.eta).toLocaleDateString('en-GB', { day:'2-digit', month:'short' })}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-slate-300">—</span>
+                    )}
+                  </td>
+                  <td className="p-4 text-center">
                     <StatusBadge status={s.status} />
                   </td>
                   <td className="p-4 text-right">
@@ -311,17 +366,32 @@ export default function ShipmentDashboardPage({ toast }) {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}
 
-        {!loading && pages > 1 && (
-          <div className="flex items-center justify-between px-8 py-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-            <p className="text-[10px] font-black tracking-[0.2em] uppercase text-slate-400">Page <span className="text-slate-900 dark:text-white">{page}</span> of <span className="text-slate-900 dark:text-white">{pages}</span></p>
+        {!loading && total > 0 && (
+          <div className="flex flex-wrap items-center justify-between px-8 py-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 gap-4">
+            <div className="flex items-center gap-4">
+              <p className="text-[10px] font-black tracking-[0.2em] uppercase text-slate-400">Showing {((page - 1) * pageSize) + 1} to {Math.min(page * pageSize, total)} of <span className="text-slate-900 dark:text-white">{total}</span></p>
+              <select
+                value={pageSize}
+                onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-[10px] font-black text-slate-500 appearance-none focus:outline-none"
+              >
+                <option value="20">20 / page</option>
+                <option value="25">25 / page</option>
+                <option value="50">50 / page</option>
+                <option value="100">100 / page</option>
+              </select>
+            </div>
             <div className="flex items-center gap-2">
-              <button disabled={page===1} onClick={()=>setPage(p=>p-1)} className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 hover:text-slate-600 disabled:opacity-20 transition-all shadow-sm"><ChevronLeft size={16} /></button>
-              <button disabled={page===pages} onClick={()=>setPage(p=>p+1)} className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 hover:text-slate-600 disabled:opacity-20 transition-all shadow-sm"><ChevronRight size={16} /></button>
+              <button disabled={page===1} onClick={()=>setPage(1)} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[10px] font-bold text-slate-400 hover:text-slate-600 disabled:opacity-20 transition-all shadow-sm">First</button>
+              <button disabled={page===1} onClick={()=>setPage(p=>p-1)} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[10px] font-bold text-slate-400 hover:text-slate-600 disabled:opacity-20 transition-all shadow-sm">Prev</button>
+              <span className="px-3 py-1 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700 text-[10px] font-black">{page} / {pages}</span>
+              <button disabled={page===pages} onClick={()=>setPage(p=>p+1)} className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-[10px] font-bold text-slate-400 hover:text-slate-600 disabled:opacity-20 transition-all shadow-sm">Next</button>
             </div>
           </div>
         )}

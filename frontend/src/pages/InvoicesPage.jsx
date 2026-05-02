@@ -379,6 +379,10 @@ export default function InvoicesPage({ toast }) {
       {viewing && (
         (() => {
           const tax = getTaxBreakdown(viewing, viewing.client);
+          const delivered = (viewing.items || []).filter(item => item.shipment?.status === 'Delivered').length;
+          const rto = (viewing.items || []).filter(item => ['RTO', 'RTODelivered'].includes(item.shipment?.status)).length;
+          const baseCharges = (viewing.items || []).reduce((sum, item) => sum + Number(item.baseAmount || item.amount || 0), 0);
+          const fuelCharges = (viewing.items || []).reduce((sum, item) => sum + Number(item.fuelSurcharge || 0), 0);
           return (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-[30px] shadow-[0_28px_70px_rgba(15,23,42,0.18)] w-full max-w-3xl my-8 border border-slate-200/70">
@@ -418,13 +422,40 @@ export default function InvoicesPage({ toast }) {
             </div>
 
             <div className="p-6">
+              <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div className="rounded-2xl bg-slate-50 p-4 dark:bg-slate-800/70">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Shipments</p>
+                  <p className="mt-1 text-xl font-black text-slate-900 dark:text-white">{viewing.items?.length || 0}</p>
+                </div>
+                <div className="rounded-2xl bg-emerald-50 p-4 dark:bg-emerald-500/10">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600">Delivered</p>
+                  <p className="mt-1 text-xl font-black text-emerald-700 dark:text-emerald-300">{delivered}</p>
+                </div>
+                <div className="rounded-2xl bg-rose-50 p-4 dark:bg-rose-500/10">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-rose-600">RTO</p>
+                  <p className="mt-1 text-xl font-black text-rose-700 dark:text-rose-300">{rto}</p>
+                </div>
+                <div className="rounded-2xl bg-orange-50 p-4 dark:bg-orange-500/10">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-orange-600">Total</p>
+                  <p className="mt-1 text-xl font-black text-orange-700 dark:text-orange-300">{fmt(viewing.total)}</p>
+                </div>
+              </div>
+
+              <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-slate-400">Billing breakdown</p>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <div className="flex justify-between text-sm text-slate-600 dark:text-slate-300"><span>Base charges</span><span className="font-bold tabular-nums">{fmt(baseCharges)}</span></div>
+                  <div className="flex justify-between text-sm text-slate-600 dark:text-slate-300"><span>Fuel surcharge</span><span className="font-bold tabular-nums">{fmt(fuelCharges)}</span></div>
+                </div>
+              </div>
+
               <div className="table-wrap mb-4">
                 <table className="tbl text-xs">
                   <thead>
                     <tr>
                       <th>#</th><th>Date</th><th>AWB No</th><th>Consignee</th>
                       <th>Destination</th><th>Courier</th>
-                      <th className="text-right">Wt(kg)</th><th className="text-right">Amount</th>
+                      <th className="text-right">Wt(kg)</th><th>Status</th><th className="text-right">Amount</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -437,6 +468,7 @@ export default function InvoicesPage({ toast }) {
                         <td>{item.destination}</td>
                         <td>{item.courier}</td>
                         <td className="text-right">{item.weight}</td>
+                        <td>{item.shipment?.status || '—'}</td>
                         <td className="text-right font-medium">{fmt(item.amount)}</td>
                       </tr>
                     ))}

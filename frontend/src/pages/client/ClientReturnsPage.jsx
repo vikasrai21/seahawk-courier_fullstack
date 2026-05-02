@@ -236,12 +236,12 @@ export default function ClientReturnsPage({ toast }) {
 
   return (
     <div className="client-premium-main space-y-6">
-      <ClientPortalPageIntro
-        eyebrow="Returns"
-        title="Request, track, and complete reverse logistics from one client returns workspace."
-        description="Move between eligible delivered shipments and active return requests without losing sight of status, method, or label-sharing actions."
-        badges={[`${returns.length} returns`, `${eligible.length} eligible shipments`, `${activeCount} active reverse moves`]}
-      />
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Returns</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Request, track, and complete reverse logistics.</p>
+        </div>
+      </div>
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

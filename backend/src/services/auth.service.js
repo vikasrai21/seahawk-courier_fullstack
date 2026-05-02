@@ -17,6 +17,25 @@ function sanitise(str) {
   return str.replace(/<[^>]*>/g, '').replace(/javascript:/gi, '').replace(/on\w+\s*=/gi, '').trim();
 }
 
+// ── Password strength validation ─────────────────────────────────────────────
+function validatePassword(password) {
+  if (!password || typeof password !== 'string') {
+    throw new AppError('Password is required.', 400);
+  }
+  if (password.length < 8) {
+    throw new AppError('Password must be at least 8 characters long.', 400);
+  }
+  if (!/[A-Z]/.test(password)) {
+    throw new AppError('Password must contain at least one uppercase letter.', 400);
+  }
+  if (!/[a-z]/.test(password)) {
+    throw new AppError('Password must contain at least one lowercase letter.', 400);
+  }
+  if (!/[0-9]/.test(password)) {
+    throw new AppError('Password must contain at least one number.', 400);
+  }
+}
+
 function signAccess(user) {
   return jwt.sign(
     { id: user.id, email: user.email, role: user.role },
@@ -47,8 +66,9 @@ async function storeRefreshToken(userId, token, meta = {}) {
         userAgent: meta.userAgent || null,
       },
     });
-  } catch {
-    // Table doesn't exist yet — silently skip
+  } catch (err) {
+    // Table might not exist during initial deployment — log instead of crashing
+    logger.warn("[Auth] Refresh token store failed (table may not exist): $($err.message)");
   }
 }
 
@@ -243,6 +263,7 @@ async function createUser({ name, email, password, role, branch, clientCode }) {
     if (!client) throw new AppError(`Client with code "${normalizedClientCode}" not found.`, 404);
   }
 
+  validatePassword(password);
   const hashed = await bcrypt.hash(password, SALT_ROUNDS);
   const user = await prisma.user.create({
     data: {
@@ -278,6 +299,7 @@ async function updateUser(id, data) {
 
   const update = { ...data };
   if (update.password) {
+    validatePassword(update.password);
     update.password = await bcrypt.hash(update.password, SALT_ROUNDS);
     update.mustChangePassword = false;
   }
@@ -363,6 +385,7 @@ async function changePassword(userId, currentPassword, newPassword) {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   const valid = await bcrypt.compare(currentPassword, user.password);
   if (!valid) throw new AppError('Current password is incorrect.', 400);
+  validatePassword(newPassword);
   const hashed = await bcrypt.hash(newPassword, SALT_ROUNDS);
   await prisma.user.update({
     where: { id: userId },

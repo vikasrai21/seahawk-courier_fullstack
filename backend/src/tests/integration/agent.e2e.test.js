@@ -2,7 +2,7 @@
  * agent.e2e.test.js — HawkAI Agent Route Integration Tests
  *
  * Tests all /api/ops/agent/* endpoints for:
- * - RBAC (OWNER/ADMIN pass, STAFF/CLIENT rejected)
+ * - RBAC (OWNER passes, ADMIN/STAFF/CLIENT rejected)
  * - Input validation
  * - Correct response shape
  */
@@ -81,13 +81,12 @@ describe('HawkAI Agent E2E Tests — /api/ops/agent/*', () => {
       expect(typeof res.body.data.reply).toBe('string');
     });
 
-    it('ADMIN token → 200 with reply (backward compat)', async () => {
+    it('ADMIN token → 403 Forbidden', async () => {
       const res = await request(app)
         .post('/api/ops/agent/chat')
         .set('Authorization', `Bearer ${adminToken}`)
         .send({ message: 'show overview' });
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
+      expect(res.status).toBe(403);
     });
 
     it('STAFF token → 403 Forbidden', async () => {
@@ -166,11 +165,11 @@ describe('HawkAI Agent E2E Tests — /api/ops/agent/*', () => {
       expect(res.status).toBe(200);
     });
 
-    it('ADMIN → 200', async () => {
+    it('ADMIN → 403', async () => {
       const res = await request(app)
         .get('/api/ops/agent/memory')
         .set('Authorization', `Bearer ${adminToken}`);
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(403);
     });
 
     it('STAFF → 403', async () => {

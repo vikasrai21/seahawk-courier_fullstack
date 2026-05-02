@@ -74,6 +74,7 @@ const SupportTicketsPage = lazy(() => import('./pages/SupportTicketsPage'));
 const OwnerAuditPage = lazy(() => import('./pages/OwnerAuditPage'));
 const MobileScannerPage = lazy(() => import('./pages/MobileScannerPage'));
 const ReturnsManagementPage = lazy(() => import('./pages/ReturnsManagementPage'));
+const SandboxRunsPage = lazy(() => import('./pages/SandboxRunsPage'));
 const OwnerAgentPage = lazy(() => import('./pages/OwnerAgentPage'));
 const NotificationCenterPage = lazy(() => import('./pages/NotificationCenterPage'));
 
@@ -239,6 +240,7 @@ function AppRoutes() {
                       <Route path="/ndr" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(NDRPage)}</PrivateRoute>} />
                       <Route path="/pickups" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER', 'STAFF']}>{withToast(PickupSchedulerPage)}</PrivateRoute>} />
                       <Route path="/users" element={<PrivateRoute roles={['ADMIN']} allowOwner>{withToast(UsersPage)}</PrivateRoute>} />
+                      <Route path="/sandbox-runs" element={<PrivateRoute roles={['ADMIN']} allowOwner>{withToast(SandboxRunsPage)}</PrivateRoute>} />
                       <Route path="/audit-logs" element={<PrivateRoute adminOnly><AuditPage /></PrivateRoute>} />
                       <Route path="/rate-mgmt" element={<PrivateRoute adminOnly>{withToast(RateManagementPage)}</PrivateRoute>} />
                       <Route path="/returns" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}>{withToast(ReturnsManagementPage)}</PrivateRoute>} />

@@ -190,12 +190,12 @@ export default function ClientWalletPage({ toast }) {
       </header>
 
       <div className="mx-auto client-premium-main animate-in fade-in duration-700">
-        <ClientPortalPageIntro
-          eyebrow="Wallet"
-          title="Manage your wallet balance, recharge, and view transaction history."
-          description="Fund the account, track transaction history, configure auto-topup alerts, and download monthly ledgers without leaving the client portal."
-          badges={[`Client ${wallet?.code || '—'}`, `${txns.length} transactions`, autoTopup.enabled ? 'Auto-topup on' : 'Auto-topup off']}
-        />
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Wallet</h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Manage your balance, recharge, and view transaction history.</p>
+          </div>
+        </div>
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
            {/* LEFT: Balance & Recharge Command Center */}
            <div className="lg:col-span-4 space-y-6">

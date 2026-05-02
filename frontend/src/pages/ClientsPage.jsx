@@ -16,7 +16,10 @@ export default function ClientsPage({ toast }) {
   const [saving, setSaving]   = useState(false);
   const [search, setSearch]   = useState('');
   const debouncedSearch = useDebounce(search, 300);
-  const empty = { code:'', company:'', contact:'', phone:'', whatsapp:'', email:'', gst:'', address:'', notes:'' };
+  const empty = {
+    code:'', company:'', contact:'', phone:'', whatsapp:'', email:'', gst:'', address:'', notes:'',
+    notificationConfig: { email: '', whatsapp: '', notifications: { booked: true, ofd: true, delivered: true, ndr: true } },
+  };
   const [form, setForm] = useState(empty);
   const clientsSource = Array.isArray(rawClients) ? rawClients : [];
 
@@ -30,7 +33,18 @@ export default function ClientsPage({ toast }) {
     c.contact?.toLowerCase().includes(debouncedSearch.toLowerCase())
   );
 
-  const open = (c = null) => { setEdit(c || {}); setForm(c ? {...c} : empty); };
+  const open = (c = null) => {
+    setEdit(c || {});
+    setForm(c ? {
+      ...empty,
+      ...c,
+      notificationConfig: {
+        ...empty.notificationConfig,
+        ...(c.notificationConfig || {}),
+        notifications: { ...empty.notificationConfig.notifications, ...(c.notificationConfig?.notifications || {}) },
+      },
+    } : empty);
+  };
 
   const save = async () => {
     if (!form.code || !form.company) return toast?.('Code and Company are required', 'error');
@@ -63,14 +77,27 @@ export default function ClientsPage({ toast }) {
   };
 
   const set = (k, v) => setForm(f => ({...f, [k]: v}));
+  const setNotification = (event, value) => setForm(f => ({
+    ...f,
+    notificationConfig: {
+      ...(f.notificationConfig || {}),
+      email: f.notificationConfig?.email || f.email || '',
+      whatsapp: f.notificationConfig?.whatsapp || f.whatsapp || '',
+      notifications: { ...(f.notificationConfig?.notifications || {}), [event]: value },
+    },
+  }));
+  const setNotificationContact = (key, value) => setForm(f => ({
+    ...f,
+    notificationConfig: { ...(f.notificationConfig || {}), [key]: value },
+  }));
 
   return (
     <div className="p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Clients</h1>
-          <p className="text-xs text-gray-500 mt-0.5">{clientsSource.length} clients registered</p>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Clients</h1>
+          <p className="text-xs text-slate-500 dark:text-slate-300 mt-0.5">{clientsSource.length} clients registered</p>
         </div>
         <button onClick={() => open()} className="btn-primary gap-2">
           <Plus className="w-4 h-4" /> Add Client
@@ -160,6 +187,35 @@ export default function ClientsPage({ toast }) {
             <textarea className="input" rows={2} placeholder="Any notes about this client…"
               value={form.notes} onChange={e => set('notes', e.target.value)} />
           </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900/60">
+            <div className="mb-3">
+              <p className="text-sm font-black text-slate-900 dark:text-white">Notification configuration</p>
+              <p className="text-xs text-slate-500 dark:text-slate-300">Used by booked, out-for-delivery, delivered and NDR automation.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="label">Notification Email</label>
+                <input className="input" value={form.notificationConfig?.email || ''} onChange={e => setNotificationContact('email', e.target.value)} placeholder={form.email || 'ops@client.com'} />
+              </div>
+              <div>
+                <label className="label">Notification WhatsApp</label>
+                <input className="input" value={form.notificationConfig?.whatsapp || ''} onChange={e => setNotificationContact('whatsapp', e.target.value)} placeholder={form.whatsapp || form.phone || '91XXXXXXXXXX'} />
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+              {[
+                ['booked', 'Booked'],
+                ['ofd', 'Out for delivery'],
+                ['delivered', 'Delivered'],
+                ['ndr', 'NDR'],
+              ].map(([key, label]) => (
+                <label key={key} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                  <input type="checkbox" checked={!!form.notificationConfig?.notifications?.[key]} onChange={e => setNotification(key, e.target.checked)} className="accent-orange-600" />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
       </Modal>
     </div>
@@ -174,7 +230,7 @@ function ClientCard({ client: c, onEdit, onDelete, onWhatsApp }) {
   const shareText = `Hi ${c.contact || c.company},\n\nHere is your shipment summary from *Seahawk Courier & Cargo*.\n\nPlease contact us for any queries.\n\nThank you! 🦅`;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md hover:border-gray-200 transition-all group overflow-hidden">
+    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-slate-200 dark:hover:border-slate-700 transition-all group overflow-hidden">
       {/* Card header */}
       <div className="p-4 flex items-start gap-3">
         <div className={`w-11 h-11 rounded-xl ${color} flex items-center justify-center text-white font-bold text-sm shrink-0`}>
@@ -182,11 +238,11 @@ function ClientCard({ client: c, onEdit, onDelete, onWhatsApp }) {
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-gray-400 font-mono tracking-widest">{c.code}</span>
+            <span className="text-[10px] font-bold text-slate-400 font-mono tracking-widest">{c.code}</span>
             {!c.active && <span className="badge badge-red text-[9px]">INACTIVE</span>}
           </div>
-          <h3 className="font-bold text-gray-900 text-sm leading-tight truncate">{c.company}</h3>
-          {c.contact && <p className="text-xs text-gray-500 truncate mt-0.5">{c.contact}</p>}
+          <h3 className="font-bold text-slate-900 dark:text-white text-sm leading-tight truncate">{c.company}</h3>
+          {c.contact && <p className="text-xs text-slate-500 dark:text-slate-300 truncate mt-0.5">{c.contact}</p>}
         </div>
       </div>
 

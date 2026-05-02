@@ -385,7 +385,9 @@ export default function AllShipmentsPage({ toast }) {
     try {
       const params = new URLSearchParams();
       Object.entries(filters).forEach(([k, v]) => { if (v) params.set(k, v); });
-      const res = await api.get(`/shipments?${params.toString()}&limit=200`);
+      params.set('limit', '200');
+      params.set('includeDetails', '1');
+      const res = await api.get(`/shipments?${params.toString()}`);
       setShipments(res.data || res || []);
       setTotal(res.pagination?.total || res.data?.length || res.length || 0);
       setSelected(new Set());

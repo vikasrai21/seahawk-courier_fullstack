@@ -24,7 +24,7 @@ async function getTimeline(req, res) {
     if (!shipment) return R.error(res, 'Shipment not found', 404);
 
     // Trigger live sync in background
-    if (shipment.courier) {
+    if (shipment.courier && shipment.environment !== 'sandbox') {
       queue.enqueueTrackingSync(shipment.id, shipment.awb, shipment.courier).catch(() => {});
     }
 
@@ -42,6 +42,9 @@ async function getTimeline(req, res) {
         weight:      shipment.weight,
         amount:      shipment.amount,
         client:      shipment.client,
+        environment: shipment.environment,
+        sandboxRunId: shipment.sandboxRunId,
+        sourcePlatform: shipment.sourcePlatform,
       },
       events: shipment.trackingEvents,
       ndrs:   shipment.ndrEvents,
@@ -58,10 +61,13 @@ async function forceSync(req, res) {
     const { awb } = req.params;
     const shipment = await prisma.shipment.findUnique({
       where:  { awb },
-      select: { id: true, courier: true },
+      select: { id: true, courier: true, environment: true },
     });
     if (!shipment) return R.error(res, 'Shipment not found', 404);
     if (!shipment.courier) return R.error(res, 'No carrier assigned to this shipment', 400);
+    if (shipment.environment === 'sandbox') {
+      return R.ok(res, { message: 'Sandbox shipment already uses persisted mock tracking events. Use /api/sandbox/shipments/:awb/progress to advance it.', eventsAdded: 0 });
+    }
 
     const count = await carrier.syncTrackingEvents(shipment.id, awb, shipment.courier);
     return R.ok(res, { message: `Synced ${count} new events`, eventsAdded: count });

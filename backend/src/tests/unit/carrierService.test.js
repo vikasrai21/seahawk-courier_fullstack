@@ -85,6 +85,16 @@ describe('carrier.service', () => {
       expect(result.awb).toBe('500055555555');
       expect(result.carrier).toBe('Trackon');
     });
+
+    it('normalizes Trackon service-tier aliases before booking', async () => {
+      mockHttp.fetchWithRetry.mockResolvedValueOnce({
+        text: vi.fn().mockResolvedValue(JSON.stringify({ docketNo: '200063700001' }))
+      });
+
+      const result = await carrierService.createShipment('PRIMETRACK', mockData);
+      expect(result.awb).toBe('200063700001');
+      expect(result.carrier).toBe('Trackon');
+    });
   });
 
   describe('fetchTracking', () => {
@@ -183,6 +193,43 @@ describe('carrier.service', () => {
 
       const count = await carrierService.syncTrackingEvents(1, 'AWB123', 'Delhivery');
       expect(count).toBe(1);
+    });
+
+    it('creates an NDR event even when the failed scan already exists', async () => {
+      const timestamp = new Date('2026-04-28T10:00:00.000Z');
+      mockHttp.fetchJsonWithRetry.mockResolvedValueOnce({
+        ShipmentData: [{
+          Shipment: {
+            Status: { Status: 'Undelivered', Instructions: 'Consignee unavailable' },
+            Scans: [{
+              ScanDetail: {
+                Scan: 'Undelivered',
+                ScanDateTime: timestamp.toISOString(),
+                ScannedLocation: 'GGM',
+                Instructions: 'Consignee unavailable'
+              }
+            }]
+          }
+        }]
+      });
+
+      mockPrisma.trackingEvent.findMany.mockResolvedValueOnce([
+        { status: 'Failed', timestamp, location: 'GGM' }
+      ]);
+      mockPrisma.shipment.findUnique.mockResolvedValueOnce({ status: 'OutForDelivery' });
+      mockPrisma.shipment.update.mockResolvedValueOnce({ id: 1, status: 'Failed' });
+      mockPrisma.nDREvent.findFirst.mockResolvedValueOnce(null);
+      mockPrisma.nDREvent.create.mockResolvedValueOnce({ id: 10 });
+
+      const count = await carrierService.syncTrackingEvents(1, 'AWB123', 'Delhivery');
+      expect(count).toBe(0);
+      expect(mockPrisma.nDREvent.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          shipmentId: 1,
+          awb: 'AWB123',
+          action: 'PENDING',
+        }),
+      }));
     });
   });
 

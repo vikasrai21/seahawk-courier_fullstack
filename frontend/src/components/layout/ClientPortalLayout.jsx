@@ -33,38 +33,48 @@ import { useTheme } from '../../context/ThemeContext';
 
 const navGroups = [
   {
-    label: 'Main',
+    label: 'Core',
     items: [
-      { to: '/portal', label: 'Dashboard', icon: LayoutDashboard, end: true },
+      { to: '/portal', label: 'Command Center', icon: LayoutDashboard, end: true },
       { to: '/portal/shipments', label: 'Shipments', icon: Package2 },
       { to: '/portal/book-shipment', label: 'Book Shipment', icon: FilePlus2 },
       { to: '/portal/drafts', label: 'Orders Queue', icon: ClipboardList },
-      { to: '/portal/bulk-track', label: 'Bulk Track', icon: Radar },
-      { to: '/portal/track', label: 'Single Track', icon: Radar },
-      { to: '/portal/map', label: 'Live Map', icon: Map },
+      { to: '/portal/pickups', label: 'Pickup Requests', icon: Truck },
+    ],
+  },
+  {
+    label: 'Financial',
+    items: [
+      { to: '/portal/wallet', label: 'Wallet & Topup', icon: Wallet },
+      { to: '/portal/invoices', label: 'Invoices & GST', icon: FileText },
     ],
   },
   {
     label: 'Operations',
     items: [
       { to: '/portal/ndr', label: 'NDR Management', icon: AlertTriangle },
-      { to: '/portal/pickups', label: 'Pickup Requests', icon: Truck },
-      { to: '/portal/import', label: 'Order Import', icon: Upload },
+      { to: '/portal/returns', label: 'Returns Portal', icon: RotateCcw },
+      { to: '/portal/import', label: 'Bulk Import', icon: Upload },
       { to: '/portal/pod', label: 'POD Vault', icon: FileText },
-      { to: '/portal/rto-intelligence', label: 'RTO Risk', icon: Calculator },
-      { to: '/portal/returns', label: 'Returns', icon: RotateCcw },
     ],
   },
   {
-    label: 'Account',
+    label: 'Intelligence',
     items: [
-      { to: '/portal/invoices', label: 'Invoices', icon: FileText },
-      { to: '/portal/wallet', label: 'Wallet', icon: Wallet },
-      { to: '/portal/support', label: 'Support', icon: LifeBuoy },
+      { to: '/portal/rto-intelligence', label: 'RTO Risk Map', icon: Calculator },
+      { to: '/portal/map', label: 'Live Map', icon: Map },
+      { to: '/portal/bulk-track', label: 'Bulk Track', icon: Radar },
+      { to: '/portal/track', label: 'Single Track', icon: Radar },
+    ],
+  },
+  {
+    label: 'Advanced',
+    items: [
+      { to: '/portal/support', label: 'Support Tickets', icon: LifeBuoy },
       { to: '/portal/notifications', label: 'Notifications', icon: Bell },
-      { to: '/portal/branding', label: 'Branding', icon: Image },
+      { to: '/portal/branding', label: 'Brand Tracking', icon: Image },
       { to: '/portal/developer', label: 'Developer Hub', icon: Code2 },
-      { to: '/portal/governance', label: 'Governance', icon: ShieldCheck },
+      { to: '/portal/governance', label: 'Governance', icon: ShieldCheck, enterpriseOnly: true },
     ],
   },
 ];
@@ -93,36 +103,47 @@ const pageMeta = {
 };
 
 function SidebarNav({ onNavigate }) {
+  const { user } = useAuth();
+  
   return (
     <nav className="flex-1 overflow-y-auto px-2 py-3">
-      {navGroups.map((group) => (
-        <section key={group.label} className="mb-5">
-          <p className="px-2 pb-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{group.label}</p>
-          <div className="space-y-1">
-            {group.items.map((item) => {
-              const Icon = item.icon;
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.end}
-                  onClick={onNavigate}
-                  className={({ isActive }) =>
-                    `client-shell-nav-item flex items-center gap-2.5 rounded-xl border px-3 py-2 text-[12px] font-bold transition ${
-                      isActive
-                        ? 'client-shell-nav-item-active border-orange-300/80 bg-gradient-to-r from-orange-500/16 to-sky-400/8 text-orange-800 shadow-[0_10px_22px_-16px_rgba(249,115,22,0.95)] dark:border-orange-400/40 dark:from-orange-500/20 dark:to-sky-500/20 dark:text-orange-200'
-                        : 'border-transparent text-slate-600 hover:border-slate-200/70 hover:bg-white/75 hover:text-slate-900 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-800/70 dark:hover:text-slate-100'
-                    }`
-                  }
-                >
-                  <Icon size={14} />
-                  <span className="truncate">{item.label}</span>
-                </NavLink>
-              );
-            })}
-          </div>
-        </section>
-      ))}
+      {navGroups.map((group) => {
+        // Filter items before rendering the group
+        const visibleItems = group.items.filter(
+          (item) => !(item.enterpriseOnly && user?.role !== 'OWNER' && user?.plan !== 'ENTERPRISE')
+        );
+        
+        if (visibleItems.length === 0) return null;
+
+        return (
+          <section key={group.label} className="mb-5">
+            <p className="px-2 pb-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">{group.label}</p>
+            <div className="space-y-1">
+              {visibleItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    onClick={onNavigate}
+                    className={({ isActive }) =>
+                      `client-shell-nav-item flex items-center gap-2.5 rounded-xl border px-3 py-2 text-[12px] font-bold transition ${
+                        isActive
+                          ? 'client-shell-nav-item-active border-orange-300/80 bg-gradient-to-r from-orange-500/16 to-sky-400/8 text-orange-800 shadow-[0_10px_22px_-16px_rgba(249,115,22,0.95)] dark:border-orange-400/40 dark:from-orange-500/20 dark:to-sky-500/20 dark:text-orange-200'
+                          : 'border-transparent text-slate-600 hover:border-slate-200/70 hover:bg-white/75 hover:text-slate-900 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-800/70 dark:hover:text-slate-100'
+                      }`
+                    }
+                  >
+                    <Icon size={14} />
+                    <span className="truncate">{item.label}</span>
+                  </NavLink>
+                );
+              })}
+            </div>
+          </section>
+        );
+      })}
     </nav>
   );
 }
@@ -157,6 +178,8 @@ function SidebarFooter({ mobile = false }) {
         className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-bold text-rose-600 transition hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-900/30"
       >
         <LogOut size={13} />
+
+
         Sign out
       </button>
     </div>
@@ -164,6 +187,7 @@ function SidebarFooter({ mobile = false }) {
 }
 
 export function ClientPortalLayout() {
+  const { user } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
   const headerMeta = useMemo(() => pageMeta[location.pathname] || pageMeta['/portal'], [location.pathname]);
@@ -227,13 +251,14 @@ export function ClientPortalLayout() {
             </div>
           </div>
           <div className="hidden items-center gap-2 md:flex">
-            <div className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-emerald-700">
-              Live
+            <div className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-black text-orange-700 shadow-sm flex items-center gap-1.5 dark:border-orange-900/50 dark:bg-orange-500/10 dark:text-orange-400">
+              <Wallet size={12} className="opacity-70" />
+              <span>₹{user?.walletBalance?.toLocaleString('en-IN') || '0'}</span>
             </div>
-            <div className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-sky-700">
+            <div className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-sky-700 dark:border-sky-900/40 dark:bg-sky-500/10 dark:text-sky-400">
               Client Account
             </div>
-            <div className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-violet-700">
+            <div className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-violet-700 dark:border-violet-900/40 dark:bg-violet-500/10 dark:text-violet-400">
               Secure
             </div>
           </div>

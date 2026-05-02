@@ -69,17 +69,12 @@ export default function ClientGovernancePage({ toast }) {
           <div className="text-sm text-slate-500 dark:text-slate-400">Loading governance dashboards...</div>
         ) : (
           <>
-            <ClientPortalPageIntro
-              eyebrow="Governance"
-              title="Review approvals, evidence packs, and audit activity from one controlled client workspace."
-              description="This page brings together maker-checker actions, compliance evidence, and immutable audit history so governance decisions stay visible and reviewable."
-              badges={['Maker-checker enabled', `${diagnostics?.keys?.length || 0} integration keys`, `${approvals.length} approval records`]}
-              actions={(
-                <button className="client-action-btn-secondary" onClick={requestApproval} disabled={requesting}>
-                  {requesting ? 'Submitting…' : 'Request governance approval'}
-                </button>
-              )}
-            />
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Review approvals, evidence packs, and audit activity from one controlled client workspace.</h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">This page brings together maker-checker actions, compliance evidence, and immutable audit history so governance decisions stay visible and reviewable.</p>
+        </div>
+      </div>
             <section className="client-premium-card p-5">
               <h2 className="text-lg font-bold text-slate-900 dark:text-white mb-2">Account Governance</h2>
               <div className="grid md:grid-cols-3 gap-3 text-sm">

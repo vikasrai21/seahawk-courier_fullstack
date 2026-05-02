@@ -12,6 +12,8 @@
 const prisma  = require('../config/prisma');
 const logger  = require('../utils/logger');
 const cache   = require('../utils/cache');
+const config  = require('../config');
+const sandboxSimulation = require('./sandboxSimulation.service');
 const { fetchJsonWithRetry, fetchWithRetry } = require('../utils/httpRetry');
 const dtdcTrackingSvc = require('./dtdc.service');
 
@@ -556,6 +558,45 @@ const dhl = {
    ════════════════════════════════════════════════════════════ */
 const CARRIERS = { Delhivery: delhivery, DTDC: dtdc, Trackon: trackon, BlueDart: bluedart, FedEx: fedex, DHL: dhl };
 
+/* ── Courier Alias Resolution ── */
+const COURIER_ALIASES = {
+  'PRIMETRACK':         'Trackon',
+  'PRIME TRACK':        'Trackon',
+  'TRACKON PRIME':      'Trackon',
+  'TRACKON EXPRESS':    'Trackon',
+  'TRACKON SURFACE':    'Trackon',
+  'TRACKON STANDARD':   'Trackon',
+  'TRACKON ROADX':      'Trackon',
+  'TRACKON TECEX':      'Trackon',
+  'TRACKON SMEXP':      'Trackon',
+  'TRACKON PARCEL':     'Trackon',
+  'DTDC EXPRESS':       'DTDC',
+  'DTDC SURFACE':       'DTDC',
+  'DTDC PRIORITY':      'DTDC',
+  'DTDC LITE':          'DTDC',
+  'DELHIVERY EXPRESS':  'Delhivery',
+  'DELHIVERY SURFACE':  'Delhivery',
+  'DELHIVERY STANDARD': 'Delhivery',
+  'BLUEDART EXPRESS':   'BlueDart',
+  'BLUE DART':          'BlueDart',
+  'BLUEDART':           'BlueDart',
+};
+
+function normalizeCourierName(courier) {
+  if (!courier) return courier;
+  const name = String(courier).trim();
+  // Exact match in carrier map
+  if (CARRIERS[name]) return name;
+  // Check alias map (case-insensitive)
+  const upper = name.toUpperCase();
+  if (COURIER_ALIASES[upper]) return COURIER_ALIASES[upper];
+  // Fuzzy prefix match: "Trackon ..." → "Trackon"
+  for (const key of Object.keys(CARRIERS)) {
+    if (upper.startsWith(key.toUpperCase())) return key;
+  }
+  return name;
+}
+
 function getBookingEndpoint(carrier, cfg) {
   if (carrier === 'Delhivery') return `${cfg.apiUrl}/api/cmu/create.json`;
   if (carrier === 'DTDC') return `${cfg.apiUrl}/secure/shiprequest`;
@@ -575,43 +616,124 @@ function getMissingBookingFields(data = {}) {
   });
 }
 
+function resolveExecutionEnvironment(data = {}, options = {}) {
+  const requested = String(options.environment || data.environment || '').trim().toLowerCase();
+  if (requested === 'sandbox' || requested === 'production') return requested;
+  if (data.sandbox === true || String(data.mode || '').toLowerCase() === 'sandbox') return 'sandbox';
+  return config.runtime?.mode || 'production';
+}
+
 async function createShipment(carrier, data, options = {}) {
-  const impl = CARRIERS[carrier];
+  const resolved = normalizeCourierName(carrier);
+  const impl = CARRIERS[resolved];
   if (!impl) throw new Error(`Unknown carrier: ${carrier}`);
-  const cfg = await getCarrierConfig(carrier);
   const dryRun = Boolean(options?.dryRun);
+  const environment = resolveExecutionEnvironment(data, options);
+  let cfg = null;
+  let configured = false;
+  let configError = null;
+
+  if (environment === 'sandbox') {
+    const missingFields = getMissingBookingFields(data);
+    if (missingFields.length) {
+      return {
+        dryRun,
+        sandbox: true,
+        environment,
+        carrier: resolved,
+        ready: false,
+        message: 'Sandbox validation failed. Fix required fields before booking.',
+        checks: {
+          configured: true,
+          requiredFields: {
+            missing: missingFields,
+            checked: ['consignee', 'deliveryAddress', 'deliveryCity', 'pin', 'weightGrams'],
+          },
+        },
+        expectedShipment: null,
+      };
+    }
+    const response = sandboxSimulation.mockCarrierResponse({ ...data, carrier: resolved });
+    return {
+      ...response,
+      dryRun,
+      sandbox: true,
+      environment,
+      ready: true,
+      message: dryRun
+        ? 'Sandbox dry run validated and simulated a courier booking response. No real courier was called.'
+        : 'Sandbox booking simulated. No real courier was called.',
+      expectedShipment: {
+        order_id: response.order_id,
+        shipment_id: response.shipment_id,
+        awb: response.awb,
+        status: response.status,
+        carrier: response.carrier,
+        trackUrl: response.trackUrl,
+        labelUrl: response.labelUrl,
+      },
+    };
+  }
+
+  try {
+    cfg = getCarrierConfig(resolved);
+    configured = true;
+  } catch (err) {
+    configError = err;
+    if (!dryRun) throw err;
+  }
 
   if (dryRun) {
     const missingFields = getMissingBookingFields(data);
+    const response = sandboxSimulation.mockCarrierResponse({ ...data, carrier: resolved });
     return {
       dryRun: true,
-      carrier,
-      ready: missingFields.length === 0,
+      sandbox: false,
+      environment,
+      carrier: resolved,
+      ready: configured && missingFields.length === 0,
       message: missingFields.length
         ? 'Dry run failed validation. Fix required fields before live booking.'
-        : 'Dry run passed. Booking credentials and payload shape look valid. No shipment was created.',
+        : configured
+          ? 'Dry run passed. Payload shape and credentials look valid. No shipment was created.'
+          : 'Dry run validated payload shape but carrier credentials are not configured.',
       checks: {
-        configured: true,
+        configured,
+        configError: configError?.message || null,
         requiredFields: {
           missing: missingFields,
           checked: ['consignee', 'deliveryAddress', 'deliveryCity', 'pin', 'weightGrams'],
         },
       },
-      bookingEndpoint: getBookingEndpoint(carrier, cfg),
+      bookingEndpoint: cfg ? getBookingEndpoint(resolved, cfg) : 'N/A',
+      simulatedCourierResponse: response,
+      expectedShipment: missingFields.length ? null : {
+        order_id: response.order_id,
+        shipment_id: response.shipment_id,
+        awb: response.awb,
+        status: response.status,
+        carrier: response.carrier,
+        trackUrl: response.trackUrl,
+        labelUrl: response.labelUrl,
+      },
     };
   }
 
-  logger.info(`Creating shipment via ${carrier} API`, { consignee: data.consignee, pin: data.pin });
+  logger.info(`Creating shipment via ${resolved} API`, { requestedCarrier: carrier, consignee: data.consignee, pin: data.pin });
   return impl.createShipment(data, cfg);
 }
 
 async function fetchTracking(carrier, awb, options = {}) {
-  const impl = CARRIERS[carrier];
-  if (!impl) throw new Error(`Unknown carrier: ${carrier}`);
+  const resolved = normalizeCourierName(carrier);
+  const impl = CARRIERS[resolved];
+  if (!impl) {
+    logger.warn(`fetchTracking: no carrier implementation for "${carrier}" (resolved: "${resolved}"), AWB: ${awb}`);
+    return null;
+  }
   try {
     const upperAwb = String(awb || '').toUpperCase();
     const useCache = !options.bypassCache;
-    const cacheKey = `carrier:track:${carrier}:${upperAwb}`;
+    const cacheKey = `carrier:track:${resolved}:${upperAwb}`;
 
     if (useCache) {
       const cached = await cache.get(cacheKey);
@@ -620,7 +742,7 @@ async function fetchTracking(carrier, awb, options = {}) {
 
     let cfg;
     try {
-      cfg = getCarrierConfig(carrier);
+      cfg = getCarrierConfig(resolved);
     } catch (err) {
       cfg = { apiUrl: '', apiKey: '', enabled: true, config: {} };
     }
@@ -636,9 +758,10 @@ async function fetchTracking(carrier, awb, options = {}) {
 }
 
 async function cancelShipment(carrier, awb) {
-  const impl = CARRIERS[carrier];
+  const resolved = normalizeCourierName(carrier);
+  const impl = CARRIERS[resolved];
   if (!impl) throw new Error(`Unknown carrier: ${carrier}`);
-  const cfg = await getCarrierConfig(carrier);
+  const cfg = getCarrierConfig(resolved);
   return impl.cancelShipment(awb, cfg);
 }
 
@@ -653,13 +776,42 @@ function isCarrierConfigured(carrier) {
 
 function getConfiguredCarriers(preferred = Object.keys(CARRIERS)) {
   const requested = Array.isArray(preferred) ? preferred : Object.keys(CARRIERS);
-  const unique = [...new Set(requested)];
+  const unique = [...new Set(requested.map(normalizeCourierName))];
   return unique.filter((carrier) => CARRIERS[carrier] && isCarrierConfigured(carrier));
+}
+
+async function ensureNdrEventForTracking(shipmentId, awb, tracking) {
+  if (!['Failed', 'NDR'].includes(tracking?.status)) return;
+
+  try {
+    const existingNdr = await prisma.nDREvent.findFirst({
+      where: { shipmentId, action: 'PENDING' },
+    });
+    if (existingNdr) return;
+
+    const latestEvent = tracking.events?.[0] || {};
+    const failedEvents = (tracking.events || []).filter(e => ['Failed', 'NDR'].includes(e.status));
+    const rawAttemptNo = Number(latestEvent.rawData?.attemptNo || latestEvent.rawData?.ATTEMPT_NO || 0);
+    await prisma.nDREvent.create({
+      data: {
+        shipmentId,
+        awb,
+        reason: latestEvent.description || tracking.statusText || 'Delivery attempt failed - auto-detected from carrier API',
+        description: latestEvent.location ? `Last scan: ${latestEvent.location}` : '',
+        action: 'PENDING',
+        attemptNo: rawAttemptNo > 0 ? rawAttemptNo : Math.max(1, failedEvents.length),
+      },
+    });
+    logger.info(`Auto-created NDR event for AWB ${awb} (status: ${tracking.status})`);
+  } catch (ndrErr) {
+    logger.warn(`Failed to auto-create NDR for AWB ${awb}: ${ndrErr.message}`);
+  }
 }
 
 /* ── Persist tracking events to DB ── */
 async function syncTrackingEvents(shipmentId, awb, carrier) {
-  const tracking = await fetchTracking(carrier, awb, { bypassCache: true });
+  const resolved = normalizeCourierName(carrier);
+  const tracking = await fetchTracking(resolved, awb, { bypassCache: true });
   if (!tracking?.events?.length) return 0;
 
   // Get existing events to avoid duplicates
@@ -674,7 +826,18 @@ async function syncTrackingEvents(shipmentId, awb, carrier) {
     return !existingSet.has(key);
   });
 
-  if (toInsert.length === 0) return 0;
+  if (toInsert.length === 0) {
+    // Even with no new events, still update the shipment status if it changed
+    if (tracking.status) {
+      const current = await prisma.shipment.findUnique({ where: { id: shipmentId }, select: { status: true } });
+      if (current && current.status !== tracking.status) {
+        await prisma.shipment.update({ where: { id: shipmentId }, data: { status: tracking.status } });
+        logger.info(`Status updated for AWB ${awb}: ${current.status} → ${tracking.status}`);
+      }
+      await ensureNdrEventForTracking(shipmentId, awb, tracking);
+    }
+    return 0;
+  }
 
   await prisma.trackingEvent.createMany({
     data: toInsert.map(e => ({
@@ -698,6 +861,8 @@ async function syncTrackingEvents(shipmentId, awb, carrier) {
     });
   }
 
+  await ensureNdrEventForTracking(shipmentId, awb, tracking);
+
   logger.info(`Synced ${toInsert.length} tracking events for AWB ${awb}`);
   return toInsert.length;
 }
@@ -707,12 +872,12 @@ async function syncTrackingEvents(shipmentId, awb, carrier) {
    ════════════════════════════════════════════════════════════ */
 function mapDelhiveryStatus(raw) {
   const s = raw.toUpperCase();
+  if (s.includes('FAIL') || s.includes('UNDELIVER')) return 'Failed';
   if (s.includes('DELIVER') && !s.includes('OUT')) return 'Delivered';
   if (s.includes('OFD') || s.includes('OUT FOR')) return 'OutForDelivery';
   if (s.includes('TRANSIT') || s.includes('DISPATCH') || s.includes('REACHED')) return 'InTransit';
   if (s.includes('PICK') || s.includes('MANIFEST')) return 'PickedUp';
   if (s.includes('RTO') || s.includes('RETURN')) return 'RTO';
-  if (s.includes('FAIL') || s.includes('UNDELIVER')) return 'Failed';
   return 'Booked';
 }
 function mapTrackonStatus(raw) {
@@ -876,5 +1041,6 @@ module.exports = {
   syncTrackingEvents,
   isCarrierConfigured,
   getConfiguredCarriers,
+  normalizeCourierName,
   CARRIERS: Object.keys(CARRIERS),
 };

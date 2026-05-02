@@ -48,24 +48,26 @@ if not exist "frontend\node_modules\" (
     echo.
 )
 
-:: ── Build React frontend if dist is missing ──────────────────────────────────
-if not exist "frontend\dist\index.html" (
-    echo  [3/4] Building frontend - please wait 30-60 seconds...
-    cd frontend
-    call npm run build
-    if %errorlevel% neq 0 (
-        echo.
-        echo  ERROR: Frontend build failed!
-        echo  Try: delete frontend\node_modules and run again.
-        pause & exit /b 1
-    )
-    cd ..
-    echo        Frontend built!
+:: ── Build React frontend and sync backend/public ─────────────────────────────
+echo  [3/4] Building frontend - please wait 30-60 seconds...
+cd frontend
+call npm run build
+if %errorlevel% neq 0 (
     echo.
-) else (
-    echo  [3/4] Frontend ready.
-    echo.
+    echo  ERROR: Frontend build failed!
+    echo  Try: delete frontend\node_modules and run again.
+    pause & exit /b 1
 )
+cd ..
+if exist "backend\public" rmdir /s /q "backend\public"
+xcopy /E /I /Y "frontend\dist" "backend\public\" >nul
+if %errorlevel% neq 0 (
+    echo.
+    echo  ERROR: Failed to sync frontend build to backend\public.
+    pause & exit /b 1
+)
+echo        Frontend built and synced.
+echo.
 
 :: ── Check .env ───────────────────────────────────────────────────────────────
 if not exist "backend\.env" (

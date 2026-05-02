@@ -65,25 +65,25 @@ function SummaryHeader({ summary, loading }) {
 
   const items = [
     {
-      label: 'Calculated Revenue',
+      label: 'Reference Value',
       value: fmtCurrency(summary?.calculatedRevenue),
       icon: Sparkles,
       tone: 'text-emerald-600 bg-emerald-50 ring-emerald-200/50',
-      sub: `${fmtNumber(summary?.calculatedCount)} shipments calculated`,
+      sub: `${fmtNumber(summary?.calculatedCount)} shipments matched to rate rules`,
     },
     {
-      label: 'Recorded Revenue',
+      label: 'Recorded Billing',
       value: fmtCurrency(summary?.recordedRevenue),
       icon: IndianRupee,
       tone: 'text-blue-600 bg-blue-50 ring-blue-200/50',
-      sub: `From Excel/import data`,
+      sub: `Authoritative for invoicing`,
     },
     {
-      label: 'Revenue Gap',
+      label: 'Reference Gap',
       value: fmtCurrency(summary?.revenueGap),
       icon: TrendingUp,
       tone: summary?.revenueGap >= 0 ? 'text-emerald-600 bg-emerald-50 ring-emerald-200/50' : 'text-rose-600 bg-rose-50 ring-rose-200/50',
-      sub: summary?.revenueGap >= 0 ? 'Potential unrealized revenue' : 'Overcharged amount',
+      sub: summary?.revenueGap >= 0 ? 'Reference is above recorded' : 'Recorded is above reference',
     },
     {
       label: 'Avg / Shipment',
@@ -219,16 +219,16 @@ export default function SmartRevenueTable({ dateFrom, dateTo }) {
             <Zap size={20} strokeWidth={2.5} />
           </div>
           <div>
-            <h3 className="text-sm font-black text-slate-900 tracking-tight">Intelligent Revenue Engine</h3>
+            <h3 className="text-sm font-black text-slate-900 tracking-tight">Reference Rate Audit</h3>
             <p className="text-[10px] text-slate-400 font-medium mt-0.5">
-              Rate-card calculated selling prices • Based on weight, zone & courier
+              Recorded shipment amount is authoritative; calculated value is only a rate-card reference
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-50 border border-emerald-200">
             <Sparkles size={12} className="text-emerald-600" />
-            <span className="text-[10px] font-bold text-emerald-700">AI-CALCULATED</span>
+            <span className="text-[10px] font-bold text-emerald-700">REFERENCE ONLY</span>
           </div>
         </div>
       </div>

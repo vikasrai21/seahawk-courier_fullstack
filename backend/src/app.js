@@ -170,6 +170,7 @@ app.use('/api/analytics',      require('./routes/analytics.routes'));
 app.use('/api/delhivery',      require('./routes/delhivery.routes'));
 app.use('/api/couriers',       require('./routes/courier.routes'));
 app.use('/api/carrier',        require('./routes/carrier.routes'));
+app.use('/api/sandbox',        require('./routes/sandbox.routes'));
 app.use('/api/webhooks',       require('./routes/webhook.routes'));
 app.use('/api/support',        require('./routes/support.routes'));
 app.use('/api/courier-invoices', require('./routes/courier-invoice.routes'));
@@ -191,12 +192,12 @@ if (fs.existsSync(frontendBuild)) {
     etag: true,
     setHeaders: (res, filePath) => {
       if (!config.isProd) return;
-      if (filePath.includes(`${path.sep}assets${path.sep}`)) {
-        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      if (filePath.endsWith(`${path.sep}sw.js`) || filePath.endsWith(`${path.sep}manifest.json`) || filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache');
         return;
       }
-      if (filePath.endsWith('.html')) {
-        res.setHeader('Cache-Control', 'no-cache');
+      if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         return;
       }
       res.setHeader('Cache-Control', 'public, max-age=604800');

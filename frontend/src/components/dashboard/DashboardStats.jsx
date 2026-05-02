@@ -39,7 +39,7 @@ function getTrend(current, previous) {
 // ── Today Pulse Bar ───────────────────────────────────────────────────────
 function TodayPulse({ stats, label = 'Current Range' }) {
   const items = [
-    { label: 'Bookings', value: stats?.Booked || stats?.todayBooked || 0, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-100' },
+    { label: 'Still Booked', value: stats?.Booked || stats?.todayBooked || 0, color: 'text-blue-600', bg: 'bg-blue-50 border-blue-100' },
     { label: 'Pending / Transit', value: stats?.OutForDelivery || 0, color: 'text-amber-600', bg: 'bg-amber-50 border-amber-100' },
     { label: 'Delivered', value: stats?.Delivered || stats?.todayDelivered || 0, color: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-100' },
     { label: 'Failed/RTO', value: (stats?.Failed || 0) + (stats?.RTO || 0), color: 'text-rose-600', bg: 'bg-rose-50 border-rose-100' },
@@ -124,12 +124,12 @@ export default function DashboardStats({ overview, previousOverview, dateLabel, 
   // We prioritize the actual Recorded Revenue so the Gross Profit calculation remains factual
   const mainRevenue = recordedRevenue;
   const revenueSubtitle = hasSmartRev
-    ? `⚡ AI Estimated Value: ₹${Number(aiRevenue).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
-    : `₹${fmtNumber(ops.todayRevenue || 0)} today`;
+    ? `Reference rate estimate: ₹${Number(aiRevenue).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+    : `From recorded shipment amounts`;
 
   // Dynamically calculate profit using actual billed revenue
-  const grossProfit = ops.grossProfit || Math.round(recordedRevenue * 0.28);
-  const avgMargin = ops.avgMargin || 28;
+  const grossProfit = ops.grossProfit || 0;
+  const avgMargin = ops.avgMargin || 0;
 
   return (
     <div className="space-y-6 relative">
@@ -137,9 +137,9 @@ export default function DashboardStats({ overview, previousOverview, dateLabel, 
       <div className={`grid gap-5 md:grid-cols-2 xl:grid-cols-3 ${isOwner ? '2xl:grid-cols-6' : '2xl:grid-cols-4'}`}>
         <StatCard title="Total Shipments" value={totalShipments || kpis.totalShipments || 0} previous={prev.totalShipments || 0} icon={Package} tone="orange" subtitle={`${fmtNumber(ops.weekShipments || 0)} this week`} />
         
-        {isOwner && <StatCard title="Revenue" value={mainRevenue} previous={prev.totalRevenue || 0} format="currency" icon={IndianRupee} tone="blue" subtitle={revenueSubtitle} />}
-        {isOwner && <StatCard title="Gross Profit" value={grossProfit} previous={0} format="currency" icon={TrendingUp} tone="green" subtitle={`Estimated from invoices`} />}
-        {isOwner && <StatCard title="Avg Margin" value={avgMargin} previous={0} format="percent" icon={Percent} tone="purple" subtitle={`On ${fmtNumber(totalShipments)} shipments`} />}
+        {isOwner && <StatCard title="Recorded Billing" value={mainRevenue} previous={prev.totalRevenue || 0} format="currency" icon={IndianRupee} tone="blue" subtitle={revenueSubtitle} />}
+        {isOwner && <StatCard title="Known Gross Profit" value={grossProfit} previous={0} format="currency" icon={TrendingUp} tone="green" subtitle={`0 until carrier buy-costs are recorded`} />}
+        {isOwner && <StatCard title="Known Margin" value={avgMargin} previous={0} format="percent" icon={Percent} tone="purple" subtitle={`Reference estimates are separate`} />}
         
         <StatCard title="Delivery Rate" value={((kpis.delivered || ops.deliveredCount || 0) / (totalShipments || 1)) * 100} previous={((prev.delivered || 0) / (prev.totalShipments || 1)) * 100} format="percent" icon={Target} tone="cyan" subtitle={`${fmtNumber(kpis.delivered || ops.deliveredCount || 0)} completed`} />
         

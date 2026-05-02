@@ -22,6 +22,7 @@ router.use(protect); // All shipment routes require auth
 router.use(requireOwnerOrRole('ADMIN', 'OPS_MANAGER', 'STAFF'));
 
 router.get('/',               ctrl.getAll);
+router.get('/export',         ctrl.exportShipments);
 router.get('/import-ledger',  ownerOnly, ctrl.getImportLedger);
 router.get('/stats/today',    ctrl.getTodayStats);
 router.get('/stats/monthly',  ctrl.getMonthlyStats);
@@ -35,6 +36,7 @@ router.post('/scan-bulk',     requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), vali
 router.post('/learn-corrections', requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), ctrl.learnCorrections);
 router.put('/:id',            validate(updateShipmentSchema), ctrl.update);
 router.patch('/:id/status',   validate(statusUpdateSchema),   ctrl.patchStatus);
+router.patch('/:id/manual-status', requireRole('ADMIN', 'OPS_MANAGER', 'STAFF'), validate(statusUpdateSchema), ctrl.manualStatus);
 router.get('/:id/transitions',                                 ctrl.getValidStatuses);
 router.delete('/:id',         requireOwnerOrRole('ADMIN'), ctrl.remove);
 

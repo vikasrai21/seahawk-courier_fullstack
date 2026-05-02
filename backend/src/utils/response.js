@@ -7,9 +7,10 @@ const ok = (res, data = null, message = 'Success', status = 200) =>
 const created = (res, data, message = 'Created') =>
   ok(res, data, message, 201);
 
-const paginated = (res, data, total, page, limit, message = 'Success') =>
+const paginated = (res, data, total, page, limit, message = 'Success', stats = null) =>
   res.status(200).json({
     success: true, message, data,
+    ...(stats && { stats }),
     pagination: {
       total,
       page: parseInt(page),

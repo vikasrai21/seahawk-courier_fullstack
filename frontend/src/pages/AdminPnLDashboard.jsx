@@ -6,9 +6,7 @@ import {
   AlertTriangle, 
   Activity, 
   BarChart2, 
-  PieChart as PieIcon,
   RefreshCw,
-  Target
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -20,17 +18,11 @@ import {
   ResponsiveContainer, 
   Cell, 
   Legend, 
-  LineChart, 
-  Line
 } from 'recharts';
 import api from '../services/api';
-import { PageHeader } from '../components/ui/PageHeader';
-import KPI from '../components/dashboard/KPI';
 
 const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 const fmtPct = (n) => `${Number(n || 0).toFixed(1)}%`;
-
-const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#06b6d4', '#ec4899'];
 
 const PERIODS = [
   { label: 'Today', days: 0 },
@@ -93,22 +85,22 @@ export default function AdminPnLDashboard({ toast }) {
   const isProfitable = (data?.marginPct || 0) > 0;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 selection:bg-blue-500/30">
+    <div className="min-h-screen selection:bg-blue-500/30">
       <div className="max-w-7xl mx-auto px-4 py-8 space-y-8">
         
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-800 pb-6">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-6">
           <div>
             <div className="flex items-center gap-2 text-blue-500 mb-2">
               <Activity size={18} className="animate-pulse" />
               <span className="text-[10px] font-black uppercase tracking-[0.3em]">Executive Control Room</span>
             </div>
-            <h1 className="text-3xl font-black text-white tracking-tight">Real-Time P&L</h1>
-            <p className="text-sm font-medium text-slate-400 mt-1">Live margin calculations and cost arbitrage</p>
+            <h1 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">Real-Time P&L</h1>
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400 mt-1">Live margin calculations and cost arbitrage. <span className="text-[10px] text-slate-400">(Manual amounts = source of truth; system estimates = reference)</span></p>
           </div>
           
           <div className="flex items-center gap-3">
-            <div className="flex bg-slate-900/50 p-1 rounded-2xl border border-slate-800">
+            <div className="flex bg-white dark:bg-slate-900/50 p-1 rounded-2xl border border-slate-200 dark:border-slate-800">
               {PERIODS.map(p => (
                 <button
                   key={p.label}
@@ -121,7 +113,7 @@ export default function AdminPnLDashboard({ toast }) {
                 </button>
               ))}
             </div>
-            <button onClick={load} className="p-2.5 rounded-2xl border border-slate-800 bg-slate-900 text-slate-400 hover:text-blue-500 hover:border-blue-500 transition-all active:scale-90">
+            <button onClick={load} className="p-2.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 hover:text-blue-500 hover:border-blue-500 transition-all active:scale-90">
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
@@ -261,7 +253,14 @@ export default function AdminPnLDashboard({ toast }) {
                </div>
             </div>
           </div>
-        ) : null}
+        ) : (
+          <div className="flex flex-col items-center justify-center py-32 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[32px]">
+            <AlertTriangle size={48} className="text-slate-300 dark:text-slate-600 mb-4" />
+            <h3 className="text-lg font-black text-slate-900 dark:text-white mb-1">Failed to Load P&L Data</h3>
+            <p className="text-sm font-medium text-slate-500 mb-4">Check your connection and try again.</p>
+            <button onClick={load} className="px-5 py-2.5 bg-blue-600 text-white text-[11px] font-black uppercase tracking-[0.2em] rounded-2xl hover:bg-blue-700 transition-all">Retry</button>
+          </div>
+        )}
       </div>
     </div>
   );
