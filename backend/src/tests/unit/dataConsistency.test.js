@@ -399,6 +399,7 @@ describe('Data Consistency & Integrity Verification', () => {
   describe('Bulk import — invalid data rejection', () => {
     it('skips rows with empty AWBs and records them as errors', async () => {
       mockPrisma.client.upsert = vi.fn().mockResolvedValue({});
+      mockPrisma.client.findUnique = vi.fn().mockResolvedValue({ walletBalance: 1000 });
       mockPrisma.shipment.findMany = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([
         { id: 1, awb: 'VALID001', clientCode: 'TESTCL', courier: 'Delhivery', status: 'Booked' },
       ]);

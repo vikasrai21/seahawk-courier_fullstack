@@ -2,7 +2,7 @@
 // src/config/__mocks__/prisma.js
 
 const mockTx = {
-  shipment: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn(), aggregate: vi.fn().mockResolvedValue({ _sum: { amount: 0, weight: 0 } }) },
+  shipment: { create: vi.fn(), createMany: vi.fn(), update: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn(), aggregate: vi.fn().mockResolvedValue({ _sum: { amount: 0, weight: 0 } }) },
   trackingEvent: { create: vi.fn(), createMany: vi.fn(), findMany: vi.fn(), count: vi.fn() },
   draftOrder: { findFirst: vi.fn(), findUnique: vi.fn(), findMany: vi.fn(), create: vi.fn(), count: vi.fn(), update: vi.fn(), delete: vi.fn() },
   sandboxRun: { findUnique: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), upsert: vi.fn(), count: vi.fn() },
@@ -49,5 +49,6 @@ const mockPrisma = {
   $disconnect: vi.fn(),
 };
 
+mockTx.shipment.createMany = vi.fn((...args) => mockPrisma.shipment.createMany(...args));
 mockPrisma._mockTx = mockTx;
 module.exports = mockPrisma;

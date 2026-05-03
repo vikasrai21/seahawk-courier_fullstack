@@ -20,6 +20,7 @@ import {
   XCircle,
 } from "lucide-react";
 import api from "../services/api";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 
 const PLATFORMS = ["all", "shopify", "amazon", "flipkart", "custom"];
 const ERROR_SCENARIOS = [
@@ -356,6 +357,7 @@ export default function SandboxRunsPage({ toast }) {
   const [simError, setSimError] = useState("");
   const [running, setRunning] = useState(false);
   const [cleaning, setCleaning] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState(null);
   const pollInterval = useRef(null);
 
   const loadDetails = async (runId, silent = false) => {
@@ -461,29 +463,41 @@ export default function SandboxRunsPage({ toast }) {
   };
 
   const cleanupRuns = async () => {
-    if (!window.confirm("Clean up sandbox runs older than 7 days?")) return;
-    setCleaning(true);
-    try {
-      const res = await api.post("/sandbox/cleanup", { olderThanDays: 7, clientCode: clientCode.trim().toUpperCase() || undefined });
-      const data = getApiData(res, res);
-      toast?.(`Cleaned up ${data?.totalDeleted || 0} runs`, "success");
-      loadRuns();
-    } catch (err) {
-      toast?.(err.message || "Cleanup failed", "error");
-    } finally {
-      setCleaning(false);
-    }
+    setConfirmDialog({
+      message: "Clean up sandbox runs older than 7 days?",
+      confirmLabel: "Clean up",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setCleaning(true);
+        try {
+          const res = await api.post("/sandbox/cleanup", { olderThanDays: 7, clientCode: clientCode.trim().toUpperCase() || undefined });
+          const data = getApiData(res, res);
+          toast?.(`Cleaned up ${data?.totalDeleted || 0} runs`, "success");
+          loadRuns();
+        } catch (err) {
+          toast?.(err.message || "Cleanup failed", "error");
+        } finally {
+          setCleaning(false);
+        }
+      },
+    });
   };
 
   const deleteRun = async (runId) => {
-    if (!window.confirm(`Delete sandbox run ${runId}?`)) return;
-    try {
-      await api.delete(`/sandbox/runs/${encodeURIComponent(runId)}?clientCode=${encodeURIComponent(clientCode.trim().toUpperCase())}`);
-      toast?.("Run deleted successfully", "success");
-      loadRuns();
-    } catch (err) {
-      toast?.(err.message || "Failed to delete run", "error");
-    }
+    setConfirmDialog({
+      message: `Delete sandbox run ${runId}?`,
+      confirmLabel: "Delete",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          await api.delete(`/sandbox/runs/${encodeURIComponent(runId)}?clientCode=${encodeURIComponent(clientCode.trim().toUpperCase())}`);
+          toast?.("Run deleted successfully", "success");
+          loadRuns();
+        } catch (err) {
+          toast?.(err.message || "Failed to delete run", "error");
+        }
+      },
+    });
   };
 
   const exportRunData = async (runId) => {
@@ -548,6 +562,13 @@ export default function SandboxRunsPage({ toast }) {
 
   return (
     <div className="min-h-full">
+      <ConfirmDialog
+        open={Boolean(confirmDialog)}
+        message={confirmDialog?.message}
+        confirmLabel={confirmDialog?.confirmLabel || "Confirm"}
+        onConfirm={confirmDialog?.onConfirm}
+        onCancel={() => setConfirmDialog(null)}
+      />
       <main className="client-premium-main max-w-7xl">
         <section className="card-premium mb-6 p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">

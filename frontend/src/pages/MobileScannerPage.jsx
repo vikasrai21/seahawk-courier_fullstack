@@ -3,10 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import api from '../services/api';
 import { cropRectForCoverVideo } from '../utils/videoCoverCrop.js';
-import { normalizeBarcodeCandidate } from '../utils/barcode.js';
+import { inferCourierFromAwb, normalizeBarcodeCandidate } from '../utils/barcode.js';
 import { analyzeCaptureQuality, describeCaptureIssues } from '../utils/scannerQuality.js';
 import { evaluateBarcodeStability, nextBarcodeFallbackState } from '../utils/scannerStateMachine.js';
 import { createBarcodeScanner } from '../utils/barcodeEngine.js';
+import { clearQueue, loadQueue, saveQueue } from '../utils/offlineQueue.js';
 import {
   Camera, Check, AlertCircle, RotateCcw, Send, Volume2, VolumeX,
   Wifi, WifiOff, Zap, Package, ScanLine, Shield, RefreshCw, X, Brain,
@@ -40,8 +41,8 @@ const STICKY_CLIENT_KEY_PREFIX = 'mobile_scanner_sticky_client';
 const WORKFLOW_MODE_KEY = 'mobile_scanner_workflow_mode';
 const DEVICE_PROFILE_KEY = 'mobile_scanner_device_profile';
 const HEARTBEAT_INTERVAL_MS = 20000;
-const BARCODE_STABILITY_WINDOW_MS = 500;
-const BARCODE_STABILITY_HITS = 1;
+const BARCODE_STABILITY_WINDOW_MS = 700; // CHANGE: require two hits within a wider stability window
+const BARCODE_STABILITY_HITS = 2; // CHANGE: reduce false barcode locks
 const BARCODE_FAIL_THRESHOLD = 100;
 const BARCODE_REFRAME_ATTEMPTS = 2;
 const DOC_STABLE_MIN_TICKS = 2;
@@ -68,29 +69,6 @@ const normalizeReviewCourier = (value) => {
 };
 
 const normalizeClientCode = (value) => String(value || '').trim().toUpperCase();
-
-/**
- * Infer courier from AWB prefix — works offline, no API needed.
- * Called immediately when a barcode is locked so the review header
- * already shows the right courier color before OCR finishes.
- */
-const inferCourierFromAwb = (awb = '') => {
-  const a = String(awb || '').trim().toUpperCase();
-  if (!a) return '';
-  // DTDC: Z, D, X, I prefix or 7X prefix
-  if (/^[ZDX][0-9]/.test(a) || /^7X[0-9]/i.test(a) || /^I[0-9]{8}/.test(a)) return 'DTDC';
-  // Delhivery: 14 digits starting with 299 or 368
-  if (/^(299|368)\d{11}$/.test(a)) return 'Delhivery';
-  // Delhivery: exactly 14 digits
-  if (/^\d{14}$/.test(a)) return 'Delhivery';
-  // Trackon: 12 digits starting with 100 or 500
-  if (/^(100|500)\d{9}$/.test(a)) return 'Trackon';
-  // BlueDart: 11 digits
-  if (/^\d{11}$/.test(a)) return 'BlueDart';
-  // Primetrack: starts with 20004 or 20040
-  if (/^2000[45]/.test(a)) return 'Trackon';
-  return '';
-};
 
 const formatDisplayDate = (isoDate) => {
   const raw = String(isoDate || '').trim();
@@ -363,6 +341,8 @@ export default function MobileScannerPage({ standalone = false }) {
   const [barcodeFailCount, setBarcodeFailCount] = useState(0);
   const [barcodeReframeCount, setBarcodeReframeCount] = useState(0);
   const [lastLockTimeMs, setLastLockTimeMs] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState(null);
+  const [guideLocked, setGuideLocked] = useState(false);
 
   // 'barcode' = narrow landscape strip, 'document' = full AWB slip portrait frame.
   // Auto-switches to 'document' after BARCODE_FAIL_THRESHOLD consecutive misses.
@@ -491,6 +471,8 @@ export default function MobileScannerPage({ standalone = false }) {
   const scanHintRef = useRef({ message: '', at: 0 });
   const lockTelemetryRef = useRef({ lockTimeMs: null, candidateCount: 1, ambiguous: false, alternatives: [] });
   const barcodeEngineRef = useRef(null); // WASM-powered barcode engine
+  const lastScannedValueRef = useRef('');
+  const lastScannedAtRef = useRef(0);
   const reviewDataRef = useRef(null);
   const reviewFormRef = useRef({});
   const addToQueueRef = useRef(null);
@@ -685,16 +667,43 @@ export default function MobileScannerPage({ standalone = false }) {
 
   const saveOfflineQueue = useCallback((nextQueue) => {
     setOfflineQueue(nextQueue);
-    try {
-      if (nextQueue.length) {
-        localStorage.setItem(offlineQueueKey, JSON.stringify(nextQueue));
-      } else {
-        localStorage.removeItem(offlineQueueKey);
-      }
-    } catch (err) {
-      logNonCriticalScannerError('persist offline queue', err);
-    }
+    // CHANGE: persist offline queue asynchronously in IndexedDB
+    const persist = nextQueue.length ? saveQueue(offlineQueueKey, nextQueue) : clearQueue(offlineQueueKey);
+    void persist.catch((err) => logNonCriticalScannerError('persist offline queue', err));
   }, [offlineQueueKey]);
+
+  const openConfirmDialog = useCallback((message, onConfirm, onCancel = null) => {
+    // CHANGE: replace browser confirm with native-feeling bottom sheet
+    setConfirmDialog({
+      message,
+      onConfirm: () => {
+        setConfirmDialog(null);
+        onConfirm?.();
+      },
+      onCancel: () => {
+        setConfirmDialog(null);
+        onCancel?.();
+      },
+    });
+  }, []);
+
+  useEffect(() => {
+    // CHANGE: lock background scroll while scanner confirm sheet is open
+    if (!confirmDialog || typeof document === 'undefined') return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [confirmDialog]);
+
+  useEffect(() => {
+    // CHANGE: pulse scan guide corners when a barcode lock is committed
+    if (!lockedAwb) return undefined;
+    setGuideLocked(true);
+    const timer = setTimeout(() => setGuideLocked(false), 250);
+    return () => clearTimeout(timer);
+  }, [lockedAwb]);
 
   const enqueueOfflineScan = useCallback((payload) => {
     const nextItem = {
@@ -813,7 +822,8 @@ export default function MobileScannerPage({ standalone = false }) {
     if (!item?.queueId) return;
     const nextDate = String(editingQueueDate || '').trim();
     if (!ISO_DATE_REGEX.test(nextDate)) {
-      window.alert('Please select a valid date.');
+      // CHANGE: replace browser alert with inline scanner error
+      setErrorMsg('Please select a valid date.');
       return;
     }
     setQueueActionBusyId(item.queueId);
@@ -830,7 +840,8 @@ export default function MobileScannerPage({ standalone = false }) {
       setEditingQueueItemId('');
       setEditingQueueDate('');
     } catch (err) {
-      window.alert(err?.message || 'Could not update consignment date.');
+      // CHANGE: replace browser alert with inline scanner error
+      setErrorMsg(err?.message || 'Could not update consignment date.');
     } finally {
       setQueueActionBusyId('');
     }
@@ -842,19 +853,21 @@ export default function MobileScannerPage({ standalone = false }) {
     const confirmMessage = item.shipmentId
       ? `Delete ${awbLabel}? This will remove it from accepted consignments and from the server.`
       : `Remove ${awbLabel} from accepted consignments?`;
-    if (!window.confirm(confirmMessage)) return;
-    setQueueActionBusyId(item.queueId);
-    try {
-      if (item.shipmentId) {
-        await api.delete(`/shipments/${item.shipmentId}`);
+    // CHANGE: replace browser confirm with scanner bottom-sheet confirmation
+    openConfirmDialog(confirmMessage, async () => {
+      setQueueActionBusyId(item.queueId);
+      try {
+        if (item.shipmentId) {
+          await api.delete(`/shipments/${item.shipmentId}`);
+        }
+        removeQueueItemById(item.queueId, item.awb);
+      } catch (err) {
+        setErrorMsg(err?.message || 'Could not delete consignment.');
+      } finally {
+        setQueueActionBusyId('');
       }
-      removeQueueItemById(item.queueId, item.awb);
-    } catch (err) {
-      window.alert(err?.message || 'Could not delete consignment.');
-    } finally {
-      setQueueActionBusyId('');
-    }
-  }, [removeQueueItemById]);
+    });
+  }, [removeQueueItemById, openConfirmDialog]);
 
   useEffect(() => {
     addToQueueRef.current = addToQueue;
@@ -910,29 +923,32 @@ export default function MobileScannerPage({ standalone = false }) {
   }, [manualAwb, connStatus, goStep, isE2eMock, isStandalone, scanWorkflowMode]);
 
   const terminateSession = useCallback(() => {
-    if (!window.confirm(isStandalone ? 'Exit this scanner session on the phone?' : 'End this mobile scanner session on the phone?')) return;
-    try {
-      localStorage.removeItem(sessionStateKey);
-    } catch (err) {
-      logNonCriticalScannerError('clear session state on terminate', err);
-    }
-    if (isStandalone) {
-      navigate('/app/scan');
-      return;
-    }
-    if (socket?.connected) {
-      socket.emit('scanner:end-session', { reason: 'Mobile ended the session' });
-    } else {
-      navigate('/');
-    }
-  }, [socket, navigate, isStandalone, sessionStateKey]);
+    // CHANGE: replace browser confirm with scanner bottom-sheet confirmation
+    openConfirmDialog(isStandalone ? 'Exit this scanner session on the phone?' : 'End this mobile scanner session on the phone?', () => {
+      try {
+        localStorage.removeItem(sessionStateKey);
+      } catch (err) {
+        logNonCriticalScannerError('clear session state on terminate', err);
+      }
+      if (isStandalone) {
+        navigate('/app/scan');
+        return;
+      }
+      if (socket?.connected) {
+        socket.emit('scanner:end-session', { reason: 'Mobile ended the session' });
+      } else {
+        navigate('/');
+      }
+    });
+  }, [socket, navigate, isStandalone, sessionStateKey, openConfirmDialog]);
 
   const saveAndUpload = useCallback(() => {
     if (offlineQueue.length > 0) {
       void flushOfflineQueue();
       return;
     }
-    window.alert(isStandalone ? 'No queued scans to upload.' : 'Everything is already synced.');
+    // CHANGE: replace browser alert with inline scanner error
+    setErrorMsg(isStandalone ? 'No queued scans to upload.' : 'Everything is already synced.');
   }, [offlineQueue.length, flushOfflineQueue, isStandalone]);
 
   useEffect(() => {
@@ -1189,16 +1205,16 @@ export default function MobileScannerPage({ standalone = false }) {
   }, [socket, connStatus, isE2eMock, isStandalone]);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(offlineQueueKey);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length) {
-        setOfflineQueue(parsed);
-      }
-    } catch (err) {
-      logNonCriticalScannerError('hydrate offline queue', err);
-    }
+    // CHANGE: hydrate offline queue asynchronously from IndexedDB
+    let cancelled = false;
+    loadQueue(offlineQueueKey)
+      .then((items) => {
+        if (!cancelled && items.length) setOfflineQueue(items);
+      })
+      .catch((err) => logNonCriticalScannerError('hydrate offline queue', err));
+    return () => {
+      cancelled = true;
+    };
   }, [offlineQueueKey]);
 
   useEffect(() => {
@@ -1314,12 +1330,16 @@ export default function MobileScannerPage({ standalone = false }) {
             value: rawValue,
             format,
             engine,
+            pass: meta?.pass || 'unknown',
             at: Date.now(),
             sinceStartMs: scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null,
             candidateCount: meta?.candidateCount || 1,
             ambiguous: false,
             alternatives: meta?.alternatives || [],
           });
+          if (meta?.pass === 'fullframe') {
+            logNonCriticalScannerError('fallback usage', `engine=${engine} pass=fullframe`);
+          }
           setScannerEngine(engine);
           handleBarcodeDetectedRef.current?.(rawValue, {
             candidateCount: meta?.candidateCount || 1,
@@ -1327,6 +1347,7 @@ export default function MobileScannerPage({ standalone = false }) {
             alternatives: meta?.alternatives || [],
             format,
             engine,
+            pass: meta?.pass || 'unknown',
           });
         },
         onFail: () => {
@@ -1337,7 +1358,8 @@ export default function MobileScannerPage({ standalone = false }) {
           }
         },
         onEngineReady: (engineName) => {
-          console.log(`[MobileScanner] Barcode engine ready: ${engineName}`);
+          // CHANGE: log active engine into existing diagnostics path
+          logNonCriticalScannerError('active engine', engineName);
           setScannerEngine(engineName);
         },
       });
@@ -1369,7 +1391,12 @@ export default function MobileScannerPage({ standalone = false }) {
       }
       return;
     }
+    // CHANGE: suppress repeat detections of the same barcode within 1500ms
+    const detectedAt = Date.now();
+    if (lastScannedValueRef.current === awb && detectedAt - lastScannedAtRef.current < 1500) return;
     if (!isE2eMock && !isStableBarcodeRead(awb)) return;
+    lastScannedValueRef.current = awb;
+    lastScannedAtRef.current = detectedAt;
     scanBusyRef.current = true;
 
     // Duplicate detection — read from the stable ref so this check is never stale
@@ -1394,6 +1421,7 @@ export default function MobileScannerPage({ standalone = false }) {
     setLockedAwb(awb);
     const lockTimeMs = scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null;
     setLastLockTimeMs(lockTimeMs);
+    logNonCriticalScannerError('barcode lock event', `engine=${detectionMeta?.engine || 'unknown'} awb=${awb} lockMs=${lockTimeMs ?? '-'}`);
     lockTelemetryRef.current = {
       lockTimeMs,
       candidateCount: Number(detectionMeta?.candidateCount || 1),
@@ -1535,17 +1563,60 @@ export default function MobileScannerPage({ standalone = false }) {
     canvas.width = Math.min(maxWidth, Math.round(cropW));
     canvas.height = Math.round((canvas.width / cropW) * cropH);
     const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    // CHANGE: boost OCR input quality only at capture time
+    ctx.filter = 'grayscale(100%) contrast(170%) brightness(108%)';
     ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL('image/jpeg', jpegQuality);
-    const base64 = dataUrl.split(',')[1] || '';
+    ctx.filter = 'none';
+
+    const byteSize = (base64Value) => Math.floor((base64Value.length * 3) / 4);
+    let finalCanvas = canvas;
+    let finalQuality = jpegQuality;
+    let compressionApplied = 'initial';
+    let base64 = canvas.toDataURL('image/jpeg', finalQuality).split(',')[1] || '';
+    let approxBytes = byteSize(base64);
+    if (approxBytes > 180 * 1024) {
+      // CHANGE: adaptive JPEG compression under 180KB
+      finalQuality = 0.52;
+      compressionApplied = 'quality-0.52';
+      base64 = canvas.toDataURL('image/jpeg', finalQuality).split(',')[1] || '';
+      approxBytes = byteSize(base64);
+    }
+    if (approxBytes > 180 * 1024) {
+      // CHANGE: preserve aspect ratio while scaling down stubborn captures
+      const scaledCanvas = document.createElement('canvas');
+      scaledCanvas.width = Math.max(1, Math.round(canvas.width * 0.8));
+      scaledCanvas.height = Math.max(1, Math.round(canvas.height * 0.8));
+      const scaledCtx = scaledCanvas.getContext('2d');
+      if (!scaledCtx) return null;
+      scaledCtx.drawImage(canvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
+      finalCanvas = scaledCanvas;
+      compressionApplied = 'quality-0.52-scale-0.8';
+      base64 = scaledCanvas.toDataURL('image/jpeg', finalQuality).split(',')[1] || '';
+      approxBytes = byteSize(base64);
+    }
+    while (approxBytes > 180 * 1024 && finalCanvas.width > 320) {
+      // CHANGE: enforce final payload cap without distorting text geometry
+      const scaledCanvas = document.createElement('canvas');
+      scaledCanvas.width = Math.max(1, Math.round(finalCanvas.width * 0.9));
+      scaledCanvas.height = Math.max(1, Math.round(finalCanvas.height * 0.9));
+      const scaledCtx = scaledCanvas.getContext('2d');
+      if (!scaledCtx) break;
+      scaledCtx.drawImage(finalCanvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
+      finalCanvas = scaledCanvas;
+      compressionApplied = 'quality-0.52-scale-fit';
+      base64 = finalCanvas.toDataURL('image/jpeg', finalQuality).split(',')[1] || '';
+      approxBytes = byteSize(base64);
+    }
     if (!base64) return null;
-    const approxBytes = Math.floor((base64.length * 3) / 4);
+    logNonCriticalScannerError('compression applied', `${Math.round(approxBytes / 1024)}KB ${finalCanvas.width}x${finalCanvas.height} ${compressionApplied}`);
     return {
       base64,
-      width: canvas.width,
-      height: canvas.height,
+      width: finalCanvas.width,
+      height: finalCanvas.height,
       approxBytes,
-      quality: jpegQuality,
+      quality: finalQuality,
+      compressionApplied,
     };
   }, []);
 
@@ -1578,6 +1649,7 @@ export default function MobileScannerPage({ standalone = false }) {
       width: shot.width || 0,
       height: shot.height || 0,
       quality: shot.quality || CAPTURE_JPEG_QUALITY,
+      compressionApplied: shot.compressionApplied || 'initial',
     });
     setCapturedImage(`data:image/jpeg;base64,${shot.base64}`);
     stopCamera();
@@ -2116,6 +2188,11 @@ export default function MobileScannerPage({ standalone = false }) {
     ? 'AWB quality looks good - press shutter'
     : (describeCaptureIssues(captureQuality.issues) || 'Fit AWB slip fully in frame and hold steady');
   const captureReadyForShutter = captureCameraReady && captureQuality.ok && docStableTicks >= DOC_STABLE_MIN_TICKS;
+  const captureRingProgress = Math.min(1, Math.max(0, docStableTicks / DOC_STABLE_MIN_TICKS));
+  const captureRingRadius = 37;
+  const captureRingCircumference = 2 * Math.PI * captureRingRadius;
+  const captureRingOffset = captureRingCircumference * (1 - captureRingProgress);
+  const captureRingColor = captureReadyForShutter ? '#10B981' : '#F59E0B';
 
   // ——— Confidence data from reviewData ———
   const fieldConfidence = useMemo(() => {
@@ -2220,7 +2297,7 @@ export default function MobileScannerPage({ standalone = false }) {
     ['Doc detect', docDetected ? `yes (${docStableTicks})` : 'no'],
     ['Capture quality', captureQuality.ok ? 'good' : (captureQuality.issues.join(', ') || 'pending')],
     ['Capture metrics', captureQuality.metrics ? `blur ${captureQuality.metrics.blurScore} | glare ${captureQuality.metrics.glareRatio}% | skew ${captureQuality.metrics.perspectiveSkew}%` : '-'],
-    ['JPEG last shot', captureMeta.kb ? `${captureMeta.kb}KB ${captureMeta.width}x${captureMeta.height} q=${captureMeta.quality}` : '-'],
+    ['JPEG last shot', captureMeta.kb ? `${captureMeta.kb}KB ${captureMeta.width}x${captureMeta.height} q=${captureMeta.quality} ${captureMeta.compressionApplied || ''}` : '-'],
     ['Secure ctx', isProbablySecureContextForCamera() ? 'yes' : 'no'],
     ['AWB lock', lockedAwb || '-'],
     ['Lock ms', lastLockTimeMs != null ? String(lastLockTimeMs) : '-'],
@@ -2228,6 +2305,7 @@ export default function MobileScannerPage({ standalone = false }) {
     ['Queued', String(offlineQueue.length)],
     ['Scans', String(sessionCtx.scanNumber)],
     ['Last format', lastDetectionMeta?.format || '-'],
+    ['Last pass', lastDetectionMeta?.pass || '-'],
     ['Last code', lastDetectionMeta?.value || '-'],
     ['Decode ms', lastDetectionMeta?.sinceStartMs != null ? String(lastDetectionMeta.sinceStartMs) : '-'],
     ['False-lock', reviewData?.scanTelemetry?.falseLock ? 'yes' : 'no'],
@@ -2610,7 +2688,8 @@ export default function MobileScannerPage({ standalone = false }) {
             <div className="cam-overlay">
               {/* Guide: narrow landscape strip in barcode mode, tall portrait in document mode */}
                 <div
-                  className="scan-guide"
+                  ref={guideRef}
+                  className={`scan-guide ${guideLocked ? 'guide-locked' : ''}`}
                   style={
                     scanMode === 'barcode'
                       ? {
@@ -2736,7 +2815,7 @@ export default function MobileScannerPage({ standalone = false }) {
               {/* Rectangular guide sized to match an actual AWB slip */}
               <div
                 ref={guideRef}
-                className={`scan-guide ${docDetected ? 'detected' : ''}`}
+                className={`scan-guide ${docDetected ? 'detected' : ''} ${guideLocked ? 'guide-locked' : ''}`}
                 style={{
                   width: DOC_CAPTURE_REGION.w,
                   height: DOC_CAPTURE_REGION.h,
@@ -2774,8 +2853,21 @@ export default function MobileScannerPage({ standalone = false }) {
                 data-testid="capture-photo-btn"
                 onClick={handleCapturePhoto}
                 disabled={!captureReadyForShutter}
-                style={{ opacity: captureReadyForShutter ? 1 : 0.4 }}
+                style={{ pointerEvents: captureReadyForShutter ? 'auto' : 'none' }}
               >
+                {/* CHANGE: capture readiness ring replaces opacity-only disabled state */}
+                <svg className="capture-quality-ring" viewBox="0 0 84 84" aria-hidden="true">
+                  <circle className="capture-quality-ring-track" cx="42" cy="42" r={captureRingRadius} />
+                  <circle
+                    className="capture-quality-ring-progress"
+                    cx="42"
+                    cy="42"
+                    r={captureRingRadius}
+                    stroke={captureRingColor}
+                    strokeDasharray={captureRingCircumference}
+                    strokeDashoffset={captureRingOffset}
+                  />
+                </svg>
                 <div className="capture-btn-inner" />
               </button>
               {isE2eMock && (
@@ -3286,6 +3378,24 @@ export default function MobileScannerPage({ standalone = false }) {
                 </button>
                 <button className="btn btn-danger btn-full" onClick={() => { setSessionSummaryOpen(false); terminateSession(); }}>
                   <Trash2 size={15} /> End Session
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {confirmDialog && (
+          // CHANGE: native-feeling bottom-sheet confirm replaces browser dialogs
+          <div className="scanner-confirm-overlay" onClick={confirmDialog.onCancel}>
+            <div className="scanner-confirm-sheet" onClick={(e) => e.stopPropagation()}>
+              <div className="scanner-confirm-handle" />
+              <div className="scanner-confirm-message">{confirmDialog.message}</div>
+              <div className="scanner-confirm-actions">
+                <button type="button" className="scanner-confirm-btn cancel" onClick={confirmDialog.onCancel}>
+                  Cancel
+                </button>
+                <button type="button" className="scanner-confirm-btn confirm" onClick={confirmDialog.onConfirm}>
+                  Confirm
                 </button>
               </div>
             </div>

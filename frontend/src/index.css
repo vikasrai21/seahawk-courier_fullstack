@@ -66,6 +66,26 @@
     @apply rounded-[32px] border border-white/60 bg-white/70 p-6 shadow-[0_20px_50px_rgba(15,23,42,0.04)] backdrop-blur-xl transition-all duration-300;
   }
 
+  .page-shell {
+    @apply mx-auto w-full max-w-[1440px] space-y-6 p-4 sm:p-6 lg:p-8;
+  }
+
+  .page-section {
+    @apply rounded-[28px] border border-slate-200/80 bg-white/80 p-4 shadow-sm backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/60 sm:p-6;
+  }
+
+  .action-row {
+    @apply flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end;
+  }
+
+  .action-row > .btn,
+  .action-row > .btn-primary,
+  .action-row > .btn-secondary,
+  .action-row > .btn-ghost,
+  .action-row > button {
+    @apply w-full sm:w-auto;
+  }
+
   .dark .card {
     background: linear-gradient(145deg, rgba(13, 20, 37, 0.85), rgba(17, 27, 48, 0.65)) !important;
     border-color: rgba(99, 130, 191, 0.1) !important;
@@ -116,7 +136,9 @@
   }
 
   .table-shell {
-    @apply overflow-hidden rounded-[28px] border border-slate-200 bg-white/80 shadow-[0_20px_50px_rgba(15,23,42,0.04)] backdrop-blur-xl dark:border-[rgba(99,130,191,0.1)] dark:bg-[rgba(13,20,37,0.65)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.3)];
+    @apply rounded-[28px] border border-slate-200 bg-white/80 shadow-[0_20px_50px_rgba(15,23,42,0.04)] backdrop-blur-xl dark:border-[rgba(99,130,191,0.1)] dark:bg-[rgba(13,20,37,0.65)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.3)];
+    overflow-x: auto;
+    overflow-y: hidden;
     transition: box-shadow 0.3s ease, border-color 0.3s ease;
   }
   .table-shell:hover {
@@ -137,6 +159,7 @@
 
   .tbl {
     @apply min-w-full border-collapse text-slate-700 dark:text-slate-200;
+    min-width: 720px;
   }
 
   .tbl th {
@@ -297,6 +320,10 @@
   .table-responsive {
     @apply overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0;
   }
+  .table-responsive > table,
+  .table-shell > table {
+    min-width: 720px;
+  }
   .table-responsive::-webkit-scrollbar { height: 3px; }
   .table-responsive::-webkit-scrollbar-track { background: transparent; }
   .table-responsive::-webkit-scrollbar-thumb { @apply bg-slate-300 rounded-full dark:bg-slate-700; }
@@ -391,7 +418,7 @@
   }
 
   .client-premium-card {
-    @apply rounded-2xl border border-slate-200/80 bg-white shadow-[0_18px_32px_-24px_rgba(15,23,42,0.42)] dark:border-slate-700/60 dark:bg-[#0c1631];
+    @apply rounded-[28px] border border-slate-200/80 bg-white/90 shadow-[0_20px_50px_rgba(15,23,42,0.04)] backdrop-blur-xl dark:border-slate-700/60 dark:bg-[#0c1631];
   }
 
   .client-premium-title {
@@ -400,6 +427,35 @@
 
   .client-premium-subtitle {
     @apply text-slate-500 text-sm dark:text-slate-300;
+  }
+}
+
+@media (max-width: 640px) {
+  .card,
+  .card-premium,
+  .page-section,
+  .client-premium-card,
+  .table-shell {
+    border-radius: 20px;
+  }
+
+  .card,
+  .card-premium {
+    padding: 1rem;
+  }
+
+  .tbl,
+  .table-responsive > table,
+  .table-shell > table {
+    min-width: 640px;
+  }
+
+  .btn {
+    min-height: 42px;
+  }
+
+  .input {
+    min-height: 42px;
   }
 }
 

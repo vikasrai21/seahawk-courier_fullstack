@@ -3,6 +3,7 @@ import { Shield, Plus, Edit3, Trash2, Loader, Clock, X } from 'lucide-react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { PageHeader } from '../components/ui/PageHeader';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
 const COURIERS_LIST = ['','trackon_exp','trackon_pt','trackon_sfc','trackon_air','delhivery_exp','delhivery_std','b2b','dtdc_7x','dtdc_7d','dtdc_7g','dtdc_xdoc','dtdc_xndx','gec_sfc','ltl_road','bluedart_exp','bluedart_air','bluedart_sfc'];
 const ZONES_LIST = ['','Delhi & NCR','North India','Metro Cities','Rest of India','North East','Diplomatic / Port Blair'];
@@ -19,6 +20,7 @@ export default function RateManagementPage({ toast }) {
   const [editRule, setEditRule]   = useState(null);
   const [form, setForm]           = useState({ name:'', courier:'', zone:'', shipType:'', minMarginPct:'15', minProfitAbs:'', active:true });
   const [saving, setSaving]       = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
   const [vForm, setVForm]         = useState({ courier:'trackon', effectiveDate:'', notes:'' });
   const [showVForm, setShowVForm] = useState(false);
@@ -75,9 +77,14 @@ export default function RateManagementPage({ toast }) {
   };
 
   const deleteRule = async id => {
-    if (!window.confirm('Delete this margin rule?')) return;
-    try { await api.delete(`/rates/margin-rules/${id}`); toast?.('Rule deleted', 'success'); load(); }
-    catch { toast?.('Delete failed', 'error'); }
+    setConfirmDialog({
+      message: 'Delete this margin rule? This cannot be undone.',
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try { await api.delete(`/rates/margin-rules/${id}`); toast?.('Rule deleted', 'success'); load(); }
+        catch { toast?.('Delete failed', 'error'); }
+      },
+    });
   };
 
   const addRateVersion = async () => {
@@ -99,6 +106,13 @@ export default function RateManagementPage({ toast }) {
 
   return (
     <div className="p-4 max-w-5xl mx-auto">
+      <ConfirmDialog
+        open={Boolean(confirmDialog)}
+        message={confirmDialog?.message}
+        confirmLabel="Delete"
+        onConfirm={confirmDialog?.onConfirm}
+        onCancel={() => setConfirmDialog(null)}
+      />
       <PageHeader
         title="Rate Management"
         subtitle="Monitor partner rate health, margin floors, and version history from one cleaner admin workspace."

@@ -619,8 +619,10 @@ async function bulkImport(shipments, userId) {
             },
           });
         }
-        // Create shipments inside same transaction
-        await tx.shipment.createMany({ data: approvedShipments, skipDuplicates: true });
+        // Create shipments inside the same transaction. Do not skip duplicates here:
+        // a race-time unique conflict must roll back wallet debits instead of hiding
+        // skipped shipments behind a successful import.
+        await tx.shipment.createMany({ data: approvedShipments });
       });
     }
 

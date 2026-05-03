@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "../../services/api";
+import { ConfirmDialog } from "../../components/ui/ConfirmDialog";
 
 export default function ClientDeveloperHubPage({ toast }) {
   const [loading, setLoading] = useState(true);
@@ -69,6 +70,7 @@ export default function ClientDeveloperHubPage({ toast }) {
   const [newWebhookDesc, setNewWebhookDesc] = useState("");
   const [creatingWebhook, setCreatingWebhook] = useState(false);
   const [webhookTestId, setWebhookTestId] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState(null);
   const loadKeys = async () => {
     setLoading(true);
     try {
@@ -217,15 +219,19 @@ export default function ClientDeveloperHubPage({ toast }) {
   };
 
   const deleteWebhook = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this webhook?"))
-      return;
-    try {
-      await api.delete(`/portal/developer/webhooks/${id}`);
-      toast?.("Webhook deleted", "success");
-      await loadWebhooks();
-    } catch (err) {
-      toast?.(err.message || "Failed to delete webhook", "error");
-    }
+    setConfirmDialog({
+      message: "Delete this webhook endpoint? Delivery attempts to this URL will stop immediately.",
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        try {
+          await api.delete(`/portal/developer/webhooks/${id}`);
+          toast?.("Webhook deleted", "success");
+          await loadWebhooks();
+        } catch (err) {
+          toast?.(err.message || "Failed to delete webhook", "error");
+        }
+      },
+    });
   };
 
   const testWebhook = async (id) => {
@@ -401,6 +407,13 @@ export default function ClientDeveloperHubPage({ toast }) {
 
   return (
     <div className="min-h-full">
+      <ConfirmDialog
+        open={Boolean(confirmDialog)}
+        message={confirmDialog?.message}
+        confirmLabel="Delete"
+        onConfirm={confirmDialog?.onConfirm}
+        onCancel={() => setConfirmDialog(null)}
+      />
       <main className="client-premium-main max-w-6xl">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>

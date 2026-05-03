@@ -32,8 +32,14 @@
   display: flex;
   opacity: 1;
   pointer-events: all; z-index: 2;
+  animation: stepIn 180ms ease forwards;
 }
 .msp-step.exiting { opacity: 0; pointer-events: none; }
+/* CHANGE: smooth scanner step transitions */
+@keyframes stepIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 /* ── Camera viewport ── */
 .cam-viewport {
@@ -67,6 +73,15 @@
   transition: border-color 0.25s;
 }
 .scan-guide.detected .scan-guide-corner { border-color: #10B981; }
+.scan-guide.guide-locked .scan-guide-corner {
+  animation: guideLockPulse 180ms ease;
+}
+/* CHANGE: scan guide lock animation */
+@keyframes guideLockPulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
 .corner-tl { top: -2px; left: -2px; border-right: none; border-bottom: none; border-radius: 7px 0 0 0; }
 .corner-tr { top: -2px; right: -2px; border-left: none; border-bottom: none; border-radius: 0 7px 0 0; }
 .corner-bl { bottom: -2px; left: -2px; border-right: none; border-top: none; border-radius: 0 0 0 7px; }
@@ -206,9 +221,92 @@
   box-shadow: 0 6px 28px rgba(0,0,0,0.35), 0 0 0 2px rgba(255,255,255,0.2);
 }
 .capture-btn:active { transform: scale(0.88); }
+.capture-quality-ring {
+  position: absolute;
+  inset: -9px;
+  width: 84px;
+  height: 84px;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+.capture-quality-ring-track,
+.capture-quality-ring-progress {
+  fill: none;
+  stroke-width: 4;
+}
+.capture-quality-ring-track { stroke: rgba(255,255,255,0.24); }
+.capture-quality-ring-progress {
+  stroke-linecap: round;
+  transition: stroke-dashoffset 180ms ease, stroke 180ms ease;
+}
 .capture-btn-inner {
   position: absolute; inset: 5px; border-radius: 50%;
   background: white; border: 2px solid #E5E7EB;
+}
+
+/* CHANGE: scanner confirmation bottom sheet */
+.scanner-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  background: rgba(2,6,23,0.62);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.scanner-confirm-sheet {
+  width: min(100%, 430px);
+  background: #fff;
+  border-radius: 18px 18px 14px 14px;
+  padding: 10px 16px 16px;
+  box-shadow: 0 -18px 44px rgba(15,23,42,0.25);
+  animation: confirmSheetIn 180ms ease forwards;
+}
+.scanner-confirm-handle {
+  width: 42px;
+  height: 4px;
+  border-radius: 999px;
+  background: #CBD5E1;
+  margin: 0 auto 14px;
+}
+.scanner-confirm-message {
+  color: #0D1B2A;
+  font-size: 0.94rem;
+  font-weight: 750;
+  line-height: 1.45;
+  text-align: center;
+  padding: 0 6px 16px;
+}
+.scanner-confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.scanner-confirm-btn {
+  border: none;
+  border-radius: 12px;
+  padding: 13px 16px;
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-weight: 800;
+  cursor: pointer;
+  -webkit-appearance: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.scanner-confirm-btn.cancel {
+  background: #F1F5F9;
+  color: #334155;
+}
+.scanner-confirm-btn.confirm {
+  background: #DC2626;
+  color: #fff;
+}
+@keyframes confirmSheetIn {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* ── Preview ── */

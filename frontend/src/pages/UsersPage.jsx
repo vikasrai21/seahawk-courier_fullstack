@@ -8,6 +8,7 @@ import { EmptyState } from '../components/ui/EmptyState';
 import { Modal } from '../components/ui/Modal';
 import { PageHeader } from '../components/ui/PageHeader';
 import { useAuth } from '../context/AuthContext';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
 const ROLE_META = {
   OWNER: { label: 'Owner', color: '#10b981', bg: 'rgba(16,185,129,0.1)' },
@@ -43,6 +44,7 @@ export default function UsersPage({ toast }) {
   const [deletingId, setDeletingId] = useState(null);
   const [form, setForm] = useState(EMPTY);
   const [tab, setTab] = useState('all');
+  const [confirmDialog, setConfirmDialog] = useState(null);
 
   const open = (u = null) => {
     setEdit(u || {});
@@ -79,19 +81,23 @@ export default function UsersPage({ toast }) {
       toast?.('You cannot delete your own account', 'error');
       return;
     }
-    const ok = window.confirm(`Delete user "${u.name}" (${u.email})? This cannot be undone.`);
-    if (!ok) return;
-    setDeletingId(u.id);
-    try {
-      await api.delete(`/auth/users/${u.id}`);
-      await refetch();
-      if (editUser?.id === u.id) setEdit(null);
-      toast?.('User deleted ✓', 'success');
-    } catch (err) {
-      toast?.(err.response?.data?.message || err.message, 'error');
-    } finally {
-      setDeletingId(null);
-    }
+    setConfirmDialog({
+      message: `Delete user "${u.name}" (${u.email})? This cannot be undone.`,
+      onConfirm: async () => {
+        setConfirmDialog(null);
+        setDeletingId(u.id);
+        try {
+          await api.delete(`/auth/users/${u.id}`);
+          await refetch();
+          if (editUser?.id === u.id) setEdit(null);
+          toast?.('User deleted ✓', 'success');
+        } catch (err) {
+          toast?.(err.response?.data?.message || err.message, 'error');
+        } finally {
+          setDeletingId(null);
+        }
+      },
+    });
   };
 
   const allUsers = users || [];
@@ -104,6 +110,13 @@ export default function UsersPage({ toast }) {
 
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
+      <ConfirmDialog
+        open={Boolean(confirmDialog)}
+        message={confirmDialog?.message}
+        confirmLabel="Delete"
+        onConfirm={confirmDialog?.onConfirm}
+        onCancel={() => setConfirmDialog(null)}
+      />
       <PageHeader
         title="User Management"
         subtitle="Create and manage internal and client portal logins with clearer separation by role."

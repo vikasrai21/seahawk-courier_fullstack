@@ -31,6 +31,18 @@ const NATIVE_FORMATS = [
 const SCAN_INTERVAL_MS = 55;        // ~18fps decode rate (balanced perf/battery)
 const CONTRAST_FACTOR = 1.65;       // Boost factor for thermal-print labels
 const CROP_MAX_WIDTH = 640;         // Max width for decode canvas (speed vs accuracy)
+const scratchCanvases = {
+  crop: null,
+  center: null,
+  raw: null,
+  full: null,
+};
+
+function getScratchCanvas(key) {
+  const canvas = scratchCanvases[key] || document.createElement('canvas');
+  scratchCanvases[key] = canvas;
+  return canvas;
+}
 
 // ── Canvas preprocessing: makes ITF bars pop on thermal paper ──────────────
 function preprocessForBarcode(canvas) {
@@ -79,7 +91,8 @@ function cropVideoToGuide(video, guide) {
   const outputW = Math.min(CROP_MAX_WIDTH, cropW);
   const outputH = Math.round((outputW / cropW) * cropH);
 
-  const canvas = document.createElement('canvas');
+  // CHANGE: reuse decode canvas across scan ticks
+  const canvas = getScratchCanvas('crop');
   canvas.width = outputW;
   canvas.height = outputH;
 
@@ -105,7 +118,8 @@ function cropVideoCenter(video) {
   const outputW = Math.min(CROP_MAX_WIDTH, vw);
   const outputH = Math.round((outputW / vw) * stripH);
 
-  const canvas = document.createElement('canvas');
+  // CHANGE: reuse center-crop canvas across scan ticks
+  const canvas = getScratchCanvas('center');
   canvas.width = outputW;
   canvas.height = outputH;
 
@@ -261,10 +275,8 @@ async function createLegacyZxingDecoder() {
       name: 'zxing-legacy',
       decode: async (canvas) => {
         try {
-          // BrowserMultiFormatReader.decodeFromCanvas expects an HTMLCanvasElement
-          const luminanceSource = reader.createCanvasSource_(canvas);
-          const binaryBitmap = reader.createBinaryBitmap_(luminanceSource);
-          const result = reader.decodeBitmap_(binaryBitmap);
+          // CHANGE: use public ZXing API instead of private decoder internals
+          const result = await reader.decodeFromCanvas(canvas);
           if (result && result.getText()) {
             let format = 'unknown';
             const barcodeFormat = result.getBarcodeFormat?.();
@@ -273,8 +285,12 @@ async function createLegacyZxingDecoder() {
             }
             return [{ rawValue: result.getText(), format }];
           }
-        } catch {
-          // NotFoundException — no barcode found
+        } catch (err) {
+          // CHANGE: ignore NotFoundException, log other legacy ZXing errors
+          const name = err?.name || err?.constructor?.name || '';
+          if (name !== 'NotFoundException') {
+            console.debug('[BarcodeEngine] Legacy ZXing decode failed:', err?.message || err);
+          }
         }
         return [];
       },
@@ -289,7 +305,7 @@ async function createLegacyZxingDecoder() {
 // ═══════════════════════════════════════════════════════════════════════════
 // MULTI-PASS DECODE — tries preprocessed first, then raw
 // ═══════════════════════════════════════════════════════════════════════════
-async function multiPassDecode(decoder, video, guide) {
+async function multiPassDecode(decoder, video, guide, frameCountRef) {
   // Pass 1: Cropped + preprocessed (grayscale + contrast boost)
   const croppedCanvas = guide
     ? cropVideoToGuide(video, guide)
@@ -297,10 +313,12 @@ async function multiPassDecode(decoder, video, guide) {
 
   if (croppedCanvas) {
     // Clone canvas for raw pass before we preprocess
-    const rawCanvas = document.createElement('canvas');
+    // CHANGE: reuse raw-pass canvas instead of allocating during scan loop
+    const rawCanvas = getScratchCanvas('raw');
     rawCanvas.width = croppedCanvas.width;
     rawCanvas.height = croppedCanvas.height;
     const rawCtx = rawCanvas.getContext('2d');
+    if (!rawCtx) return { results: [], pass: 'none' };
     rawCtx.drawImage(croppedCanvas, 0, 0);
 
     // Preprocess the original canvas
@@ -320,13 +338,15 @@ async function multiPassDecode(decoder, video, guide) {
 
   // Pass 3: Full frame (no crop, no preprocessing) — catches edge cases
   // Only do this every 3rd call to save CPU
-  if (Math.random() < 0.33) {
-    const fullCanvas = document.createElement('canvas');
+  // CHANGE: deterministic full-frame fallback every third scan tick
+  if (frameCountRef % 3 === 0) {
+    const fullCanvas = getScratchCanvas('full');
     const maxW = Math.min(CROP_MAX_WIDTH, video.videoWidth);
     const maxH = Math.round((maxW / video.videoWidth) * video.videoHeight);
     fullCanvas.width = maxW;
     fullCanvas.height = maxH;
     const ctx = fullCanvas.getContext('2d');
+    if (!ctx) return { results: [], pass: 'none' };
     ctx.drawImage(video, 0, 0, maxW, maxH);
 
     const fullResults = await decoder.decode(fullCanvas);
@@ -361,6 +381,7 @@ export function createBarcodeScanner() {
   let timerId = null;
   let stopped = true;
   let engineName = null;
+  let frameCountRef = 0;
 
   async function initDecoder(onEngineReady) {
     // Try engines in order of quality
@@ -416,7 +437,9 @@ export function createBarcodeScanner() {
       busy = true;
 
       try {
-        const { results, pass } = await multiPassDecode(decoder, videoEl, guideEl);
+        // CHANGE: persist frame count across scan ticks without increasing frequency
+        frameCountRef += 1;
+        const { results, pass } = await multiPassDecode(decoder, videoEl, guideEl, frameCountRef);
 
         if (results.length > 0) {
           const best = results[0];

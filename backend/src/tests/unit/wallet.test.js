@@ -99,6 +99,7 @@ describe('wallet.service', () => {
   // ── adjust ───────────────────────────────────────────────────────────
   describe('adjust', () => {
     it('handles positive adjustment (credit)', async () => {
+      mockTx.client.findUnique = vi.fn().mockResolvedValue({ code: 'T', walletBalance: 500 });
       mockTx.client.update = vi.fn().mockResolvedValue({ code: 'T', company: 'T', walletBalance: 600 });
       mockTx.walletTransaction.create = vi.fn().mockResolvedValue({ type: 'CREDIT', amount: 100 });
       mockPrisma.$transaction.mockImplementation((fn) => fn(mockTx));
@@ -108,7 +109,8 @@ describe('wallet.service', () => {
     });
 
     it('handles negative adjustment (debit)', async () => {
-      mockTx.client.update = vi.fn().mockResolvedValue({ code: 'T', company: 'T', walletBalance: 400 });
+      mockTx.client.updateMany = vi.fn().mockResolvedValue({ count: 1 });
+      mockTx.client.findUnique = vi.fn().mockResolvedValue({ code: 'T', company: 'T', walletBalance: 400 });
       mockTx.walletTransaction.create = vi.fn().mockResolvedValue({ type: 'DEBIT', amount: 100 });
       mockPrisma.$transaction.mockImplementation((fn) => fn(mockTx));
 

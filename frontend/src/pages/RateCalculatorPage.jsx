@@ -314,7 +314,7 @@ export default function RateCalculatorPage() {
       }
 
       let cancelled = false;
-      async function lookupPin() {
+      const lookupPin = async () => {
         if (PIN_CACHE.has(value)) {
           const cached = PIN_CACHE.get(value);
           setZone(cached.zone);
@@ -341,7 +341,7 @@ export default function RateCalculatorPage() {
         } finally {
           if (!cancelled) setPinLoad(false);
         }
-      }
+      };
       lookupPin();
       return () => { cancelled = true; };
     }

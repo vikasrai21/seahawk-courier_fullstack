@@ -202,6 +202,7 @@ model Shipment {
   @@index([courier, status])
   @@index([date, status])
   @@index([clientCode, date])
+  @@index([date, status, environment])
   @@map("shipments")
 }
 

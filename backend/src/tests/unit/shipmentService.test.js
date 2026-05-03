@@ -67,7 +67,7 @@ describe('shipment.service', () => {
     vi.spyOn(contractService, 'getActiveContractsByClientCodes').mockResolvedValue({});
     vi.spyOn(contractService, 'selectBestContract').mockReturnValue(null);
     vi.spyOn(contractService, 'calculatePriceFromContract').mockReturnValue(null);
-    mockPrisma.$queryRawUnsafe = vi.fn().mockResolvedValue([{}]);
+    mockPrisma.$queryRaw = vi.fn().mockResolvedValue([]);
   });
 
   // ── getAll ──────────────────────────────────────────────────────
@@ -355,7 +355,7 @@ describe('shipment.service', () => {
           remarks: '',
           client: null,
         });
-      mockPrisma.$queryRawUnsafe.mockResolvedValueOnce([{ id: 13 }]);
+      mockPrisma.$queryRaw.mockResolvedValueOnce([{ id: 13 }]);
       mockPrisma.shipment.update.mockResolvedValue({
         id: 13,
         awb: 'D1015 823129',
@@ -370,7 +370,7 @@ describe('shipment.service', () => {
         source: 'scanner',
       });
 
-      expect(mockPrisma.$queryRawUnsafe).toHaveBeenCalled();
+      expect(mockPrisma.$queryRaw).toHaveBeenCalled();
       expect(mockPrisma.shipment.update).toHaveBeenCalledWith(expect.objectContaining({
         where: { id: 13 },
       }));

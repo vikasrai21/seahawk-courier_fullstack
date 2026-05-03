@@ -19,7 +19,7 @@ const COURIER_RULES = {
   trackon: [/^(?:100|200|500)\d{8,10}$/],
   dtdc: [/^[A-Z]{1,2}\d{8,11}$/, /^\d{9,12}$/],
   delhivery: [/^\d{12,15}$/],
-  bluedart: [/^\d{9,12}$/, /^[A-Z0-9]{10,14}$/],
+  bluedart: [/^(209|175|176|177|178|179)\d{8}$/],
   default: [/^\d{10,14}$/, /^[A-Z]{1,2}\d{8,11}$/],
 };
 
@@ -27,6 +27,7 @@ const COURIER_RULES = {
 // Keep these strict to avoid promoting random numeric strings.
 const TRACKON_PREFIXES = [
   /^100\d{9,10}$/, // 12-13 digits
+  /^2000[45]\d*$/, // CHANGE: match backend Trackon Prime Track prefix
   /^200\d{8,10}$/, // 11-13 digits
   /^500\d{8,10}$/, // 11-13 digits
 ];
@@ -171,4 +172,25 @@ export function rankBarcodeCandidates(rawValues = [], options = {}) {
 
 export function normalizeBarcodeCandidate(rawValue = '', options = {}) {
   return rankBarcodeCandidates([rawValue], options).awb;
+}
+
+export function inferCourierFromAwb(awb = '') {
+  // CHANGE: match backend/src/utils/awbDetect.js courier inference exactly
+  const a = String(awb || '').trim().toUpperCase().replace(/\s+/g, '');
+  if (!a) return '';
+  if (/^Z\d{8,9}$/.test(a)) return 'DTDC';
+  if (/^D\d{9,11}$/.test(a)) return 'DTDC';
+  if (/^X\d{9,10}$/.test(a)) return 'DTDC';
+  if (/^7X\d{9}$/.test(a)) return 'DTDC';
+  if (/^I\d{7,8}$/.test(a)) return 'DTDC';
+  if (/^I85\d{6}$/.test(a)) return 'DTDC';
+  if (/^(209|175|176|177|178|179)\d{8}$/.test(a)) return 'BlueDart';
+  if (/^(299|368|289|279)\d{11}$/.test(a)) return 'Delhivery';
+  if (/^8\d{9,10}$/.test(a)) return 'DHL';
+  if (/^JD\d{18}$/.test(a)) return 'DHL';
+  if (/^100\d{9}$/.test(a)) return 'Trackon';
+  if (/^500\d{9}$/.test(a)) return 'Trackon';
+  if (/^2000[45]/.test(a)) return 'Trackon';
+  if (/^200\d{9}$/.test(a)) return 'Trackon';
+  return '';
 }
