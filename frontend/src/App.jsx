@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
@@ -29,6 +29,11 @@ const ClientWalletPage = lazy(() => import('./pages/client/ClientWalletPage'));
 const ClientInvoicesPage = lazy(() => import('./pages/client/ClientInvoicesPage'));
 const ClientGovernancePage = lazy(() => import('./pages/client/ClientGovernancePage'));
 const ClientReturnsPage = lazy(() => import('./pages/client/ClientReturnsPage'));
+const ClientCODPage = lazy(() => import('./pages/client/ClientCODPage'));
+const ClientWarehousesPage = lazy(() => import('./pages/client/ClientWarehousesPage'));
+const ClientChannelsPage = lazy(() => import('./pages/client/ClientChannelsPage'));
+const PublicFeedbackPage = lazy(() => import('./pages/public/PublicFeedbackPage'));
+const PublicOnboardingPage = lazy(() => import('./pages/public/PublicOnboardingPage'));
 const LandingPage = lazy(() => import('./pages/public/LandingPage'));
 const PublicTrackPage = lazy(() => import('./pages/public/PublicTrackPage'));
 const ServicesPage = lazy(() => import('./pages/public/ServicesPage'));
@@ -76,6 +81,12 @@ const ReturnsManagementPage = lazy(() => import('./pages/ReturnsManagementPage')
 const SandboxRunsPage = lazy(() => import('./pages/SandboxRunsPage'));
 const OwnerAgentPage = lazy(() => import('./pages/OwnerAgentPage'));
 const NotificationCenterPage = lazy(() => import('./pages/NotificationCenterPage'));
+const CODDashboardPage = lazy(() => import('./pages/CODDashboardPage'));
+const WeightDisputesPage = lazy(() => import('./pages/WeightDisputesPage'));
+const OnboardingAdminPage = lazy(() => import('./pages/OnboardingAdminPage'));
+const SLADashboardPage = lazy(() => import('./pages/SLADashboardPage'));
+const CSATDashboardPage = lazy(() => import('./pages/CSATDashboardPage'));
+const RTOReductionPage = lazy(() => import('./pages/RTOReductionPage'));
 
 function AuthLoadingScreen() {
   return (
@@ -154,6 +165,12 @@ function AppRoutes() {
   const { toasts, toast, removeToast } = useToast();
   const withToast = (Component, extraProps = {}) => <Component toast={toast} {...extraProps} />;
 
+  useEffect(() => {
+    if (window.location.pathname === '/' && window.location.search.includes('sessionId')) {
+      window.location.href = '/scan-mobile' + window.location.search;
+    }
+  }, []);
+
   return (
     <>
 
@@ -166,6 +183,8 @@ function AppRoutes() {
             <Route path="/book" element={<BookPage />} />
             <Route path="/track" element={<PublicTrackPage />} />
             <Route path="/track/:awb" element={<PublicTrackPage />} />
+            <Route path="/feedback/:token" element={<PublicFeedbackPage />} />
+            <Route path="/onboarding" element={<PublicOnboardingPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/portal/login" element={<ClientLoginPage />} />
             <Route path="/mobile-scanner" element={<MobileScannerPage />} />
@@ -194,6 +213,9 @@ function AppRoutes() {
               <Route path="invoices" element={withToast(ClientInvoicesPage)} />
               <Route path="governance" element={withToast(ClientGovernancePage)} />
               <Route path="returns" element={withToast(ClientReturnsPage)} />
+              <Route path="cod" element={withToast(ClientCODPage)} />
+              <Route path="warehouses" element={withToast(ClientWarehousesPage)} />
+              <Route path="channels" element={withToast(ClientChannelsPage)} />
               <Route path="*" element={<Navigate to="/portal" replace />} />
             </Route>
 
@@ -243,6 +265,12 @@ function AppRoutes() {
                       <Route path="/audit-logs" element={<PrivateRoute adminOnly><AuditPage /></PrivateRoute>} />
                       <Route path="/rate-mgmt" element={<PrivateRoute adminOnly>{withToast(RateManagementPage)}</PrivateRoute>} />
                       <Route path="/returns" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}>{withToast(ReturnsManagementPage)}</PrivateRoute>} />
+                      <Route path="/cod" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}>{withToast(CODDashboardPage)}</PrivateRoute>} />
+                      <Route path="/weight-disputes" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}>{withToast(WeightDisputesPage)}</PrivateRoute>} />
+                      <Route path="/onboarding" element={<PrivateRoute adminOnly>{withToast(OnboardingAdminPage)}</PrivateRoute>} />
+                      <Route path="/sla" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}>{withToast(SLADashboardPage)}</PrivateRoute>} />
+                      <Route path="/csat" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}>{withToast(CSATDashboardPage)}</PrivateRoute>} />
+                      <Route path="/rto-reduction" element={<PrivateRoute roles={['ADMIN', 'OPS_MANAGER']}>{withToast(RTOReductionPage)}</PrivateRoute>} />
                     </Routes>
                   </AppLayout>
                 </StaffRoute>

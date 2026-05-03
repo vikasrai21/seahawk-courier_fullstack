@@ -40,6 +40,7 @@ const navGroups = [
       { to: '/portal/book-shipment', label: 'Book Shipment', icon: FilePlus2 },
       { to: '/portal/drafts', label: 'Orders Queue', icon: ClipboardList },
       { to: '/portal/pickups', label: 'Pickup Requests', icon: Truck },
+      { to: '/portal/warehouses', label: 'Warehouses', icon: Package2 },
     ],
   },
   {
@@ -47,6 +48,7 @@ const navGroups = [
     items: [
       { to: '/portal/wallet', label: 'Wallet & Topup', icon: Wallet },
       { to: '/portal/invoices', label: 'Invoices & GST', icon: FileText },
+      { to: '/portal/cod', label: 'COD Remittance', icon: Wallet },
     ],
   },
   {
@@ -75,6 +77,7 @@ const navGroups = [
       { to: '/portal/branding', label: 'Brand Tracking', icon: Image },
       { to: '/portal/developer', label: 'Developer Hub', icon: Code2 },
       { to: '/portal/governance', label: 'Governance', icon: ShieldCheck, enterpriseOnly: true },
+      { to: '/portal/channels', label: 'Channel Integrations', icon: Code2 },
     ],
   },
 ];
@@ -100,6 +103,9 @@ const pageMeta = {
   '/portal/developer': { title: 'Developer Hub', subtitle: 'API and integration tools for engineering teams.' },
   '/portal/governance': { title: 'Governance', subtitle: 'Security and audit settings.' },
   '/portal/returns': { title: 'Returns', subtitle: 'Request and track product returns and reverse pickups.' },
+  '/portal/cod': { title: 'COD Remittance', subtitle: 'Track your Cash on Delivery collections and settlements.' },
+  '/portal/warehouses': { title: 'Warehouses', subtitle: 'Manage pickup locations for your shipments.' },
+  '/portal/channels': { title: 'Channel Integrations', subtitle: 'Connect Shopify, WooCommerce, or custom platforms.' },
 };
 
 function SidebarNav({ onNavigate }) {

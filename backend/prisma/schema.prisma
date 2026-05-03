@@ -101,6 +101,12 @@ model Client {
   notificationConfig Json?             @map("notification_config")
   apiKeys         ClientApiKey[]
   webhooks        ClientWebhook[]
+  warehouses      Warehouse[]
+  codRemittances  CODRemittance[]
+  customerFeedback CustomerFeedback[]
+  channelIntegrations ChannelIntegration[]
+  onboardingApplications OnboardingApplication[]
+  weightDisputes  WeightDispute[]
 
   @@index([code])
   @@index([normalizedName])
@@ -176,6 +182,16 @@ model Shipment {
   riskScore      Float?              @map("risk_score")
   riskFactors    Json?               @map("risk_factors")
   marginAlert    Boolean             @default(false) @map("margin_alert")
+  // ── Feature Gap Fields ──────────────────────────────────────────────
+  codAmount      Decimal             @default(0) @map("cod_amount") @db.Decimal(12,2)
+  codStatus      String?             @map("cod_status") @db.VarChar(30) // PENDING, COLLECTED, REMITTED
+  codRemittanceId Int?               @map("cod_remittance_id")
+  predictedDeliveryDate String?      @map("predicted_delivery_date") @db.VarChar(10)
+  warehouseId    Int?                @map("warehouse_id")
+  channelSource  String?             @map("channel_source") @db.VarChar(30) // SHOPIFY, WOOCOMMERCE, MANUAL
+  channelOrderId String?             @map("channel_order_id") @db.VarChar(100)
+  labelFormat    String?             @map("label_format") @db.VarChar(10) // 4x6, A4
+  labelGeneratedAt DateTime?         @map("label_generated_at")
   createdById    Int?                @map("created_by_id")
   updatedById    Int?                @map("updated_by_id")
   createdAt      DateTime            @default(now()) @map("created_at")
@@ -189,6 +205,10 @@ model Shipment {
   importRows      ShipmentImportRow[]
   DraftOrder      DraftOrder?
   returnRequests  ReturnRequest[]
+  warehouse      Warehouse?          @relation(fields: [warehouseId], references: [id])
+  codRemittance  CODRemittance?      @relation(fields: [codRemittanceId], references: [id])
+  weightDisputes WeightDispute[]
+  customerFeedback CustomerFeedback[]
 
   @@index([date])
   @@index([clientCode])
@@ -203,6 +223,9 @@ model Shipment {
   @@index([date, status])
   @@index([clientCode, date])
   @@index([date, status, environment])
+  @@index([codStatus])
+  @@index([channelSource])
+  @@index([warehouseId])
   @@map("shipments")
 }
 
@@ -732,4 +755,228 @@ model WebhookDelivery {
   @@index([success])
   @@index([nextRetryAt])
   @@map("webhook_deliveries")
+}
+
+// ══════════════════════════════════════════════════════════════
+// FEATURE GAP MODELS — Closing gaps vs Shiprocket/Delhivery/DTDC
+// ══════════════════════════════════════════════════════════════
+
+// ── Feature 3: COD Remittance Tracking ──────────────────────────────────────
+model CODRemittance {
+  id              Int       @id @default(autoincrement())
+  remittanceNo    String    @unique @map("remittance_no")
+  clientCode      String    @map("client_code") @db.VarChar(20)
+  courier         String
+  totalAmount     Decimal   @default(0) @map("total_amount") @db.Decimal(12,2)
+  shipmentCount   Int       @default(0) @map("shipment_count")
+  status          String    @default("PENDING") // PENDING, COLLECTED, IN_TRANSIT, REMITTED, DISPUTED
+  collectedDate   String?   @map("collected_date") @db.VarChar(10)
+  expectedRemitDate String? @map("expected_remit_date") @db.VarChar(10)
+  actualRemitDate String?   @map("actual_remit_date") @db.VarChar(10)
+  utrNumber       String?   @map("utr_number")
+  bankReference   String?   @map("bank_reference")
+  deductions      Decimal   @default(0) @db.Decimal(12,2)
+  netAmount       Decimal   @default(0) @map("net_amount") @db.Decimal(12,2)
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  client          Client    @relation(fields: [clientCode], references: [code])
+  shipments       Shipment[]
+
+  @@index([clientCode])
+  @@index([status])
+  @@index([courier])
+  @@map("cod_remittances")
+}
+
+// ── Feature 4: Weight Discrepancy Auto-Dispute ──────────────────────────────
+model WeightDispute {
+  id              Int       @id @default(autoincrement())
+  shipmentId      Int       @map("shipment_id")
+  awb             String    @db.VarChar(50)
+  clientCode      String    @map("client_code") @db.VarChar(20)
+  courier         String
+  bookedWeight    Decimal   @map("booked_weight") @db.Decimal(12,4)
+  billedWeight    Decimal   @map("billed_weight") @db.Decimal(12,4)
+  discrepancyPct  Decimal   @map("discrepancy_pct") @db.Decimal(8,2)
+  bookedAmount    Decimal   @map("booked_amount") @db.Decimal(12,2)
+  billedAmount    Decimal   @map("billed_amount") @db.Decimal(12,2)
+  overchargeAmount Decimal  @default(0) @map("overcharge_amount") @db.Decimal(12,2)
+  status          String    @default("OPEN") // OPEN, ACCEPTED, DISPUTED, RESOLVED, CLOSED
+  autoFlagged     Boolean   @default(true) @map("auto_flagged")
+  resolution      String?   // CREDIT_NOTE, ADJUSTED, CARRIER_ACCEPTED, REJECTED
+  resolvedAmount  Decimal?  @map("resolved_amount") @db.Decimal(12,2)
+  notes           String?   @db.Text
+  resolvedAt      DateTime? @map("resolved_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  shipment        Shipment  @relation(fields: [shipmentId], references: [id])
+  client          Client    @relation(fields: [clientCode], references: [code])
+
+  @@index([clientCode])
+  @@index([status])
+  @@index([courier])
+  @@index([awb])
+  @@map("weight_disputes")
+}
+
+// ── Feature 5: Client Self-Serve Onboarding ─────────────────────────────────
+model OnboardingApplication {
+  id              Int       @id @default(autoincrement())
+  companyName     String    @map("company_name")
+  contactName     String    @map("contact_name")
+  email           String
+  phone           String
+  gst             String?
+  pan             String?
+  address         String?
+  city            String?
+  state           String?
+  pincode         String?   @db.VarChar(10)
+  monthlyVolume   String?   @map("monthly_volume") // 1-100, 100-500, 500-2000, 2000+
+  businessType    String?   @map("business_type") // ECOMMERCE, B2B, D2C, MARKETPLACE
+  primaryCourier  String?   @map("primary_courier")
+  website         String?
+  status          String    @default("PENDING") // PENDING, UNDER_REVIEW, KYC_REQUIRED, APPROVED, REJECTED
+  reviewNotes     String?   @map("review_notes") @db.Text
+  approvedById    Int?      @map("approved_by_id")
+  clientCode      String?   @map("client_code") @db.VarChar(20) // Set once approved
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  client          Client?   @relation(fields: [clientCode], references: [code])
+
+  @@index([status])
+  @@index([email])
+  @@map("onboarding_applications")
+}
+
+// ── Feature 6: Multi-Warehouse Management ───────────────────────────────────
+model Warehouse {
+  id              Int       @id @default(autoincrement())
+  clientCode      String    @map("client_code") @db.VarChar(20)
+  name            String
+  code            String    @db.VarChar(20)
+  contactName     String    @map("contact_name")
+  contactPhone    String    @map("contact_phone")
+  contactEmail    String?   @map("contact_email")
+  address         String
+  city            String
+  state           String
+  pincode         String    @db.VarChar(10)
+  country         String    @default("India")
+  isDefault       Boolean   @default(false) @map("is_default")
+  active          Boolean   @default(true)
+  gstNumber       String?   @map("gst_number")
+  operatingHours  String?   @map("operating_hours")
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  client          Client    @relation(fields: [clientCode], references: [code])
+  shipments       Shipment[]
+
+  @@unique([clientCode, code])
+  @@index([clientCode])
+  @@index([active])
+  @@map("warehouses")
+}
+
+// ── Feature 9: Channel Integrations (Shopify/WooCommerce) ───────────────────
+model ChannelIntegration {
+  id              Int       @id @default(autoincrement())
+  clientCode      String    @map("client_code") @db.VarChar(20)
+  platform        String    // SHOPIFY, WOOCOMMERCE, CUSTOM
+  shopDomain      String?   @map("shop_domain")
+  accessToken     String?   @map("access_token")
+  apiKey          String?   @map("api_key")
+  apiSecret       String?   @map("api_secret")
+  webhookSecret   String?   @map("webhook_secret")
+  syncEnabled     Boolean   @default(true) @map("sync_enabled")
+  autoFulfill     Boolean   @default(false) @map("auto_fulfill")
+  defaultCourier  String?   @map("default_courier")
+  defaultWarehouse String?  @map("default_warehouse")
+  lastSyncAt      DateTime? @map("last_sync_at")
+  syncStats       Json?     @map("sync_stats")
+  status          String    @default("ACTIVE") // ACTIVE, PAUSED, ERROR, DISCONNECTED
+  errorMessage    String?   @map("error_message")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  client          Client    @relation(fields: [clientCode], references: [code])
+
+  @@unique([clientCode, platform])
+  @@index([clientCode])
+  @@index([platform])
+  @@map("channel_integrations")
+}
+
+// ── Feature 10: Customer Feedback/CSAT ──────────────────────────────────────
+model CustomerFeedback {
+  id              Int       @id @default(autoincrement())
+  shipmentId      Int       @map("shipment_id")
+  awb             String    @db.VarChar(50)
+  clientCode      String    @map("client_code") @db.VarChar(20)
+  rating          Int       // 1-5 stars
+  comment         String?   @db.Text
+  deliveryRating  Int?      @map("delivery_rating") // 1-5
+  packagingRating Int?      @map("packaging_rating") // 1-5
+  communicationRating Int?  @map("communication_rating") // 1-5
+  issues          String[]  @default([]) // LATE_DELIVERY, DAMAGED, WRONG_ITEM, RUDE_AGENT, OTHER
+  respondentName  String?   @map("respondent_name")
+  respondentPhone String?   @map("respondent_phone")
+  token           String    @unique // Unique survey token for public link
+  submittedAt     DateTime? @map("submitted_at")
+  expiresAt       DateTime  @map("expires_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  shipment        Shipment  @relation(fields: [shipmentId], references: [id])
+  client          Client    @relation(fields: [clientCode], references: [code])
+
+  @@index([shipmentId])
+  @@index([clientCode])
+  @@index([token])
+  @@index([rating])
+  @@map("customer_feedback")
+}
+
+// ── Feature 12: SLA Breach Rules ────────────────────────────────────────────
+model SLARule {
+  id              Int       @id @default(autoincrement())
+  name            String
+  courier         String?   // null = applies to all couriers
+  service         String?   // null = applies to all services
+  maxDays         Int       @map("max_days") // Max days for delivery
+  warningDays     Int       @map("warning_days") // Days before breach to warn
+  notifyEmail     Boolean   @default(true) @map("notify_email")
+  notifyWhatsapp  Boolean   @default(false) @map("notify_whatsapp")
+  notifyWebhook   Boolean   @default(false) @map("notify_webhook")
+  escalateTo      String?   @map("escalate_to") // Email addresses for escalation
+  active          Boolean   @default(true)
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([active])
+  @@index([courier])
+  @@map("sla_rules")
+}
+
+// ── Feature 13: Razorpay Payment Orders ─────────────────────────────────────
+model PaymentOrder {
+  id              Int       @id @default(autoincrement())
+  clientCode      String    @map("client_code") @db.VarChar(20)
+  amount          Decimal   @db.Decimal(12,2)
+  currency        String    @default("INR") @db.VarChar(5)
+  razorpayOrderId String?   @unique @map("razorpay_order_id")
+  razorpayPaymentId String? @map("razorpay_payment_id")
+  razorpaySignature String? @map("razorpay_signature")
+  status          String    @default("CREATED") // CREATED, PAID, FAILED, REFUNDED
+  description     String?
+  receipt         String?   @unique
+  notes           Json?     @default("{}")
+  paidAt          DateTime? @map("paid_at")
+  failedAt        DateTime? @map("failed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([clientCode])
+  @@index([status])
+  @@index([razorpayOrderId])
+  @@map("payment_orders")
 }

@@ -278,9 +278,12 @@ const fmtDuration = (ms) => {
 // Component
 // ══════════════════════════════════════════════════════════════════════════════════
 export default function MobileScannerPage({ standalone = false }) {
-  const { pin } = useParams();
+  const { pin: pathPin } = useParams();
+  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const sessionPin = searchParams.get('sessionId');
+  const pin = pathPin || sessionPin;
   const navigate = useNavigate();
-  const isStandalone = Boolean(standalone);
+  const isStandalone = Boolean(standalone) && !sessionPin;
   const offlineQueueKey = `${OFFLINE_QUEUE_KEY_PREFIX}:${isStandalone ? 'direct' : (pin || 'unknown')}`;
   const sessionStateKey = useMemo(
     () => `${SESSION_STATE_KEY_PREFIX}:${isStandalone ? 'direct' : (pin || 'unknown')}`,
@@ -881,6 +884,19 @@ export default function MobileScannerPage({ standalone = false }) {
     reviewFormRef.current = reviewForm;
   }, [reviewForm]);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.search.includes('sessionId')) {
+      if (connStatus === 'paired' && step === STEPS.IDLE) {
+        const urlParams = new URLSearchParams(window.location.search);
+        // Clear it so we don't keep auto-restarting if they manually go back to IDLE
+        if (!window.sessionStorage.getItem('scanner_auto_started')) {
+          window.sessionStorage.setItem('scanner_auto_started', '1');
+          handleStartScanning();
+        }
+      }
+    }
+  }, [connStatus, step, handleStartScanning]);
+
   const handleStartScanning = useCallback(() => {
     if (connStatus !== 'paired') {
       setErrorMsg(isStandalone ? 'Scanner is offline. Reconnect internet and retry.' : 'Phone is not connected to the desktop session.');
@@ -964,7 +980,7 @@ export default function MobileScannerPage({ standalone = false }) {
 
   const applyProcessedScanResult = useCallback((data) => {
     if (!data) return;
-    const suggestedClientCode = normalizeClientCode(data.clientCode || '');
+    const suggestedClientCode = normalizeClientCode(data?.clientCode || '');
     const effectiveClientCode = normalizeClientCode(stickyClientCode || suggestedClientCode);
     setReviewData(data);
     const stripUnknown = (v) => {
@@ -972,28 +988,28 @@ export default function MobileScannerPage({ standalone = false }) {
       return (s === 'UNKNOWN' || s === 'N/A' || s === 'NA' || s === 'NONE') ? '' : String(v || '').trim();
     };
     // Auto-detect courier from AWB prefix if OCR didn't return one
-    const ocrCourier = normalizeReviewCourier(data.courier || '');
-    const awbInferred = inferCourierFromAwb(data.awb || lockedAwb);
+    const ocrCourier = normalizeReviewCourier(data?.courier || '');
+    const awbInferred = inferCourierFromAwb(data?.awb || lockedAwb);
     const effectiveCourier = ocrCourier || awbInferred || '';
     setInferredCourier(awbInferred);
     // Auto-fill destination from pincode if OCR couldn't read it
-    const ocrDest = stripUnknown(data.destination);
-    const ocrPin = data.pincode || '';
+    const ocrDest = stripUnknown(data?.destination);
+    const ocrPin = data?.pincode || '';
     const pinCity = !ocrDest && ocrPin.length === 6 ? lookupPincodeCity(ocrPin) : '';
     setReviewForm({
       clientCode: effectiveClientCode,
-      consignee: stripUnknown(data.consignee),
+      consignee: stripUnknown(data?.consignee),
       destination: ocrDest || pinCity,
       pincode: ocrPin,
-      weight: data.weight || 0,
-      amount: data.amount || 0,
-      orderNo: data.orderNo || '',
+      weight: data?.weight || 0,
+      amount: data?.amount || 0,
+      orderNo: data?.orderNo || '',
       courier: effectiveCourier,
-      date: data.date || sessionDate || new Date().toISOString().slice(0, 10),
+      date: data?.date || sessionDate || new Date().toISOString().slice(0, 10),
     });
     setProcessingFields({});
 
-    if (data.reviewRequired) {
+    if (data?.reviewRequired) {
       pulseHaptic('review');
       playHardwareBeep();
       goStep(STEPS.REVIEWING);
@@ -1002,16 +1018,16 @@ export default function MobileScannerPage({ standalone = false }) {
 
     playSuccessBeep();
     pulseHaptic('success');
-    if (voiceEnabled) speak(`Auto approved. ${data.clientName || ''}. ${data.destination || ''}.`);
+    if (voiceEnabled) speak(`Auto approved. ${data?.clientName || ''}. ${data?.destination || ''}.`);
     const item = {
-      awb: data.awb,
-      clientCode: effectiveClientCode || data.clientCode,
-      clientName: data.clientName,
-      destination: data.destination || '',
-      weight: data.weight || 0,
+      awb: data?.awb,
+      clientCode: effectiveClientCode || data?.clientCode,
+      clientName: data?.clientName,
+      destination: data?.destination || '',
+      weight: data?.weight || 0,
       autoApproved: true,
-      shipmentId: data.shipmentId || null,
-      date: normalizeQueueDate(data.date, sessionDate),
+      shipmentId: data?.shipmentId || null,
+      date: normalizeQueueDate(data?.date, sessionDate),
     };
     setLastSuccess(item);
     addToQueue(item);
@@ -1082,7 +1098,7 @@ export default function MobileScannerPage({ standalone = false }) {
       } catch (err) {
         logNonCriticalScannerError('clear session state on end', err);
       }
-      navigate('/');
+      navigate('/scan-mobile');
     });
     s.on('scanner:desktop-disconnected', ({ message }) => {
       setConnStatus('paired');
@@ -1115,7 +1131,7 @@ export default function MobileScannerPage({ standalone = false }) {
         return; // Ignore — we're not expecting scan results right now
       }
 
-      if (data.status === 'error') {
+      if (data?.status === 'error') {
         // Only show errors if we're still in PROCESSING (waiting for ANY result).
         // If we're already in REVIEWING, a late error should NOT override it.
         if (currentStep !== STEPS.PROCESSING) return;
@@ -1123,11 +1139,11 @@ export default function MobileScannerPage({ standalone = false }) {
         playErrorBeep();
         pulseHaptic('error');
         goStep(STEPS.ERROR);
-        setErrorMsg(data.error || 'Scan failed on desktop.');
+        setErrorMsg(data?.error || 'Scan failed on desktop.');
         return;
       }
 
-      if (data.status === 'photo_required' || data.requiresImageCapture) {
+      if (data?.status === 'photo_required' || data?.requiresImageCapture) {
         handleLookupNeedsPhotoRef.current?.(data);
         return;
       }
@@ -1826,15 +1842,15 @@ export default function MobileScannerPage({ standalone = false }) {
       try {
         const result = await api.post('/shipments/scan-mobile', payload);
         const data = result?.data || result;
-        if (data.status === 'error' || !data.success) {
+        if (data?.status === 'error' || !data?.success) {
           setFlash('error');
           playErrorBeep();
           pulseHaptic('error');
           goStep(STEPS.ERROR);
-          setErrorMsg(data.error || data.message || 'Lookup failed.');
+          setErrorMsg(data?.error || data?.message || 'Lookup failed.');
           return;
         }
-        if (data.status === 'photo_required' || data.requiresImageCapture) {
+        if (data?.status === 'photo_required' || data?.requiresImageCapture) {
           handleLookupNeedsPhoto(data);
           return;
         }
@@ -1912,15 +1928,15 @@ export default function MobileScannerPage({ standalone = false }) {
       try {
         const result = await api.post('/shipments/scan-mobile', payload);
         const data = result?.data || result;
-        if (data.status === 'error' || !data.success) {
+        if (data?.status === 'error' || !data?.success) {
           setFlash('error');
           playErrorBeep();
           pulseHaptic('error');
           goStep(STEPS.ERROR);
-          setErrorMsg(data.error || data.message || 'Scan failed.');
+          setErrorMsg(data?.error || data?.message || 'Scan failed.');
           return;
         }
-        if (data.status === 'photo_required' || data.requiresImageCapture) {
+        if (data?.status === 'photo_required' || data?.requiresImageCapture) {
           handleLookupNeedsPhoto(data);
           return;
         }
@@ -2152,7 +2168,7 @@ export default function MobileScannerPage({ standalone = false }) {
     if (step === STEPS.SUCCESS) {
       const nextStep = scanWorkflowMode === 'fast' ? STEPS.SCANNING : STEPS.IDLE;
       const delayMs = scanWorkflowMode === 'fast' ? FAST_AUTO_NEXT_DELAY : AUTO_NEXT_DELAY;
-      autoNextTimer.current = setTimeout(() => resetForNextScan(nextStep), delayMs);
+      autoNextTimer.current = setTimeout(() => { window.location.href = '/scan-mobile' + window.location.search; }, delayMs);
       return () => clearTimeout(autoNextTimer.current);
     }
   }, [step, resetForNextScan, scanWorkflowMode]);
@@ -2311,6 +2327,11 @@ export default function MobileScannerPage({ standalone = false }) {
     ['False-lock', reviewData?.scanTelemetry?.falseLock ? 'yes' : 'no'],
   ];
 
+  if (!step) {
+    return <div>Loading...</div>;
+  }
+
+  try {
   return (
     <>
       
@@ -3407,4 +3428,8 @@ export default function MobileScannerPage({ standalone = false }) {
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </>
   );
+  } catch (e) {
+    console.error(e);
+    return <div>Something went wrong</div>;
+  }
 }

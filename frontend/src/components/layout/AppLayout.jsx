@@ -59,6 +59,7 @@ const navGroups = [
       { to: '/app/notifications', label: 'Notifications', icon: Send, isSecondary: true },
       { to: '/app/daily',     label: 'Daily Sheet',         icon: Calendar, isSecondary: true },
       { to: '/app/monthly',   label: 'Monthly Report',      icon: BarChart2, isSecondary: true },
+      { to: '/app/rto-reduction', label: 'RTO Reduction',   icon: ShieldAlert, badge: 'NEW', roles: ['ADMIN','OPS_MANAGER'] },
     ],
   },
   {
@@ -69,7 +70,10 @@ const navGroups = [
       { to: '/app/invoices',       label: 'Invoices',         icon: Receipt, roles: ['OWNER'] },
       { to: '/app/support',        label: 'Support Tickets',  icon: MessageCircle, roles: ['ADMIN','OPS_MANAGER','STAFF'], isSecondary: true },
       { to: '/app/wallet',         label: 'Wallet',           icon: CreditCard, roles: ['OWNER'] },
+      { to: '/app/cod',            label: 'COD Remittance',   icon: CreditCard, roles: ['ADMIN','OPS_MANAGER'] },
       { to: '/app/reconciliation', label: 'Reconciliation',   icon: Shield, roles: ['OWNER'], isSecondary: true },
+      { to: '/app/weight-disputes', label: 'Weight Disputes', icon: ShieldAlert, badge: 'NEW', roles: ['ADMIN','OPS_MANAGER'], isSecondary: true },
+      { to: '/app/csat',           label: 'CSAT Analytics',   icon: MessageCircle, badge: 'NEW', roles: ['ADMIN','OPS_MANAGER'], isSecondary: true },
     ],
   },
   {
@@ -93,9 +97,11 @@ const navGroups = [
 
 const adminItems = [
   { to: '/app/users',      label: 'Users',           icon: UserCircle, isSecondary: true, roles: ['OWNER', 'ADMIN'] },
+  { to: '/app/onboarding', label: 'Client Onboarding', icon: Users, isSecondary: true, roles: ['OWNER', 'ADMIN'] },
   { to: '/app/sandbox-runs', label: 'Sandbox Runs',  icon: Bug, isSecondary: true, roles: ['OWNER', 'ADMIN'] },
   { to: '/app/audit-logs', label: 'Audit Logs',      icon: ShieldAlert, isSecondary: true, roles: ['ADMIN'] },
   { to: '/app/rate-mgmt',  label: 'Rate Management', icon: Settings2, isSecondary: true, roles: ['ADMIN'] },
+  { to: '/app/sla',        label: 'SLA Config',      icon: Settings2, isSecondary: true, roles: ['ADMIN', 'OPS_MANAGER'] },
 ];
 
 // ── Nav item ───────────────────────────────────────────────────────────────

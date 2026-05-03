@@ -306,24 +306,47 @@ function pickBestAwb({ awb, awbSource, barcodeCandidates, rawText, courierHint, 
 
 function enhanceParsedDetails(parsed = {}, knownAwb = '') {
   const rawText = normalizeRawText(parsed.rawText || '');
+  
+  // STEP 1 & 2: Text Normalization and Structured Field Extraction
+  const cleanText = rawText
+    .replace(/\n/g, ' ')
+    .replace(/[^a-zA-Z0-9@.\- ]/g, ' ')
+    .toLowerCase();
+
+  const structuredFields = {
+    phone: cleanText.match(/\b\d{10}\b/)?.[0] || null,
+    pincode: cleanText.match(/\b\d{6}\b/)?.[0] || null,
+    email: cleanText.match(/\S+@\S+\.\S+/)?.[0] || null,
+  };
+
+  // STEP 5: Remove "UNKNOWN" completely -> return null
+  const cleanField = (val) => {
+    const v = String(val || '').trim().toUpperCase();
+    if (!v || v === 'UNKNOWN' || v === 'N/A' || v === 'NA' || v === 'NONE') return null;
+    return String(val || '').trim();
+  };
+
   const next = {
     ...parsed,
     awb: sanitizeAwbToken(parsed.awb || knownAwb || ''),
     rawText,
-    // Strip AI placeholder values like "UNKNOWN", "N/A" so they are treated
-    // as "not extracted" rather than real data that overwrites the UI defaults.
-    consignee: cleanOcrPlaceholder(parsed.consignee || ''),
-    destination: cleanOcrPlaceholder(parsed.destination || ''),
-    clientName: cleanOcrPlaceholder(parsed.clientName || ''),
-    senderCompany: cleanOcrPlaceholder(parsed.senderCompany || ''),
+    consignee: cleanField(parsed.consignee),
+    destination: cleanField(parsed.destination),
+    clientName: cleanField(parsed.clientName),
+    senderCompany: cleanField(parsed.senderCompany),
   };
 
+  // Assign structured fields if missing
+  if (!next.phone) next.phone = structuredFields.phone;
+  if (!next.pincode) next.pincode = structuredFields.pincode;
+  if (!next.email) next.email = structuredFields.email;
+
   // Normalize numeric fields.
-  if (next.weight !== undefined) {
+  if (next.weight !== undefined && next.weight !== null) {
     const weight = asNumber(next.weight);
     next.weight = weight === null ? undefined : weight;
   }
-  if (next.amount !== undefined) {
+  if (next.amount !== undefined && next.amount !== null) {
     const amount = asNumber(next.amount);
     next.amount = amount === null ? undefined : amount;
   }
@@ -363,17 +386,9 @@ function enhanceParsedDetails(parsed = {}, knownAwb = '') {
     next.awbSource = next.awbSource || 'known_awb';
   }
 
-  if (!next.pincode) {
-    next.pincode = firstMatch(rawText, /\b(\d{6})\b/, 1);
-  }
-
   if (!next.weight) {
     const w = firstMatch(rawText, /\b(\d+(?:\.\d+)?)\s*(?:kg|kgs|kilograms?)\b/i, 1);
     if (w) next.weight = Number(w);
-  }
-
-  if (!next.phone) {
-    next.phone = firstMatch(rawText, /(?:mob(?:ile)?|ph(?:one)?|tel)?[:\s]*([6-9]\d{9})/i, 1);
   }
 
   if (!next.orderNo) {
@@ -381,21 +396,36 @@ function enhanceParsedDetails(parsed = {}, knownAwb = '') {
       rawText,
       /\b(?:order|oid|invoice|ref(?:erence)?|docket|c\s*note|cnote)[\s#:-]*([A-Z0-9/-]{4,})/i,
       1
-    );
+    ) || null;
   }
 
+  // STEP 3: Consignee extraction
   if (!next.consignee) {
-    const consignee = extractLabeledValue(rawText, [
-      /^(?:consignee(?:\s*name)?|receiver(?:\s*name)?|ship\s*to|deliver\s*to|to\s*name|recipient)\s*[:-]?\s*(.*)$/i,
-      /^to\s*:\s*(.+)$/im,
-      /^to\s*[:-]?\s*(.*)$/i,
-    ], {
-      minLength: 3,
-      rejectTokens: ['PIN CODE', 'TRACKON', 'DTDC', 'DELHIVERY', 'WEIGHT', 'INVOICE', 'AWB'],
-    });
-    if (consignee) {
-      next.consignee = consignee.toUpperCase();
+    const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+    let foundConsignee = null;
+    for (let i = 0; i < lines.length; i++) {
+      const lowerLine = lines[i].toLowerCase();
+      if (lowerLine.includes('name') || lowerLine.includes('consignee') || lowerLine.includes('ship to')) {
+        const parts = lines[i].split(/[:-]/);
+        if (parts.length > 1 && parts[1].trim().length > 2) {
+          foundConsignee = parts[1].trim();
+        } else if (i + 1 < lines.length) {
+          foundConsignee = lines[i+1].trim();
+        }
+        break;
+      }
     }
+    // fallback to first uppercase-heavy line
+    if (!foundConsignee) {
+      for (const line of lines) {
+        const uppers = (line.match(/[A-Z]/g) || []).length;
+        if (uppers > 5 && line.length < 30) {
+          foundConsignee = line;
+          break;
+        }
+      }
+    }
+    if (foundConsignee) next.consignee = cleanField(foundConsignee);
   }
 
   if (!next.amount) {
@@ -413,59 +443,37 @@ function enhanceParsedDetails(parsed = {}, knownAwb = '') {
     }
   }
 
-  const destinationNoiseTokens = [
-    'PIN CODE',
-    'TRACKON',
-    'CONSIGNEE',
-    'CONSIGNOR',
-    'BOOKING',
-    'READ TERMS',
-    'VISIT',
-    'WEIGHT',
-    'VALUE',
-    'PCS',
-    'VOL',
-    'ACTUAL',
-    'CHGD',
-    'RESTRICTION',
-    'DELIVERY LOCATION',
-    'CURRENT LOCATION',
-    'PHONE',
-  ];
-
+  // STEP 4: Destination detection
+  const CITY_LIST = ['delhi','gurgaon','noida','mumbai','bangalore','chennai','hyderabad','pune','kolkata'];
   if (!next.destination) {
-    const labeledDestination = extractLabeledValue(rawText, [
-      /^(?:destination|destn|dest(?:ination)?\s*city|to\s*city|delivery\s*city|city)\s*[:-]?\s*(.*)$/i,
-      /^station\s*[:-]?\s*(.*)$/i,
-    ], {
-      minLength: 2,
-      uppercase: true,
-      rejectTokens: destinationNoiseTokens,
-    });
-    if (labeledDestination) {
-      next.destination = labeledDestination;
-    }
-  }
-
-  if (!next.destination) {
-    const cityPin = rawText.match(/([A-Za-z][A-Za-z\s]{2,40})[-,\s]+(\d{6})\b/);
-    if (cityPin) {
-      const city = String(cityPin[1] || '').replace(/[^A-Za-z ]+/g, ' ').replace(/\s+/g, ' ').trim();
-      const cityUpper = city.toUpperCase();
-      if (city && !destinationNoiseTokens.some((token) => cityUpper.includes(token))) {
-        next.destination = cityUpper;
+    for (const city of CITY_LIST) {
+      if (cleanText.includes(city)) {
+        next.destination = city.toUpperCase();
+        break;
       }
-      if (!next.pincode) next.pincode = cityPin[2];
     }
   }
 
   if (!next.clientName) {
-    next.clientName = String(parsed.senderCompany || parsed.merchant || '').trim();
+    next.clientName = cleanField(parsed.senderCompany || parsed.merchant) || null;
   }
 
   if (typeof next.success !== 'boolean') {
     next.success = Boolean(next.awb || next.rawText);
   }
+
+  // STEP 6: Confidence scoring
+  function computeConfidence(data) {
+    let score = 0;
+    if (data.awb) score += 30;
+    if (data.phone) score += 15;
+    if (data.pincode) score += 15;
+    if (data.consignee) score += 20;
+    if (data.destination) score += 20;
+    return score;
+  }
+  
+  next.confidence = computeConfidence(next);
 
   return next;
 }

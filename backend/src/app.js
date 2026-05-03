@@ -177,6 +177,7 @@ app.use('/api/docs',           require('./routes/docs.routes'));
 app.use('/api/pincodes',      require('./routes/pincode.routes'));
 app.use('/api/returns',        require('./routes/return.routes'));
 app.use('/api/notifications',  require('./routes/notification.routes'));
+app.use('/api/features',       require('./routes/features.routes'));
 
 // ── Catch-all for API Routes ─────────────────────────────────────────────
 app.all('/api/*', (req, res) => {
