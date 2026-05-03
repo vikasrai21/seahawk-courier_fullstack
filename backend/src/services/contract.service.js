@@ -44,6 +44,7 @@ function normalizeZone(value) {
 function normalizeWeightKg(weight) {
   const n = Number(weight || 0);
   if (!Number.isFinite(n) || n <= 0) return 0;
+  if (n >= 1000) return n / 1000; // If >= 1000, it's definitely grams. (Safely allows up to 999kg)
   return n;
 }
 
@@ -331,4 +332,5 @@ module.exports = {
   getWeightSlab,
   normalizeMode,
   normalizeZone,
+  normalizeWeightKg,
 };

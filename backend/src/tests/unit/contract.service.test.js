@@ -84,6 +84,41 @@ describe('contract.service', () => {
     });
   });
 
+  it('calculatePriceFromContract calculates prices across weight slab boundaries correctly', async () => {
+    const contractService = await loadService();
+    const contract = {
+      id: 10,
+      name: 'Slabs',
+      pricingType: 'SLAB_BASED',
+      pricingRules: [
+        { weightSlab: '0-500g', rate: 40 },
+        { weightSlab: '500g-1kg', rate: 70 },
+        { weightSlab: '1-5kg', rate: 120 },
+        { weightSlab: '5kg+', rate: 200 }
+      ],
+      fuelSurcharge: 0,
+      gstPercent: 0,
+    };
+
+    // 0.5kg (exact boundary) -> 0-500g
+    expect(contractService.calculatePriceFromContract(contract, 0.5).base).toBe(40);
+    
+    // 0.51kg (just over boundary) -> 500g-1kg
+    expect(contractService.calculatePriceFromContract(contract, 0.51).base).toBe(70);
+
+    // 1kg (exact boundary) -> 500g-1kg
+    expect(contractService.calculatePriceFromContract(contract, 1).base).toBe(70);
+
+    // 1.01kg (just over boundary) -> 1-5kg
+    expect(contractService.calculatePriceFromContract(contract, 1.01).base).toBe(120);
+
+    // 5kg (exact boundary) -> 1-5kg
+    expect(contractService.calculatePriceFromContract(contract, 5).base).toBe(120);
+
+    // 5.01kg (just over boundary) -> 5kg+
+    expect(contractService.calculatePriceFromContract(contract, 5.01).base).toBe(200);
+  });
+
   it('getActiveContractsByClientCodes normalizes client codes and groups results', async () => {
     const contractService = await loadService();
     prismaMock.contract.findMany.mockResolvedValue([
@@ -118,5 +153,12 @@ describe('contract.service', () => {
     }, prismaMock);
 
     expect(result).toBeNull();
+  });
+
+  it('normalizeWeightKg treats 51kg as 51kg (regression test for >50 heuristic)', async () => {
+    const contractService = await loadService();
+    expect(contractService.normalizeWeightKg(51)).toBe(51);
+    expect(contractService.normalizeWeightKg(0.051)).toBe(0.051);
+    expect(contractService.normalizeWeightKg(50000)).toBe(50); // 50000g -> 50kg
   });
 });

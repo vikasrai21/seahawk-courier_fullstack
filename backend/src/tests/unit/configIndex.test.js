@@ -61,6 +61,7 @@ describe('config/index', () => {
       ALLOW_MOCK_WALLET_RECHARGE: 'false',
       API_DOCS_ENABLED: 'false',
       API_DOCS_PUBLIC: 'false',
+      OWNER_EMAILS: 'you@yourdomain.com',
     })).default;
 
     expect(config.env).toBe('production');

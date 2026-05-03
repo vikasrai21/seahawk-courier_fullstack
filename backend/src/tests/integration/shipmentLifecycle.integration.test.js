@@ -88,7 +88,7 @@ describe('Shipment Lifecycle Integration', () => {
       where: { reference: awb, type: 'DEBIT' }
     });
     expect(walletTx).toBeDefined();
-    expect(walletTx.amount).toBe(150);
+    expect(Number(walletTx.amount)).toBe(150);
 
     // 2. Transition to PickedUp
     const pickedUpRes = await request(app)
@@ -128,7 +128,7 @@ describe('Shipment Lifecycle Integration', () => {
       where: { reference: awb, type: 'CREDIT', description: { contains: 'Refund' } }
     });
     expect(refundTx).toBeDefined();
-    expect(refundTx.amount).toBe(150);
+    expect(Number(refundTx.amount)).toBe(150);
 
     // 5. Transition to RTO Delivered (Terminal)
     const terminalRes = await request(app)

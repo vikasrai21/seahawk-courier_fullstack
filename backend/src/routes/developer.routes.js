@@ -12,24 +12,8 @@ const webhookDispatch = require('../services/webhook-dispatch.service');
 const sandboxSimulation = require('../services/sandboxSimulation.service');
 const dns = require('dns').promises;
 const { isIP } = require('net');
+const { isSafeUrl } = require('../utils/security');
 
-async function isSafeUrl(urlStr) {
-  try {
-    const u = new URL(urlStr);
-    const hostname = u.hostname;
-    // Block direct IP private ranges
-    if (isIP(hostname)) {
-      if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|169\.254\.|::1|fc|fd)/.test(hostname)) {
-        return false;
-      }
-    }
-    // Resolve DNS and check resolved IPs
-    const addresses = await dns.lookup(hostname, { all: true }).catch(() => []);
-    return !addresses.some(({ address }) =>
-      /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|127\.|169\.254\.)/.test(address)
-    );
-  } catch { return false; }
-}
 
 router.use(authenticate);
 

@@ -1,6 +1,10 @@
 const { _mockTx } = require('../config/__mocks__/prisma.js');
 const mockPrisma = require('../config/__mocks__/prisma.js');
 
+// ── Global prisma mock — ensures ALL unit tests use the mock, not real DB ──
+vi.mock('../../config/prisma', () => require('../../config/__mocks__/prisma.js'));
+vi.mock('../config/prisma', () => require('../config/__mocks__/prisma.js'));
+
 global.mockPrisma = mockPrisma;
 global.mockTx = _mockTx;
 

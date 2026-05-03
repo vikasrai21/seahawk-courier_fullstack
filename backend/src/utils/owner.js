@@ -1,5 +1,7 @@
+const DEFAULT_OWNER_EMAIL = 'admin@seahawk.com';
+
 function getOwnerEmails() {
-  const raw = process.env.OWNER_EMAILS || process.env.OWNER_EMAIL || '';
+  const raw = process.env.OWNER_EMAILS || process.env.OWNER_EMAIL || DEFAULT_OWNER_EMAIL;
   return raw
     .split(',')
     .map(v => v.trim().toLowerCase())
@@ -20,4 +22,5 @@ function isOwnerUser(userOrEmail) {
 module.exports = {
   getOwnerEmails,
   isOwnerUser,
+  DEFAULT_OWNER_EMAIL,
 };

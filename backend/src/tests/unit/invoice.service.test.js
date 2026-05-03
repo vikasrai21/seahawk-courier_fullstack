@@ -29,6 +29,25 @@ describe('invoice.service', () => {
       ).rejects.toThrow('No unbilled shipments found');
     });
 
+    it('handles fractional GST amounts with exact rounding', async () => {
+      mockPrisma.client.findUnique.mockResolvedValue({ code: 'CLI-1', gst: '06ABCDE1234F1Z5' }); // Haryana
+      mockPrisma.shipment.findMany.mockResolvedValue([
+        { id: 1, awb: 'A1', amount: 100.55 },
+        { id: 2, awb: 'A2', amount: 200.33 }
+      ]);
+      mockPrisma.invoice.findFirst.mockResolvedValue(null);
+      mockPrisma.invoice.create.mockImplementation((args) => Promise.resolve(args.data));
+
+      const invoice = await invoiceService.create({ clientCode: 'CLI-1', fromDate: '2023-01-01', toDate: '2023-01-31', gstPercent: 18 });
+      
+      expect(invoice.subtotal).toBe(300.88);
+      // GST: 18% of 300.88 = 54.1584 -> rounds to 54.16
+      expect(invoice.gstAmount).toBe(54.16);
+      expect(invoice.cgstAmount).toBe(27.08); 
+      expect(invoice.sgstAmount).toBe(27.08);
+      expect(invoice.total).toBe(355.04);
+    });
+
     it('generates invoice successfully with intra-state GST (Haryana)', async () => {
       mockPrisma.client.findUnique.mockResolvedValue({ code: 'CLI-1', gst: '06ABCDE1234F1Z5' }); // Haryana GST
       mockPrisma.shipment.findMany.mockResolvedValue([

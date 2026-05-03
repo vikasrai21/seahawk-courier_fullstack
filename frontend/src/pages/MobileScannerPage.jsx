@@ -69,6 +69,29 @@ const normalizeReviewCourier = (value) => {
 
 const normalizeClientCode = (value) => String(value || '').trim().toUpperCase();
 
+/**
+ * Infer courier from AWB prefix — works offline, no API needed.
+ * Called immediately when a barcode is locked so the review header
+ * already shows the right courier color before OCR finishes.
+ */
+const inferCourierFromAwb = (awb = '') => {
+  const a = String(awb || '').trim().toUpperCase();
+  if (!a) return '';
+  // DTDC: Z, D, X, I prefix or 7X prefix
+  if (/^[ZDX][0-9]/.test(a) || /^7X[0-9]/i.test(a) || /^I[0-9]{8}/.test(a)) return 'DTDC';
+  // Delhivery: 14 digits starting with 299 or 368
+  if (/^(299|368)\d{11}$/.test(a)) return 'Delhivery';
+  // Delhivery: exactly 14 digits
+  if (/^\d{14}$/.test(a)) return 'Delhivery';
+  // Trackon: 12 digits starting with 100 or 500
+  if (/^(100|500)\d{9}$/.test(a)) return 'Trackon';
+  // BlueDart: 11 digits
+  if (/^\d{11}$/.test(a)) return 'BlueDart';
+  // Primetrack: starts with 20004 or 20040
+  if (/^2000[45]/.test(a)) return 'Trackon';
+  return '';
+};
+
 const formatDisplayDate = (isoDate) => {
   const raw = String(isoDate || '').trim();
   if (!ISO_DATE_REGEX.test(raw)) return raw;
@@ -912,6 +935,135 @@ const css = `
 .manifest-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 44px 20px; gap: 10px; }
 .manifest-empty-icon { width: 56px; height: 56px; border-radius: 18px; background: ${theme.bg}; display: flex; align-items: center; justify-content: center; }
 .manifest-empty-text { font-size: 0.8rem; color: ${theme.mutedLight}; font-weight: 500; text-align: center; line-height: 1.6; }
+
+/* ══ SWIPE TO APPROVE ══════════════════════════════════════════════════════════ */
+.review-swipe-root {
+  display: flex; flex-direction: column; height: 100%;
+  position: relative; overflow: hidden; touch-action: pan-y;
+}
+.swipe-hint-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 20px 4px;
+  background: ${theme.surface};
+  border-bottom: 1px solid ${theme.border};
+}
+.swipe-hint-side {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 0.62rem; font-weight: 700; color: ${theme.mutedLight};
+  letter-spacing: 0.05em;
+  opacity: 0.7;
+}
+.swipe-action-overlay {
+  position: absolute; inset: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none; opacity: 0;
+  transition: opacity 0.15s;
+  border-radius: 0;
+}
+.swipe-action-overlay.approve {
+  background: linear-gradient(135deg, rgba(5,150,105,0.92), rgba(16,185,129,0.92));
+}
+.swipe-action-overlay.skip {
+  background: linear-gradient(135deg, rgba(220,38,38,0.85), rgba(239,68,68,0.85));
+}
+.swipe-action-label {
+  font-size: 1.6rem; font-weight: 900; color: white; letter-spacing: 0.04em;
+  text-shadow: 0 2px 12px rgba(0,0,0,0.3);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+
+/* ══ WEIGHT QUICK PICKS ══════════════════════════════════════════════════════ */
+.weight-quick-picks {
+  display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px;
+}
+.weight-chip {
+  padding: 5px 11px; border-radius: 8px;
+  border: 1.5px solid ${theme.border};
+  background: ${theme.bg}; color: ${theme.muted};
+  font-size: 0.7rem; font-weight: 800; cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+  transition: all 0.15s; touch-action: manipulation;
+}
+.weight-chip:active { transform: scale(0.92); }
+.weight-chip.active {
+  background: ${theme.primaryLight}; color: ${theme.primary};
+  border-color: rgba(29,78,216,0.3);
+}
+
+/* ══ FIELD STAGGER ANIMATION ═════════════════════════════════════════════════ */
+@keyframes fieldSlideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.field-card-animated {
+  animation: fieldSlideIn 0.28s ease-out both;
+}
+.field-card-animated:nth-child(1) { animation-delay: 0.04s; }
+.field-card-animated:nth-child(2) { animation-delay: 0.09s; }
+.field-card-animated:nth-child(3) { animation-delay: 0.14s; }
+.field-card-animated:nth-child(4) { animation-delay: 0.19s; }
+.field-card-animated:nth-child(5) { animation-delay: 0.24s; }
+.field-card-animated:nth-child(6) { animation-delay: 0.29s; }
+
+/* ══ COPY AWB ════════════════════════════════════════════════════════════════ */
+.awb-copyable {
+  cursor: pointer; position: relative;
+  transition: opacity 0.15s;
+  display: inline-flex; align-items: center; gap: 7px;
+}
+.awb-copyable:active { opacity: 0.6; }
+.copy-flash {
+  position: absolute; left: 50%; top: -28px;
+  transform: translateX(-50%);
+  background: rgba(5,150,105,0.92); color: white;
+  font-size: 0.6rem; font-weight: 800; padding: 3px 10px;
+  border-radius: 999px; white-space: nowrap;
+  pointer-events: none; letter-spacing: 0.05em;
+}
+
+/* ══ HAPTIC RING on scan lock ════════════════════════════════════════════════ */
+@keyframes lockRingExpand {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+.lock-ring-flash {
+  position: fixed; top: 50%; left: 50%;
+  width: 60px; height: 60px;
+  border-radius: 50%;
+  border: 3px solid #10B981;
+  transform: translate(-50%, -50%);
+  animation: lockRingExpand 0.55s ease-out forwards;
+  pointer-events: none; z-index: 20;
+}
+
+/* ══ SESSION SUMMARY MODAL ═══════════════════════════════════════════════════ */
+.session-modal-overlay {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(13,27,42,0.82); backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+.session-modal {
+  background: ${theme.surface}; border-radius: 24px 24px 0 0;
+  width: 100%; max-width: 460px;
+  padding: 20px 20px 36px;
+  box-shadow: 0 -8px 40px rgba(0,0,0,0.2);
+}
+.session-modal-handle {
+  width: 36px; height: 4px; border-radius: 999px;
+  background: ${theme.border}; margin: 0 auto 18px;
+}
+.session-summary-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 10px; margin: 16px 0;
+}
+.session-summary-tile {
+  background: ${theme.bg}; border-radius: 14px;
+  padding: 12px; text-align: center;
+  border: 1px solid ${theme.border};
+}
+.session-summary-num { font-size: 1.6rem; font-weight: 900; color: ${theme.text}; }
+.session-summary-lbl { font-size: 0.6rem; font-weight: 700; color: ${theme.muted}; text-transform: uppercase; letter-spacing: 0.07em; margin-top: 3px; }
 `;
 
 // ——— Confidence helpers ———————————————————————————————————————————————————————————
@@ -1138,6 +1290,22 @@ export default function MobileScannerPage({ standalone = false }) {
   const addToQueueRef = useRef(null);
   const handleLookupNeedsPhotoRef = useRef(null);
   const applyProcessedScanResultRef = useRef(null);
+
+  // Swipe-to-approve gesture state
+  const swipeStartXRef = useRef(null);
+  const swipeStartYRef = useRef(null);
+  const swipeDeltaXRef = useRef(0);
+  const [swipeProgress, setSwipeProgress] = useState(0); // -1 (skip) to +1 (approve)
+  const swipeAnimFrameRef = useRef(null);
+
+  // Auto-detected courier from AWB prefix
+  const [inferredCourier, setInferredCourier] = useState('');
+  // Copy-to-clipboard flash
+  const [awbCopied, setAwbCopied] = useState(false);
+  // Session summary modal
+  const [sessionSummaryOpen, setSessionSummaryOpen] = useState(false);
+  // Lock ring animation
+  const [showLockRing, setShowLockRing] = useState(false);
 
   const goStep = useCallback((next) => {
     setStep(next);
@@ -1581,15 +1749,24 @@ export default function MobileScannerPage({ standalone = false }) {
       const s = String(v || '').trim().toUpperCase();
       return (s === 'UNKNOWN' || s === 'N/A' || s === 'NA' || s === 'NONE') ? '' : String(v || '').trim();
     };
+    // Auto-detect courier from AWB prefix if OCR didn't return one
+    const ocrCourier = normalizeReviewCourier(data.courier || '');
+    const awbInferred = inferCourierFromAwb(data.awb || lockedAwb);
+    const effectiveCourier = ocrCourier || awbInferred || '';
+    setInferredCourier(awbInferred);
+    // Auto-fill destination from pincode if OCR couldn't read it
+    const ocrDest = stripUnknown(data.destination);
+    const ocrPin = data.pincode || '';
+    const pinCity = !ocrDest && ocrPin.length === 6 ? lookupPincodeCity(ocrPin) : '';
     setReviewForm({
       clientCode: effectiveClientCode,
       consignee: stripUnknown(data.consignee),
-      destination: stripUnknown(data.destination),
-      pincode: data.pincode || '',
+      destination: ocrDest || pinCity,
+      pincode: ocrPin,
       weight: data.weight || 0,
       amount: data.amount || 0,
       orderNo: data.orderNo || '',
-      courier: normalizeReviewCourier(data.courier || ''),
+      courier: effectiveCourier,
       date: data.date || sessionDate || new Date().toISOString().slice(0, 10),
     });
     setProcessingFields({});
@@ -2007,6 +2184,7 @@ export default function MobileScannerPage({ standalone = false }) {
     clearTimeout(lockToCaptureTimerRef.current);
     pulseHaptic('lock');
     playHardwareBeep(); // True hardware beep
+    setShowLockRing(true);
     setLockedAwb(awb);
     const lockTimeMs = scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null;
     setLastLockTimeMs(lockTimeMs);
@@ -2746,6 +2924,16 @@ export default function MobileScannerPage({ standalone = false }) {
     };
   }, [reviewData]);
 
+  const copyAwb = useCallback(async (awb) => {
+    if (!awb) return;
+    try {
+      await navigator.clipboard.writeText(awb);
+      setAwbCopied(true);
+      pulseHaptic('tap');
+      setTimeout(() => setAwbCopied(false), 1800);
+    } catch (_) {}
+  }, []);
+
   const cycleReviewCourier = useCallback(() => {
     setReviewForm((prev) => {
       const current = normalizeReviewCourier(prev.courier || reviewData?.courier || '');
@@ -2754,6 +2942,42 @@ export default function MobileScannerPage({ standalone = false }) {
       return { ...prev, courier: next };
     });
   }, [reviewData]);
+
+  // Swipe gesture handlers for the review screen
+  const handleSwipeTouchStart = useCallback((e) => {
+    const t = e.touches[0];
+    swipeStartXRef.current = t.clientX;
+    swipeStartYRef.current = t.clientY;
+    swipeDeltaXRef.current = 0;
+    setSwipeProgress(0);
+  }, []);
+
+  const handleSwipeTouchMove = useCallback((e) => {
+    if (swipeStartXRef.current === null) return;
+    const t = e.touches[0];
+    const dx = t.clientX - swipeStartXRef.current;
+    const dy = t.clientY - swipeStartYRef.current;
+    if (Math.abs(dy) > Math.abs(dx) * 1.4) return; // vertical scroll wins
+    swipeDeltaXRef.current = dx;
+    const progress = Math.max(-1, Math.min(1, dx / 140));
+    cancelAnimationFrame(swipeAnimFrameRef.current);
+    swipeAnimFrameRef.current = requestAnimationFrame(() => setSwipeProgress(progress));
+  }, []);
+
+  const handleSwipeTouchEnd = useCallback(() => {
+    const dx = swipeDeltaXRef.current;
+    swipeStartXRef.current = null;
+    setSwipeProgress(0);
+    if (dx > 110) {
+      // Swipe right = approve
+      pulseHaptic('success');
+      submitApproval();
+    } else if (dx < -110) {
+      // Swipe left = skip
+      pulseHaptic('warning');
+      if (isStandalone) { navigate('/scan-mobile'); } else { resetForNextScan(); }
+    }
+  }, [submitApproval, resetForNextScan, isStandalone, navigate]);
 
   const reviewConfidence = useMemo(() => {
     const scores = Object.values(fieldConfidence)
@@ -3060,7 +3284,7 @@ export default function MobileScannerPage({ standalone = false }) {
                 <button className="action-tile" onClick={() => setVoiceEnabled(v => !v)}>
                   {voiceEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />} Voice {voiceEnabled ? 'On' : 'Off'}
                 </button>
-                <button className="action-tile danger" onClick={terminateSession}>
+                <button className="action-tile danger" onClick={() => setSessionSummaryOpen(true)}>
                   <Trash2 size={14} /> End
                 </button>
               </div>
@@ -3174,7 +3398,6 @@ export default function MobileScannerPage({ standalone = false }) {
           </div>
         </div>
 
-        {/* ═══ SCANNING ═══ */}
         <div className={stepClass(STEPS.SCANNING)}>
           <div className="cam-viewport" style={{ background: 'transparent' }}>
             <div id="scanbot-camera-container" style={{ position: 'absolute', inset: 0, display: scanbotRef.current ? 'block' : 'none' }} />
@@ -3442,14 +3665,40 @@ export default function MobileScannerPage({ standalone = false }) {
 
         {/* ═══ REVIEWING ═══ */}
         <div className={stepClass(STEPS.REVIEWING)}>
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: theme.bg }}>
+          <div className="review-swipe-root"
+            onTouchStart={handleSwipeTouchStart}
+            onTouchMove={handleSwipeTouchMove}
+            onTouchEnd={handleSwipeTouchEnd}
+          >
+            {/* Swipe overlays */}
+            <div className="swipe-action-overlay approve" style={{ opacity: Math.max(0, swipeProgress) * 1.1 }}>
+              <div className="swipe-action-label">
+                <Check size={44} color="white" strokeWidth={3} />
+                APPROVE
+              </div>
+            </div>
+            <div className="swipe-action-overlay skip" style={{ opacity: Math.max(0, -swipeProgress) * 1.1 }}>
+              <div className="swipe-action-label">
+                <X size={44} color="white" strokeWidth={3} />
+                SKIP
+              </div>
+            </div>
 
             {/* Courier-colored header */}
-            <div className={`review-header${reviewCourier ? ' courier-' + reviewCourier.toLowerCase() : ''}`}>
+            <div className={`review-header${reviewCourier ? ' courier-' + reviewCourier.toLowerCase() : ''}`}
+              style={{ transform: `translateX(${swipeProgress * 18}px)`, transition: swipeProgress === 0 ? 'transform 0.25s ease' : 'none' }}>
               <div className="review-header-top">
                 <div>
                   <div className="review-title">REVIEW CONSIGNMENT</div>
-                  <div className="mono review-awb">{reviewData?.awb || lockedAwb}</div>
+                  <div className="mono review-awb awb-copyable" onClick={() => copyAwb(reviewData?.awb || lockedAwb)}>
+                    {reviewData?.awb || lockedAwb}
+                    {awbCopied && <span className="copy-flash">COPIED</span>}
+                  </div>
+                  {inferredCourier && !reviewCourier && (
+                    <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
+                      AWB suggests: {inferredCourier}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   {intelligence?.learnedFieldCount > 0 && (
@@ -3468,11 +3717,24 @@ export default function MobileScannerPage({ standalone = false }) {
                   {reviewConfidence.label} ({Math.round(reviewConfidence.score * 100)}%)
                 </span>
                 <button type="button" className="review-chip review-chip-courier" onClick={cycleReviewCourier} title="Tap to change courier">
-                  <Package size={12} /> {reviewCourier || 'Tap to set courier'}
+                  <Package size={12} /> {reviewCourier || 'Set courier →'}
                 </button>
                 <span className="review-chip review-chip-date">
                   <CalendarDays size={12} /> {reviewDateLabel || 'No date'}
                 </span>
+              </div>
+            </div>
+
+            {/* Swipe hint bar */}
+            <div className="swipe-hint-bar">
+              <div className="swipe-hint-side" style={{ color: swipeProgress < -0.2 ? theme.error : theme.mutedLight }}>
+                <X size={11} /> SKIP
+              </div>
+              <div style={{ fontSize: '0.6rem', color: theme.mutedLight, fontWeight: 600, letterSpacing: '0.05em' }}>
+                SWIPE TO APPROVE OR SKIP
+              </div>
+              <div className="swipe-hint-side" style={{ color: swipeProgress > 0.2 ? theme.success : theme.mutedLight }}>
+                SAVE <Check size={11} />
               </div>
             </div>
 
@@ -3489,7 +3751,9 @@ export default function MobileScannerPage({ standalone = false }) {
                   <div className="form-progress-bar-track">
                     <div className="form-progress-bar-fill" style={{ width: pct + '%' }} />
                   </div>
-                  <div className="form-progress-label">{filled}/{required.length} required</div>
+                  <div className="form-progress-label" style={{ color: pct === 100 ? theme.success : theme.muted }}>
+                    {pct === 100 ? '✓ Ready to save' : `${filled}/${required.length} required`}
+                  </div>
                 </div>
               );
             })()}
@@ -3497,19 +3761,22 @@ export default function MobileScannerPage({ standalone = false }) {
             <div className="scroll-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
               {/* CLIENT */}
-              <div className={`field-card ${(fieldConfidence.clientCode?.confidence || 0) < 0.55 ? 'warning' : 'conf-high'}`}>
+              <div className={`field-card field-card-animated ${(fieldConfidence.clientCode?.confidence || 0) < 0.55 ? 'warning' : 'conf-high'}`}>
                 <div className={confDotClass(fieldConfidence.clientCode?.confidence || 0)} />
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
                     <span className="field-label" style={{ margin: 0 }}>Client</span>
                     {fieldConfidence.clientCode?.source && (() => { const s = sourceLabel(fieldConfidence.clientCode.source); return s ? <span className={s.className}>{s.icon} {s.text}</span> : null; })()}
                   </div>
-                  <input className="field-input" value={reviewForm.clientCode || ''} onChange={e => setReviewForm(f => ({ ...f, clientCode: e.target.value.toUpperCase() }))} placeholder="Client code" />
+                  <input className="field-input" value={reviewForm.clientCode || ''}
+                    onChange={e => setReviewForm(f => ({ ...f, clientCode: e.target.value.toUpperCase() }))}
+                    placeholder="Client code"
+                    autoCapitalize="characters" />
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 7, gap: 8 }}>
                     <div style={{ fontSize: '0.6rem', color: theme.muted }}>
                       {stickyClientCode
-                        ? <span style={{ color: theme.primary, fontWeight: 700 }}>Sticky: {stickyClientCode}</span>
-                        : 'Sticky client off'}
+                        ? <span style={{ color: theme.primary, fontWeight: 700 }}>📌 Sticky: {stickyClientCode}</span>
+                        : 'Sticky off'}
                     </div>
                     {stickyClientCode
                       ? <button type="button" className="suggest-chip" onClick={() => setStickyClientCode('')}>Clear</button>
@@ -3531,7 +3798,7 @@ export default function MobileScannerPage({ standalone = false }) {
               </div>
 
               {/* CONSIGNEE — required */}
-              <div className={`field-card ${!reviewForm.consignee?.trim() ? 'required-empty' : 'conf-high'}`}>
+              <div className={`field-card field-card-animated ${!reviewForm.consignee?.trim() ? 'required-empty' : 'conf-high'}`}>
                 <div className={!reviewForm.consignee?.trim() ? 'conf-dot conf-low' : confDotClass(fieldConfidence.consignee?.confidence || 0)} />
                 <div style={{ flex: 1 }}>
                   <div className="field-label">
@@ -3540,12 +3807,13 @@ export default function MobileScannerPage({ standalone = false }) {
                   </div>
                   <input className="field-input" value={reviewForm.consignee || ''}
                     onChange={e => setReviewForm(f => ({ ...f, consignee: e.target.value.toUpperCase() }))}
-                    placeholder="Recipient name *" />
+                    placeholder="Recipient name *"
+                    autoCapitalize="words" />
                 </div>
               </div>
 
               {/* DESTINATION — required */}
-              <div className={`field-card ${!reviewForm.destination?.trim() ? 'required-empty' : 'conf-high'}`}>
+              <div className={`field-card field-card-animated ${!reviewForm.destination?.trim() ? 'required-empty' : 'conf-high'}`}>
                 <div className={!reviewForm.destination?.trim() ? 'conf-dot conf-low' : confDotClass(fieldConfidence.destination?.confidence || 0)} />
                 <div style={{ flex: 1 }}>
                   <div className="field-label">
@@ -3554,11 +3822,12 @@ export default function MobileScannerPage({ standalone = false }) {
                   </div>
                   <input className="field-input" value={reviewForm.destination || ''}
                     onChange={e => setReviewForm(f => ({ ...f, destination: e.target.value.toUpperCase() }))}
-                    placeholder="City *" />
+                    placeholder="City *"
+                    autoCapitalize="words" />
                   {intelligence?.pincodeCity && intelligence.pincodeCity !== reviewForm.destination && (
                     <button type="button" className="suggest-chip pincode-suggest" style={{ marginTop: 6 }}
                       onClick={() => setReviewForm(f => ({ ...f, destination: intelligence.pincodeCity }))}>
-                      Pincode suggests: {intelligence.pincodeCity}
+                      📍 Pincode → {intelligence.pincodeCity}
                     </button>
                   )}
                   {!intelligence?.pincodeCity && reviewForm.pincode?.length === 6 && (() => {
@@ -3566,7 +3835,7 @@ export default function MobileScannerPage({ standalone = false }) {
                     return city && city !== reviewForm.destination ? (
                       <button type="button" className="suggest-chip pincode-suggest" style={{ marginTop: 6 }}
                         onClick={() => setReviewForm(f => ({ ...f, destination: city }))}>
-                        {reviewForm.pincode} suggests: {city}
+                        📍 {reviewForm.pincode} → {city}
                       </button>
                     ) : null;
                   })()}
@@ -3575,7 +3844,7 @@ export default function MobileScannerPage({ standalone = false }) {
 
               {/* PINCODE + WEIGHT */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div className="field-card">
+                <div className="field-card field-card-animated">
                   <div style={{ flex: 1 }}>
                     <div className="field-label">Pincode</div>
                     <input className="field-input" value={reviewForm.pincode || ''}
@@ -3589,7 +3858,7 @@ export default function MobileScannerPage({ standalone = false }) {
                       placeholder="6 digits" maxLength={6} inputMode="numeric" />
                   </div>
                 </div>
-                <div className={`field-card ${intelligence?.weightAnomaly?.anomaly ? 'warning' : (!reviewForm.weight || String(reviewForm.weight).trim() === '0' ? 'required-empty' : 'conf-med')}`}>
+                <div className={`field-card field-card-animated ${intelligence?.weightAnomaly?.anomaly ? 'warning' : (!reviewForm.weight || String(reviewForm.weight).trim() === '0' ? 'required-empty' : 'conf-med')}`}>
                   <div style={{ flex: 1 }}>
                     <div className="field-label">Weight (kg) <span className="field-required-star">*</span></div>
                     <input className="field-input" value={reviewForm.weight || ''}
@@ -3604,9 +3873,20 @@ export default function MobileScannerPage({ standalone = false }) {
                 </div>
               </div>
 
+              {/* Weight quick picks */}
+              <div className="weight-quick-picks">
+                {[0.5, 1, 1.5, 2, 3, 5, 10].map(w => (
+                  <button key={w} type="button"
+                    className={`weight-chip ${String(reviewForm.weight) === String(w) ? 'active' : ''}`}
+                    onClick={() => { setReviewForm(f => ({ ...f, weight: w })); pulseHaptic('tap'); }}>
+                    {w}kg
+                  </button>
+                ))}
+              </div>
+
               {/* AMOUNT + ORDER NO */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div className="field-card">
+                <div className="field-card field-card-animated">
                   <div style={{ flex: 1 }}>
                     <div className="field-label">COD Amount (Rs.)</div>
                     <input className="field-input" value={reviewForm.amount || ''}
@@ -3614,7 +3894,7 @@ export default function MobileScannerPage({ standalone = false }) {
                       placeholder="0" inputMode="decimal" />
                   </div>
                 </div>
-                <div className="field-card">
+                <div className="field-card field-card-animated">
                   <div style={{ flex: 1 }}>
                     <div className="field-label">Order No</div>
                     <input className="field-input" value={reviewForm.orderNo || ''}
@@ -3625,12 +3905,12 @@ export default function MobileScannerPage({ standalone = false }) {
               </div>
 
               <div style={{ fontSize: '0.6rem', color: theme.mutedLight, textAlign: 'center', paddingBottom: 4 }}>
-                <span style={{ color: '#E11D48' }}>*</span> Required fields
+                <span style={{ color: '#E11D48' }}>*</span> Required  ·  Swipe right to save instantly
               </div>
             </div>
 
             {/* Action bar */}
-            <div style={{ padding: '10px 16px 20px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: 10, background: theme.surface }}>
+            <div style={{ padding: '10px 16px 24px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: 10, background: theme.surface }}>
               <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => {
                 if (isStandalone) { navigate('/scan-mobile'); return; }
                 resetForNextScan();
@@ -3744,6 +4024,65 @@ export default function MobileScannerPage({ standalone = false }) {
           <div className="offline-banner">
             <WifiOff size={12} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} />
             Offline â€” Reconnecting... {offlineQueue.length ? `(${offlineQueue.length} queued)` : ''}
+          </div>
+        )}
+
+        {/* ── Lock ring flash ── */}
+        {showLockRing && <div className="lock-ring-flash" onAnimationEnd={() => setShowLockRing(false)} />}
+
+        {/* ── Session Summary Modal ── */}
+        {sessionSummaryOpen && (
+          <div className="session-modal-overlay" onClick={() => setSessionSummaryOpen(false)}>
+            <div className="session-modal" onClick={e => e.stopPropagation()}>
+              <div className="session-modal-handle" />
+              <div style={{ fontSize: '1rem', fontWeight: 800, color: theme.text, marginBottom: 4 }}>End Session?</div>
+              <div style={{ fontSize: '0.78rem', color: theme.muted, marginBottom: 12 }}>Summary before you go</div>
+              <div className="session-summary-grid">
+                <div className="session-summary-tile">
+                  <div className="session-summary-num">{sessionCtx.scanNumber}</div>
+                  <div className="session-summary-lbl">Parcels Scanned</div>
+                </div>
+                <div className="session-summary-tile">
+                  <div className="session-summary-num">{totalWeight > 0 ? totalWeight.toFixed(1) : '0'}</div>
+                  <div className="session-summary-lbl">Total Weight kg</div>
+                </div>
+                <div className="session-summary-tile">
+                  <div className="session-summary-num">{sessionDuration}</div>
+                  <div className="session-summary-lbl">Duration</div>
+                </div>
+                <div className="session-summary-tile">
+                  <div className="session-summary-num">{offlineQueue.length}</div>
+                  <div className="session-summary-lbl">Pending Sync</div>
+                </div>
+              </div>
+              {sessionCtx.scannedItems.length > 0 && (() => {
+                const cc = {};
+                sessionCtx.scannedItems.forEach(item => {
+                  const c = normalizeReviewCourier(item.courier || '') || 'Other';
+                  cc[c] = (cc[c] || 0) + 1;
+                });
+                return (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+                    {Object.entries(cc).map(([c, n]) => {
+                      const pal = getCourierPalette(c);
+                      return (
+                        <span key={c} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 12px', borderRadius: 999, background: pal.light, color: pal.bg, fontSize: '0.7rem', fontWeight: 800, border: `1px solid ${pal.bg}33` }}>
+                          {c} × {n}
+                        </span>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button className="btn btn-outline btn-full" onClick={() => setSessionSummaryOpen(false)}>
+                  Keep Scanning
+                </button>
+                <button className="btn btn-danger btn-full" onClick={() => { setSessionSummaryOpen(false); terminateSession(); }}>
+                  <Trash2 size={15} /> End Session
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchBufferWithRetry, fetchJsonWithRetry, fetchWithRetry } from '../../utils/httpRetry.js';
 
+vi.mock('../../utils/security.js', () => ({
+  isSafeUrl: vi.fn().mockResolvedValue(true),
+}));
+
 describe('httpRetry', () => {
   beforeEach(() => {
     vi.restoreAllMocks();

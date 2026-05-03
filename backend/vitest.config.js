@@ -7,10 +7,10 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'json-summary', 'html'],
       thresholds: {
-        lines: 30,
-        functions: 35,
+        lines: 50,
+        functions: 50,
         branches: 50,
-        statements: 30,
+        statements: 50,
       },
       include: [
         'src/controllers/**/*.js',
@@ -27,5 +27,34 @@ export default defineConfig({
         'src/utils/seed.js'
       ],
     },
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'unit',
+          include: ['src/tests/unit/**/*.test.js'],
+          setupFiles: ['./src/tests/setup.js'],
+          environment: 'node',
+          testTimeout: 15000,
+        }
+      },
+      {
+        extends: true,
+        test: {
+          name: 'integration',
+          include: ['src/tests/integration/**/*.test.js'],
+          setupFiles: ['./src/tests/setupIntegration.js'],
+          globalSetup: ['./src/tests/globalSetup.js'],
+          testTimeout: 30000,
+          environment: 'node',
+          pool: 'forks',
+          poolOptions: {
+            forks: {
+              singleFork: true,
+            }
+          }
+        }
+      }
+    ]
   },
 });

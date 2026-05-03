@@ -71,6 +71,9 @@ describe('AuthContext', () => {
   });
 
   it('clears the active user when a session-expired event is raised', async () => {
+    // Seed localStorage so AuthProvider attempts refreshSession
+    window.localStorage.setItem('shk_remember', '1');
+
     refreshSession.mockResolvedValue({
       data: {
         id: 1,

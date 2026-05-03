@@ -177,19 +177,19 @@ describe('auth.service', () => {
   describe('createUser', () => {
     it('throws on duplicate email', async () => {
       mockPrisma.user.findUnique.mockResolvedValue({ id: 1 });
-      await expect(authService.createUser({ email: 'dup@x.com', password: 'p', name: 'Test' }))
+      await expect(authService.createUser({ email: 'dup@x.com', password: 'Pass123!', name: 'Test' }))
         .rejects.toThrow('Email already registered.');
     });
 
     it('throws on invalid role', async () => {
       mockPrisma.user.findUnique.mockResolvedValue(null);
-      await expect(authService.createUser({ email: 'new@x.com', password: 'p', name: 'Test', role: 'HACKER' }))
+      await expect(authService.createUser({ email: 'new@x.com', password: 'Pass123!', name: 'Test', role: 'HACKER' }))
         .rejects.toThrow('Invalid role.');
     });
 
     it('throws when CLIENT role missing clientCode', async () => {
       mockPrisma.user.findUnique.mockResolvedValue(null);
-      await expect(authService.createUser({ email: 'new@x.com', password: 'p', name: 'Test', role: 'CLIENT' }))
+      await expect(authService.createUser({ email: 'new@x.com', password: 'Pass123!', name: 'Test', role: 'CLIENT' }))
         .rejects.toThrow('clientCode is required');
     });
 
@@ -198,7 +198,7 @@ describe('auth.service', () => {
       mockPrisma.user.create.mockResolvedValue({
         id: 2, name: 'Test', email: 'new@x.com', role: 'STAFF', branch: null, active: true, createdAt: new Date(),
       });
-      const user = await authService.createUser({ email: 'new@x.com', password: 'pass123', name: 'Test' });
+      const user = await authService.createUser({ email: 'new@x.com', password: 'Pass123!', name: 'Test' });
       expect(user.email).toBe('new@x.com');
       expect(mockPrisma.user.create).toHaveBeenCalled();
     });
@@ -212,7 +212,7 @@ describe('auth.service', () => {
         id: 3, name: 'Client', email: 'c@x.com', role: 'CLIENT', branch: null, active: true, createdAt: new Date(),
       });
       mockPrisma.clientUser.create.mockResolvedValue({});
-      const user = await authService.createUser({ email: 'c@x.com', password: 'pass', name: 'Client', role: 'CLIENT', clientCode: 'TEST' });
+      const user = await authService.createUser({ email: 'c@x.com', password: 'Pass123!', name: 'Client', role: 'CLIENT', clientCode: 'TEST' });
       expect(user.clientCode).toBe('TEST');
       expect(mockPrisma.clientUser.create).toHaveBeenCalled();
     });
@@ -224,9 +224,9 @@ describe('auth.service', () => {
       mockPrisma.user.findUnique.mockResolvedValue({ id: 1, email: 'u@x.com', role: 'ADMIN', active: true, clientProfile: null });
       mockPrisma._mockTx.user.update.mockResolvedValue({ id: 1, name: 'U', email: 'u@x.com', role: 'ADMIN', active: true });
       mockPrisma._mockTx.clientUser.deleteMany.mockResolvedValue({ count: 0 });
-      await authService.updateUser(1, { password: 'newpass' });
+      await authService.updateUser(1, { password: 'NewPass123!' });
       const call = mockPrisma._mockTx.user.update.mock.calls[0][0];
-      expect(call.data.password).not.toBe('newpass'); // should be hashed
+      expect(call.data.password).not.toBe('NewPass123!'); // should be hashed
     });
 
     it('lowercases email', async () => {
@@ -294,7 +294,7 @@ describe('auth.service', () => {
     it('throws on wrong current password', async () => {
       const hash = await bcrypt.hash('correct', 12);
       mockPrisma.user.findUnique.mockResolvedValue({ id: 1, password: hash });
-      await expect(authService.changePassword(1, 'wrong', 'newpass')).rejects.toThrow('Current password is incorrect.');
+      await expect(authService.changePassword(1, 'wrong', 'NewPass123!')).rejects.toThrow('Current password is incorrect.');
     });
 
     it('updates password and revokes tokens', async () => {
@@ -302,7 +302,7 @@ describe('auth.service', () => {
       mockPrisma.user.findUnique.mockResolvedValue({ id: 1, password: hash });
       mockPrisma.user.update.mockResolvedValue({});
       mockPrisma.refreshToken.updateMany.mockResolvedValue({});
-      await authService.changePassword(1, 'correct', 'newpass');
+      await authService.changePassword(1, 'correct', 'NewPass123!');
       expect(mockPrisma.user.update).toHaveBeenCalled();
       expect(mockPrisma.refreshToken.updateMany).toHaveBeenCalled();
     }, 10000);

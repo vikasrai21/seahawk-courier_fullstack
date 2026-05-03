@@ -386,7 +386,8 @@ function enhanceParsedDetails(parsed = {}, knownAwb = '') {
 
   if (!next.consignee) {
     const consignee = extractLabeledValue(rawText, [
-      /^(?:consignee(?:\s*name)?|receiver(?:\s*name)?|ship\s*to|deliver\s*to)\s*[:-]?\s*(.*)$/i,
+      /^(?:consignee(?:\s*name)?|receiver(?:\s*name)?|ship\s*to|deliver\s*to|to\s*name|recipient)\s*[:-]?\s*(.*)$/i,
+      /^to\s*:\s*(.+)$/im,
       /^to\s*[:-]?\s*(.*)$/i,
     ], {
       minLength: 3,
@@ -728,7 +729,30 @@ Rules:
 5) pincode is exactly 6 digits.
 6) Prefer explicit values on label over guesses.
 7) Set confidence 0.0-1.0 for each field based on legibility.
-8) Return JSON only.`;
+8) Return JSON only.
+
+## DTDC LABEL SPECIFIC RULES
+DTDC labels have these specific regions:
+- AWB starts with Z, D, X, 7X, or I followed by digits
+- "Company Name & Address" or "Consignee Name & Address" box = consignee name + destination
+- "Booking Branch" area shows origin city
+- "Risk Surcharge" / "FSC" section = ignore for field extraction
+- Handwritten entries in boxes — always attempt to read, even if cursive
+- The large barcode at bottom = AWB number
+- "Destination:" label or destination city is often printed in a dedicated box
+
+## DELHIVERY LABEL SPECIFIC RULES  
+- Large "SHIP TO" section = consignee
+- "Return to:" = sender/client
+- Order number often starts with letters followed by digits
+
+## TRACKON LABEL SPECIFIC RULES
+- AWB starts with 100 or 500 followed by 9 digits
+- "To:" section = consignee and destination
+
+If rawText is provided above, PRIORITIZE reading from that text rather than the image directly.
+When rawText has a line like "Consignee Name: HARDEEP KUR" — extract "HARDEEP KUR" as consignee.
+When rawText has "Destination: DELHI" — extract "DELHI" as destination.`;
 }
 
 const GEMINI_RESPONSE_SCHEMA = {
@@ -784,6 +808,9 @@ async function tryGeminiModel(modelName, normalizedBase64, mimeType, knownAwb, c
     generationConfig: {
       responseMimeType: 'application/json',
       responseSchema: GEMINI_RESPONSE_SCHEMA,
+      temperature: 0.1,   // Low temperature = more deterministic, less hallucination
+      topP: 0.8,
+      maxOutputTokens: 1024,
     },
   });
 

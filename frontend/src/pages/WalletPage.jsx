@@ -47,6 +47,9 @@ export default function WalletPage({ toast }) {
         const r = await api.get('/wallet/me');
         setWallets([r.data]);
         setSelected(r.data);
+        if (r.data?.clientCode) {
+          loadTxns(r.data.clientCode);
+        }
       }
     } catch(e) { toast?.(e.message, 'error'); }
     finally { setLoading(false); }

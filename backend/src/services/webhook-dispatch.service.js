@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const prisma = require('../config/prisma');
 const logger = require('../utils/logger');
 const config = require('../config');
+const { isSafeUrl } = require('../utils/security');
 
 // ── Supported webhook events ──────────────────────────────────────────────
 const SUPPORTED_EVENTS = [
@@ -87,6 +88,10 @@ async function deliverWebhook(webhook, event, data) {
   });
 
   try {
+    if (!await isSafeUrl(webhook.url)) {
+      throw new Error('Unsafe webhook URL resolved (SSRF prevention)');
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
 

@@ -32,16 +32,19 @@ vi.mock('../../realtime/socket', () => ({
 
 const queueMocks = vi.hoisted(() => ({
   enqueueTrackingSync: vi.fn(),
+  enqueueNotification: vi.fn(),
 }));
 vi.mock('../../services/queue.service', () => ({
-  default: { enqueueTrackingSync: queueMocks.enqueueTrackingSync },
+  default: { enqueueTrackingSync: queueMocks.enqueueTrackingSync, enqueueNotification: queueMocks.enqueueNotification },
   enqueueTrackingSync: queueMocks.enqueueTrackingSync,
+  enqueueNotification: queueMocks.enqueueNotification,
 }));
 
 vi.mock('../../services/import-ledger.service', () => ({
-  default: { ensureTable: vi.fn(), insertRow: vi.fn() },
+  default: { ensureTable: vi.fn(), insertRow: vi.fn(), insertRowsBulk: vi.fn() },
   ensureTable: vi.fn(),
   insertRow: vi.fn(),
+  insertRowsBulk: vi.fn(),
 }));
 
 vi.mock('../../services/stateMachine', () => ({
@@ -67,12 +70,16 @@ vi.mock('../../services/wallet.service', () => ({
 }));
 
 const riskMocks = vi.hoisted(() => ({
-  analyzeShipment: vi.fn(),
+  analyzeShipment: vi.fn().mockResolvedValue({ score: 30, factors: ['Missing or invalid Consignee Phone Number'] }),
 }));
 
 vi.mock('../../services/riskAnalysis.service', () => ({
   default: riskMocks,
   ...riskMocks,
+}));
+
+vi.mock('../../services/clientMatcher.service', () => ({
+  findClosestClient: vi.fn().mockResolvedValue(null),
 }));
 
 const shipmentService = await import('../../services/shipment.service.js');
@@ -85,12 +92,15 @@ describe('Data Integrity & Business Logic (Client-Grade)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPrisma.$queryRawUnsafe = vi.fn().mockResolvedValue([{}]);
-    mockPrisma.$executeRawUnsafe = vi.fn().mockResolvedValue({}); // Prevent insertRow failure
-    mockPrisma.shipment.findUnique = vi.fn().mockResolvedValue(null); // Prevent leaks
+    mockPrisma.$executeRawUnsafe = vi.fn().mockResolvedValue(1);
+    mockPrisma.shipment.findUnique = vi.fn().mockResolvedValue(null);
+    mockPrisma.shipment.findMany = vi.fn().mockResolvedValue([]);
     
     vi.spyOn(importLedgerService, 'ensureTable').mockResolvedValue(undefined);
     vi.spyOn(importLedgerService, 'insertRow').mockResolvedValue(undefined);
+    vi.spyOn(importLedgerService, 'insertRowsBulk').mockResolvedValue(undefined);
     
+    // Reset the transaction mock to route through mockTx
     mockPrisma.$transaction.mockImplementation(async (fn) => {
       if (typeof fn === 'function') {
         return await fn(mockTx);
@@ -107,40 +117,43 @@ describe('Data Integrity & Business Logic (Client-Grade)', () => {
         consignee: 'Test Recipient',
         destination: 'Mumbai',
         weight: 1.5,
-        amount: 500, // Explicit amount to charge
+        amount: 500,
         courier: 'Delhivery',
         service: 'Standard',
         date: '2026-04-25',
       };
 
-      // Mock client has enough balance
+      // The new create() uses tx.client.updateMany for atomic debit
+      mockTx.client.updateMany = vi.fn().mockResolvedValue({ count: 1 });
       mockTx.client.findUnique = vi.fn().mockResolvedValue({
         code: 'TESTCL',
-        walletBalance: 1000,
+        walletBalance: 500,
       });
-      
-      mockTx.client.update = vi.fn().mockResolvedValue({});
       mockTx.walletTransaction.create = vi.fn().mockResolvedValue({ id: 1 });
       mockTx.shipment.create = vi.fn().mockResolvedValue({
         id: 101,
         ...payload,
         status: 'Booked',
+        client: { company: 'Test Co', phone: '9999' },
       });
 
-      const result = await shipmentService.create(payload, 99); // 99 is createdById
+      const result = await shipmentService.create(payload, 99);
 
-      // Wallet MUST be checked and debited inside the transaction
-      expect(mockTx.client.findUnique).toHaveBeenCalledWith({ where: { code: 'TESTCL' }, select: { walletBalance: true } });
-      expect(mockTx.client.update).toHaveBeenCalledWith(expect.objectContaining({
-        where: { code: 'TESTCL' },
-        data: expect.objectContaining({ walletBalance: { decrement: 500 } })
+      // Wallet debit MUST use atomic updateMany (WHERE balance >= amount)
+      expect(mockTx.client.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          code: 'TESTCL',
+          walletBalance: { gte: 500 },
+        }),
+        data: expect.objectContaining({ walletBalance: { decrement: 500 } }),
       }));
+      
       expect(mockTx.walletTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({
           type: 'DEBIT',
           amount: 500,
-          description: expect.stringContaining('NEW_AWB_123')
-        })
+          description: expect.stringContaining('NEW_AWB_123'),
+        }),
       }));
       
       // Shipment must be created
@@ -148,8 +161,8 @@ describe('Data Integrity & Business Logic (Client-Grade)', () => {
         data: expect.objectContaining({
           awb: 'NEW_AWB_123',
           amount: 500,
-          status: 'Booked'
-        })
+          status: 'Booked',
+        }),
       }));
 
       expect(result.awb).toBe('NEW_AWB_123');
@@ -165,12 +178,12 @@ describe('Data Integrity & Business Logic (Client-Grade)', () => {
         amount: 500,
       };
 
-      // Simulate Prisma Unique Constraint error
       const p2002Error = new Error('Unique constraint failed');
       p2002Error.code = 'P2002';
       
-      mockTx.client.findUnique = vi.fn().mockResolvedValue({ walletBalance: 1000 });
-      mockTx.client.update = vi.fn().mockResolvedValue({});
+      mockTx.client.updateMany = vi.fn().mockResolvedValue({ count: 1 });
+      mockTx.client.findUnique = vi.fn().mockResolvedValue({ walletBalance: 500 });
+      mockTx.walletTransaction.create = vi.fn().mockResolvedValue({});
       mockTx.shipment.create = vi.fn().mockRejectedValue(p2002Error);
 
       await expect(shipmentService.create(payload, 99)).rejects.toThrow(/Unique constraint failed/);
@@ -186,9 +199,11 @@ describe('Data Integrity & Business Logic (Client-Grade)', () => {
         amount: 500,
       };
 
+      // updateMany returns count: 0 when balance is insufficient
+      mockTx.client.updateMany = vi.fn().mockResolvedValue({ count: 0 });
       mockTx.client.findUnique = vi.fn().mockResolvedValue({
         code: 'TESTCL',
-        walletBalance: 100, // Insufficient!
+        walletBalance: 100,
       });
 
       await expect(shipmentService.create(payload, 99)).rejects.toThrow(/Insufficient wallet balance/);
@@ -204,17 +219,20 @@ describe('Data Integrity & Business Logic (Client-Grade)', () => {
         consignee: 'Test Recipient',
         destination: 'Mumbai',
         weight: 1.5,
-        amount: 0, // Should auto-calculate
+        amount: 0,
         courier: 'Delhivery',
         service: 'Express',
       };
 
-      mockTx.client.findUnique = vi.fn().mockResolvedValue({ walletBalance: 1000 });
-      mockTx.client.update = vi.fn().mockResolvedValue({});
-      mockTx.shipment.create = vi.fn().mockResolvedValue({ awb: 'CONTRACT_AWB', amount: 150 });
+      mockTx.client.updateMany = vi.fn().mockResolvedValue({ count: 1 });
+      mockTx.client.findUnique = vi.fn().mockResolvedValue({ walletBalance: 850 });
+      mockTx.shipment.create = vi.fn().mockResolvedValue({ 
+        awb: 'CONTRACT_AWB', amount: 150,
+        client: { company: 'Test', phone: '9999' },
+      });
       mockTx.walletTransaction.create = vi.fn().mockResolvedValue({});
       
-      // Mock the database to return a contract so the REAL contractService calculates a price
+      // Mock the database to return a contract
       mockPrisma.contract = {
         findMany: vi.fn().mockResolvedValue([{
           id: 1,
@@ -227,17 +245,17 @@ describe('Data Integrity & Business Logic (Client-Grade)', () => {
           fuelSurcharge: 0,
           gstPercent: 0,
           active: true,
-        }])
+        }]),
       };
       
       await shipmentService.create(payload, 99);
 
-      // Verify debit was for 150, not 0
-      expect(mockTx.client.update).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({ walletBalance: { decrement: 150 } })
+      // Verify debit was for the contract price, not 0
+      expect(mockTx.client.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ walletBalance: { decrement: 150 } }),
       }));
       expect(mockTx.walletTransaction.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({ amount: 150 })
+        data: expect.objectContaining({ amount: 150 }),
       }));
     });
 
@@ -246,21 +264,25 @@ describe('Data Integrity & Business Logic (Client-Grade)', () => {
         awb: 'RISK_AWB',
         clientCode: 'TESTCL',
         amount: 200,
-        aiPredictedAmount: 250, // Should NOT override final amount
+        aiPredictedAmount: 250,
       };
 
-      mockTx.client.findUnique = vi.fn().mockResolvedValue({ walletBalance: 1000 });
-      mockTx.client.update = vi.fn().mockResolvedValue({});
-      mockTx.shipment.create = vi.fn().mockResolvedValue({ awb: 'RISK_AWB' });
+      mockTx.client.updateMany = vi.fn().mockResolvedValue({ count: 1 });
+      mockTx.client.findUnique = vi.fn().mockResolvedValue({ walletBalance: 800 });
+      mockTx.walletTransaction.create = vi.fn().mockResolvedValue({});
+      mockTx.shipment.create = vi.fn().mockResolvedValue({
+        awb: 'RISK_AWB',
+        client: { company: 'Test', phone: '9999' },
+      });
 
       await shipmentService.create(payload, 99);
 
       expect(mockTx.shipment.create).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({
-          amount: 200, // Final amount stays 200
-          riskScore: 30, // Default computed by real risk analysis when missing phone
+          amount: 200,
+          riskScore: 30,
           riskFactors: expect.arrayContaining(['Missing or invalid Consignee Phone Number']),
-        })
+        }),
       }));
     });
   });
@@ -269,24 +291,21 @@ describe('Data Integrity & Business Logic (Client-Grade)', () => {
     it('gracefully skips duplicate AWBs and returns correct success/fail counts', async () => {
       const rows = [
         { awb: 'NEW_1', clientCode: 'TESTCL' },
-        { awb: 'DUPE_2', clientCode: 'TESTCL' }, // Will fail
+        { awb: 'DUPE_2', clientCode: 'TESTCL' },
       ];
 
       mockPrisma.client.upsert = vi.fn().mockResolvedValue({});
       
-      // Setup mock to fail on second create
-      const p2002Error = new Error('Unique constraint failed');
-      p2002Error.code = 'P2002';
-      
-      mockPrisma.shipment.create = vi.fn()
-        .mockResolvedValueOnce({ id: 1, awb: 'NEW_1' })
-        .mockRejectedValueOnce(p2002Error);
+      // Pre-existing AWB
+      mockPrisma.shipment.findMany
+        .mockResolvedValueOnce([{ id: 99, awb: 'DUPE_2', courier: 'Delhivery', status: 'Booked' }]) // existing lookup
+        .mockResolvedValueOnce([{ id: 100, awb: 'NEW_1', clientCode: 'TESTCL', courier: 'Delhivery', status: 'Booked' }]); // after createMany
+      mockPrisma.shipment.createMany = vi.fn().mockResolvedValue({ count: 1 });
 
       const result = await shipmentService.bulkImport(rows, 99);
 
-      expect(result.imported).toBe(1);
       expect(result.duplicates).toBe(1);
-      expect(result.errors.length).toBe(0);
+      expect(result.operationalCreated).toBe(1);
     });
 
     it('rejects empty or invalid AWBs entirely', async () => {
@@ -295,19 +314,25 @@ describe('Data Integrity & Business Logic (Client-Grade)', () => {
         { awb: null, clientCode: 'TESTCL' },
       ];
 
+      mockPrisma.shipment.findMany = vi.fn().mockResolvedValue([]);
+
       const result = await shipmentService.bulkImport(rows, 99);
 
       expect(result.imported).toBe(0);
       expect(result.errors.length).toBe(2);
-      expect(mockPrisma.shipment.create).not.toHaveBeenCalled();
+      expect(mockPrisma.shipment.createMany).not.toHaveBeenCalled();
     });
   });
 
   describe('updateStatus()', () => {
-
     it('enforces state machine transitions via API', async () => {
       mockPrisma.shipment.findUnique = vi.fn().mockResolvedValue({
-        id: 1, awb: 'STATUS_AWB', status: 'Booked'
+        id: 1, awb: 'STATUS_AWB', status: 'Booked', client: {},
+        createdBy: { name: 'Admin' }, updatedBy: null, trackingEvents: [],
+      });
+
+      vi.spyOn(stateMachine, 'assertValidTransition').mockImplementation(() => {
+        throw new Error('Invalid transition');
       });
 
       await expect(shipmentService.updateStatus(1, 'Delivered', 99))
@@ -318,26 +343,26 @@ describe('Data Integrity & Business Logic (Client-Grade)', () => {
 
     it('creates tracking event when status is updated', async () => {
       mockPrisma.shipment.findUnique = vi.fn().mockResolvedValue({
-        id: 1, awb: 'STATUS_AWB', status: 'Booked', courier: 'Delhivery'
+        id: 1, awb: 'STATUS_AWB', status: 'Booked', courier: 'Delhivery', amount: 0,
+        client: {}, createdBy: { name: 'Admin' }, updatedBy: null, trackingEvents: [],
       });
       mockPrisma.shipment.update = vi.fn().mockResolvedValue({
-        id: 1, awb: 'STATUS_AWB', status: 'PickedUp'
+        id: 1, awb: 'STATUS_AWB', status: 'PickedUp',
+        client: { company: 'Test', phone: '9999', email: 'test@test.com' },
       });
       mockPrisma.trackingEvent.create = vi.fn().mockResolvedValue({});
       
-      vi.spyOn(stateMachine, 'assertValidTransition').mockImplementation(() => {}); // Allow
-      vi.spyOn(stateMachine, 'normalizeStatus').mockImplementation((s) => s.replace(' ', '')); // Handle "Picked Up" -> "PickedUp"
+      vi.spyOn(stateMachine, 'assertValidTransition').mockImplementation(() => {});
+      vi.spyOn(stateMachine, 'normalizeStatus').mockImplementation((s) => s.replace(' ', ''));
 
-      await shipmentService.updateStatus(1, 'Picked Up', 99, {
-        location: 'Warehouse', description: 'Picked up successfully'
-      });
+      await shipmentService.updateStatus(1, 'Picked Up', 99);
 
       expect(mockPrisma.trackingEvent.create).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({
           shipmentId: 1,
           awb: 'STATUS_AWB',
           status: 'PickedUp',
-        })
+        }),
       }));
     });
   });

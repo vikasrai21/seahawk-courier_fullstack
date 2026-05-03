@@ -170,6 +170,43 @@ describe('Developer Hub End-to-End Integration Tests', () => {
     expect(drafts[0].id).toBe(liveDraftId);
   });
 
+  it('rejects order ingestion if API key lacks orders:create scope', async () => {
+    // 1. Create a key with ONLY events:read scope
+    const noScopeKeyRes = await request(app)
+      .post('/api/portal/developer/keys')
+      .set('Authorization', `Bearer ${clientToken}`)
+      .send({
+        name: 'Read Only Key',
+        mode: 'live',
+        scopes: ['events:read'], // deliberately omitting orders:create
+      });
+
+    expect(noScopeKeyRes.status).toBe(200);
+    const readOnlyToken = noScopeKeyRes.body.data.token;
+
+    // 2. Attempt to create a draft with it
+    const payload = {
+      order: { id: `ORDER-NO-SCOPE-${runId}` },
+      customer: { name: 'API Test Customer' },
+      shipping: {
+        city: 'Pune',
+        phone: '9999999999',
+        pincode: '411001',
+        weight: '1.2',
+      },
+    };
+
+    const ingestRes = await request(app)
+      .post(`/api/public/integrations/ecommerce/custom/${clientCode}`)
+      .set('x-api-key', readOnlyToken)
+      .send(payload);
+
+    expect(ingestRes.status).toBe(403);
+    expect(ingestRes.body.success).toBe(false);
+    expect(ingestRes.body.code).toBe('MISSING_SCOPE');
+    expect(ingestRes.body.message).toMatch(/scope does not allow order creation/i);
+  });
+
   it('exposes developer hub events/logs with scoped key policy', async () => {
     const eventsRes = await request(app)
       .get('/api/portal/developer/integrations/events?limit=50')

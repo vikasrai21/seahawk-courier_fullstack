@@ -55,7 +55,7 @@ describe('Wallet Chaos & Concurrency Tests', () => {
       .get(`/api/wallet/${TEST_CLIENT_CODE}`)
       .set('Authorization', `Bearer ${ownerToken}`);
     
-    const initialBalance = before.body?.data?.balance || 0;
+    const initialBalance = Number(before.body?.data?.balance || 0);
     const creditAmount = 10;
     const concurrency = 5;
 
@@ -81,7 +81,7 @@ describe('Wallet Chaos & Concurrency Tests', () => {
       .set('Authorization', `Bearer ${ownerToken}`);
     
     const expectedBalance = initialBalance + (successes.length * creditAmount);
-    expect(after.body.data.balance).toBe(expectedBalance);
+    expect(Number(after.body.data.balance)).toBe(expectedBalance);
     expect(successes.length).toBe(concurrency);
   });
 
@@ -104,7 +104,7 @@ describe('Wallet Chaos & Concurrency Tests', () => {
       .get(`/api/wallet/${TEST_CLIENT_CODE}`)
       .set('Authorization', `Bearer ${ownerToken}`);
     
-    const balanceBefore = balanceRes.body.data.balance;
+    const balanceBefore = Number(balanceRes.body.data.balance);
 
     // Try to debit more than the balance with concurrent requests
     const debitAmount = balanceBefore; 
@@ -130,7 +130,7 @@ describe('Wallet Chaos & Concurrency Tests', () => {
       .get(`/api/wallet/${TEST_CLIENT_CODE}`)
       .set('Authorization', `Bearer ${ownerToken}`);
     
-    expect(after.body.data.balance).toBeGreaterThanOrEqual(0);
+    expect(Number(after.body.data.balance)).toBeGreaterThanOrEqual(0);
   });
 
   // ── 3. Rapid Fire: Credit then Debit Interleaving ────────────────────────
@@ -139,7 +139,7 @@ describe('Wallet Chaos & Concurrency Tests', () => {
     const before = await request(app)
       .get(`/api/wallet/${TEST_CLIENT_CODE}`)
       .set('Authorization', `Bearer ${ownerToken}`);
-    const startBalance = before.body?.data?.balance || 0;
+    const startBalance = Number(before.body?.data?.balance || 0);
 
     // Fire a sequence: +100, -50, +200, -100, +50  → net = +200
     const ops = [
@@ -178,7 +178,7 @@ describe('Wallet Chaos & Concurrency Tests', () => {
       .set('Authorization', `Bearer ${ownerToken}`);
     
     const expectedNet = startBalance + 200;
-    expect(after.body.data.balance).toBe(expectedNet);
+    expect(Number(after.body.data.balance)).toBe(expectedNet);
   });
 });
 

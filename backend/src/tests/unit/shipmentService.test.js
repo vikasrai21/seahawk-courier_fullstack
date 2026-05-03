@@ -140,12 +140,15 @@ describe('shipment.service', () => {
     it('auto-detects courier and queues tracking sync for imported active shipments', async () => {
       mockPrisma.client.upsert.mockResolvedValue({});
       mockPrisma.shipment.findUnique.mockResolvedValue(null);
-      mockPrisma.shipment.create.mockResolvedValue({
-        id: 42,
-        awb: 'Z66077871',
-        courier: 'DTDC',
-        status: 'Booked',
-      });
+      mockPrisma.shipment.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([
+        {
+          id: 42,
+          awb: 'Z66077871',
+          courier: 'DTDC',
+          status: 'Booked',
+        }
+      ]);
+      mockPrisma.shipment.createMany.mockResolvedValue({ count: 1 });
 
       const result = await shipmentService.bulkImport([
         {
@@ -161,11 +164,13 @@ describe('shipment.service', () => {
         },
       ], 7);
 
-      expect(mockPrisma.shipment.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({
-          courier: 'DTDC',
-          status: 'Booked',
-        }),
+      expect(mockPrisma.shipment.createMany).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.arrayContaining([
+          expect.objectContaining({
+            courier: 'DTDC',
+            status: 'Booked',
+          }),
+        ]),
       }));
       expect(result.trackingQueued).toBeGreaterThanOrEqual(0);
     });

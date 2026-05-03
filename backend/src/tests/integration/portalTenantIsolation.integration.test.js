@@ -155,7 +155,7 @@ describe('Portal Tenant Isolation', () => {
     expect(walletData).toBeDefined();
     // Client A wallet balance should be 1000 (not 2000 which is B's)
     // The wallet API returns { wallet: { walletBalance }, txns }
-    expect(walletData.wallet.walletBalance).toBe(1000);
+    expect(Number(walletData.wallet.walletBalance)).toBe(1000);
   });
 
   // ─── Test 4: Client A cannot access Client B's shipment by ID ──
