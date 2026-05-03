@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import api from '../services/api';
@@ -207,29 +207,54 @@ const isProbablySecureContextForCamera = () => {
 
 // â”€â”€â”€ Styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const theme = {
-  bg: '#F0F4FF',
+  bg: '#F8FAFF',
   surface: '#FFFFFF',
-  border: 'rgba(0,0,0,0.07)',
-  text: '#111827',
-  muted: '#6B7280',
-  mutedLight: '#9CA3AF',
-  primary: '#4F46E5',
-  primaryLight: '#EEF2FF',
+  border: 'rgba(15,23,42,0.09)',
+  text: '#0D1B2A',
+  muted: '#5B6B7C',
+  mutedLight: '#8FA0B0',
+  primary: '#1D4ED8',
+  primaryLight: '#EFF6FF',
   success: '#059669',
   successLight: '#ECFDF5',
   warning: '#D97706',
   warningLight: '#FFFBEB',
   error: '#DC2626',
-  errorLight: '#FEF2F2',
+  errorLight: '#FFF1F1',
   accent: '#7C3AED',
   accentLight: '#F5F3FF',
+  navy: '#0D1B2A',
+  navyMid: '#1E2D3D',
+  navyLight: '#253545',
+};
+
+// Enterprise courier palette
+const COURIER_PALETTE = {
+  DTDC:      { bg: '#C8102E', light: '#FFF0F1', text: '#fff', label: 'DTDC' },
+  Delhivery: { bg: '#00A0A0', light: '#E6FAFA', text: '#fff', label: 'Delhivery' },
+  Trackon:   { bg: '#E65C00', light: '#FFF3EC', text: '#fff', label: 'Trackon' },
+  BlueDart:  { bg: '#1A3A8C', light: '#EDF2FF', text: '#fff', label: 'BlueDart' },
+};
+const getCourierPalette = (name = '') => {
+  const n = String(name || '').trim();
+  return COURIER_PALETTE[n] || { bg: '#1D4ED8', light: '#EFF6FF', text: '#fff', label: n || 'Unknown' };
+};
+
+// Major Indian pincode -> city (offline lookup, ~700 entries)
+const PIN_CITY = {'110001':'New Delhi','110002':'New Delhi','110003':'New Delhi','110004':'New Delhi','110005':'New Delhi','110006':'New Delhi','110007':'New Delhi','110008':'New Delhi','110009':'New Delhi','110010':'New Delhi','110011':'New Delhi','110012':'New Delhi','110013':'New Delhi','110014':'New Delhi','110015':'New Delhi','110016':'New Delhi','110017':'New Delhi','110018':'New Delhi','110019':'New Delhi','110020':'New Delhi','110021':'New Delhi','110022':'New Delhi','110023':'New Delhi','110024':'New Delhi','110025':'New Delhi','110026':'New Delhi','110027':'New Delhi','110028':'New Delhi','110029':'New Delhi','110030':'New Delhi','110031':'New Delhi','110032':'New Delhi','110033':'New Delhi','110034':'New Delhi','110035':'New Delhi','110036':'New Delhi','110037':'New Delhi','110038':'New Delhi','110039':'New Delhi','110040':'New Delhi','110041':'New Delhi','110042':'New Delhi','110043':'New Delhi','110044':'New Delhi','110045':'New Delhi','110046':'New Delhi','110047':'New Delhi','110048':'New Delhi','110049':'New Delhi','110051':'New Delhi','110052':'New Delhi','110053':'New Delhi','110054':'New Delhi','110055':'New Delhi','110056':'New Delhi','110057':'New Delhi','110058':'New Delhi','110059':'New Delhi','110060':'New Delhi','110061':'New Delhi','110062':'New Delhi','110063':'New Delhi','110064':'New Delhi','110065':'New Delhi','110066':'New Delhi','110067':'New Delhi','110068':'New Delhi','110069':'New Delhi','110070':'New Delhi','110071':'New Delhi','110072':'New Delhi','110073':'New Delhi','110074':'New Delhi','110075':'New Delhi','110076':'New Delhi','110077':'New Delhi','110078':'New Delhi','110081':'New Delhi','110082':'New Delhi','110083':'New Delhi','110084':'New Delhi','110085':'New Delhi','110086':'New Delhi','110087':'New Delhi','110088':'New Delhi','110089':'New Delhi','110091':'New Delhi','110092':'New Delhi','110093':'New Delhi','110094':'New Delhi','110095':'New Delhi','110096':'New Delhi','121001':'Faridabad','121002':'Faridabad','121003':'Faridabad','121004':'Faridabad','122001':'Gurugram','122002':'Gurugram','122003':'Gurugram','122004':'Gurugram','122006':'Gurugram','122007':'Gurugram','122008':'Gurugram','122009':'Gurugram','122010':'Gurugram','122011':'Gurugram','122015':'Gurugram','122016':'Gurugram','122017':'Gurugram','122018':'Gurugram','122051':'Gurugram','201001':'Ghaziabad','201002':'Ghaziabad','201003':'Ghaziabad','201004':'Ghaziabad','201005':'Ghaziabad','201006':'Ghaziabad','201007':'Ghaziabad','201008':'Ghaziabad','201009':'Ghaziabad','201010':'Ghaziabad','201011':'Ghaziabad','201012':'Ghaziabad','201013':'Ghaziabad','201014':'Ghaziabad','201015':'Ghaziabad','201016':'Ghaziabad','201017':'Ghaziabad','201301':'Noida','201302':'Noida','201303':'Noida','201304':'Noida','201305':'Noida','201306':'Noida','201307':'Noida','201308':'Noida','400001':'Mumbai','400002':'Mumbai','400003':'Mumbai','400004':'Mumbai','400005':'Mumbai','400006':'Mumbai','400007':'Mumbai','400008':'Mumbai','400009':'Mumbai','400010':'Mumbai','400011':'Mumbai','400012':'Mumbai','400013':'Mumbai','400014':'Mumbai','400015':'Mumbai','400016':'Mumbai','400017':'Mumbai','400018':'Mumbai','400019':'Mumbai','400020':'Mumbai','400050':'Mumbai','400051':'Mumbai','400052':'Mumbai','400053':'Mumbai','400054':'Mumbai','400055':'Mumbai','400056':'Mumbai','400057':'Mumbai','400058':'Mumbai','400059':'Mumbai','400060':'Mumbai','400061':'Mumbai','400062':'Mumbai','400063':'Mumbai','400064':'Mumbai','400065':'Mumbai','400066':'Mumbai','400067':'Mumbai','400068':'Mumbai','400069':'Mumbai','400070':'Mumbai','400071':'Mumbai','400072':'Mumbai','400074':'Mumbai','400075':'Mumbai','400076':'Mumbai','400077':'Mumbai','400078':'Mumbai','400079':'Mumbai','400080':'Mumbai','400081':'Mumbai','400082':'Mumbai','400083':'Mumbai','400084':'Mumbai','400085':'Mumbai','400086':'Mumbai','400087':'Mumbai','400088':'Mumbai','400089':'Mumbai','400090':'Mumbai','400091':'Mumbai','400092':'Mumbai','400093':'Mumbai','400094':'Mumbai','400095':'Mumbai','400097':'Mumbai','400098':'Mumbai','400099':'Mumbai','400101':'Mumbai','400102':'Mumbai','400103':'Mumbai','400104':'Mumbai','560001':'Bangalore','560002':'Bangalore','560003':'Bangalore','560004':'Bangalore','560005':'Bangalore','560006':'Bangalore','560007':'Bangalore','560008':'Bangalore','560009':'Bangalore','560010':'Bangalore','560011':'Bangalore','560012':'Bangalore','560013':'Bangalore','560014':'Bangalore','560015':'Bangalore','560016':'Bangalore','560017':'Bangalore','560018':'Bangalore','560019':'Bangalore','560020':'Bangalore','560021':'Bangalore','560022':'Bangalore','560023':'Bangalore','560024':'Bangalore','560025':'Bangalore','560026':'Bangalore','560027':'Bangalore','560028':'Bangalore','560029':'Bangalore','560030':'Bangalore','560032':'Bangalore','560033':'Bangalore','560034':'Bangalore','560035':'Bangalore','560036':'Bangalore','560037':'Bangalore','560038':'Bangalore','560040':'Bangalore','560041':'Bangalore','560042':'Bangalore','560043':'Bangalore','560044':'Bangalore','560045':'Bangalore','560047':'Bangalore','560048':'Bangalore','560050':'Bangalore','560051':'Bangalore','560052':'Bangalore','560053':'Bangalore','560054':'Bangalore','560055':'Bangalore','560056':'Bangalore','560057':'Bangalore','560058':'Bangalore','560059':'Bangalore','560060':'Bangalore','560061':'Bangalore','560062':'Bangalore','560063':'Bangalore','560064':'Bangalore','560065':'Bangalore','560066':'Bangalore','560067':'Bangalore','560068':'Bangalore','560069':'Bangalore','560070':'Bangalore','560071':'Bangalore','560072':'Bangalore','560073':'Bangalore','560074':'Bangalore','560075':'Bangalore','560076':'Bangalore','560077':'Bangalore','560078':'Bangalore','560079':'Bangalore','560080':'Bangalore','560081':'Bangalore','560082':'Bangalore','560083':'Bangalore','560085':'Bangalore','560086':'Bangalore','560087':'Bangalore','560088':'Bangalore','560089':'Bangalore','560090':'Bangalore','560091':'Bangalore','560092':'Bangalore','560093':'Bangalore','560094':'Bangalore','560095':'Bangalore','560096':'Bangalore','560097':'Bangalore','560098':'Bangalore','560099':'Bangalore','560100':'Bangalore','560102':'Bangalore','560103':'Bangalore','560104':'Bangalore','560105':'Bangalore','600001':'Chennai','600002':'Chennai','600003':'Chennai','600004':'Chennai','600005':'Chennai','600006':'Chennai','600007':'Chennai','600008':'Chennai','600009':'Chennai','600010':'Chennai','600011':'Chennai','600012':'Chennai','600013':'Chennai','600014':'Chennai','600015':'Chennai','600016':'Chennai','600017':'Chennai','600018':'Chennai','600019':'Chennai','600020':'Chennai','600021':'Chennai','600022':'Chennai','600023':'Chennai','600024':'Chennai','600025':'Chennai','600026':'Chennai','600028':'Chennai','600029':'Chennai','600030':'Chennai','600031':'Chennai','600032':'Chennai','600033':'Chennai','600034':'Chennai','600035':'Chennai','600036':'Chennai','600037':'Chennai','600038':'Chennai','600039':'Chennai','600040':'Chennai','600041':'Chennai','600042':'Chennai','600043':'Chennai','600044':'Chennai','600045':'Chennai','600047':'Chennai','600048':'Chennai','600049':'Chennai','600050':'Chennai','600051':'Chennai','600052':'Chennai','600053':'Chennai','600054':'Chennai','600055':'Chennai','600056':'Chennai','600057':'Chennai','600058':'Chennai','600059':'Chennai','600060':'Chennai','600061':'Chennai','600062':'Chennai','600063':'Chennai','600064':'Chennai','600065':'Chennai','600066':'Chennai','600067':'Chennai','600068':'Chennai','600069':'Chennai','600070':'Chennai','600071':'Chennai','600072':'Chennai','600073':'Chennai','600074':'Chennai','600075':'Chennai','600076':'Chennai','600077':'Chennai','600078':'Chennai','600079':'Chennai','600080':'Chennai','600081':'Chennai','600082':'Chennai','600083':'Chennai','600084':'Chennai','600085':'Chennai','600086':'Chennai','600087':'Chennai','600088':'Chennai','600089':'Chennai','600090':'Chennai','600091':'Chennai','600092':'Chennai','600093':'Chennai','600094':'Chennai','600095':'Chennai','600096':'Chennai','600097':'Chennai','600099':'Chennai','600100':'Chennai','600101':'Chennai','600102':'Chennai','600103':'Chennai','600104':'Chennai','600105':'Chennai','600106':'Chennai','600107':'Chennai','600108':'Chennai','600109':'Chennai','600110':'Chennai','600111':'Chennai','600112':'Chennai','600113':'Chennai','600114':'Chennai','600115':'Chennai','600116':'Chennai','600117':'Chennai','600119':'Chennai','600120':'Chennai','600121':'Chennai','600122':'Chennai','600123':'Chennai','600125':'Chennai','600126':'Chennai','600127':'Chennai','600128':'Chennai','700001':'Kolkata','700002':'Kolkata','700003':'Kolkata','700004':'Kolkata','700005':'Kolkata','700006':'Kolkata','700007':'Kolkata','700008':'Kolkata','700009':'Kolkata','700010':'Kolkata','700011':'Kolkata','700012':'Kolkata','700013':'Kolkata','700014':'Kolkata','700015':'Kolkata','700016':'Kolkata','700017':'Kolkata','700018':'Kolkata','700019':'Kolkata','700020':'Kolkata','500001':'Hyderabad','500002':'Hyderabad','500003':'Hyderabad','500004':'Hyderabad','500005':'Hyderabad','500006':'Hyderabad','500007':'Hyderabad','500008':'Hyderabad','500009':'Hyderabad','500010':'Hyderabad','500011':'Hyderabad','500012':'Hyderabad','500013':'Hyderabad','500014':'Hyderabad','500015':'Hyderabad','500016':'Hyderabad','500017':'Hyderabad','500018':'Hyderabad','500019':'Hyderabad','500020':'Hyderabad','380001':'Ahmedabad','380002':'Ahmedabad','380003':'Ahmedabad','380004':'Ahmedabad','380005':'Ahmedabad','380006':'Ahmedabad','380007':'Ahmedabad','380008':'Ahmedabad','380009':'Ahmedabad','380010':'Ahmedabad','380013':'Ahmedabad','380014':'Ahmedabad','380015':'Ahmedabad','380016':'Ahmedabad','380017':'Ahmedabad','380018':'Ahmedabad','380019':'Ahmedabad','380021':'Ahmedabad','380022':'Ahmedabad','380023':'Ahmedabad','380024':'Ahmedabad','380025':'Ahmedabad','380026':'Ahmedabad','380027':'Ahmedabad','380028':'Ahmedabad','302001':'Jaipur','302002':'Jaipur','302003':'Jaipur','302004':'Jaipur','302005':'Jaipur','302006':'Jaipur','302007':'Jaipur','302008':'Jaipur','302009':'Jaipur','302010':'Jaipur','302011':'Jaipur','302012':'Jaipur','302013':'Jaipur','302015':'Jaipur','302016':'Jaipur','302017':'Jaipur','302018':'Jaipur','302019':'Jaipur','302020':'Jaipur','302021':'Jaipur','302022':'Jaipur','302023':'Jaipur','302026':'Jaipur','302027':'Jaipur','302028':'Jaipur','302029':'Jaipur','302030':'Jaipur','302031':'Jaipur','302033':'Jaipur','302034':'Jaipur','302036':'Jaipur','302037':'Jaipur','226001':'Lucknow','226002':'Lucknow','226003':'Lucknow','226004':'Lucknow','226005':'Lucknow','226006':'Lucknow','226007':'Lucknow','226008':'Lucknow','226009':'Lucknow','226010':'Lucknow','226011':'Lucknow','226012':'Lucknow','226013':'Lucknow','226014':'Lucknow','226015':'Lucknow','226016':'Lucknow','226017':'Lucknow','226018':'Lucknow','226019':'Lucknow','226020':'Lucknow','226021':'Lucknow','226022':'Lucknow','226023':'Lucknow','226024':'Lucknow','226025':'Lucknow','226026':'Lucknow','226028':'Lucknow','226029':'Lucknow','411001':'Pune','411002':'Pune','411003':'Pune','411004':'Pune','411005':'Pune','411006':'Pune','411007':'Pune','411008':'Pune','411009':'Pune','411010':'Pune','411011':'Pune','411012':'Pune','411013':'Pune','411014':'Pune','411015':'Pune','411016':'Pune','411017':'Pune','411018':'Pune','411019':'Pune','411020':'Pune','411021':'Pune','411022':'Pune','411023':'Pune','411024':'Pune','411025':'Pune','411026':'Pune','411027':'Pune','411028':'Pune','411029':'Pune','411030':'Pune','411031':'Pune','411032':'Pune','411033':'Pune','411034':'Pune','411035':'Pune','411036':'Pune','411037':'Pune','411038':'Pune','411039':'Pune','411040':'Pune','411041':'Pune','411042':'Pune','411043':'Pune','411044':'Pune','411045':'Pune','411046':'Pune','411047':'Pune','411048':'Pune','411049':'Pune','411051':'Pune','411052':'Pune','411053':'Pune','411057':'Pune','411058':'Pune','411060':'Pune','411061':'Pune','411062':'Pune','411067':'Pune','160001':'Chandigarh','160002':'Chandigarh','160003':'Chandigarh','160004':'Chandigarh','160005':'Chandigarh','160006':'Chandigarh','160007':'Chandigarh','160008':'Chandigarh','160009':'Chandigarh','160010':'Chandigarh','160011':'Chandigarh','160012':'Chandigarh','160014':'Chandigarh','160015':'Chandigarh','160016':'Chandigarh','160017':'Chandigarh','160018':'Chandigarh','160019':'Chandigarh','160020':'Chandigarh','160022':'Chandigarh','160023':'Chandigarh','160024':'Chandigarh','160025':'Chandigarh','160026':'Chandigarh','160028':'Chandigarh','160030':'Chandigarh','160031':'Chandigarh','160036':'Chandigarh','160047':'Chandigarh','160059':'Chandigarh','160061':'Chandigarh','160062':'Chandigarh','160071':'Chandigarh','440001':'Nagpur','440002':'Nagpur','440003':'Nagpur','440004':'Nagpur','440005':'Nagpur','440006':'Nagpur','440007':'Nagpur','440008':'Nagpur','440009':'Nagpur','440010':'Nagpur','440011':'Nagpur','440012':'Nagpur','440013':'Nagpur','440014':'Nagpur','440015':'Nagpur','440016':'Nagpur','440017':'Nagpur','440018':'Nagpur','440019':'Nagpur','440020':'Nagpur','440021':'Nagpur','440022':'Nagpur','440023':'Nagpur','440024':'Nagpur','440025':'Nagpur','440026':'Nagpur','440027':'Nagpur','440028':'Nagpur','440032':'Nagpur','440033':'Nagpur','440034':'Nagpur','440035':'Nagpur','440036':'Nagpur','440037':'Nagpur','530001':'Visakhapatnam','530002':'Visakhapatnam','530003':'Visakhapatnam','530004':'Visakhapatnam','530005':'Visakhapatnam','530006':'Visakhapatnam','530007':'Visakhapatnam','530008':'Visakhapatnam','530009':'Visakhapatnam','530010':'Visakhapatnam','530011':'Visakhapatnam','530012':'Visakhapatnam','530013':'Visakhapatnam','530014':'Visakhapatnam','530015':'Visakhapatnam','530016':'Visakhapatnam','530017':'Visakhapatnam','530018':'Visakhapatnam','530020':'Visakhapatnam','530022':'Visakhapatnam','530023':'Visakhapatnam','530024':'Visakhapatnam','530025':'Visakhapatnam','530026':'Visakhapatnam','530027':'Visakhapatnam','530028':'Visakhapatnam','530029':'Visakhapatnam','530031':'Visakhapatnam','530032':'Visakhapatnam','530040':'Visakhapatnam','530041':'Visakhapatnam','530043':'Visakhapatnam','530044':'Visakhapatnam','530045':'Visakhapatnam','530046':'Visakhapatnam','530047':'Visakhapatnam','530048':'Visakhapatnam','530049':'Visakhapatnam','530051':'Visakhapatnam'};
+const lookupPincodeCity = (pin = '') => {
+  const p = String(pin || '').replace(/\D/g, '').trim();
+  if (p.length !== 6) return '';
+  return PIN_CITY[p] || '';
 };
 
 const css = `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 .msp-root {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', -apple-system, system-ui, sans-serif;
   background: ${theme.bg};
   color: ${theme.text};
   min-height: 100dvh;
@@ -239,39 +264,32 @@ const css = `
   position: relative;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
-.msp-root * { box-sizing: border-box; }
 
-/* â”€â”€ Monospace for AWB â”€â”€ */
-.mono { font-family: 'JetBrains Mono', 'SF Mono', monospace; letter-spacing: -0.02em; }
+/* ── Mono ── */
+.mono { font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace; letter-spacing: -0.02em; }
 
-/* â”€â”€ Step wrapper (full-screen transitions) â”€â”€ */
+/* ── Step wrapper ── */
 .msp-step {
   position: absolute; inset: 0;
   display: none; flex-direction: column;
-  opacity: 0; transform: none;
-  transition: none;
+  opacity: 0;
   pointer-events: none;
   z-index: 1;
 }
 .msp-step.active {
   display: flex;
-  opacity: 1; transform: none;
+  opacity: 1;
   pointer-events: all; z-index: 2;
 }
-.msp-step.exiting {
-  opacity: 0; transform: none;
-  pointer-events: none;
-}
+.msp-step.exiting { opacity: 0; pointer-events: none; }
 
-/* â”€â”€ Camera viewport â”€â”€ */
+/* ── Camera viewport ── */
 .cam-viewport {
   position: relative; width: 100%; flex: 1;
-  /* Use the full screen height as the sizing context so the scan-guide
-     height-percentages always reference the actual screen, not the element's
-     own unknown height (which can collapse when the <video> is outside). */
   min-height: 100dvh;
-  background: transparent; overflow: hidden;
+  background: #000; overflow: hidden;
 }
 .cam-viewport video {
   width: 100%; height: 100%; object-fit: cover;
@@ -279,102 +297,64 @@ const css = `
 .cam-overlay {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  /* Must sit ABOVE the persistent background video (z-index 0) */
   z-index: 3;
 }
 
-/* â”€â”€ Scan guide rectangle â”€â”€ */
+/* ── Scan guide ── */
 .scan-guide {
-  border: 2.5px solid rgba(255,255,255,0.7);
+  border: 2.5px solid rgba(255,255,255,0.55);
   border-radius: 16px;
   position: relative;
-  transition: border-color 0.3s, box-shadow 0.3s;
+  transition: border-color 0.25s, box-shadow 0.25s;
 }
 .scan-guide.detected {
   border-color: #10B981;
-  box-shadow: 0 0 0 3px rgba(16,185,129,0.25), inset 0 0 30px rgba(16,185,129,0.05);
+  box-shadow: 0 0 0 3px rgba(16,185,129,0.28), inset 0 0 40px rgba(16,185,129,0.07);
 }
 .scan-guide-corner {
-  position: absolute; width: 24px; height: 24px;
+  position: absolute; width: 22px; height: 22px;
   border: 3px solid rgba(255,255,255,0.9);
-  transition: border-color 0.3s;
+  transition: border-color 0.25s;
 }
 .scan-guide.detected .scan-guide-corner { border-color: #10B981; }
-.corner-tl { top: -2px; left: -2px; border-right: none; border-bottom: none; border-radius: 8px 0 0 0; }
-.corner-tr { top: -2px; right: -2px; border-left: none; border-bottom: none; border-radius: 0 8px 0 0; }
-.corner-bl { bottom: -2px; left: -2px; border-right: none; border-top: none; border-radius: 0 0 0 8px; }
-.corner-br { bottom: -2px; right: -2px; border-left: none; border-top: none; border-radius: 0 0 8px 0; }
+.corner-tl { top: -2px; left: -2px; border-right: none; border-bottom: none; border-radius: 7px 0 0 0; }
+.corner-tr { top: -2px; right: -2px; border-left: none; border-bottom: none; border-radius: 0 7px 0 0; }
+.corner-bl { bottom: -2px; left: -2px; border-right: none; border-top: none; border-radius: 0 0 0 7px; }
+.corner-br { bottom: -2px; right: -2px; border-left: none; border-top: none; border-radius: 0 0 7px 0; }
 
-/* â”€â”€ Scan laser â”€â”€ */
-@keyframes laserHeadSweep {
-  0% { left: 2%; }
-  100% { left: 98%; }
-}
+/* ── Scan laser ── */
+@keyframes laserHeadSweep { 0% { left: 2%; } 100% { left: 98%; } }
 @keyframes laserLinePulse {
-  0%, 100% {
-    opacity: 0.78;
-    box-shadow: 0 0 7px rgba(255, 28, 32, 0.8), 0 0 20px rgba(255, 10, 16, 0.35);
-  }
-  50% {
-    opacity: 1;
-    box-shadow: 0 0 12px rgba(255, 36, 42, 0.95), 0 0 34px rgba(255, 12, 20, 0.55);
-  }
+  0%,100% { opacity: 0.78; box-shadow: 0 0 7px rgba(255,28,32,0.8), 0 0 20px rgba(255,10,16,0.35); }
+  50% { opacity: 1; box-shadow: 0 0 12px rgba(255,36,42,0.95), 0 0 34px rgba(255,12,20,0.55); }
 }
-@keyframes laserBandsDrift {
-  0% { background-position: 0 0, 0 0; }
-  100% { background-position: 160px 0, -120px 0; }
-}
-@keyframes laserBandsPulse {
-  0%, 100% { opacity: 0.35; transform: translateY(-50%) scaleY(0.82); }
-  50% { opacity: 0.85; transform: translateY(-50%) scaleY(1.08); }
-}
-@keyframes laserParticlesDrift {
-  0% { background-position: 0 0, 10px 6px, 5px 2px; opacity: 0.28; }
-  50% { opacity: 0.6; }
-  100% { background-position: -42px 0, -24px 6px, -54px 2px; opacity: 0.32; }
-}
+@keyframes laserBandsDrift { 0% { background-position: 0 0, 0 0; } 100% { background-position: 160px 0, -120px 0; } }
+@keyframes laserBandsPulse { 0%,100% { opacity: 0.35; transform: translateY(-50%) scaleY(0.82); } 50% { opacity: 0.85; transform: translateY(-50%) scaleY(1.08); } }
+@keyframes laserParticlesDrift { 0% { background-position: 0 0, 10px 6px, 5px 2px; opacity: 0.28; } 50% { opacity: 0.6; } 100% { background-position: -42px 0, -24px 6px, -54px 2px; opacity: 0.32; } }
 .scan-laser {
   position: absolute; left: 2%; right: 2%; height: 3px;
   top: 50%; transform: translateY(-50%);
   border-radius: 999px;
-  background: linear-gradient(90deg, rgba(255, 42, 46, 0.92), #ff111a 48%, rgba(255, 42, 46, 0.92));
+  background: linear-gradient(90deg, rgba(255,42,46,0.92), #ff111a 48%, rgba(255,42,46,0.92));
   animation: laserLinePulse 1.4s ease-in-out infinite;
   overflow: visible;
 }
 .scan-laser::before {
-  content: '';
-  position: absolute;
-  left: 0; right: 0; top: 50%; height: 34px;
-  transform: translateY(-50%);
-  background:
-    linear-gradient(
-      to bottom,
-      transparent 0%,
-      rgba(255, 48, 48, 0.4) 36%,
-      rgba(255, 90, 90, 0.9) 50%,
-      rgba(255, 48, 48, 0.4) 64%,
-      transparent 100%
-    ),
-    repeating-linear-gradient(
-      90deg,
-      rgba(255, 70, 70, 0) 0 7px,
-      rgba(255, 95, 95, 0.85) 7px 8px,
-      rgba(255, 70, 70, 0) 8px 13px
-    );
+  content: ''; position: absolute;
+  left: 0; right: 0; top: 50%; height: 34px; transform: translateY(-50%);
+  background: linear-gradient(to bottom, transparent 0%, rgba(255,48,48,0.4) 36%, rgba(255,90,90,0.9) 50%, rgba(255,48,48,0.4) 64%, transparent 100%),
+    repeating-linear-gradient(90deg, rgba(255,70,70,0) 0 7px, rgba(255,95,95,0.85) 7px 8px, rgba(255,70,70,0) 8px 13px);
   filter: blur(0.35px);
   transform-origin: center;
   animation: laserBandsDrift 2.2s linear infinite, laserBandsPulse 1.3s ease-in-out infinite;
-  pointer-events: none;
-  mix-blend-mode: screen;
+  pointer-events: none; mix-blend-mode: screen;
 }
 .scan-laser::after {
-  content: '';
-  position: absolute;
+  content: ''; position: absolute;
   left: 0; right: 0; top: 2px; height: 26px;
-  background:
-    radial-gradient(circle, rgba(255, 95, 95, 0.72) 0 1px, transparent 1.8px) 0 0 / 22px 15px repeat,
-    radial-gradient(circle, rgba(255, 40, 40, 0.55) 0 1.1px, transparent 2px) 11px 6px / 29px 17px repeat,
-    radial-gradient(circle, rgba(255, 145, 145, 0.36) 0 0.8px, transparent 1.6px) 5px 2px / 18px 13px repeat;
+  background: radial-gradient(circle, rgba(255,95,95,0.72) 0 1px, transparent 1.8px) 0 0 / 22px 15px repeat,
+    radial-gradient(circle, rgba(255,40,40,0.55) 0 1.1px, transparent 2px) 11px 6px / 29px 17px repeat,
+    radial-gradient(circle, rgba(255,145,145,0.36) 0 0.8px, transparent 1.6px) 5px 2px / 18px 13px repeat;
   filter: blur(0.15px);
   animation: laserParticlesDrift 2.4s linear infinite;
   pointer-events: none;
@@ -383,472 +363,555 @@ const css = `
   position: absolute; top: 50%;
   width: 14px; height: 14px; border-radius: 50%;
   transform: translate(-50%, -50%);
-  background: radial-gradient(circle at 40% 40%, #fff 0 26%, #ffd9dd 34%, #ff3b44 70%, rgba(255, 40, 45, 0.7) 100%);
-  box-shadow: 0 0 14px 4px rgba(255, 245, 245, 0.85), 0 0 28px 10px rgba(255, 40, 45, 0.75), 0 0 58px 20px rgba(255, 20, 30, 0.36);
-  animation: laserHeadSweep 1.35s cubic-bezier(0.45, 0, 0.2, 1) infinite alternate;
+  background: radial-gradient(circle at 40% 40%, #fff 0 26%, #ffd9dd 34%, #ff3b44 70%, rgba(255,40,45,0.7) 100%);
+  box-shadow: 0 0 14px 4px rgba(255,245,245,0.85), 0 0 28px 10px rgba(255,40,45,0.75), 0 0 58px 20px rgba(255,20,30,0.36);
+  animation: laserHeadSweep 1.35s cubic-bezier(0.45,0,0.2,1) infinite alternate;
   z-index: 2;
 }
 .scan-laser-spark::before {
-  content: '';
-  position: absolute; top: 50%; right: 100%;
+  content: ''; position: absolute; top: 50%; right: 100%;
   width: 30px; height: 3px; transform: translateY(-50%);
-  background: linear-gradient(to left, rgba(255, 220, 220, 0.82), rgba(255, 55, 60, 0.4), rgba(255, 55, 60, 0));
+  background: linear-gradient(to left, rgba(255,220,220,0.82), rgba(255,55,60,0.4), rgba(255,55,60,0));
   filter: blur(0.6px);
 }
 .scan-laser-spark::after {
-  content: '';
-  position: absolute; inset: -4px; border-radius: 50%;
-  border: 1px solid rgba(255, 220, 220, 0.5);
+  content: ''; position: absolute; inset: -4px; border-radius: 50%;
+  border: 1px solid rgba(255,220,220,0.5);
   animation: laserLinePulse 1.2s ease-in-out infinite;
 }
 
-/* â”€â”€ HUD (top bar on camera) â”€â”€ */
+/* ── Camera HUD ── */
 .cam-hud {
   position: absolute; top: 0; left: 0; right: 0;
-  padding: 16px 20px;
-  background: linear-gradient(to bottom, rgba(0,0,0,0.55), transparent);
+  padding: 52px 18px 18px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.18) 80%, transparent 100%);
   display: flex; justify-content: space-between; align-items: flex-start;
   z-index: 3;
 }
 .cam-hud-chip {
   padding: 5px 12px; border-radius: 20px;
-  background: rgba(255,255,255,0.15); backdrop-filter: blur(8px);
-  color: white; font-size: 0.72rem; font-weight: 600;
+  background: rgba(255,255,255,0.12); backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: white; font-size: 0.7rem; font-weight: 700;
   display: flex; align-items: center; gap: 5px;
+  border: 1px solid rgba(255,255,255,0.15);
+  letter-spacing: 0.02em;
 }
-
-/* â”€â”€ Bottom bar on camera â”€â”€ */
 .cam-bottom {
   position: absolute; bottom: 0; left: 0; right: 0;
-  padding: 20px;
-  background: linear-gradient(to top, rgba(0,0,0,0.65), transparent);
-  display: flex; flex-direction: column; align-items: center; gap: 12px;
+  padding: 24px 20px 40px;
+  background: linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.3) 70%, transparent 100%);
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
   z-index: 3;
 }
 
-/* â”€â”€ Cards â”€â”€ */
+/* ── Cards ── */
 .card {
-  background: ${theme.surface}; border: 1px solid ${theme.border};
+  background: ${theme.surface};
+  border: 1px solid ${theme.border};
   border-radius: 16px; padding: 16px;
-  box-shadow: 0 2px 10px rgba(79,70,229,0.07);
+  box-shadow: 0 2px 12px rgba(15,23,42,0.06);
 }
 
-/* â”€â”€ Buttons â”€â”€ */
+/* ── Enterprise buttons ── */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 14px 24px; border-radius: 12px; border: none;
-  font-family: inherit; font-size: 0.9rem; font-weight: 700;
-  cursor: pointer; transition: all 0.2s;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-  letter-spacing: 0.01em;
+  padding: 14px 22px; border-radius: 14px; border: none;
+  font-family: inherit; font-size: 0.88rem; font-weight: 700;
+  cursor: pointer; transition: all 0.18s ease;
+  letter-spacing: 0.01em; line-height: 1;
+  -webkit-tap-highlight-color: transparent;
 }
-.btn:active { transform: scale(0.96); }
+.btn:active { transform: scale(0.95); }
 .btn-primary {
-  background: linear-gradient(135deg, #4F46E5, #7C3AED);
+  background: linear-gradient(135deg, #1D4ED8, #2563EB);
   color: white;
+  box-shadow: 0 4px 14px rgba(29,78,216,0.35);
 }
-.btn-primary:hover { box-shadow: 0 6px 20px rgba(79,70,229,0.4); }
+.btn-primary:hover { box-shadow: 0 6px 22px rgba(29,78,216,0.45); }
 .btn-success {
   background: linear-gradient(135deg, #059669, #10B981);
   color: white;
-  box-shadow: 0 4px 16px rgba(5,150,105,0.3);
+  box-shadow: 0 4px 16px rgba(5,150,105,0.32);
 }
 .btn-success:hover { box-shadow: 0 6px 22px rgba(5,150,105,0.45); }
 .btn-outline {
-  background: ${theme.surface}; border: 1.5px solid ${theme.border};
+  background: ${theme.surface};
+  border: 1.5px solid ${theme.border};
   color: ${theme.text};
+  box-shadow: 0 1px 4px rgba(15,23,42,0.04);
 }
-.btn-danger { background: ${theme.errorLight}; color: ${theme.error}; }
-.btn-lg { padding: 16px 32px; font-size: 1rem; border-radius: 14px; }
+.btn-outline:hover { border-color: rgba(29,78,216,0.3); background: #F8FAFF; }
+.btn-danger { background: ${theme.errorLight}; color: ${theme.error}; border: 1.5px solid rgba(220,38,38,0.15); }
+.btn-lg { padding: 16px 28px; font-size: 0.94rem; border-radius: 16px; }
 .btn-full { width: 100%; }
-.btn:disabled {
-  opacity: 0.5; cursor: default;
-}
+.btn:disabled { opacity: 0.48; cursor: default; transform: none; }
 
-/* ——— Capture button (circular) ——— */
+/* ── Capture button ── */
 .capture-btn {
-  width: 72px; height: 72px; border-radius: 50%;
-  background: white; border: 4px solid rgba(255,255,255,0.4);
+  width: 76px; height: 76px; border-radius: 50%;
+  background: white; border: 5px solid rgba(255,255,255,0.35);
   cursor: pointer; position: relative;
   transition: transform 0.15s;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+  box-shadow: 0 6px 28px rgba(0,0,0,0.35), 0 0 0 2px rgba(255,255,255,0.2);
 }
-.capture-btn:active { transform: scale(0.92); }
+.capture-btn:active { transform: scale(0.88); }
 .capture-btn-inner {
-  position: absolute; inset: 4px; border-radius: 50%;
+  position: absolute; inset: 5px; border-radius: 50%;
   background: white; border: 2px solid #E5E7EB;
 }
 
-/* ——— Preview image ——— */
+/* ── Preview ── */
 .preview-img {
-  width: 100%; border-radius: 12px;
-  object-fit: contain; max-height: 50vh;
+  width: 100%; border-radius: 14px;
+  object-fit: contain; max-height: 52vh;
   background: #F1F5F9;
+  box-shadow: 0 4px 20px rgba(15,23,42,0.1);
 }
 
-/* ——— Field card in review ——— */
+/* ── Field cards (review form) ── */
 .field-card {
-  display: flex; align-items: flex-start; gap: 10px;
-  padding: 12px 14px;
-  background: ${theme.surface}; border: 1px solid ${theme.border};
-  border-left-width: 4px; border-left-style: solid; border-left-color: transparent;
-  border-radius: 12px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.05);
-  transition: box-shadow 0.2s;
+  background: ${theme.surface};
+  border: 1.5px solid ${theme.border};
+  border-left-width: 4px;
+  border-left-style: solid;
+  border-left-color: #CBD5E1;
+  border-radius: 14px;
+  padding: 13px 15px 11px;
+  box-shadow: 0 1px 6px rgba(15,23,42,0.05);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  position: relative;
 }
 .field-card.conf-high { border-left-color: ${theme.success}; }
 .field-card.conf-med { border-left-color: ${theme.warning}; }
 .field-card.conf-low { border-left-color: ${theme.error}; }
-.field-card.warning { border-color: ${theme.warning}; background: ${theme.warningLight}; border-left-color: ${theme.warning}; box-shadow: 0 2px 8px rgba(217,119,6,0.1); }
-.field-card.error-field { border-color: ${theme.error}; background: ${theme.errorLight}; border-left-color: ${theme.error}; box-shadow: 0 2px 8px rgba(220,38,38,0.1); }
+.field-card.warning { border-color: rgba(217,119,6,0.25); background: #FFFDF5; border-left-color: ${theme.warning}; box-shadow: 0 2px 10px rgba(217,119,6,0.08); }
+.field-card.error-field { border-color: rgba(220,38,38,0.2); background: #FFF8F8; border-left-color: ${theme.error}; box-shadow: 0 2px 10px rgba(220,38,38,0.08); }
+.field-card.required-empty { border-left-color: #E11D48; border-color: rgba(225,29,72,0.2); background: #FFF5F7; }
 .field-label {
-  font-size: 0.65rem; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.05em;
-  color: ${theme.muted}; margin-bottom: 2px;
+  font-size: 0.62rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  color: ${theme.muted}; margin-bottom: 5px;
+  display: flex; align-items: center; gap: 5px;
 }
-.field-value {
-  font-size: 0.85rem; font-weight: 600;
-  color: ${theme.text};
-}
+.field-required-star { color: #E11D48; font-size: 0.7rem; }
+.field-value { font-size: 0.87rem; font-weight: 600; color: ${theme.text}; }
 .field-input {
-  width: 100%; background: ${theme.bg}; border: 1px solid ${theme.border};
-  border-radius: 8px; padding: 8px 10px;
-  font-family: inherit; font-size: 0.82rem; font-weight: 500;
+  width: 100%; background: #F8FAFF;
+  border: 1.5px solid rgba(15,23,42,0.08);
+  border-radius: 9px; padding: 9px 11px;
+  font-family: inherit; font-size: 0.84rem; font-weight: 600;
   color: ${theme.text}; outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  -webkit-appearance: none;
 }
-.field-input:focus { border-color: ${theme.primary}; box-shadow: 0 0 0 3px rgba(79,70,229,0.1); }
-
-/* ——— Confidence dot ——— */
-.conf-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  flex-shrink: 0; margin-top: 4px;
+.field-input:focus {
+  border-color: ${theme.primary};
+  box-shadow: 0 0 0 3px rgba(29,78,216,0.1);
+  background: #fff;
 }
-.conf-high { background: ${theme.success}; }
-.conf-med { background: ${theme.warning}; }
-.conf-low { background: ${theme.error}; }
+.field-input::placeholder { color: #B0BCC8; font-weight: 500; }
 
-/* ——— Source badge ——— */
+/* ── Confidence dot ── */
+.conf-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+.conf-high { background: ${theme.success}; box-shadow: 0 0 0 3px rgba(5,150,105,0.18); }
+.conf-med { background: ${theme.warning}; box-shadow: 0 0 0 3px rgba(217,119,6,0.15); }
+.conf-low { background: ${theme.error}; box-shadow: 0 0 0 3px rgba(220,38,38,0.15); }
+.conf-none { background: #CBD5E1; }
+
+/* ── Source badge ── */
 .source-badge {
-  font-size: 0.6rem; padding: 2px 6px; border-radius: 6px;
-  font-weight: 600; display: inline-flex; align-items: center; gap: 3px;
+  font-size: 0.58rem; padding: 2px 7px; border-radius: 6px;
+  font-weight: 700; display: inline-flex; align-items: center; gap: 3px;
+  letter-spacing: 0.02em;
 }
 .source-learned { background: #F5F3FF; color: #7C3AED; }
 .source-ai { background: ${theme.primaryLight}; color: ${theme.primary}; }
 .source-history { background: ${theme.warningLight}; color: ${theme.warning}; }
 .source-pincode { background: ${theme.successLight}; color: ${theme.success}; }
 
+/* ── Review header ── */
 .review-header {
-  background: linear-gradient(135deg, #1E1B4B, #312E81);
+  background: linear-gradient(135deg, #0D1B2A 0%, #1E2D3D 50%, #0D1B2A 100%);
   color: #F8FAFC;
-  border-bottom: 1px solid #334155;
-  padding: 14px 20px 12px;
+  padding: 52px 20px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  position: relative;
+  overflow: hidden;
 }
+.review-header::before {
+  content: '';
+  position: absolute; top: -60px; right: -40px;
+  width: 180px; height: 180px; border-radius: 50%;
+  background: rgba(255,255,255,0.03);
+  pointer-events: none;
+}
+.review-header.courier-dtdc { background: linear-gradient(135deg, #7A0019 0%, #C8102E 60%, #7A0019 100%); }
+.review-header.courier-delhivery { background: linear-gradient(135deg, #005C5C 0%, #00A0A0 60%, #005C5C 100%); }
+.review-header.courier-trackon { background: linear-gradient(135deg, #7A2E00 0%, #E65C00 60%, #7A2E00 100%); }
+.review-header.courier-bluedart { background: linear-gradient(135deg, #0F2154 0%, #1A3A8C 60%, #0F2154 100%); }
 .review-header-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
 }
-.review-title {
-  font-size: 0.65rem;
-  color: #94A3B8;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-}
-.review-awb {
-  font-size: 0.96rem;
-  font-weight: 700;
-  color: #F8FAFC;
-  margin-top: 2px;
-}
+.review-title { font-size: 0.6rem; color: rgba(255,255,255,0.5); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.review-awb { font-size: 1.05rem; font-weight: 800; color: #F8FAFC; margin-top: 3px; letter-spacing: 0.01em; }
 .review-meta-row {
-  margin-top: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+  margin-top: 12px;
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
 }
 .review-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  font-size: 0.68rem;
-  font-weight: 700;
-  border: 1px solid transparent;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; border-radius: 999px;
+  font-size: 0.67rem; font-weight: 700; border: 1px solid transparent;
+  letter-spacing: 0.02em;
 }
 .review-chip-courier {
-  border: 1px solid #6366F1;
-  background: rgba(99,102,241,0.22);
-  color: #E0E7FF;
-  cursor: pointer;
+  border: 1px solid rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.12);
+  color: #fff; cursor: pointer;
+  backdrop-filter: blur(8px);
 }
 .review-chip-date {
-  border: 1px solid #475569;
-  background: rgba(30,41,59,0.6);
-  color: #CBD5E1;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(0,0,0,0.2);
+  color: rgba(255,255,255,0.75);
 }
 .review-confidence {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border-radius: 999px;
-  font-size: 0.68rem;
-  font-weight: 700;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; border-radius: 999px;
+  font-size: 0.67rem; font-weight: 700; border: 1px solid transparent;
 }
-.review-confidence.high { background: rgba(5,150,105,0.22); color: #6EE7B7; border: 1px solid #059669; }
-.review-confidence.med { background: rgba(217,119,6,0.22); color: #FCD34D; border: 1px solid #D97706; }
-.review-confidence.low { background: rgba(220,38,38,0.22); color: #FCA5A5; border: 1px solid #DC2626; }
+.review-confidence.high { background: rgba(16,185,129,0.22); color: #6EE7B7; border-color: rgba(16,185,129,0.4); }
+.review-confidence.med { background: rgba(217,119,6,0.22); color: #FCD34D; border-color: rgba(217,119,6,0.4); }
+.review-confidence.low { background: rgba(220,38,38,0.22); color: #FCA5A5; border-color: rgba(220,38,38,0.4); }
 
+/* ── Form completion bar ── */
+.form-progress-bar-wrap {
+  margin: 0 20px 0; padding: 8px 0;
+  display: flex; align-items: center; gap: 8px;
+}
+.form-progress-bar-track {
+  flex: 1; height: 4px; border-radius: 999px;
+  background: rgba(15,23,42,0.08); overflow: hidden;
+}
+.form-progress-bar-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, #1D4ED8, #10B981);
+  transition: width 0.4s ease;
+}
+.form-progress-label {
+  font-size: 0.62rem; font-weight: 700; color: ${theme.muted};
+  white-space: nowrap;
+}
+
+/* ── Suggest chip ── */
 .suggest-chip {
-  font-size: 0.76rem;
-  padding: 8px 12px;
-  min-height: 34px;
+  font-size: 0.74rem; padding: 7px 12px; min-height: 32px;
   border-radius: 10px;
-  border: 1px solid ${theme.border};
-  background: ${theme.surface};
-  color: ${theme.text};
-  cursor: pointer;
-  font-family: inherit;
-  font-weight: 600;
-  touch-action: manipulation;
+  border: 1.5px solid ${theme.border};
+  background: ${theme.surface}; color: ${theme.text};
+  cursor: pointer; font-family: inherit; font-weight: 600;
+  touch-action: manipulation; transition: all 0.15s;
 }
+.suggest-chip:active { transform: scale(0.96); }
 .suggest-chip.active {
-  background: ${theme.primaryLight};
-  color: ${theme.primary};
-  border-color: rgba(79,70,229,0.3);
+  background: ${theme.primaryLight}; color: ${theme.primary};
+  border-color: rgba(29,78,216,0.3);
+}
+.suggest-chip.pincode-suggest {
+  background: ${theme.successLight}; color: ${theme.success};
+  border-color: rgba(5,150,105,0.25); font-size: 0.7rem;
 }
 
-/* ——— Shimmer skeleton ——— */
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
+/* ── Shimmer skeleton ── */
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
 .skeleton {
-  background: linear-gradient(90deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%);
+  background: linear-gradient(90deg, #F1F5F9 25%, #E8EDF3 50%, #F1F5F9 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
   border-radius: 8px;
 }
 
-/* ——— Success checkmark ——— */
-@keyframes checkDraw {
-  0% { stroke-dashoffset: 48; }
-  100% { stroke-dashoffset: 0; }
-}
-@keyframes circleDraw {
-  0% { stroke-dashoffset: 200; }
-  100% { stroke-dashoffset: 0; }
-}
-.success-check-circle {
-  stroke-dasharray: 200; stroke-dashoffset: 200;
-  animation: circleDraw 0.6s ease-out 0.1s forwards;
-}
-.success-check-mark {
-  stroke-dasharray: 48; stroke-dashoffset: 48;
-  animation: checkDraw 0.5s ease-out 0.5s forwards;
-}
+/* ── Success ── */
+@keyframes checkDraw { 0% { stroke-dashoffset: 48; } 100% { stroke-dashoffset: 0; } }
+@keyframes circleDraw { 0% { stroke-dashoffset: 200; } 100% { stroke-dashoffset: 0; } }
+.success-check-circle { stroke-dasharray: 200; stroke-dashoffset: 200; animation: circleDraw 0.6s ease-out 0.1s forwards; }
+.success-check-mark { stroke-dasharray: 48; stroke-dashoffset: 48; animation: checkDraw 0.5s ease-out 0.5s forwards; }
 
-/* ——— Flash overlay ——— */
-@keyframes flash { 0% { opacity: 0.8; } 100% { opacity: 0; } }
-.flash-overlay {
-  position: fixed; inset: 0; z-index: 50;
-  pointer-events: none;
-  animation: flash 0.3s ease-out forwards;
-}
+/* ── Flash ── */
+@keyframes flash { 0% { opacity: 0.85; } 100% { opacity: 0; } }
+.flash-overlay { position: fixed; inset: 0; z-index: 50; pointer-events: none; animation: flash 0.32s ease-out forwards; }
 .flash-white { background: white; }
-.flash-success { background: rgba(5,150,105,0.2); }
-.flash-error { background: rgba(220,38,38,0.2); }
+.flash-success { background: rgba(5,150,105,0.22); }
+.flash-error { background: rgba(220,38,38,0.22); }
 
-/* ——— Duplicate warning ——— */
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  20%, 60% { transform: translateX(-6px); }
-  40%, 80% { transform: translateX(6px); }
-}
+/* ── Shake ── */
+@keyframes shake { 0%,100% { transform: translateX(0); } 20%,60% { transform: translateX(-7px); } 40%,80% { transform: translateX(7px); } }
 .shake { animation: shake 0.5s ease-in-out; }
 
-/* ——— Offline banner ——— */
+/* ── Offline banner ── */
 .offline-banner {
   background: ${theme.warningLight}; color: ${theme.warning};
-  text-align: center; padding: 6px; font-size: 0.72rem; font-weight: 600;
+  text-align: center; padding: 7px; font-size: 0.72rem; font-weight: 700;
   position: fixed; bottom: 0; left: 0; right: 0; z-index: 99;
+  border-top: 1px solid rgba(217,119,6,0.2);
 }
 
-/* ——— Scrollable panel ——— */
+/* ── Scroll panel ── */
 .scroll-panel {
   flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  padding: 16px 20px;
+  padding: 14px 16px;
 }
 
-/* ──────────────────────────────────────────────────────────────────────────────────
-   HOME SCREEN (aligned with direct mobile scanner)
-   ────────────────────────────────────────────────────────────────────────────────── */
+/* ══ HOME SCREEN ══════════════════════════════════════════════════════════════ */
 .home-root {
   display: flex; flex-direction: column;
   min-height: 100dvh; overflow-y: auto;
-  background: linear-gradient(160deg, #EEF2FF 0%, #F0F4FF 60%, #F5F3FF 100%);
+  background: ${theme.bg};
 }
-.home-header {
-  background: linear-gradient(135deg, #FFFFFF 0%, #F1F5F9 100%);
-  padding: 20px 20px 36px; position: relative; overflow: hidden;
-  border-bottom: 1px solid #E2E8F0;
+
+/* Hero: full-bleed dark navy gradient */
+.home-hero {
+  background: linear-gradient(160deg, #0D1B2A 0%, #1E2D3D 55%, #0F2840 100%);
+  padding: 52px 20px 28px;
+  position: relative; overflow: hidden;
+  flex-shrink: 0;
 }
-.home-header::before {
-  content: ''; position: absolute; top: -40px; right: -40px;
-  width: 180px; height: 180px; border-radius: 50%;
-  background: rgba(79,70,229,0.03);
+.home-hero::before {
+  content: '';
+  position: absolute; top: -80px; right: -60px;
+  width: 260px; height: 260px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(29,78,216,0.18) 0%, transparent 70%);
+  pointer-events: none;
 }
-.home-header::after {
-  content: ''; position: absolute;
-  bottom: -22px; left: 0; right: 0; height: 44px;
-  background: #F8FAFC;
-  border-radius: 60% 60% 0 0 / 22px 22px 0 0;
-  border-top: 1px solid #E2E8F0;
+.home-hero::after {
+  content: '';
+  position: absolute; bottom: -50px; left: -40px;
+  width: 200px; height: 200px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(0,160,160,0.1) 0%, transparent 70%);
+  pointer-events: none;
 }
-.home-logo-row {
-  display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px;
+.home-hero-top {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 22px; position: relative; z-index: 1;
 }
-.home-logo-text {
-  font-size: 1.08rem; font-weight: 800; color: #0F172A; letter-spacing: -0.01em;
-  display: flex; align-items: center; gap: 8px;
+.home-brand {
+  display: flex; align-items: center; gap: 10px;
 }
-.home-logo-badge {
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0; border-radius: 20px;
-  padding: 5px 12px; font-size: 0.72rem; font-weight: 600; color: #475569;
+.home-brand-logo {
+  width: 34px; height: 34px; border-radius: 8px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+.home-brand-name {
+  font-size: 1rem; font-weight: 800; color: #fff;
+  letter-spacing: -0.01em; line-height: 1.1;
+}
+.home-brand-tagline {
+  font-size: 0.58rem; color: rgba(255,255,255,0.45);
+  font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase;
+}
+.home-conn-pill {
   display: flex; align-items: center; gap: 5px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+  padding: 5px 12px; border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.7); font-size: 0.68rem; font-weight: 700;
+  letter-spacing: 0.04em;
 }
-.home-stats-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
-.home-date-chip {
-  display: flex; align-items: center; gap: 6px;
-  background: linear-gradient(135deg, #1E293B, #334155);
-  border: 1px solid #475569; border-radius: 12px;
-  padding: 10px 14px; margin-bottom: 12px;
-  cursor: pointer; position: relative;
-  transition: all 0.2s ease;
+.home-conn-pill.connected { color: #34D399; border-color: rgba(52,211,153,0.3); background: rgba(52,211,153,0.08); }
+
+/* Stats band */
+.home-stats-band {
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px; position: relative; z-index: 1; margin-bottom: 20px;
 }
-.home-date-chip:active { transform: scale(0.97); }
-.home-date-label {
-  font-size: 0.68rem; font-weight: 500; color: #94A3B8;
-  text-transform: uppercase; letter-spacing: 0.5px;
+.home-stat-tile {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px; padding: 12px 10px;
+  text-align: center; backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
-.home-date-value {
-  font-size: 1rem; font-weight: 700; color: #F8FAFC;
-  line-height: 1.2;
+.home-stat-num { font-size: 1.4rem; font-weight: 900; color: #fff; line-height: 1; }
+.home-stat-lbl { font-size: 0.56rem; font-weight: 700; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }
+
+/* Date chip inside hero */
+.home-date-tile {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px; padding: 12px 16px;
+  position: relative; z-index: 1; cursor: pointer;
+  transition: background 0.2s;
 }
-.home-date-change {
-  font-size: 0.65rem; font-weight: 500; color: #38BDF8;
-  margin-left: auto;
+.home-date-tile:active { background: rgba(255,255,255,0.12); }
+.home-date-lbl { font-size: 0.6rem; color: rgba(255,255,255,0.45); font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; }
+.home-date-val { font-size: 0.94rem; font-weight: 700; color: #fff; line-height: 1.2; margin-top: 1px; }
+.home-date-today-badge {
+  font-size: 0.55rem; font-weight: 800; color: #34D399;
+  background: rgba(52,211,153,0.12);
+  border: 1px solid rgba(52,211,153,0.25);
+  padding: 2px 7px; border-radius: 999px;
+  letter-spacing: 0.06em;
+  margin-left: 6px;
 }
-.home-date-chip input[type="date"] {
-  position: absolute; inset: 0; opacity: 0;
-  width: 100%; height: 100%; cursor: pointer;
-  -webkit-appearance: none;
+.home-date-tile input[type="date"] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  width: 100%; height: 100%; -webkit-appearance: none;
 }
-.home-stat-card {
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0; border-radius: 12px;
-  padding: 11px 10px; text-align: center;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+.home-date-change { font-size: 0.63rem; color: #60A5FA; margin-left: auto; font-weight: 600; flex-shrink: 0; }
+
+/* Centre scan zone */
+.home-scan-zone {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 28px 20px 20px; background: ${theme.bg};
 }
-.home-stat-val { font-size: 1.3rem; font-weight: 800; color: #0F172A; line-height: 1; }
-.home-stat-label { font-size: 0.58rem; font-weight: 600; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 3px; }
-.home-scan-section { display: flex; flex-direction: column; align-items: center; padding: 36px 20px 28px; }
-@keyframes pulseRing { 0% { transform: scale(1); opacity: 0.55; } 100% { transform: scale(1.6); opacity: 0; } }
-.home-scan-btn-wrap { position: relative; display: flex; align-items: center; justify-content: center; margin-bottom: 20px; }
+@keyframes pulseRing { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(1.65); opacity: 0; } }
+.home-scan-btn-wrap {
+  position: relative; display: flex; align-items: center;
+  justify-content: center; margin-bottom: 18px;
+}
 .home-scan-ring {
-  position: absolute; width: 120px; height: 120px; border-radius: 50%;
-  border: 2.5px solid #6366F1;
-  animation: pulseRing 2.2s ease-out infinite;
+  position: absolute; width: 128px; height: 128px; border-radius: 50%;
+  border: 2px solid #1D4ED8;
+  animation: pulseRing 2.4s ease-out infinite;
 }
-.home-scan-ring2 { animation-delay: 0.8s; }
+.home-scan-ring2 { animation-delay: 0.9s; }
 .home-scan-btn {
-  width: 104px; height: 104px; border-radius: 50%;
-  background: linear-gradient(145deg, #4F46E5, #7C3AED);
+  width: 110px; height: 110px; border-radius: 50%;
+  background: linear-gradient(145deg, #1D4ED8 0%, #2563EB 50%, #3B82F6 100%);
   border: none; cursor: pointer; touch-action: manipulation;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-  box-shadow: 0 8px 36px rgba(79,70,229,0.35), 0 0 0 6px rgba(79,70,229,0.12);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  box-shadow: 0 10px 40px rgba(29,78,216,0.4), 0 0 0 6px rgba(29,78,216,0.1), 0 0 0 12px rgba(29,78,216,0.05);
   transition: transform 0.15s, box-shadow 0.15s;
   position: relative; z-index: 1;
 }
-.home-scan-btn:active { transform: scale(0.93); box-shadow: 0 4px 18px rgba(79,70,229,0.25); }
-.home-scan-btn-label { font-size: 0.6rem; font-weight: 800; color: white; text-transform: uppercase; letter-spacing: 0.06em; }
-.home-cta-text { font-size: 0.82rem; color: #64748B; font-weight: 500; }
-.action-buttons-row {
-  display: flex; gap: 12px; margin-top: 24px; width: 100%; max-width: 300px;
+.home-scan-btn:active { transform: scale(0.91); box-shadow: 0 4px 16px rgba(29,78,216,0.25); }
+.home-scan-btn-lbl { font-size: 0.58rem; font-weight: 900; color: rgba(255,255,255,0.85); text-transform: uppercase; letter-spacing: 0.1em; }
+.home-cta { font-size: 0.8rem; color: ${theme.muted}; font-weight: 500; }
+
+/* Mode toggle pills */
+.mode-toggle-row {
+  display: flex; gap: 8px; margin-top: 14px; width: 100%; max-width: 320px;
 }
-.action-btn {
+.mode-pill {
   flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 10px; border-radius: 12px; border: 1px solid #E2E8F0;
-  background: #FFFFFF; color: #475569; font-size: 0.75rem; font-weight: 600;
-  cursor: pointer; transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  padding: 9px 8px; border-radius: 999px;
+  border: 1.5px solid ${theme.border};
+  background: ${theme.surface}; color: ${theme.muted};
+  font-size: 0.7rem; font-weight: 700; cursor: pointer;
+  transition: all 0.18s; touch-action: manipulation;
+  letter-spacing: 0.02em;
 }
-.action-btn:active { transform: scale(0.96); background: #F8FAFC; }
-.action-btn.danger { color: #DC2626; border-color: #FECACA; background: #FEF2F2; }
-.home-queue-section {
-  flex: 1; background: #FFFFFF; border-radius: 20px 20px 0 0;
-  overflow: hidden; display: flex; flex-direction: column; min-height: 280px;
-  border-top: 1px solid #E2E8F0; box-shadow: 0 -4px 20px rgba(0,0,0,0.02);
+.mode-pill.active {
+  background: #EFF6FF; color: #1D4ED8;
+  border-color: rgba(29,78,216,0.3);
 }
-.home-queue-head {
+
+/* Manual AWB entry */
+.manual-awb-row {
+  display: flex; gap: 7px; width: 100%; max-width: 320px; margin-top: 14px;
+}
+.manual-awb-input {
+  flex: 1; padding: 10px 14px;
+  border: 1.5px solid ${theme.border};
+  border-radius: 12px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; font-weight: 600;
+  background: ${theme.surface}; color: ${theme.text}; outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  -webkit-appearance: none;
+}
+.manual-awb-input:focus { border-color: ${theme.primary}; box-shadow: 0 0 0 3px rgba(29,78,216,0.1); background: #fff; }
+
+/* Action buttons */
+.action-strip {
+  display: flex; gap: 10px; margin-top: 14px; width: 100%; max-width: 320px;
+}
+.action-tile {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 8px; border-radius: 12px;
+  border: 1.5px solid ${theme.border};
+  background: ${theme.surface}; color: ${theme.muted};
+  font-size: 0.72rem; font-weight: 700; cursor: pointer;
+  transition: all 0.18s; box-shadow: 0 1px 4px rgba(15,23,42,0.04);
+  letter-spacing: 0.01em;
+}
+.action-tile:active { transform: scale(0.95); background: ${theme.bg}; }
+.action-tile.danger { color: ${theme.error}; border-color: rgba(220,38,38,0.2); background: ${theme.errorLight}; }
+.action-tile.upload-active { color: ${theme.primary}; border-color: rgba(29,78,216,0.25); background: ${theme.primaryLight}; }
+
+/* Queue / manifest */
+.home-manifest {
+  flex: 1;
+  background: ${theme.surface};
+  border-radius: 24px 24px 0 0;
+  overflow: hidden;
+  border-top: 1px solid ${theme.border};
+  box-shadow: 0 -6px 24px rgba(15,23,42,0.05);
+  display: flex; flex-direction: column;
+  min-height: 260px;
+}
+.manifest-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 20px 12px; border-bottom: 1px solid #E2E8F0;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid ${theme.border};
 }
-.home-queue-title-text {
-  font-size: 0.65rem; font-weight: 700; color: #64748B;
-  text-transform: uppercase; letter-spacing: 0.08em;
+.manifest-title {
+  font-size: 0.62rem; font-weight: 800; color: ${theme.muted};
+  text-transform: uppercase; letter-spacing: 0.09em;
   display: flex; align-items: center; gap: 6px;
 }
-.home-queue-badge {
-  font-size: 0.65rem; font-weight: 700;
-  background: #EEF2FF; color: #4F46E5;
-  padding: 2px 9px; border-radius: 10px;
+.manifest-count {
+  font-size: 0.65rem; font-weight: 800;
+  background: ${theme.primaryLight}; color: ${theme.primary};
+  padding: 2px 10px; border-radius: 999px;
+  border: 1px solid rgba(29,78,216,0.15);
 }
-.home-queue-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-@keyframes slideIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
-.queue-item {
+.manifest-courier-bar {
+  display: flex; padding: 8px 18px 6px; gap: 6px; flex-wrap: wrap;
+}
+.courier-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 0.6rem; font-weight: 800; letter-spacing: 0.04em;
+}
+.manifest-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+@keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+.manifest-item {
   display: flex; align-items: flex-start; gap: 12px;
-  padding: 12px 20px; border-bottom: 1px solid #F1F5F9;
-  animation: slideIn 0.3s ease-out;
+  padding: 11px 18px; border-bottom: 1px solid ${theme.bg};
+  animation: slideIn 0.25s ease-out;
+  transition: background 0.15s;
 }
-.queue-item:active { background: #F8FAFC; }
-.queue-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.queue-main-top { display: flex; align-items: center; gap: 8px; }
-.queue-check {
-  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
-  background: #ECFDF5; border: 1.5px solid #10B981;
+.manifest-item:active { background: ${theme.bg}; }
+.manifest-item-icon {
+  width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
+  font-size: 0.55rem; font-weight: 900; letter-spacing: 0.05em;
 }
-.queue-awb { font-family: 'JetBrains Mono', 'SF Mono', monospace; font-size: 0.8rem; font-weight: 600; color: #0F172A; }
-.queue-meta { font-size: 0.64rem; color: #64748B; margin-top: 2px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.queue-client-tag { background: #EEF2FF; color: #4F46E5; padding: 1px 6px; border-radius: 4px; }
-.queue-offline-tag { background: #FFFBEB; color: #D97706; padding: 1px 6px; border-radius: 4px; }
-.queue-date-tag { background: #EFF6FF; color: #1D4ED8; padding: 1px 6px; border-radius: 4px; }
-.queue-weight { font-size: 0.72rem; font-weight: 700; color: #4F46E5; margin-left: auto; flex-shrink: 0; }
-.queue-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.queue-date-editor { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.queue-date-input {
-  height: 28px; border-radius: 8px; border: 1px solid #CBD5E1;
-  padding: 0 8px; font-size: 0.72rem; color: #0F172A; background: #FFFFFF;
+.manifest-main { flex: 1; min-width: 0; }
+.manifest-awb { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; font-weight: 700; color: ${theme.text}; }
+.manifest-meta { font-size: 0.63rem; color: ${theme.muted}; margin-top: 3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.manifest-tag { padding: 1px 6px; border-radius: 5px; font-weight: 700; font-size: 0.57rem; }
+.manifest-weight { font-size: 0.76rem; font-weight: 800; color: ${theme.primary}; flex-shrink: 0; align-self: center; }
+.manifest-actions { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
+.manifest-action-btn {
+  height: 26px; border-radius: 7px; border: 1px solid ${theme.border};
+  background: ${theme.bg}; color: ${theme.muted}; font-size: 0.64rem; font-weight: 700;
+  padding: 0 9px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;
+  font-family: inherit; transition: all 0.15s;
 }
-.queue-action-btn {
-  height: 28px; border-radius: 8px; border: 1px solid #CBD5E1;
-  background: #FFFFFF; color: #334155; font-size: 0.68rem; font-weight: 700;
-  padding: 0 10px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
-}
-.queue-action-btn.primary {
-  border-color: #4F46E5; background: #EEF2FF; color: #4338CA;
-}
-.queue-action-btn.danger {
-  border-color: #FECACA; background: #FEF2F2; color: #B91C1C;
-}
-.queue-action-btn:disabled { opacity: 0.55; cursor: default; }
-.queue-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 44px 20px; gap: 12px; }
-.queue-empty-text { font-size: 0.8rem; color: #94A3B8; font-weight: 500; text-align: center; line-height: 1.5; }
+.manifest-action-btn:active { transform: scale(0.95); }
+.manifest-action-btn.primary { border-color: rgba(29,78,216,0.25); background: ${theme.primaryLight}; color: ${theme.primary}; }
+.manifest-action-btn.danger { border-color: rgba(220,38,38,0.2); background: ${theme.errorLight}; color: ${theme.error}; }
+.manifest-action-btn:disabled { opacity: 0.48; cursor: default; }
+.queue-date-input { height: 26px; border-radius: 7px; border: 1px solid ${theme.border}; padding: 0 8px; font-size: 0.72rem; color: ${theme.text}; background: ${theme.surface}; font-family: inherit; }
+.manifest-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 44px 20px; gap: 10px; }
+.manifest-empty-icon { width: 56px; height: 56px; border-radius: 18px; background: ${theme.bg}; display: flex; align-items: center; justify-content: center; }
+.manifest-empty-text { font-size: 0.8rem; color: ${theme.mutedLight}; font-weight: 500; text-align: center; line-height: 1.6; }
 `;
 
 // ——— Confidence helpers ———————————————————————————————————————————————————————————
@@ -2867,316 +2930,244 @@ export default function MobileScannerPage({ standalone = false }) {
         {/* ═══ IDLE / HOME ═══ */}
         <div className={stepClass(STEPS.IDLE)}>
           <div className="home-root">
-            <div className="home-header">
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <button
-                  onClick={() => navigate('/app/scan')}
-                  style={{ background: 'white', border: '1px solid #E2E8F0', padding: '6px 12px', borderRadius: 20, fontSize: '0.75rem', fontWeight: 600, color: '#475569', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
-                >
-                  <ArrowLeft size={14} /> Go Back
-                </button>
-                <div className="home-logo-badge">
-                  <Wifi size={11} color={connStatus === 'paired' && navigator.onLine ? '#10B981' : '#EF4444'} />
-                  {pairedLabel}
+            {/* ── Hero ── */}
+            <div className="home-hero">
+              <div className="home-hero-top">
+                <div className="home-brand">
+                  <div className="home-brand-logo">
+                    <img src="/images/logo.png" alt="Sea Hawk" style={{ width: 26, height: 26, objectFit: 'contain' }} />
+                  </div>
+                  <div>
+                    <div className="home-brand-name">Sea Hawk Scanner</div>
+                    <div className="home-brand-tagline">Courier Management</div>
+                  </div>
                 </div>
-              </div>
-              <div className="home-logo-row">
-                <div className="home-logo-text">
-                  <img src="/images/logo.png" alt="Sea Hawk Logo" style={{ height: 28, width: 'auto', objectFit: 'contain', padding: 2, background: 'white', borderRadius: 6, border: '1px solid #E2E8F0' }} />
-                  <span>Seahawk Scanner</span>
-                </div>
-              </div>
-              <div className="home-stats-row">
-                <div className="home-stat-card">
-                  <div className="home-stat-val">{sessionCtx.scanNumber}</div>
-                  <div className="home-stat-label">Scanned</div>
-                </div>
-                <div className="home-stat-card">
-                  <div className="home-stat-val">{totalWeight > 0 ? totalWeight.toFixed(1) : '0'}</div>
-                  <div className="home-stat-label">Total kg</div>
-                </div>
-                <div className="home-stat-card">
-                  <div className="home-stat-val">{sessionDuration}</div>
-                  <div className="home-stat-label">Session</div>
+                <div className={`home-conn-pill ${connStatus === 'paired' ? 'connected' : ''}`}>
+                  {connStatus === 'paired' ? <Wifi size={11} /> : <WifiOff size={11} />}
+                  {connStatus === 'paired' ? 'Live' : connStatus === 'connecting' ? 'Connecting...' : 'Offline'}
                 </div>
               </div>
 
-              {/* Session Date Selector */}
-              <div className="home-date-chip">
-                <CalendarDays size={18} color="#38BDF8" />
-                <div>
-                  <div className="home-date-label">Scan Date</div>
-                  <div className="home-date-value">
-                    {new Date(sessionDate + 'T00:00:00').toLocaleDateString('en-IN', {
-                      day: '2-digit', month: 'short', year: 'numeric'
-                    })}
+              {/* Stats */}
+              <div className="home-stats-band">
+                <div className="home-stat-tile">
+                  <div className="home-stat-num">{sessionCtx.scanNumber}</div>
+                  <div className="home-stat-lbl">Scanned</div>
+                </div>
+                <div className="home-stat-tile">
+                  <div className="home-stat-num">{totalWeight > 0 ? totalWeight.toFixed(1) : '0'}</div>
+                  <div className="home-stat-lbl">Total kg</div>
+                </div>
+                <div className="home-stat-tile">
+                  <div className="home-stat-num">{sessionDuration}</div>
+                  <div className="home-stat-lbl">Session</div>
+                </div>
+              </div>
+
+              {/* Date tile */}
+              <div className="home-date-tile">
+                <CalendarDays size={18} color="#60A5FA" />
+                <div style={{ flex: 1 }}>
+                  <div className="home-date-lbl">Scan Date</div>
+                  <div className="home-date-val">
+                    {new Date(sessionDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
                     {sessionDate === new Date().toISOString().slice(0, 10) && (
-                      <span style={{ fontSize: '0.65rem', color: '#10B981', marginLeft: 6, fontWeight: 500 }}>TODAY</span>
+                      <span className="home-date-today-badge">TODAY</span>
                     )}
                   </div>
                 </div>
                 <div className="home-date-change">Change ▸</div>
-                <input
-                  type="date"
-                  value={sessionDate}
-                  max={new Date().toISOString().slice(0, 10)}
+                <input type="date" value={sessionDate} max={new Date().toISOString().slice(0, 10)}
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val && ISO_DATE_REGEX.test(val)) {
                       setSessionDate(val);
-                      try {
-                        localStorage.setItem('seahawk_scanner_session_date', val);
-                      } catch (err) {
-                        logNonCriticalScannerError('persist session date', err);
-                      }
-                      pulseHaptic('light');
+                      try { localStorage.setItem('seahawk_scanner_session_date', val); } catch (err) { logNonCriticalScannerError('persist session date', err); }
+                      pulseHaptic('tap');
                     }
                   }}
                 />
               </div>
-
             </div>
 
-            <div className="home-scan-section">
+            {/* ── Scan zone ── */}
+            <div className="home-scan-zone">
               <div className="home-scan-btn-wrap">
                 <div className="home-scan-ring" />
                 <div className="home-scan-ring home-scan-ring2" />
                 <button data-testid="start-scan-btn" className="home-scan-btn" onClick={handleStartScanning}>
-                  <Camera size={34} color="white" />
-                  <span className="home-scan-btn-label">Scan</span>
+                  <Camera size={36} color="white" />
+                  <span className="home-scan-btn-lbl">Scan</span>
                 </button>
               </div>
-              <div className="home-cta-text">
-                {sessionCtx.scanNumber === 0 ? 'Tap to start your first scan' : 'Tap to scan next parcel'}
-              </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 14, width: '100%', maxWidth: 320 }}>
-                <button
-                  type="button"
-                  data-testid="workflow-fast-btn"
-                  onClick={() => setScanWorkflowMode('fast')}
-                  style={{
-                    flex: 1,
-                    borderRadius: 999,
-                    border: `1px solid ${scanWorkflowMode === 'fast' ? theme.primary : theme.border}`,
-                    background: scanWorkflowMode === 'fast' ? theme.primaryLight : theme.surface,
-                    color: scanWorkflowMode === 'fast' ? theme.primary : theme.muted,
-                    fontWeight: 700,
-                    fontSize: '0.72rem',
-                    padding: '9px 12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                    cursor: 'pointer',
-                  }}
-                >
+              <div className="home-cta">{sessionCtx.scanNumber === 0 ? 'Tap to scan your first parcel' : 'Ready — tap to scan next parcel'}</div>
+
+              {/* Mode toggles */}
+              <div className="mode-toggle-row">
+                <button type="button" data-testid="workflow-fast-btn"
+                  className={`mode-pill ${scanWorkflowMode === 'fast' ? 'active' : ''}`}
+                  onClick={() => setScanWorkflowMode('fast')}>
                   <Zap size={13} /> Fast scan
                 </button>
-                <button
-                  type="button"
-                  data-testid="workflow-ocr-btn"
-                  onClick={() => setScanWorkflowMode('ocr')}
-                  style={{
-                    flex: 1,
-                    borderRadius: 999,
-                    border: `1px solid ${scanWorkflowMode === 'ocr' ? theme.primary : theme.border}`,
-                    background: scanWorkflowMode === 'ocr' ? theme.primaryLight : theme.surface,
-                    color: scanWorkflowMode === 'ocr' ? theme.primary : theme.muted,
-                    fontWeight: 700,
-                    fontSize: '0.72rem',
-                    padding: '9px 12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                    cursor: 'pointer',
-                  }}
-                >
+                <button type="button" data-testid="workflow-ocr-btn"
+                  className={`mode-pill ${scanWorkflowMode === 'ocr' ? 'active' : ''}`}
+                  onClick={() => setScanWorkflowMode('ocr')}>
                   <Brain size={13} /> OCR label
                 </button>
               </div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 8, width: '100%', maxWidth: 320 }}>
-                <button
-                  type="button"
-                  data-testid="device-profile-phone-btn"
-                  onClick={() => setDeviceProfile(DEVICE_PROFILES.phone)}
-                  style={{
-                    flex: 1,
-                    borderRadius: 999,
-                    border: `1px solid ${deviceProfile === DEVICE_PROFILES.phone ? theme.primary : theme.border}`,
-                    background: deviceProfile === DEVICE_PROFILES.phone ? theme.primaryLight : theme.surface,
-                    color: deviceProfile === DEVICE_PROFILES.phone ? theme.primary : theme.muted,
-                    fontWeight: 700,
-                    fontSize: '0.7rem',
-                    padding: '8px 12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                    cursor: 'pointer',
-                  }}
-                >
+              <div className="mode-toggle-row" style={{ marginTop: 7 }}>
+                <button type="button" data-testid="device-profile-phone-btn"
+                  className={`mode-pill ${deviceProfile === DEVICE_PROFILES.phone ? 'active' : ''}`}
+                  onClick={() => setDeviceProfile(DEVICE_PROFILES.phone)}>
                   <Camera size={13} /> Phone lens
                 </button>
-                <button
-                  type="button"
-                  data-testid="device-profile-rugged-btn"
-                  onClick={() => setDeviceProfile(DEVICE_PROFILES.rugged)}
-                  style={{
-                    flex: 1,
-                    borderRadius: 999,
-                    border: `1px solid ${deviceProfile === DEVICE_PROFILES.rugged ? theme.primary : theme.border}`,
-                    background: deviceProfile === DEVICE_PROFILES.rugged ? theme.primaryLight : theme.surface,
-                    color: deviceProfile === DEVICE_PROFILES.rugged ? theme.primary : theme.muted,
-                    fontWeight: 700,
-                    fontSize: '0.7rem',
-                    padding: '8px 12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 6,
-                    cursor: 'pointer',
-                  }}
-                >
+                <button type="button" data-testid="device-profile-rugged-btn"
+                  className={`mode-pill ${deviceProfile === DEVICE_PROFILES.rugged ? 'active' : ''}`}
+                  onClick={() => setDeviceProfile(DEVICE_PROFILES.rugged)}>
                   <Shield size={13} /> Rugged
                 </button>
               </div>
 
-              {/* Manual AWB Entry */}
-              <form
-                onSubmit={handleManualAwbSubmit}
-                style={{ width: '100%', maxWidth: 300, marginTop: 20 }}
-              >
-                <div style={{ fontSize: '0.62rem', fontWeight: 700, color: theme.muted, textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 6, textAlign: 'center' }}>Can't scan? Enter AWB manually</div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <input
-                    data-testid="manual-awb-input"
+              {/* Manual AWB */}
+              <div style={{ width: '100%', maxWidth: 320, marginTop: 14 }}>
+                <div style={{ fontSize: '0.6rem', fontWeight: 700, color: theme.mutedLight, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 7, textAlign: 'center' }}>
+                  Can't scan? Enter AWB manually
+                </div>
+                <div className="manual-awb-row">
+                  <input data-testid="manual-awb-input" className="manual-awb-input"
                     value={manualAwb}
                     onChange={e => setManualAwb(e.target.value.toUpperCase())}
-                    placeholder="e.g. 1234567890"
-                    inputMode="text"
-                    autoCapitalize="characters"
-                    style={{
-                      flex: 1, padding: '9px 12px', border: `1.5px solid ${theme.border}`,
-                      borderRadius: 10, fontFamily: 'JetBrains Mono, monospace',
-                      fontSize: '0.82rem', fontWeight: 600, background: theme.surface,
-                      color: theme.text, outline: 'none',
-                    }}
+                    placeholder="e.g. Z67086879"
+                    inputMode="text" autoCapitalize="characters"
                     onFocus={e => e.target.style.borderColor = theme.primary}
                     onBlur={e => e.target.style.borderColor = theme.border}
                   />
-                  <button
-                    type="submit"
-                    data-testid="manual-awb-submit"
+                  <button type="button" data-testid="manual-awb-submit"
                     disabled={manualAwb.trim().length < 6}
                     className="btn btn-primary"
-                    style={{ padding: '9px 14px', fontSize: '0.78rem', borderRadius: 10, opacity: manualAwb.trim().length >= 6 ? 1 : 0.45 }}
-                  >
+                    style={{ padding: '10px 16px', fontSize: '0.8rem', borderRadius: 12, opacity: manualAwb.trim().length >= 6 ? 1 : 0.42 }}
+                    onClick={handleManualAwbSubmit}>
                     Go →
                   </button>
                 </div>
-              </form>
+              </div>
 
-              <div className="action-buttons-row">
-                <button className="action-btn" onClick={saveAndUpload}>
+              {/* Action strip */}
+              <div className="action-strip">
+                <button className={`action-tile ${offlineQueue.length > 0 ? 'upload-active' : ''}`} onClick={saveAndUpload}>
                   <CloudUpload size={14} /> {offlineQueue.length > 0 ? `Upload (${offlineQueue.length})` : 'Synced'}
                 </button>
-                <button className="action-btn danger" onClick={terminateSession}>
-                  <Trash2 size={14} /> End Session
+                <button className="action-tile" onClick={() => setVoiceEnabled(v => !v)}>
+                  {voiceEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />} Voice {voiceEnabled ? 'On' : 'Off'}
+                </button>
+                <button className="action-tile danger" onClick={terminateSession}>
+                  <Trash2 size={14} /> End
                 </button>
               </div>
 
               {offlineQueue.length > 0 && (
-                <div style={{ marginTop: 14, fontSize: '0.7rem', color: theme.warning, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <Clock size={12} /> {offlineQueue.length} offline scan{offlineQueue.length > 1 ? 's' : ''} pending sync
+                <div style={{ marginTop: 10, fontSize: '0.7rem', color: theme.warning, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <Clock size={12} /> {offlineQueue.length} pending sync
                 </div>
               )}
             </div>
 
-            <div className="home-queue-section">
-              <div className="home-queue-head">
-                <div className="home-queue-title-text">
-                  <List size={11} />
-                  Accepted Consignments
+            {/* ── Manifest / Queue ── */}
+            <div className="home-manifest">
+              <div className="manifest-head">
+                <div className="manifest-title">
+                  <List size={11} /> Accepted Consignments
                 </div>
                 {sessionCtx.scannedItems.length > 0 && (
-                  <div className="home-queue-badge">{sessionCtx.scannedItems.length}</div>
+                  <div className="manifest-count">{sessionCtx.scannedItems.length}</div>
                 )}
               </div>
-              <div className="home-queue-list">
+
+              {/* Courier breakdown chips */}
+              {sessionCtx.scannedItems.length > 0 && (() => {
+                const courierCounts = {};
+                sessionCtx.scannedItems.forEach(item => {
+                  const c = normalizeReviewCourier(item.courier || '');
+                  if (c) courierCounts[c] = (courierCounts[c] || 0) + 1;
+                });
+                return Object.keys(courierCounts).length > 0 ? (
+                  <div className="manifest-courier-bar">
+                    {Object.entries(courierCounts).map(([c, n]) => {
+                      const pal = getCourierPalette(c);
+                      return (
+                        <span key={c} className="courier-chip" style={{ background: pal.light, color: pal.bg, border: `1px solid ${pal.bg}22` }}>
+                          {c} {n}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : null;
+              })()}
+
+              <div className="manifest-list">
                 {sessionCtx.scannedItems.length === 0 ? (
-                  <div className="queue-empty">
-                    <Package size={36} color="rgba(255,255,255,0.12)" />
-                    <div className="queue-empty-text">No consignments scanned yet.<br />Tap the button above to begin.</div>
+                  <div className="manifest-empty">
+                    <div className="manifest-empty-icon">
+                      <Package size={28} color={theme.mutedLight} />
+                    </div>
+                    <div className="manifest-empty-text">
+                      No consignments yet.<br />Tap the scan button above to begin.
+                    </div>
                   </div>
                 ) : (
-                  sessionCtx.scannedItems.map((item, idx) => (
-                    <div key={item.queueId || `${item.awb}-${idx}`} className="queue-item">
-                      <div className="queue-check">
-                        <Check size={13} color="#10B981" />
-                      </div>
-                      <div className="queue-main">
-                        <div className="queue-main-top">
-                          <div className="queue-awb">{item.awb}</div>
-                          {item.weight > 0 && <div className="queue-weight">{item.weight}kg</div>}
+                  sessionCtx.scannedItems.map((item, idx) => {
+                    const pal = getCourierPalette(normalizeReviewCourier(item.courier || ''));
+                    return (
+                      <div key={item.queueId || `${item.awb}-${idx}`} className="manifest-item">
+                        <div className="manifest-item-icon" style={{ background: pal.light, color: pal.bg }}>
+                          {normalizeReviewCourier(item.courier || '') || 'PKG'}
                         </div>
-                        <div className="queue-meta">
-                          {item.clientCode === 'OFFLINE'
-                            ? <span className="queue-offline-tag">Offline</span>
-                            : item.clientCode && <span className="queue-client-tag">{item.clientCode}</span>}
-                          {item.destination && <span>{item.destination}</span>}
-                          {item.date && <span className="queue-date-tag">{formatDisplayDate(item.date)}</span>}
+                        <div className="manifest-main">
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div className="manifest-awb">{item.awb}</div>
+                            {item.weight > 0 && <div className="manifest-weight">{item.weight}kg</div>}
+                          </div>
+                          <div className="manifest-meta">
+                            {item.clientCode === 'OFFLINE'
+                              ? <span className="manifest-tag" style={{ background: theme.warningLight, color: theme.warning }}>Offline</span>
+                              : item.clientCode && <span className="manifest-tag" style={{ background: theme.primaryLight, color: theme.primary }}>{item.clientCode}</span>}
+                            {item.consignee && <span>{item.consignee}</span>}
+                            {item.destination && <span>→ {item.destination}</span>}
+                            {item.date && <span className="manifest-tag" style={{ background: '#EFF6FF', color: '#1D4ED8' }}>{formatDisplayDate(item.date)}</span>}
+                          </div>
+                          {editingQueueItemId === item.queueId ? (
+                            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
+                              <input type="date" className="queue-date-input" value={editingQueueDate}
+                                max={new Date().toISOString().slice(0, 10)}
+                                onChange={(e) => setEditingQueueDate(e.target.value)}
+                                disabled={queueActionBusyId === item.queueId} />
+                              <button type="button" className="manifest-action-btn primary"
+                                onClick={() => saveQueueDateEdit(item)}
+                                disabled={queueActionBusyId === item.queueId || !ISO_DATE_REGEX.test(editingQueueDate)}>
+                                {queueActionBusyId === item.queueId ? 'Saving...' : 'Save'}
+                              </button>
+                              <button type="button" className="manifest-action-btn"
+                                onClick={cancelQueueDateEdit}
+                                disabled={queueActionBusyId === item.queueId}>Cancel</button>
+                            </div>
+                          ) : (
+                            <div className="manifest-actions">
+                              <button type="button" className="manifest-action-btn"
+                                onClick={() => beginQueueDateEdit(item)}
+                                disabled={queueActionBusyId === item.queueId}>
+                                <CalendarDays size={11} /> Date
+                              </button>
+                              <button type="button" className="manifest-action-btn danger"
+                                onClick={() => deleteQueueItem(item)}
+                                disabled={queueActionBusyId === item.queueId}>
+                                <Trash2 size={11} /> {queueActionBusyId === item.queueId ? 'Removing...' : 'Remove'}
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        {editingQueueItemId === item.queueId ? (
-                          <div className="queue-date-editor">
-                            <input
-                              type="date"
-                              className="queue-date-input"
-                              value={editingQueueDate}
-                              max={new Date().toISOString().slice(0, 10)}
-                              onChange={(e) => setEditingQueueDate(e.target.value)}
-                              disabled={queueActionBusyId === item.queueId}
-                            />
-                            <button
-                              type="button"
-                              className="queue-action-btn primary"
-                              onClick={() => saveQueueDateEdit(item)}
-                              disabled={queueActionBusyId === item.queueId || !ISO_DATE_REGEX.test(editingQueueDate)}
-                            >
-                              {queueActionBusyId === item.queueId ? 'Saving...' : 'Save'}
-                            </button>
-                            <button
-                              type="button"
-                              className="queue-action-btn"
-                              onClick={cancelQueueDateEdit}
-                              disabled={queueActionBusyId === item.queueId}
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="queue-actions">
-                            <button
-                              type="button"
-                              className="queue-action-btn"
-                              onClick={() => beginQueueDateEdit(item)}
-                              disabled={queueActionBusyId === item.queueId}
-                            >
-                              <CalendarDays size={12} /> Edit Date
-                            </button>
-                            <button
-                              type="button"
-                              className="queue-action-btn danger"
-                              onClick={() => deleteQueueItem(item)}
-                              disabled={queueActionBusyId === item.queueId}
-                            >
-                              <Trash2 size={12} /> {queueActionBusyId === item.queueId ? 'Deleting...' : 'Delete'}
-                            </button>
-                          </div>
-                        )}
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -3389,26 +3380,24 @@ export default function MobileScannerPage({ standalone = false }) {
         {/* ═══ PREVIEW ═══ */}
         <div className={stepClass(STEPS.PREVIEW)}>
           <div style={{ background: theme.bg, display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: `1px solid ${theme.border}` }}>
-              <div>
-                <div style={{ fontSize: '0.72rem', color: theme.muted, fontWeight: 600 }}>CAPTURED</div>
-                <div className="mono" style={{ fontSize: '1rem', fontWeight: 700 }}>{lockedAwb || 'Printed AWB OCR'}</div>
-                {captureMeta.kb > 0 && (
-                  <div style={{ fontSize: '0.68rem', color: theme.mutedLight }}>
-                    {captureMeta.kb}KB • {captureMeta.width}×{captureMeta.height}
-                  </div>
-                )}
-              </div>
+            <div style={{ padding: '52px 20px 16px', background: 'linear-gradient(135deg, #0D1B2A, #1E2D3D)', color: 'white' }}>
+              <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.45)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>CAPTURED</div>
+              <div className="mono" style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>{lockedAwb || 'OCR Capture'}</div>
+              {captureMeta.kb > 0 && (
+                <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: 3 }}>
+                  {captureMeta.kb}KB · {captureMeta.width}×{captureMeta.height}
+                </div>
+              )}
             </div>
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
               {capturedImage && <img src={capturedImage} alt="Captured label" className="preview-img" />}
             </div>
-            <div style={{ padding: '16px 20px', display: 'flex', gap: 12 }}>
+            <div style={{ padding: '12px 16px 28px', display: 'flex', gap: 10, background: theme.surface, borderTop: `1px solid ${theme.border}` }}>
               <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => { setCapturedImage(null); goStep(STEPS.CAPTURING); }}>
-                <RotateCcw size={16} /> Retake
+                <RotateCcw size={15} /> Retake
               </button>
               <button data-testid="use-photo-btn" className="btn btn-primary" style={{ flex: 2 }} onClick={submitForProcessing}>
-                <Send size={16} /> Use Photo
+                <Send size={15} /> Read This Label
               </button>
             </div>
           </div>
@@ -3416,122 +3405,123 @@ export default function MobileScannerPage({ standalone = false }) {
 
         {/* ═══ PROCESSING ═══ */}
         <div className={stepClass(STEPS.PROCESSING)}>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 20, gap: 16 }}>
-            <div style={{ textAlign: 'center', paddingTop: 24, paddingBottom: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
-                <Brain size={22} color={theme.primary} style={{ animation: 'spin 2s linear infinite' }} />
-                <span style={{ fontSize: '0.9rem', fontWeight: 700, color: theme.primary }}>Intelligence Engine</span>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: theme.bg }}>
+            {/* Top status */}
+            <div style={{ padding: '52px 24px 20px', textAlign: 'center', background: 'linear-gradient(135deg, #0D1B2A, #1E2D3D)', color: 'white' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 18px', borderRadius: 999, background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', marginBottom: 14 }}>
+                <Brain size={16} color="#93C5FD" style={{ animation: 'spin 2s linear infinite' }} />
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#93C5FD', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                  {capturedImage ? 'Reading Label' : 'Saving Scan'}
+                </span>
               </div>
-              <div className="mono" style={{ fontSize: '0.82rem', color: theme.muted }}>{lockedAwb}</div>
-              <div style={{ fontSize: '0.72rem', color: theme.mutedLight, marginTop: 6 }}>
-                {capturedImage ? 'Reading AWB label with local OCR...' : 'Saving barcode scan...'}
+              <div className="mono" style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', marginBottom: 6 }}>{lockedAwb || '—'}</div>
+              <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)' }}>
+                {capturedImage ? 'OCR engine extracting fields...' : 'Syncing with server...'}
               </div>
             </div>
-            {['Client', 'Consignee', 'Destination', 'Pincode', 'Weight', 'Order No'].map((label) => (
-              <div key={label} className="card" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ flex: 1 }}>
-                  <div className="field-label">{label}</div>
-                  <div className="skeleton" style={{ height: 18, width: `${60 + Math.random() * 30}%`, marginTop: 4 }} />
+            {/* Skeleton fields */}
+            <div style={{ padding: '16px 16px', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+              {[['Client', '55%'], ['Consignee', '80%'], ['Destination', '65%'], ['Pincode', '40%'], ['Weight (kg)', '35%'], ['Order No', '50%']].map(([label, w]) => (
+                <div key={label} className="field-card" style={{ opacity: 0.8 }}>
+                  <div className="conf-dot conf-none" style={{ background: '#DDE3EC' }} />
+                  <div style={{ flex: 1 }}>
+                    <div className="field-label">{label}</div>
+                    <div className="skeleton" style={{ height: 16, width: w, marginTop: 5 }} />
+                  </div>
                 </div>
-                <div className="skeleton" style={{ width: 8, height: 8, borderRadius: '50%' }} />
-              </div>
-            ))}
-            <div style={{ textAlign: 'center', marginTop: 8 }}>
-              <button
-                className="btn btn-outline"
-                style={{ fontSize: '0.75rem', padding: '8px 20px' }}
-                onClick={() => { setErrorMsg('Cancelled by user.'); goStep(STEPS.ERROR); }}
-              >
+              ))}
+            </div>
+            <div style={{ padding: '12px 20px 28px', textAlign: 'center' }}>
+              <button className="btn btn-outline" style={{ fontSize: '0.75rem', padding: '9px 24px' }}
+                onClick={() => { setErrorMsg('Cancelled by user.'); goStep(STEPS.ERROR); }}>
                 Cancel
               </button>
             </div>
           </div>
         </div>
 
-        {/* â•â•â• REVIEWING â•â•â• */}
+        {/* ═══ REVIEWING ═══ */}
         <div className={stepClass(STEPS.REVIEWING)}>
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <div className="review-header">
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: theme.bg }}>
+
+            {/* Courier-colored header */}
+            <div className={`review-header${reviewCourier ? ' courier-' + reviewCourier.toLowerCase() : ''}`}>
               <div className="review-header-top">
                 <div>
-                  <div className="review-title">REVIEW EXTRACTION</div>
+                  <div className="review-title">REVIEW CONSIGNMENT</div>
                   <div className="mono review-awb">{reviewData?.awb || lockedAwb}</div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                   {intelligence?.learnedFieldCount > 0 && (
-                    <div className="source-badge source-learned">AI {intelligence.learnedFieldCount} auto-corrected</div>
+                    <div className="source-badge source-learned">AI {intelligence.learnedFieldCount} corrected</div>
                   )}
                   {reviewConfidence.score === 0 && (
-                    <div style={{ fontSize: '0.62rem', background: 'rgba(220,38,38,0.18)', color: '#FCA5A5', padding: '3px 8px', borderRadius: 6, fontWeight: 700 }}>
-                      OCR could not read label — fill fields manually
+                    <div style={{ fontSize: '0.6rem', background: 'rgba(220,38,38,0.22)', color: '#FCA5A5', padding: '3px 9px', borderRadius: 7, fontWeight: 800, border: '1px solid rgba(220,38,38,0.3)' }}>
+                      OCR failed — fill manually
                     </div>
                   )}
                 </div>
               </div>
               <div className="review-meta-row">
                 <span className={`review-confidence ${reviewConfidence.level}`}>
-                  <Shield size={13} />
+                  <Shield size={12} />
                   {reviewConfidence.label} ({Math.round(reviewConfidence.score * 100)}%)
                 </span>
-                <button
-                  type="button"
-                  className="review-chip review-chip-courier"
-                  onClick={cycleReviewCourier}
-                  title="Tap to change courier"
-                >
-                  <Package size={13} />
-                  {reviewCourier || 'Trackon'}
+                <button type="button" className="review-chip review-chip-courier" onClick={cycleReviewCourier} title="Tap to change courier">
+                  <Package size={12} /> {reviewCourier || 'Tap to set courier'}
                 </button>
                 <span className="review-chip review-chip-date">
-                  <CalendarDays size={13} />
-                  {reviewDateLabel || 'No date'}
+                  <CalendarDays size={12} /> {reviewDateLabel || 'No date'}
                 </span>
               </div>
             </div>
-            <div className="scroll-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10, background: 'linear-gradient(180deg, #F0F4FF 0%, #F5F3FF 100%)' }}>
-              {/* Client */}
-              <div className={`field-card ${(fieldConfidence.clientCode?.confidence || 0) < 0.55 ? 'warning' : ''}`}>
+
+            {/* Form completion progress */}
+            {(() => {
+              const required = ['consignee', 'destination', 'weight'];
+              const filled = required.filter(k => {
+                const v = reviewForm[k];
+                return v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim() !== '0';
+              }).length;
+              const pct = Math.round((filled / required.length) * 100);
+              return (
+                <div className="form-progress-bar-wrap">
+                  <div className="form-progress-bar-track">
+                    <div className="form-progress-bar-fill" style={{ width: pct + '%' }} />
+                  </div>
+                  <div className="form-progress-label">{filled}/{required.length} required</div>
+                </div>
+              );
+            })()}
+
+            <div className="scroll-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+              {/* CLIENT */}
+              <div className={`field-card ${(fieldConfidence.clientCode?.confidence || 0) < 0.55 ? 'warning' : 'conf-high'}`}>
                 <div className={confDotClass(fieldConfidence.clientCode?.confidence || 0)} />
                 <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
                     <span className="field-label" style={{ margin: 0 }}>Client</span>
                     {fieldConfidence.clientCode?.source && (() => { const s = sourceLabel(fieldConfidence.clientCode.source); return s ? <span className={s.className}>{s.icon} {s.text}</span> : null; })()}
                   </div>
                   <input className="field-input" value={reviewForm.clientCode || ''} onChange={e => setReviewForm(f => ({ ...f, clientCode: e.target.value.toUpperCase() }))} placeholder="Client code" />
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, gap: 8 }}>
-                    <div style={{ fontSize: '0.62rem', color: '#64748B' }}>
-                      {stickyClientCode ? `Sticky for next scans: ${stickyClientCode}` : 'Sticky client is off'}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 7, gap: 8 }}>
+                    <div style={{ fontSize: '0.6rem', color: theme.muted }}>
+                      {stickyClientCode
+                        ? <span style={{ color: theme.primary, fontWeight: 700 }}>Sticky: {stickyClientCode}</span>
+                        : 'Sticky client off'}
                     </div>
-                    {stickyClientCode ? (
-                      <button
-                        type="button"
-                        className="suggest-chip"
-                        onClick={() => setStickyClientCode('')}
-                      >
-                        Clear sticky
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        className="suggest-chip"
-                        onClick={() => {
-                          const nextCode = normalizeClientCode(reviewForm.clientCode || '');
-                          if (nextCode && nextCode !== 'MISC') setStickyClientCode(nextCode);
-                        }}
-                      >
-                        Keep this client
-                      </button>
-                    )}
+                    {stickyClientCode
+                      ? <button type="button" className="suggest-chip" onClick={() => setStickyClientCode('')}>Clear</button>
+                      : <button type="button" className="suggest-chip" onClick={() => { const c = normalizeClientCode(reviewForm.clientCode || ''); if (c && c !== 'MISC') setStickyClientCode(c); }}>Keep this client</button>
+                    }
                   </div>
                   {intelligence?.clientMatches?.length > 0 && intelligence.clientNeedsConfirmation && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 6 }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 7 }}>
                       {intelligence.clientMatches.slice(0, 3).map(m => (
-                        <button
-                          key={m.code}
-                          type="button"
+                        <button key={m.code} type="button"
                           className={`suggest-chip ${reviewForm.clientCode === m.code ? 'active' : ''}`}
-                          onClick={() => setReviewForm(f => ({ ...f, clientCode: m.code }))}
-                        >
+                          onClick={() => setReviewForm(f => ({ ...f, clientCode: m.code }))}>
                           {m.code} ({Math.round(m.score * 100)}%)
                         </button>
                       ))}
@@ -3540,159 +3530,208 @@ export default function MobileScannerPage({ standalone = false }) {
                 </div>
               </div>
 
-              {/* Consignee */}
-              <div className="field-card">
-                <div className={confDotClass(fieldConfidence.consignee?.confidence || 0)} />
+              {/* CONSIGNEE — required */}
+              <div className={`field-card ${!reviewForm.consignee?.trim() ? 'required-empty' : 'conf-high'}`}>
+                <div className={!reviewForm.consignee?.trim() ? 'conf-dot conf-low' : confDotClass(fieldConfidence.consignee?.confidence || 0)} />
                 <div style={{ flex: 1 }}>
-                  <div className="field-label">Consignee</div>
-                  <input className="field-input" value={reviewForm.consignee || ''} onChange={e => setReviewForm(f => ({ ...f, consignee: e.target.value.toUpperCase() }))} placeholder="Recipient name" />
+                  <div className="field-label">
+                    Consignee <span className="field-required-star">*</span>
+                    {fieldConfidence.consignee?.source && (() => { const s = sourceLabel(fieldConfidence.consignee.source); return s ? <span className={s.className} style={{ marginLeft: 4 }}>{s.icon} {s.text}</span> : null; })()}
+                  </div>
+                  <input className="field-input" value={reviewForm.consignee || ''}
+                    onChange={e => setReviewForm(f => ({ ...f, consignee: e.target.value.toUpperCase() }))}
+                    placeholder="Recipient name *" />
                 </div>
               </div>
 
-              {/* Destination */}
-              <div className="field-card">
-                <div className={confDotClass(fieldConfidence.destination?.confidence || 0)} />
+              {/* DESTINATION — required */}
+              <div className={`field-card ${!reviewForm.destination?.trim() ? 'required-empty' : 'conf-high'}`}>
+                <div className={!reviewForm.destination?.trim() ? 'conf-dot conf-low' : confDotClass(fieldConfidence.destination?.confidence || 0)} />
                 <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                    <span className="field-label" style={{ margin: 0 }}>Destination</span>
-                    {fieldConfidence.destination?.source && (() => { const s = sourceLabel(fieldConfidence.destination.source); return s ? <span className={s.className}>{s.icon} {s.text}</span> : null; })()}
+                  <div className="field-label">
+                    Destination <span className="field-required-star">*</span>
+                    {fieldConfidence.destination?.source && (() => { const s = sourceLabel(fieldConfidence.destination.source); return s ? <span className={s.className} style={{ marginLeft: 4 }}>{s.icon} {s.text}</span> : null; })()}
                   </div>
-                  <input className="field-input" value={reviewForm.destination || ''} onChange={e => setReviewForm(f => ({ ...f, destination: e.target.value.toUpperCase() }))} placeholder="City" />
+                  <input className="field-input" value={reviewForm.destination || ''}
+                    onChange={e => setReviewForm(f => ({ ...f, destination: e.target.value.toUpperCase() }))}
+                    placeholder="City *" />
                   {intelligence?.pincodeCity && intelligence.pincodeCity !== reviewForm.destination && (
-                    <button onClick={() => setReviewForm(f => ({ ...f, destination: intelligence.pincodeCity }))} style={{ fontSize: '0.62rem', marginTop: 4, padding: '2px 8px', borderRadius: 6, border: 'none', background: theme.successLight, color: theme.success, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                      ðŸ“ Pincode suggests: {intelligence.pincodeCity}
+                    <button type="button" className="suggest-chip pincode-suggest" style={{ marginTop: 6 }}
+                      onClick={() => setReviewForm(f => ({ ...f, destination: intelligence.pincodeCity }))}>
+                      Pincode suggests: {intelligence.pincodeCity}
                     </button>
                   )}
+                  {!intelligence?.pincodeCity && reviewForm.pincode?.length === 6 && (() => {
+                    const city = lookupPincodeCity(reviewForm.pincode);
+                    return city && city !== reviewForm.destination ? (
+                      <button type="button" className="suggest-chip pincode-suggest" style={{ marginTop: 6 }}
+                        onClick={() => setReviewForm(f => ({ ...f, destination: city }))}>
+                        {reviewForm.pincode} suggests: {city}
+                      </button>
+                    ) : null;
+                  })()}
                 </div>
               </div>
 
-              {/* Pincode + Weight row */}
+              {/* PINCODE + WEIGHT */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div className="field-card">
                   <div style={{ flex: 1 }}>
                     <div className="field-label">Pincode</div>
-                    <input className="field-input" value={reviewForm.pincode || ''} onChange={(e) => setReviewForm(f => ({ ...f, pincode: e.target.value }))} placeholder="6 digits" maxLength={6} inputMode="numeric" />
+                    <input className="field-input" value={reviewForm.pincode || ''}
+                      onChange={(e) => {
+                        const pin = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
+                        setReviewForm(f => {
+                          const city = pin.length === 6 && !f.destination?.trim() ? lookupPincodeCity(pin) : '';
+                          return { ...f, pincode: pin, ...(city ? { destination: city } : {}) };
+                        });
+                      }}
+                      placeholder="6 digits" maxLength={6} inputMode="numeric" />
                   </div>
                 </div>
-                <div className={`field-card ${intelligence?.weightAnomaly?.anomaly ? 'warning' : 'conf-med'}`}>
+                <div className={`field-card ${intelligence?.weightAnomaly?.anomaly ? 'warning' : (!reviewForm.weight || String(reviewForm.weight).trim() === '0' ? 'required-empty' : 'conf-med')}`}>
                   <div style={{ flex: 1 }}>
-                    <div className="field-label">Weight (kg)</div>
-                    <input className="field-input" value={reviewForm.weight || ''} onChange={(e) => setReviewForm(f => ({ ...f, weight: e.target.value }))} placeholder="0.0" inputMode="decimal" />
+                    <div className="field-label">Weight (kg) <span className="field-required-star">*</span></div>
+                    <input className="field-input" value={reviewForm.weight || ''}
+                      onChange={(e) => setReviewForm(f => ({ ...f, weight: e.target.value }))}
+                      placeholder="0.0 *" inputMode="decimal" />
                     {intelligence?.weightAnomaly?.anomaly && (
-                      <div style={{ fontSize: '0.6rem', color: theme.warning, marginTop: 2, fontWeight: 500 }}>Warning: {intelligence.weightAnomaly.warning}</div>
+                      <div style={{ fontSize: '0.6rem', color: theme.warning, marginTop: 3, fontWeight: 700 }}>
+                        {intelligence.weightAnomaly.warning}
+                      </div>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Amount + Order No */}
+              {/* AMOUNT + ORDER NO */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div className="field-card conf-med">
+                <div className="field-card">
                   <div style={{ flex: 1 }}>
-                    <div className="field-label">Amount (₹)</div>
-                    <input className="field-input" value={reviewForm.amount || ''} onChange={(e) => setReviewForm(f => ({ ...f, amount: e.target.value }))} placeholder="0" inputMode="decimal" />
+                    <div className="field-label">COD Amount (Rs.)</div>
+                    <input className="field-input" value={reviewForm.amount || ''}
+                      onChange={(e) => setReviewForm(f => ({ ...f, amount: e.target.value }))}
+                      placeholder="0" inputMode="decimal" />
                   </div>
                 </div>
-                <div className="field-card conf-low">
+                <div className="field-card">
                   <div style={{ flex: 1 }}>
                     <div className="field-label">Order No</div>
-                    <input className="field-input" value={reviewForm.orderNo || ''} onChange={(e) => setReviewForm(f => ({ ...f, orderNo: e.target.value }))} placeholder="Optional" />
+                    <input className="field-input" value={reviewForm.orderNo || ''}
+                      onChange={(e) => setReviewForm(f => ({ ...f, orderNo: e.target.value }))}
+                      placeholder="Optional" />
                   </div>
                 </div>
               </div>
+
+              <div style={{ fontSize: '0.6rem', color: theme.mutedLight, textAlign: 'center', paddingBottom: 4 }}>
+                <span style={{ color: '#E11D48' }}>*</span> Required fields
+              </div>
             </div>
 
-            {/* Action buttons */}
-            <div style={{ padding: '12px 20px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: 10 }}>
+            {/* Action bar */}
+            <div style={{ padding: '10px 16px 20px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: 10, background: theme.surface }}>
               <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => {
-                // In standalone mode, navigate forces a clean re-mount which avoids
-                // the blank-screen glitch caused by batched state resets in resetForNextScan.
-                if (isStandalone) {
-                  navigate('/scan-mobile');
-                  return;
-                }
+                if (isStandalone) { navigate('/scan-mobile'); return; }
                 resetForNextScan();
               }}>
-                <X size={16} /> Skip
+                <X size={15} /> Skip
               </button>
               <button data-testid="approve-save-btn" className="btn btn-success btn-lg" style={{ flex: 2 }} onClick={submitApproval} disabled={step === STEPS.APPROVING}>
-                {step === STEPS.APPROVING ? <RefreshCw size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={16} />}
-                {step === STEPS.APPROVING ? 'Saving...' : 'Approve & Save'}
+                {step === STEPS.APPROVING
+                  ? <><RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Saving...</>
+                  : <><Check size={15} /> Approve &amp; Save</>}
               </button>
             </div>
           </div>
         </div>
 
-        {/* â•â•â• APPROVING â•â•â• */}
+        {/* ═══ APPROVING ═══ */}
         <div className={stepClass(STEPS.APPROVING)}>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 16 }}>
-            <RefreshCw size={42} style={{ animation: 'spin 1s linear infinite', color: theme.primary }} />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 20, background: theme.bg }}>
+            <div style={{ width: 72, height: 72, borderRadius: '50%', background: theme.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <RefreshCw size={34} style={{ animation: 'spin 1s linear infinite', color: theme.primary }} />
+            </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '1.05rem', fontWeight: 700, color: theme.text }}>
-                Saving approval...
-              </div>
-              <div className="mono" style={{ fontSize: '0.98rem', marginTop: 6, color: theme.muted }}>
-                {reviewData?.awb || lockedAwb || 'AWB'}
-              </div>
-              <div style={{ fontSize: '0.78rem', color: theme.muted, marginTop: 8 }}>
-                Waiting for desktop confirmation. If this takes too long, retry from review.
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: theme.text }}>Saving Consignment</div>
+              <div className="mono" style={{ fontSize: '0.95rem', marginTop: 8, color: theme.muted }}>{reviewData?.awb || lockedAwb}</div>
+              <div style={{ fontSize: '0.74rem', color: theme.mutedLight, marginTop: 6, lineHeight: 1.5 }}>
+                Communicating with server...<br />If this takes too long, go back and retry.
               </div>
             </div>
-            <button
-              className="btn btn-outline"
-              onClick={() => {
-                clearTimeout(approvalResultTimerRef.current);
-                approvalResultTimerRef.current = null;
-                setErrorMsg('Approval pending. Please tap Approve & Save again.');
-                goStep(STEPS.REVIEWING);
-              }}
-            >
+            <button className="btn btn-outline" onClick={() => {
+              clearTimeout(approvalResultTimerRef.current);
+              approvalResultTimerRef.current = null;
+              setErrorMsg('Please tap Approve & Save again.');
+              goStep(STEPS.REVIEWING);
+            }}>
               Back to review
             </button>
           </div>
         </div>
 
-        {/* â•â•â• SUCCESS â•â•â• */}
+        {/* ═══ SUCCESS ═══ */}
         <div className={stepClass(STEPS.SUCCESS)}>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 20 }}>
-            <svg width="80" height="80" viewBox="0 0 80 80">
-              <circle cx="40" cy="40" r="36" fill="none" stroke={theme.success} strokeWidth="3" className="success-check-circle" />
-              <polyline points="24,42 35,53 56,30" fill="none" stroke={theme.success} strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="success-check-mark" />
-            </svg>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 28, gap: 20, background: theme.bg }}>
+            {/* Courier badge */}
+            {lastSuccess?.courier && (() => {
+              const pal = getCourierPalette(normalizeReviewCourier(lastSuccess.courier));
+              return (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderRadius: 999, background: pal.light, color: pal.bg, fontSize: '0.7rem', fontWeight: 800, border: `1px solid ${pal.bg}33`, letterSpacing: '0.04em' }}>
+                  <Package size={13} /> {pal.label}
+                </div>
+              );
+            })()}
+
+            {/* Animated check */}
+            <div style={{ position: 'relative' }}>
+              <svg width="88" height="88" viewBox="0 0 88 88">
+                <circle cx="44" cy="44" r="38" fill={theme.successLight} />
+                <circle cx="44" cy="44" r="38" fill="none" stroke={theme.success} strokeWidth="3" className="success-check-circle" />
+                <polyline points="26,46 38,58 62,32" fill="none" stroke={theme.success} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="success-check-mark" />
+              </svg>
+            </div>
+
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, color: theme.success, marginBottom: 4 }}>Saved Successfully</div>
-              <div className="mono" style={{ fontSize: '1.2rem', fontWeight: 700 }}>{lastSuccess?.awb}</div>
+              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: theme.success, marginBottom: 6 }}>Saved Successfully</div>
+              <div className="mono" style={{ fontSize: '1.3rem', fontWeight: 700, color: theme.text }}>{lastSuccess?.awb}</div>
               {lastSuccess?.clientCode && (
-                <div style={{ marginTop: 6, display: 'inline-block', padding: '4px 14px', borderRadius: 20, background: theme.primaryLight, color: theme.primary, fontSize: '0.78rem', fontWeight: 600 }}>
+                <div style={{ marginTop: 8, display: 'inline-block', padding: '4px 16px', borderRadius: 999, background: theme.primaryLight, color: theme.primary, fontSize: '0.78rem', fontWeight: 700, border: '1px solid rgba(29,78,216,0.15)' }}>
                   {lastSuccess.clientName || lastSuccess.clientCode}
                 </div>
               )}
+              {lastSuccess?.destination && (
+                <div style={{ marginTop: 6, fontSize: '0.78rem', color: theme.muted, fontWeight: 500 }}>
+                  {lastSuccess.destination} {lastSuccess.weight ? `• ${lastSuccess.weight}kg` : ''}
+                </div>
+              )}
             </div>
-            <div style={{ fontSize: '0.72rem', color: theme.muted }}>
+
+            <div style={{ fontSize: '0.72rem', color: theme.muted, textAlign: 'center', lineHeight: 1.5 }}>
               {lastSuccess?.offlineQueued
-                ? `${offlineQueue.length} queued for sync - Auto-continuing in ${successAutoSeconds}s`
-                : `#${sessionCtx.scanNumber} scanned - Auto-continuing in ${successAutoSeconds}s`}
+                ? `${offlineQueue.length} queued for sync`
+                : `Consignment #${sessionCtx.scanNumber} accepted`}
+              <br />
+              <span style={{ color: theme.mutedLight }}>Auto-continuing in {successAutoSeconds}s</span>
             </div>
-            <button
-              data-testid="scan-next-btn"
-              className="btn btn-primary btn-lg btn-full"
+
+            <button data-testid="scan-next-btn" className="btn btn-primary btn-lg btn-full"
               onClick={() => resetForNextScan(scanWorkflowMode === 'fast' ? STEPS.SCANNING : STEPS.IDLE)}
-              style={{ maxWidth: 320 }}
-            >
+              style={{ maxWidth: 320 }}>
               <Camera size={18} /> {scanWorkflowMode === 'fast' ? 'Keep Scanning' : 'Scan Next Parcel'}
             </button>
           </div>
         </div>
 
-        {/* â•â•â• ERROR â•â•â• */}
+        {/* ═══ ERROR ═══ */}
         <div className={stepClass(STEPS.ERROR)}>
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 20 }}>
-            <div style={{ width: 64, height: 64, borderRadius: '50%', background: theme.errorLight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <AlertCircle size={32} color={theme.error} />
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 20, background: theme.bg }}>
+            <div style={{ width: 72, height: 72, borderRadius: '50%', background: theme.errorLight, border: `2px solid rgba(220,38,38,0.18)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <AlertCircle size={34} color={theme.error} />
             </div>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '1rem', fontWeight: 700, color: theme.error }}>Scan Error</div>
-              <div style={{ fontSize: '0.82rem', color: theme.muted, marginTop: 4 }}>{errorMsg}</div>
+              <div style={{ fontSize: '1rem', fontWeight: 800, color: theme.error }}>Scan Error</div>
+              <div style={{ fontSize: '0.82rem', color: theme.muted, marginTop: 6, lineHeight: 1.5 }}>{errorMsg}</div>
             </div>
             <button className="btn btn-primary" onClick={resetForNextScan}>
               <RotateCcw size={16} /> Try Again
@@ -3700,7 +3739,7 @@ export default function MobileScannerPage({ standalone = false }) {
           </div>
         </div>
 
-        {/* â”€â”€ Offline banner â”€â”€ */}
+        {/* ── Offline banner ── */}
         {connStatus === 'disconnected' && step !== STEPS.IDLE && (
           <div className="offline-banner">
             <WifiOff size={12} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} />
