@@ -69,9 +69,9 @@ module.exports = {
 
   cookie: {
     secure:   env === 'production',
-    // 'none' is required for cross-origin portal access (e.g., separate frontend domain).
-    // Set COOKIE_SAME_SITE=lax when frontend and backend share the same origin for stronger CSRF protection.
-    sameSite: optional('COOKIE_SAME_SITE', env === 'production' ? 'none' : 'lax'),
+    // Default 'lax' provides strong CSRF protection. Set COOKIE_SAME_SITE=none only if the
+    // frontend is served from a different domain than the API (cross-origin portal access).
+    sameSite: optional('COOKIE_SAME_SITE', 'lax'),
     maxAge:   30 * 24 * 60 * 60 * 1000,
   },
 

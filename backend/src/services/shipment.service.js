@@ -561,11 +561,78 @@ async function bulkImport(shipments, userId) {
     imported++;
   }
 
-  // Insert new shipments in one transaction batch
+  // Insert new shipments in one transaction batch and debit wallets
   if (newShipmentsData.length > 0) {
-    await prisma.shipment.createMany({ data: newShipmentsData, skipDuplicates: true });
+    // Aggregate total amount per client for wallet debit
+    const walletDebitsPerClient = {};
+    for (const s of newShipmentsData) {
+      if (s.amount > 0) {
+        walletDebitsPerClient[s.clientCode] = (walletDebitsPerClient[s.clientCode] || 0) + s.amount;
+      }
+    }
+
+    // Verify wallet balances BEFORE creating shipments
+    const insufficientClients = new Set();
+    for (const [code, totalAmount] of Object.entries(walletDebitsPerClient)) {
+      if (totalAmount <= 0) continue;
+      const client = await prisma.client.findUnique({
+        where: { code },
+        select: { walletBalance: true },
+      });
+      if (!client || Number(client.walletBalance || 0) < totalAmount) {
+        insufficientClients.add(code);
+        errors.push({
+          awb: `ALL:${code}`,
+          error: `Insufficient wallet balance for client ${code} (needed: ₹${totalAmount.toFixed(2)}, available: ₹${Number(client?.walletBalance || 0).toFixed(2)})`,
+        });
+      }
+    }
+
+    // Filter out shipments for clients with insufficient balance
+    const approvedShipments = insufficientClients.size > 0
+      ? newShipmentsData.filter(s => !insufficientClients.has(s.clientCode))
+      : newShipmentsData;
+
+    if (approvedShipments.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        // Debit wallets atomically
+        for (const [code, totalAmount] of Object.entries(walletDebitsPerClient)) {
+          if (totalAmount <= 0 || insufficientClients.has(code)) continue;
+          const debitResult = await tx.client.updateMany({
+            where: { code, walletBalance: { gte: totalAmount } },
+            data: { walletBalance: { decrement: totalAmount } },
+          });
+          if (debitResult.count === 0) {
+            throw new Error(`Wallet debit failed for ${code} — balance changed during import`);
+          }
+          // Record wallet transaction
+          const updated = await tx.client.findUnique({ where: { code }, select: { walletBalance: true } });
+          await tx.walletTransaction.create({
+            data: {
+              clientCode: code,
+              type: 'DEBIT',
+              amount: totalAmount,
+              balance: updated?.walletBalance || 0,
+              description: `Bulk import: ${approvedShipments.filter(s => s.clientCode === code).length} shipments (batch: ${batchKey})`,
+              paymentMode: 'SYSTEM',
+              status: 'SUCCESS',
+            },
+          });
+        }
+        // Create shipments inside same transaction
+        await tx.shipment.createMany({ data: approvedShipments, skipDuplicates: true });
+      });
+    }
+
+    // Adjust counts for skipped clients
+    if (insufficientClients.size > 0) {
+      const skippedCount = newShipmentsData.length - approvedShipments.length;
+      operationalCreated -= skippedCount;
+      imported -= skippedCount;
+    }
+
     const createdShipments = await prisma.shipment.findMany({
-      where: { awb: { in: newShipmentsData.map(s => s.awb) } },
+      where: { awb: { in: (approvedShipments.length > 0 ? approvedShipments : newShipmentsData).map(s => s.awb) } },
       select: { id: true, awb: true, clientCode: true, courier: true, status: true }
     });
     
@@ -751,14 +818,12 @@ async function findShipmentByAwb(awb, include = null) {
   const directMatch = await prisma.shipment.findUnique(buildShipmentQuery({ awb: normalizedAwb }, include));
   if (directMatch) return directMatch;
 
-  const legacyMatches = await prisma.$queryRawUnsafe(
-    `SELECT id
+  const legacyMatches = await prisma.$queryRaw`
+    SELECT id
      FROM shipments
-     WHERE regexp_replace(upper(awb), '[^A-Z0-9]+', '', 'g') = $1
+     WHERE regexp_replace(upper(awb), '[^A-Z0-9]+', '', 'g') = ${normalizedAwb}
      ORDER BY id ASC
-     LIMIT 1`,
-    normalizedAwb
-  );
+     LIMIT 1`;
 
   const legacyId = Number(legacyMatches?.[0]?.id || 0);
   if (!legacyId) return null;

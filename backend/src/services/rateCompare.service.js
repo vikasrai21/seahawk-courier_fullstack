@@ -101,10 +101,18 @@ async function compareRates({ weightKg, zone, shipType = 'standard', isInternati
   if (!weight || weight <= 0) throw new Error('Invalid weight');
   if (!zone) throw new Error('Zone is required');
 
-  // Fetch dynamic rates from database
-  const activeVersions = await prisma.rateVersion.findMany({ where: { active: true } });
+  // Fetch latest dynamic rates from database (one per courier, by most recent effectiveDate)
+  const today = new Date().toISOString().split('T')[0];
+  const allVersions = await prisma.rateVersion.findMany({
+    where: { effectiveDate: { lte: today } },
+    orderBy: { effectiveDate: 'desc' },
+  });
   const dynamicRates = { ...CARRIER_RATES };
-  for (const rv of activeVersions) {
+  const seenCouriers = new Set();
+  for (const rv of allVersions) {
+    // Take only the latest version per courier
+    if (seenCouriers.has(rv.courier)) continue;
+    seenCouriers.add(rv.courier);
     if (rv.dataJson && rv.dataJson.modes && rv.dataJson.zones) {
       dynamicRates[rv.courier] = rv.dataJson;
     }

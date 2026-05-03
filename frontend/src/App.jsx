@@ -4,7 +4,6 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { useToast } from './hooks/useToast';
-import { Toast } from './components/ui/Toast';
 import { AppLayout } from './components/layout/AppLayout';
 import { ClientPortalLayout } from './components/layout/ClientPortalLayout';
 import { Spinner } from './components/ui/Loading';

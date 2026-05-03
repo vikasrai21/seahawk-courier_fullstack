@@ -65,7 +65,7 @@ function TodayPulse({ stats, label = 'Current Range' }) {
   );
 }
 
-function StatCard({ title, value, previous, format, icon: Icon, tone, subtitle }) {
+function StatCard({ title, value, previous, format, icon: Icon, tone, subtitle, delay = 0 }) {
   const trend = useMemo(() => getTrend(value, previous), [value, previous]);
   
   const toneMap = {
@@ -79,7 +79,7 @@ function StatCard({ title, value, previous, format, icon: Icon, tone, subtitle }
   const t = toneMap[tone] || toneMap.orange;
 
   return (
-    <div className="group relative overflow-hidden rounded-[24px] bg-white dark:bg-[rgba(13,20,37,0.65)] border border-slate-200/70 dark:border-[rgba(99,130,191,0.1)] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.3)] transition-all hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)] dark:hover:shadow-[0_12px_32px_rgba(0,0,0,0.4)] hover:-translate-y-0.5 dark:backdrop-blur-xl">
+    <div className="group relative overflow-hidden rounded-[24px] bg-white dark:bg-[rgba(13,20,37,0.65)] border border-slate-200/70 dark:border-[rgba(99,130,191,0.1)] p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] dark:shadow-[0_8px_24px_rgba(0,0,0,0.3)] transition-all hover:shadow-[0_12px_32px_rgba(15,23,42,0.08)] dark:hover:shadow-[0_12px_32px_rgba(0,0,0,0.4)] hover:-translate-y-0.5 dark:backdrop-blur-xl animate-in" style={{ animationDelay: `${delay}ms` }}>
       <div className="flex items-center justify-between">
         <div className={`flex items-center justify-center w-11 h-11 rounded-2xl ring-1 ${t}`}>
           <Icon size={22} strokeWidth={2.5} />
@@ -135,18 +135,18 @@ export default function DashboardStats({ overview, previousOverview, dateLabel, 
     <div className="space-y-6 relative">
       <TodayPulse stats={{ ...todayStats, todayBooked: ops.todayBooked, todayDelivered: ops.todayDelivered }} label={dateLabel || 'Current Range'} />
       <div className={`grid gap-5 md:grid-cols-2 xl:grid-cols-3 ${isOwner ? '2xl:grid-cols-6' : '2xl:grid-cols-4'}`}>
-        <StatCard title="Total Shipments" value={totalShipments || kpis.totalShipments || 0} previous={prev.totalShipments || 0} icon={Package} tone="orange" subtitle={`${fmtNumber(ops.weekShipments || 0)} this week`} />
+        <StatCard title="Total Shipments" value={totalShipments || kpis.totalShipments || 0} previous={prev.totalShipments || 0} icon={Package} tone="orange" subtitle={`${fmtNumber(ops.weekShipments || 0)} this week`} delay={0} />
         
-        {isOwner && <StatCard title="Recorded Billing" value={mainRevenue} previous={prev.totalRevenue || 0} format="currency" icon={IndianRupee} tone="blue" subtitle={revenueSubtitle} />}
-        {isOwner && <StatCard title="Known Gross Profit" value={grossProfit} previous={0} format="currency" icon={TrendingUp} tone="green" subtitle={`0 until carrier buy-costs are recorded`} />}
-        {isOwner && <StatCard title="Known Margin" value={avgMargin} previous={0} format="percent" icon={Percent} tone="purple" subtitle={`Reference estimates are separate`} />}
+        {isOwner && <StatCard title="Recorded Billing" value={mainRevenue} previous={prev.totalRevenue || 0} format="currency" icon={IndianRupee} tone="blue" subtitle={revenueSubtitle} delay={60} />}
+        {isOwner && <StatCard title="Known Gross Profit" value={grossProfit} previous={0} format="currency" icon={TrendingUp} tone="green" subtitle={`0 until carrier buy-costs are recorded`} delay={120} />}
+        {isOwner && <StatCard title="Known Margin" value={avgMargin} previous={0} format="percent" icon={Percent} tone="purple" subtitle={`Reference estimates are separate`} delay={180} />}
         
-        <StatCard title="Delivery Rate" value={((kpis.delivered || ops.deliveredCount || 0) / (totalShipments || 1)) * 100} previous={((prev.delivered || 0) / (prev.totalShipments || 1)) * 100} format="percent" icon={Target} tone="cyan" subtitle={`${fmtNumber(kpis.delivered || ops.deliveredCount || 0)} completed`} />
+        <StatCard title="Delivery Rate" value={((kpis.delivered || ops.deliveredCount || 0) / (totalShipments || 1)) * 100} previous={((prev.delivered || 0) / (prev.totalShipments || 1)) * 100} format="percent" icon={Target} tone="cyan" subtitle={`${fmtNumber(kpis.delivered || ops.deliveredCount || 0)} completed`} delay={240} />
         
-        {!isOwner && <StatCard title="Pending / Transit" value={transitOut} previous={0} icon={Clock} tone="blue" subtitle="Awaiting completion" />}
-        {!isOwner && <StatCard title="Booked Today" value={ops.todayBooked || todayStats.Booked || 0} previous={0} icon={Package} tone="purple" subtitle="New volume" />}
+        {!isOwner && <StatCard title="Pending / Transit" value={transitOut} previous={0} icon={Clock} tone="blue" subtitle="Awaiting completion" delay={60} />}
+        {!isOwner && <StatCard title="Booked Today" value={ops.todayBooked || todayStats.Booked || 0} previous={0} icon={Package} tone="purple" subtitle="New volume" delay={120} />}
         
-        <StatCard title="Failed / RTO" value={(ops.failedCount || failedCurrent) + (ops.rtoCount || 0)} previous={failedPrevious} icon={Truck} tone="red" subtitle={`${ops.rtoCount || 0} RTO + ${ops.failedCount || failedCurrent} failed`} />
+        <StatCard title="Failed / RTO" value={(ops.failedCount || failedCurrent) + (ops.rtoCount || 0)} previous={failedPrevious} icon={Truck} tone="red" subtitle={`${ops.rtoCount || 0} RTO + ${ops.failedCount || failedCurrent} failed`} delay={300} />
       </div>
     </div>
   );

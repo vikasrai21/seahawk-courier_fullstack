@@ -265,12 +265,43 @@ async function getByClient(clientCode, db = prisma) {
   });
 }
 
-// Get all contracts
-async function getAll(db = prisma) {
-  return db.contract.findMany({
-    include: { client: { select: { company: true } } },
-    orderBy: [{ clientCode: 'asc' }, { active: 'desc' }],
-  });
+// Get all contracts — supports optional pagination
+async function getAll({ page, limit, search } = {}, db = prisma) {
+  const where = {};
+  if (search) {
+    const q = String(search).trim();
+    where.OR = [
+      { clientCode: { contains: q, mode: 'insensitive' } },
+      { name: { contains: q, mode: 'insensitive' } },
+      { courier: { contains: q, mode: 'insensitive' } },
+    ];
+  }
+
+  // If no pagination params, return all (backward-compatible)
+  if (!page && !limit) {
+    return db.contract.findMany({
+      where,
+      include: { client: { select: { company: true } } },
+      orderBy: [{ clientCode: 'asc' }, { active: 'desc' }],
+    });
+  }
+
+  const take = Math.min(Number(limit) || 50, 500);
+  const skip = (Math.max(1, Number(page) || 1) - 1) * take;
+  const [contracts, total] = await Promise.all([
+    db.contract.findMany({
+      where,
+      include: { client: { select: { company: true } } },
+      orderBy: [{ clientCode: 'asc' }, { active: 'desc' }],
+      take,
+      skip,
+    }),
+    db.contract.count({ where }),
+  ]);
+  return {
+    contracts,
+    pagination: { page: Number(page) || 1, limit: take, total, totalPages: Math.ceil(total / take) },
+  };
 }
 
 // Upsert contract

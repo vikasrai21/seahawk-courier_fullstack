@@ -493,18 +493,28 @@ router.get("/rto-alerts", async (req, res) => {
     const thirtyDays = new Date(Date.now() - 30 * 86400000)
       .toISOString()
       .split("T")[0];
-    const couriers = await prisma.shipment.groupBy({
-      by: ["courier"],
-      where: { date: { gte: thirtyDays }, courier: { not: null } },
-      _count: { id: true },
-    });
+    // Single query: get total + RTO counts per courier in parallel (no N+1)
+    const [courierTotals, courierRTO] = await Promise.all([
+      prisma.shipment.groupBy({
+        by: ["courier"],
+        where: { date: { gte: thirtyDays }, courier: { not: null } },
+        _count: { id: true },
+      }),
+      prisma.shipment.groupBy({
+        by: ["courier"],
+        where: { date: { gte: thirtyDays }, courier: { not: null }, status: "RTO" },
+        _count: { id: true },
+      }),
+    ]);
+
+    const rtoMap = Object.fromEntries(
+      courierRTO.map((r) => [r.courier, r._count.id])
+    );
 
     const alerts = [];
-    for (const c of couriers) {
+    for (const c of courierTotals) {
       if (!c.courier || c._count.id < 5) continue;
-      const rto = await prisma.shipment.count({
-        where: { courier: c.courier, date: { gte: thirtyDays }, status: "RTO" },
-      });
+      const rto = rtoMap[c.courier] || 0;
       const rate = (rto / c._count.id) * 100;
       if (rate >= 15) {
         alerts.push({
@@ -695,222 +705,12 @@ router.get(
 );
 
 // ── GET /api/ops/dashboard — consolidated analytics with intelligence ─────
-router.get("/dashboard", async (req, res) => {
+const dashboardSvc = require('../services/dashboard.service');
+router.get('/dashboard', async (req, res) => {
   try {
-    const cached = await cache.get("ops:dashboard:v2");
-    if (cached) return R.ok(res, cached);
-
-    let now = new Date();
-    // Intelligent Date Anchor: Use latest shipment date if we are in a demo/inactive state
-    const latestShipment = await prisma.shipment.findFirst({
-      select: { date: true },
-      orderBy: { createdAt: "desc" },
-    });
-    if (latestShipment && latestShipment.date) {
-      const latestDate = new Date(latestShipment.date);
-      if (latestDate < now) {
-        now = new Date(latestDate.getTime() + 12 * 3600000); // Add 12 hours to safely be inside that day
-      }
-    }
-
-    const today = now.toISOString().split("T")[0];
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 86400000)
-      .toISOString()
-      .split("T")[0];
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 86400000)
-      .toISOString()
-      .split("T")[0];
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-
-    const [
-      todayCount,
-      weekCount,
-      todayRev,
-      monthRev,
-      pendingCount,
-      monthDelivered,
-      monthTotal,
-      courierData,
-      clientData,
-      dailyData,
-      recentShipments,
-      quoteStats,
-      reconStats,
-      delayedByDays,
-      monthCostData,
-      rtoCount,
-      failedCount,
-      todayDelivered,
-      todayBooked,
-    ] = await Promise.all([
-      prisma.shipment.count({ where: { date: today } }),
-      prisma.shipment.count({ where: { date: { gte: sevenDaysAgo } } }),
-      prisma.shipment.aggregate({
-        where: { date: today },
-        _sum: { amount: true },
-      }),
-      prisma.shipment.aggregate({
-        where: { date: { gte: monthStart } },
-        _sum: { amount: true },
-      }),
-      prisma.shipment.count({
-        where: { status: { in: ["Booked", "InTransit"] } },
-      }),
-      prisma.shipment.count({
-        where: { status: "Delivered", date: { gte: monthStart } },
-      }),
-      prisma.shipment.count({ where: { date: { gte: monthStart } } }),
-      prisma.shipment.groupBy({
-        by: ["courier"],
-        where: { date: { gte: monthStart }, courier: { not: null } },
-        _sum: { amount: true },
-        _count: { id: true },
-        orderBy: { _sum: { amount: "desc" } },
-      }),
-      prisma.shipment.groupBy({
-        by: ["clientCode"],
-        where: { date: { gte: monthStart } },
-        _sum: { amount: true },
-        _count: { id: true },
-        orderBy: { _sum: { amount: "desc" } },
-        take: 10,
-      }),
-      prisma.shipment.groupBy({
-        by: ["date"],
-        where: { date: { gte: thirtyDaysAgo } },
-        _count: { id: true },
-        _sum: { amount: true },
-        orderBy: { date: "asc" },
-      }),
-      prisma.shipment.findMany({
-        where: { date: { gte: sevenDaysAgo } },
-        take: 15,
-        orderBy: { createdAt: "desc" },
-        include: { client: { select: { company: true } } },
-      }),
-      prisma.quote.aggregate({
-        _count: { id: true },
-        _avg: { profit: true, margin: true },
-        _sum: { profit: true },
-      }),
-      reconciliationSvc.getReconciliationStats(),
-      // Delayed shipments by courier (in transit > 7 days)
-      prisma.shipment.groupBy({
-        by: ["courier"],
-        where: {
-          status: "InTransit",
-          date: { lte: sevenDaysAgo },
-          courier: { not: null },
-        },
-        _count: { id: true },
-        orderBy: { _count: { id: "desc" } },
-      }),
-      // Cost estimate from courier invoices this month
-      prisma.courierInvoice.aggregate({
-        where: { createdAt: { gte: new Date(monthStart) } },
-        _sum: { totalAmount: true },
-      }),
-      // RTO & Failed counts
-      prisma.shipment.count({
-        where: { status: "RTO", date: { gte: monthStart } },
-      }),
-      prisma.shipment.count({
-        where: { status: "Failed", date: { gte: monthStart } },
-      }),
-      // Today specifics
-      prisma.shipment.count({ where: { status: "Delivered", date: today } }),
-      prisma.shipment.count({ where: { status: "Booked", date: today } }),
-    ]);
-
-    // Enrich client data
-    const clientCodes = clientData.map((c) => c.clientCode);
-    const clients = await prisma.client.findMany({
-      where: { code: { in: clientCodes } },
-      select: { code: true, company: true },
-    });
-    const clientMap = Object.fromEntries(
-      clients.map((c) => [c.code, c.company]),
-    );
-
-    // Profit calculations
-    const totalRevenue = monthRev._sum.amount || 0;
-    const estimatedCost =
-      monthCostData._sum.totalAmount || Math.round(totalRevenue * 0.72);
-    const grossProfit = totalRevenue - estimatedCost;
-    const avgMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
-
-    const responseData = {
-      overview: {
-        todayShipments: todayCount,
-        weekShipments: weekCount,
-        todayRevenue: todayRev._sum.amount || 0,
-        monthRevenue: totalRevenue,
-        pendingCount,
-        deliveredCount: monthDelivered,
-        deliveryRate:
-          monthTotal > 0
-            ? parseFloat(((monthDelivered / monthTotal) * 100).toFixed(1))
-            : 0,
-        // Intelligence fields
-        estimatedCost,
-        grossProfit,
-        avgMargin: parseFloat(avgMargin.toFixed(1)),
-        rtoCount,
-        failedCount,
-        totalShipments: monthTotal,
-        todayDelivered,
-        todayBooked,
-      },
-      courierBreakdown: courierData.map((c) => ({
-        courier: c.courier,
-        revenue: c._sum.amount || 0,
-        count: c._count.id,
-      })),
-      topClients: clientData.map((c) => ({
-        code: c.clientCode,
-        company: clientMap[c.clientCode] || c.clientCode,
-        revenue: c._sum.amount || 0,
-        count: c._count.id,
-      })),
-      dailyTrend: dailyData.map((d) => ({
-        date: d.date,
-        count: d._count.id,
-        revenue: d._sum.amount || 0,
-      })),
-      recentShipments: recentShipments.map((s) => ({
-        id: s.id,
-        date: s.date,
-        awb: s.awb,
-        consignee: s.consignee,
-        destination: s.destination,
-        courier: s.courier,
-        amount: s.amount,
-        status: s.status,
-        clientName: s.client?.company || s.clientCode,
-      })),
-      delayedByCourier: (delayedByDays || []).map((d) => ({
-        courier: d.courier,
-        count: d._count.id,
-      })),
-      quotes: {
-        total: quoteStats._count.id || 0,
-        avgProfit: parseFloat((quoteStats._avg.profit || 0).toFixed(2)),
-        avgMargin: parseFloat((quoteStats._avg.margin || 0).toFixed(1)),
-        totalProfit: quoteStats._sum.profit || 0,
-      },
-      reconciliation: {
-        totalInvoices: reconStats?.totalInvoices || 0,
-        overchargeCount: reconStats?.overchargeCount || 0,
-        leakageAlerts: reconStats?.leakageAlerts || 0,
-        weightDisputeAlerts: reconStats?.weightDisputeAlerts || 0,
-        potentialSaving: reconStats?.potentialSaving || 0,
-      },
-    };
-
-    await cache.set("ops:dashboard:v2", responseData, 30).catch(() => {});
-    R.ok(res, responseData);
+    const data = await dashboardSvc.getDashboardData();
+    R.ok(res, data);
   } catch (err) {
-    logger.error(`Dashboard error: ${err.message}`);
     R.error(res, err.message);
   }
 });

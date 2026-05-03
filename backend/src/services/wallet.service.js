@@ -165,9 +165,34 @@ async function adjust({ clientCode, amount, description }) {
     throw new AppError('Adjustment amount must be non-zero.', 400);
   }
   return prisma.$transaction(async (tx) => {
-    const updated = await tx.client.update({
+    // For negative adjustments, guard against resulting negative balance
+    if (safeAmount < 0) {
+      const absAmount = Math.abs(safeAmount);
+      const debitResult = await tx.client.updateMany({
+        where: {
+          code: clientCode,
+          walletBalance: { gte: absAmount },
+        },
+        data: { walletBalance: { decrement: absAmount } },
+      });
+      if (debitResult.count === 0) {
+        const client = await tx.client.findUnique({
+          where: { code: clientCode },
+          select: { walletBalance: true },
+        });
+        if (!client) throw new AppError(`Client not found: ${clientCode}`, 404);
+        throw new AppError(`Adjustment would result in negative balance (available: ₹${toNumber(client.walletBalance).toFixed(2)}, adjustment: -₹${absAmount.toFixed(2)})`, 400);
+      }
+    } else {
+      const exists = await tx.client.findUnique({ where: { code: clientCode }, select: { code: true } });
+      if (!exists) throw new AppError(`Client not found: ${clientCode}`, 404);
+      await tx.client.update({
+        where: { code: clientCode },
+        data:  { walletBalance: { increment: safeAmount } },
+      });
+    }
+    const updated = await tx.client.findUnique({
       where: { code: clientCode },
-      data:  { walletBalance: { increment: safeAmount } }, // negative amount = deduct
       select: { code: true, company: true, walletBalance: true },
     });
     const txn = await tx.walletTransaction.create({

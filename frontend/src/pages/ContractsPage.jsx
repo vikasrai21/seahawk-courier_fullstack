@@ -315,8 +315,8 @@ export default function ContractsPage({ toast }) {
           </div>
 
           {form.contractMode === 'simple' ? (
-            <div className="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-3 dark:border-slate-800">
+            <div className="table-shell">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/60 p-4 dark:border-[rgba(99,130,191,0.1)] bg-white/50 dark:bg-[rgba(13,20,37,0.4)] backdrop-blur-sm">
                 <div>
                   <p className="text-sm font-black text-slate-900 dark:text-white">Simple Rules</p>
                   <p className="text-xs text-slate-500 dark:text-slate-300">Flat price by zone, with optional mode-specific overrides.</p>
@@ -325,7 +325,7 @@ export default function ContractsPage({ toast }) {
               </div>
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                <thead className="table-head">
                     <tr>
                       <th className="px-3 py-2 text-left">Zone</th>
                       <th className="px-3 py-2 text-left">Mode</th>
@@ -364,8 +364,8 @@ export default function ContractsPage({ toast }) {
               </div>
             </div>
           ) : (
-          <div className="rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 p-3 dark:border-slate-800">
+          <div className="table-shell mt-2">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/60 p-4 dark:border-[rgba(99,130,191,0.1)] bg-white/50 dark:bg-[rgba(13,20,37,0.4)] backdrop-blur-sm">
               <div>
                 <p className="text-sm font-black text-slate-900 dark:text-white">Pricing Matrix</p>
                 <p className="text-xs text-slate-500 dark:text-slate-300">Base charge + slab rate, with optional per-kg charge for 5kg+ excess.</p>
@@ -380,7 +380,7 @@ export default function ContractsPage({ toast }) {
             </div>
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-[10px] uppercase tracking-widest text-slate-500 dark:bg-slate-800 dark:text-slate-300">
+                <thead className="table-head">
                   <tr>
                     <th className="px-3 py-2 text-left">Zone</th>
                     <th className="px-3 py-2 text-left">Slab</th>

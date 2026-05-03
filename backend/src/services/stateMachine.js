@@ -32,14 +32,14 @@ const LABELS = {
 };
 
 const TRANSITIONS = {
-  Booked: ['PickedUp', 'Cancelled'],
+  Booked: ['PickedUp', 'InTransit', 'Cancelled'],
   PickedUp: ['InTransit', 'RTO', 'Cancelled'],
-  InTransit: ['OutForDelivery', 'RTO', 'Delayed'],
-  OutForDelivery: ['Delivered', 'Delayed', 'RTO'],
+  InTransit: ['OutForDelivery', 'RTO', 'Delayed', 'Failed', 'NDR'],
+  OutForDelivery: ['Delivered', 'Delayed', 'RTO', 'Failed', 'NDR'],
   Delivered: [],
   Failed: ['OutForDelivery', 'RTO', 'Delivered'],
   NDR: ['OutForDelivery', 'RTO', 'Delivered'],
-  Delayed: ['InTransit', 'RTO'],
+  Delayed: ['InTransit', 'OutForDelivery', 'RTO'],
   RTO: ['RTODelivered', 'InTransit'],
   RTODelivered: [],
   Cancelled: [],

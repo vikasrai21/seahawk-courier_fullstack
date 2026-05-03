@@ -55,11 +55,13 @@ function buildRefreshExpiry() {
 }
 
 // Store refresh token — gracefully skips if table doesn't exist yet
+function hashToken(token) { return crypto.createHash("sha256").update(token).digest("hex"); }
 async function storeRefreshToken(userId, token, meta = {}) {
+  const hashedToken = hashToken(token);
   try {
     await prisma.refreshToken.create({
       data: {
-        token,
+        token: hashedToken,
         userId,
         expiresAt: buildRefreshExpiry(),
         ip: meta.ip || null,
@@ -141,7 +143,7 @@ async function refreshAccessToken(token) {
   // Try DB-stored token first
   try {
     const rotated = await prisma.$transaction(async (tx) => {
-      const stored = await tx.refreshToken.findUnique({ where: { token } });
+      const stored = await tx.refreshToken.findUnique({ where: { token: hashToken(token) } });
       if (!stored) return null;
 
       if (stored.expiresAt < now) {
@@ -165,7 +167,7 @@ async function refreshAccessToken(token) {
 
       const nextRefreshToken = generateRefreshToken();
       await tx.refreshToken.update({
-        where: { token },
+        where: { token: hashToken(token) },
         data: { revokedAt: now },
       });
       await tx.refreshToken.create({
@@ -207,7 +209,7 @@ async function revokeRefreshToken(token) {
   if (!token) return;
   try {
     await prisma.refreshToken.update({
-      where: { token },
+      where: { token: hashToken(token) },
       data: { revokedAt: new Date() },
     });
   } catch {
@@ -400,22 +402,31 @@ async function changePassword(userId, currentPassword, newPassword) {
   logger.info(`Password changed: userId=${userId}`);
 }
 
-async function getAllUsers() {
-  const users = await prisma.user.findMany({
-    select: {
-      id: true, name: true, email: true, role: true,
-      branch: true, active: true, mustChangePassword: true, createdAt: true,
-      clientProfile: { select: { clientCode: true } },
-    },
-    orderBy: { createdAt: 'asc' },
-  });
-  // Flatten clientCode to top level for convenience
-  return users.map(u => ({
-    ...u,
-    isOwner: isOwnerUser(u),
-    clientCode: u.clientProfile?.clientCode ?? null,
-    clientProfile: undefined,
-  }));
+async function getAllUsers({ page = 1, limit = 100 } = {}) {
+  const take = Math.min(limit, 500);
+  const skip = (Math.max(1, page) - 1) * take;
+  const [users, total] = await Promise.all([
+    prisma.user.findMany({
+      select: {
+        id: true, name: true, email: true, role: true,
+        branch: true, active: true, mustChangePassword: true, createdAt: true,
+        clientProfile: { select: { clientCode: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+      take,
+      skip,
+    }),
+    prisma.user.count(),
+  ]);
+  return {
+    users: users.map(u => ({
+      ...u,
+      isOwner: isOwnerUser(u),
+      clientCode: u.clientProfile?.clientCode ?? null,
+      clientProfile: undefined,
+    })),
+    pagination: { page, limit: take, total, totalPages: Math.ceil(total / take) },
+  };
 }
 
 module.exports = {
