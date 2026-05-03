@@ -3,7 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { ThemeProvider } from './context/ThemeContext';
-import { useToast } from './hooks/useToast';
+import { ToastProvider, useToast } from './components/ui/Toast';
 import { AppLayout } from './components/layout/AppLayout';
 import { ClientPortalLayout } from './components/layout/ClientPortalLayout';
 import { Spinner } from './components/ui/Loading';
@@ -156,7 +156,7 @@ function AppRoutes() {
 
   return (
     <>
-      <Toast toasts={toasts} removeToast={removeToast} />
+
       <AuthGate>
         <Suspense fallback={<RouteLoadingScreen />}>
           <Routes>
@@ -263,7 +263,9 @@ export default function App() {
       <ThemeProvider>
         <AuthProvider>
           <SocketProvider>
-            <AppRoutes />
+            <ToastProvider>
+              <AppRoutes />
+            </ToastProvider>
           </SocketProvider>
         </AuthProvider>
       </ThemeProvider>
