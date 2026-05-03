@@ -146,17 +146,20 @@ function ClientRoute({ children }) {
 
 function AuthGate({ children }) {
   const { loading } = useAuth();
-  const bypassAuthLoadingForMockScanner = (() => {
+  // Mobile scanner pages are opened on the user's phone — the phone has no
+  // session and never will. Skipping the auth loading screen for ALL
+  // /mobile-scanner paths prevents the blank-screen race where the auth
+  // system fires a redirect-to-login before the page can render.
+  const bypassAuthLoading = (() => {
     try {
       if (typeof window === 'undefined') return false;
       const path = window.location?.pathname || '';
-      const qp = new URLSearchParams(window.location?.search || '');
-      return path.startsWith('/mobile-scanner') && (qp.get('mock') === '1' || qp.get('e2e') === '1');
+      return path.startsWith('/mobile-scanner');
     } catch {
       return false;
     }
   })();
-  if (bypassAuthLoadingForMockScanner) return children;
+  if (bypassAuthLoading) return children;
   if (loading) return <AuthLoadingScreen />;
   return children;
 }

@@ -649,19 +649,119 @@ async function callGoogleVisionAPI(base64Data) {
         requests: [
           {
             image: { content: base64Data },
+            // DOCUMENT_TEXT_DETECTION is best for dense printed labels (AWB slips).
+            // TEXT_DETECTION would work too, but DOCUMENT_TEXT_DETECTION handles
+            // multi-column layouts and small fonts on courier labels better.
             features: [{ type: 'DOCUMENT_TEXT_DETECTION' }],
+            imageContext: {
+              // Hint the engine toward English so it doesn't waste cycles trying
+              // other scripts — Indian AWB slips are always printed in English.
+              languageHints: ['en'],
+            },
           },
         ],
       }
     );
-    const textAnnotations = response.data?.responses?.[0]?.textAnnotations;
-    const visionText = textAnnotations && textAnnotations.length > 0 ? textAnnotations[0].description : '';
+
+    const resp0 = response.data?.responses?.[0];
+
+    // DOCUMENT_TEXT_DETECTION returns two overlapping structures:
+    //   fullTextAnnotation.text  — the full page text in reading order (preferred)
+    //   textAnnotations[0].description — same content but occasionally truncated
+    // Prefer fullTextAnnotation so we get the complete label text.
+    const fullText = resp0?.fullTextAnnotation?.text || '';
+    const fallbackText = resp0?.textAnnotations?.[0]?.description || '';
+    const visionText = (fullText || fallbackText).trim();
+
+    if (!visionText) {
+      logger.warn('[OCR GoogleVision] API returned no text — image may be too dark/blurry or quota exceeded.');
+      return null;
+    }
+
     logger.info(`[OCR GoogleVision] Extracted ${visionText.length} chars in ${Date.now() - startedAt}ms`);
     return visionText;
   } catch (error) {
-    logger.error(`[OCR GoogleVision] Failed: ${error.message}`);
+    // Surface the HTTP status so we can distinguish auth failures from quota issues
+    const status = error.response?.status;
+    const detail = error.response?.data?.error?.message || error.message;
+    logger.error(`[OCR GoogleVision] Failed (HTTP ${status || 'network'}): ${detail}`);
     return null;
   }
+}
+
+/**
+ * Vision-API-only extraction: call Vision for raw text then run the same
+ * field-extraction logic the local OCR pipeline uses.  This lets Vision API
+ * act as a standalone OCR engine when Gemini is not configured.
+ */
+async function extractWithVisionOnly(base64Data, options = {}) {
+  const normalizedBase64 = normalizeBase64Data(base64Data);
+  if (!normalizedBase64) throw new Error('OCR_VISION_RUNTIME: imageBase64 is required.');
+
+  const visionText = await callGoogleVisionAPI(normalizedBase64);
+  if (!visionText) throw new Error('OCR_VISION_RUNTIME: Google Vision returned no text.');
+
+  const knownAwb = String(options.knownAwb || '').trim();
+
+  // Build a minimal parsed object from the Vision raw text using the same
+  // AWB + field heuristics the local OCR uses, then let enhanceParsedDetails
+  // fill in courier detection, normalization, etc.
+  const rawText = normalizeRawText(visionText);
+  const awbCandidates = extractRawTextAwbCandidates(rawText);
+  const detectedCourier = detectCourier(rawText);
+  const courierHint = normalizeDetectedCourier(detectedCourier?.carrier);
+  const ck = courierKey(courierHint);
+
+  const LABEL_PATTERNS = {
+    consignee: [
+      /(?:consignee|receiver|deliver\s*to|ship\s*to|to)\s*[:\-]?\s*(.+)/i,
+      /^to\s*[:\-]?\s*(.+)/im,
+    ],
+    destination: [
+      /(?:destination|dest|to\s*city|city)\s*[:\-]?\s*([A-Za-z\s]+)/i,
+    ],
+    pincode: [
+      /\b([1-9]\d{5})\b/,
+    ],
+    clientName: [
+      /(?:consignor|sender|from|shipper|ship\s*from)\s*[:\-]?\s*(.+)/i,
+    ],
+    weight: [
+      /(?:weight|wt\.?|kg)\s*[:\-]?\s*(\d+(?:\.\d+)?)\s*(?:kg)?/i,
+    ],
+    amount: [
+      /(?:cod|amount|value|rs\.?|inr)\s*[:\-]?\s*(\d+(?:\.\d+)?)/i,
+    ],
+    orderNo: [
+      /(?:order\s*(?:no|num|#|id)|invoice\s*(?:no|#))\s*[:\-]?\s*([A-Z0-9\-]+)/i,
+    ],
+    phone: [
+      /\b([6-9]\d{9})\b/,
+    ],
+  };
+
+  const parsedFromText = {
+    success: true,
+    rawText,
+    awb: pickBestAwb({ awb: knownAwb, barcodeCandidates: [], rawText, courierHint }).awb || knownAwb,
+    courier: courierHint,
+    consignee:   cleanOcrPlaceholder(extractLabeledValue(rawText, LABEL_PATTERNS.consignee[ck] || LABEL_PATTERNS.consignee.default || LABEL_PATTERNS.consignee)),
+    destination: cleanOcrPlaceholder(extractLabeledValue(rawText, LABEL_PATTERNS.destination)),
+    pincode:     firstMatch(rawText, LABEL_PATTERNS.pincode[0]),
+    clientName:  cleanOcrPlaceholder(extractLabeledValue(rawText, LABEL_PATTERNS.clientName)),
+    weight:      asNumber(firstMatch(rawText, LABEL_PATTERNS.weight[0])),
+    amount:      asNumber(firstMatch(rawText, LABEL_PATTERNS.amount[0])),
+    orderNo:     firstMatch(rawText, LABEL_PATTERNS.orderNo[0]),
+    phone:       firstMatch(rawText, LABEL_PATTERNS.phone[0]),
+  };
+
+  const enhanced = enhanceParsedDetails(parsedFromText, knownAwb);
+  enhanced._runtime = { engine: 'vision_only' };
+  logger.info(
+    `[OCR VisionOnly] awb=${enhanced.awb || 'NA'} courier=${enhanced.courier || 'NA'} ` +
+    `consignee=${enhanced.consignee || 'NA'} dest=${enhanced.destination || 'NA'} pin=${enhanced.pincode || 'NA'}`
+  );
+  return enhanced;
 }
 
 function buildPrompt(knownAwb = '', contextData = {}, visionText = '') {
@@ -945,6 +1045,9 @@ exports.extractShipmentFromImage = async (base64Data, mimeType, options = {}) =>
   // AUTO MODE: Gemini-first with local OCR running in parallel as backup.
   // Gemini is vastly superior for handwritten labels + field understanding.
   // Local OCR is fast and reliable for barcodes and basic printed text.
+  //
+  // If only GOOGLE_VISION_API_KEY is set (no Gemini), Vision-only extraction
+  // acts as the primary engine and local OCR is the fallback.
   // ═══════════════════════════════════════════════════════════════════════
   const GEMINI_BUDGET_MS = 12000;
 
@@ -978,6 +1081,18 @@ exports.extractShipmentFromImage = async (base64Data, mimeType, options = {}) =>
     }
   }
 
-  // No Gemini API key — pure local
+  // No Gemini key but Vision API key is present — use Vision-only extraction.
+  // This makes GOOGLE_VISION_API_KEY useful as a standalone OCR engine for
+  // computer-generated (printed) AWB slips without requiring Gemini.
+  if (GOOGLE_VISION_API_KEY) {
+    logger.info('[OCR Auto] No Gemini key — trying Google Vision as standalone OCR engine.');
+    try {
+      return await extractWithVisionOnly(base64Data, options);
+    } catch (visionErr) {
+      logger.warn(`[OCR Auto] Vision-only extraction failed: ${visionErr.message}. Falling back to local OCR.`);
+    }
+  }
+
+  // Last resort — pure local
   return extractWithLocal(base64Data, mimeType, options);
 };
