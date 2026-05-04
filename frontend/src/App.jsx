@@ -145,20 +145,41 @@ function ClientRoute({ children }) {
 }
 
 function AuthGate({ children }) {
-  const { loading } = useAuth();
-  // Mobile scanner pages are opened on the user's phone — the phone has no
-  // session and never will. Skipping the auth loading screen for ALL
-  // /mobile-scanner paths prevents the blank-screen race where the auth
-  // system fires a redirect-to-login before the page can render.
-  const bypassAuthLoading = (() => {
-    try {
-      if (typeof window === 'undefined') return false;
-      const path = window.location?.pathname || '';
-      return path.startsWith('/mobile-scanner');
-    } catch {
-      return false;
-    }
-  })();
+    const { loading } = useAuth();
+    // Mobile scanner pages are opened on the user's phone — the phone has no
+    // session and never will. Skipping the auth loading screen for ALL
+    // /mobile-scanner paths prevents the blank-screen race where the auth
+    // system fires a redirect-to-login before the page can render.
+    const bypassAuthLoading = (() => {
+      try {
+        if (typeof window === 'undefined') return false;
+        
+        // CHANGE: redirect root with sessionId to scanner
+        if (
+          window.location.pathname === "/" &&
+          window.location.search.includes("sessionId")
+        ) {
+          window.location.replace("/scan-mobile" + window.location.search);
+          return true;
+        }
+
+        const path = window.location?.pathname || '';
+        return path.startsWith('/mobile-scanner') || path.startsWith('/scan-mobile');
+      } catch {
+        return false;
+      }
+    })();
+
+    useEffect(() => {
+      if (typeof window !== 'undefined' && window.location.pathname === '/') {
+        const searchParams = new URLSearchParams(window.location.search);
+        const sessionId = searchParams.get('sessionId');
+        if (sessionId) {
+          window.location.replace('/scan-mobile' + window.location.search);
+        }
+      }
+    }, []);
+
   if (bypassAuthLoading) return children;
   if (loading) return <AuthLoadingScreen />;
   return children;
@@ -167,16 +188,6 @@ function AuthGate({ children }) {
 function AppRoutes() {
   const { toasts, toast, removeToast } = useToast();
   const withToast = (Component, extraProps = {}) => <Component toast={toast} {...extraProps} />;
-
-  useEffect(() => {
-    if (window.location.pathname === '/' && window.location.search.includes('sessionId')) {
-      const searchParams = new URLSearchParams(window.location.search);
-      const sessionId = searchParams.get('sessionId');
-      if (sessionId) {
-        window.location.href = '/mobile-scanner/' + sessionId;
-      }
-    }
-  }, []);
 
   return (
     <>

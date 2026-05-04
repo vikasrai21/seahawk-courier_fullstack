@@ -254,7 +254,7 @@ export default function ScanAWBPage({ toast }) {
     }
     try {
       const baseUrl = window.location.origin;
-      const scannerUrl = `${baseUrl}/mobile-scanner/${mobilePIN}`;
+      const scannerUrl = `${baseUrl}/scan-mobile?sessionId=${mobilePIN}`;
       setMobileQRData(generateQRCodeDataURL(scannerUrl, 280));
     } catch {
       setMobileQRData('');

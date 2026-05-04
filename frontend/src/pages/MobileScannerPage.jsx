@@ -278,12 +278,23 @@ const fmtDuration = (ms) => {
 // Component
 // ══════════════════════════════════════════════════════════════════════════════════
 export default function MobileScannerPage({ standalone = false }) {
+  // CHANGE: prevent crash on missing data
+  if (typeof window === 'undefined' || typeof document === 'undefined') {
+    return <div>Loading...</div>;
+  }
+
   const { pin: pathPin } = useParams();
-  const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const searchParams = new URLSearchParams(window.location.search);
   const sessionPin = searchParams.get('sessionId');
   const pin = pathPin || sessionPin;
   const navigate = useNavigate();
   const isStandalone = Boolean(standalone) && !sessionPin;
+
+  // CHANGE: fallback UI if no pin and not standalone
+  if (!pin && !isStandalone) {
+    return <div>Initializing scanner...</div>;
+  }
+
   const offlineQueueKey = `${OFFLINE_QUEUE_KEY_PREFIX}:${isStandalone ? 'direct' : (pin || 'unknown')}`;
   const sessionStateKey = useMemo(
     () => `${SESSION_STATE_KEY_PREFIX}:${isStandalone ? 'direct' : (pin || 'unknown')}`,
