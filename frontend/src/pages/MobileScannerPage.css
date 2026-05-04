@@ -1,4 +1,3 @@
-
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -7,6 +6,11 @@
   font-family: 'Inter', -apple-system, system-ui, sans-serif;
   background: #F8FAFF;
   color: #0D1B2A;
+  /* Fallback for iOS Safari < 15.4 which doesn't support dvh */
+  height: 100vh;
+  min-height: 100vh;
+  /* Override with dynamic viewport height on modern browsers */
+  height: 100dvh;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -23,6 +27,8 @@
 /* ── Step wrapper ── */
 .msp-step {
   position: absolute; inset: 0;
+  /* Explicit height ensures step fills msp-root even on older browsers */
+  height: 100%;
   display: none; flex-direction: column;
   opacity: 0;
   pointer-events: none;
@@ -514,6 +520,7 @@
 /* ══ HOME SCREEN ══════════════════════════════════════════════════════════════ */
 .home-root {
   display: flex; flex-direction: column;
+  min-height: 100vh; /* fallback for older iOS Safari */
   min-height: 100dvh; overflow-y: auto;
   background: #F8FAFF;
 }

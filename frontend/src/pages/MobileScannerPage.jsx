@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+﻿import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import api from '../services/api';
@@ -2168,10 +2168,19 @@ export default function MobileScannerPage({ standalone = false }) {
     if (step === STEPS.SUCCESS) {
       const nextStep = scanWorkflowMode === 'fast' ? STEPS.SCANNING : STEPS.IDLE;
       const delayMs = scanWorkflowMode === 'fast' ? FAST_AUTO_NEXT_DELAY : AUTO_NEXT_DELAY;
-      autoNextTimer.current = setTimeout(() => { window.location.href = '/scan-mobile' + window.location.search; }, delayMs);
+      autoNextTimer.current = setTimeout(() => {
+        if (isStandalone) {
+          // Standalone /scan-mobile mode — redirect back to the same page (requires login)
+          window.location.href = '/scan-mobile' + window.location.search;
+        } else {
+          // Linked scanner mode (QR code from desktop) — just reset state, stay on the
+          // same /mobile-scanner/:pin URL. Don't redirect to /scan-mobile which requires login.
+          resetForNextScan(nextStep);
+        }
+      }, delayMs);
       return () => clearTimeout(autoNextTimer.current);
     }
-  }, [step, resetForNextScan, scanWorkflowMode]);
+  }, [step, resetForNextScan, scanWorkflowMode, isStandalone]);
 
   // Voice feedback on review data & success
   useEffect(() => {
