@@ -207,7 +207,7 @@ function AppRoutes() {
             <Route path="/portal/login" element={<ClientLoginPage />} />
             <Route path="/mobile-scanner" element={<MobileScannerPage />} />
             <Route path="/mobile-scanner/:pin" element={<MobileScannerPage />} />
-            <Route path="/scan-mobile" element={<StaffRoute><MobileScannerPage standalone /></StaffRoute>} />
+            <Route path="/scan-mobile" element={<MobileScannerPage standalone />} />
             <Route path="/change-password" element={<PrivateRoute><ChangePasswordPage /></PrivateRoute>} />
 
             <Route path="/portal/*" element={<ClientRoute><ClientPortalLayout /></ClientRoute>}>
