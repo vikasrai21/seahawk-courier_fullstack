@@ -170,7 +170,11 @@ function AppRoutes() {
 
   useEffect(() => {
     if (window.location.pathname === '/' && window.location.search.includes('sessionId')) {
-      window.location.href = '/scan-mobile' + window.location.search;
+      const searchParams = new URLSearchParams(window.location.search);
+      const sessionId = searchParams.get('sessionId');
+      if (sessionId) {
+        window.location.href = '/mobile-scanner/' + sessionId;
+      }
     }
   }, []);
 

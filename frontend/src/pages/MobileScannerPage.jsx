@@ -1,4 +1,4 @@
-﻿import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import api from '../services/api';
@@ -885,9 +885,8 @@ export default function MobileScannerPage({ standalone = false }) {
   }, [reviewForm]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.location.search.includes('sessionId')) {
+    if (typeof window !== 'undefined' && pin && !isStandalone) {
       if (connStatus === 'paired' && step === STEPS.IDLE) {
-        const urlParams = new URLSearchParams(window.location.search);
         // Clear it so we don't keep auto-restarting if they manually go back to IDLE
         if (!window.sessionStorage.getItem('scanner_auto_started')) {
           window.sessionStorage.setItem('scanner_auto_started', '1');
@@ -895,7 +894,7 @@ export default function MobileScannerPage({ standalone = false }) {
         }
       }
     }
-  }, [connStatus, step, handleStartScanning]);
+  }, [connStatus, step, handleStartScanning, pin, isStandalone]);
 
   const handleStartScanning = useCallback(() => {
     if (connStatus !== 'paired') {
@@ -2169,18 +2168,12 @@ export default function MobileScannerPage({ standalone = false }) {
       const nextStep = scanWorkflowMode === 'fast' ? STEPS.SCANNING : STEPS.IDLE;
       const delayMs = scanWorkflowMode === 'fast' ? FAST_AUTO_NEXT_DELAY : AUTO_NEXT_DELAY;
       autoNextTimer.current = setTimeout(() => {
-        if (isStandalone) {
-          // Standalone /scan-mobile mode — redirect back to the same page (requires login)
-          window.location.href = '/scan-mobile' + window.location.search;
-        } else {
-          // Linked scanner mode (QR code from desktop) — just reset state, stay on the
-          // same /mobile-scanner/:pin URL. Don't redirect to /scan-mobile which requires login.
-          resetForNextScan(nextStep);
-        }
+        // ALWAYS reset state instead of full page reload to prevent blank screen
+        resetForNextScan(nextStep);
       }, delayMs);
       return () => clearTimeout(autoNextTimer.current);
     }
-  }, [step, resetForNextScan, scanWorkflowMode, isStandalone]);
+  }, [step, resetForNextScan, scanWorkflowMode]);
 
   // Voice feedback on review data & success
   useEffect(() => {
