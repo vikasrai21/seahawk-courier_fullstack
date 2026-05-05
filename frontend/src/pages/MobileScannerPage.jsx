@@ -3,11 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import api from '../services/api';
 import { cropRectForCoverVideo } from '../utils/videoCoverCrop.js';
-import { inferCourierFromAwb, normalizeBarcodeCandidate } from '../utils/barcode.js';
+import { normalizeBarcodeCandidate } from '../utils/barcode.js';
 import { analyzeCaptureQuality, describeCaptureIssues } from '../utils/scannerQuality.js';
 import { evaluateBarcodeStability, nextBarcodeFallbackState } from '../utils/scannerStateMachine.js';
 import { createBarcodeScanner } from '../utils/barcodeEngine.js';
-import { clearQueue, loadQueue, saveQueue } from '../utils/offlineQueue.js';
 import {
   Camera, Check, AlertCircle, RotateCcw, Send, Volume2, VolumeX,
   Wifi, WifiOff, Zap, Package, ScanLine, Shield, RefreshCw, X, Brain,
@@ -41,8 +40,8 @@ const STICKY_CLIENT_KEY_PREFIX = 'mobile_scanner_sticky_client';
 const WORKFLOW_MODE_KEY = 'mobile_scanner_workflow_mode';
 const DEVICE_PROFILE_KEY = 'mobile_scanner_device_profile';
 const HEARTBEAT_INTERVAL_MS = 20000;
-const BARCODE_STABILITY_WINDOW_MS = 700; // CHANGE: require two hits within a wider stability window
-const BARCODE_STABILITY_HITS = 2; // CHANGE: reduce false barcode locks
+const BARCODE_STABILITY_WINDOW_MS = 500;
+const BARCODE_STABILITY_HITS = 1;
 const BARCODE_FAIL_THRESHOLD = 100;
 const BARCODE_REFRAME_ATTEMPTS = 2;
 const DOC_STABLE_MIN_TICKS = 2;
@@ -249,15 +248,672 @@ const lookupPincodeCity = (pin = '') => {
   return PIN_CITY[p] || '';
 };
 
-import './MobileScannerPage.css';
-import {
-  ScannerOverlays,
-  ConnectionScreen,
-  PreviewView,
-  ProcessingView,
-  ReviewPanel,
-  ResultScreens,
-} from './scanner';
+const css = `
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@500;600;700&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+.msp-root {
+  font-family: 'Inter', -apple-system, system-ui, sans-serif;
+  background: ${theme.bg};
+  color: ${theme.text};
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Mono ── */
+.mono { font-family: 'JetBrains Mono', 'SF Mono', 'Consolas', monospace; letter-spacing: -0.02em; }
+
+/* ── Step wrapper ── */
+.msp-step {
+  position: absolute; inset: 0;
+  display: none; flex-direction: column;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.msp-step.active {
+  display: flex;
+  opacity: 1;
+  pointer-events: all; z-index: 2;
+}
+.msp-step.exiting { opacity: 0; pointer-events: none; }
+
+/* ── Camera viewport ── */
+.cam-viewport {
+  position: relative; width: 100%; flex: 1;
+  min-height: 100dvh;
+  background: #000; overflow: hidden;
+}
+.cam-viewport video {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.cam-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 3;
+}
+
+/* ── Scan guide ── */
+.scan-guide {
+  border: 2.5px solid rgba(255,255,255,0.55);
+  border-radius: 16px;
+  position: relative;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+.scan-guide.detected {
+  border-color: #10B981;
+  box-shadow: 0 0 0 3px rgba(16,185,129,0.28), inset 0 0 40px rgba(16,185,129,0.07);
+}
+.scan-guide-corner {
+  position: absolute; width: 22px; height: 22px;
+  border: 3px solid rgba(255,255,255,0.9);
+  transition: border-color 0.25s;
+}
+.scan-guide.detected .scan-guide-corner { border-color: #10B981; }
+.corner-tl { top: -2px; left: -2px; border-right: none; border-bottom: none; border-radius: 7px 0 0 0; }
+.corner-tr { top: -2px; right: -2px; border-left: none; border-bottom: none; border-radius: 0 7px 0 0; }
+.corner-bl { bottom: -2px; left: -2px; border-right: none; border-top: none; border-radius: 0 0 0 7px; }
+.corner-br { bottom: -2px; right: -2px; border-left: none; border-top: none; border-radius: 0 0 7px 0; }
+
+/* ── Scan laser ── */
+@keyframes laserHeadSweep { 0% { left: 2%; } 100% { left: 98%; } }
+@keyframes laserLinePulse {
+  0%,100% { opacity: 0.78; box-shadow: 0 0 7px rgba(255,28,32,0.8), 0 0 20px rgba(255,10,16,0.35); }
+  50% { opacity: 1; box-shadow: 0 0 12px rgba(255,36,42,0.95), 0 0 34px rgba(255,12,20,0.55); }
+}
+@keyframes laserBandsDrift { 0% { background-position: 0 0, 0 0; } 100% { background-position: 160px 0, -120px 0; } }
+@keyframes laserBandsPulse { 0%,100% { opacity: 0.35; transform: translateY(-50%) scaleY(0.82); } 50% { opacity: 0.85; transform: translateY(-50%) scaleY(1.08); } }
+@keyframes laserParticlesDrift { 0% { background-position: 0 0, 10px 6px, 5px 2px; opacity: 0.28; } 50% { opacity: 0.6; } 100% { background-position: -42px 0, -24px 6px, -54px 2px; opacity: 0.32; } }
+.scan-laser {
+  position: absolute; left: 2%; right: 2%; height: 3px;
+  top: 50%; transform: translateY(-50%);
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(255,42,46,0.92), #ff111a 48%, rgba(255,42,46,0.92));
+  animation: laserLinePulse 1.4s ease-in-out infinite;
+  overflow: visible;
+}
+.scan-laser::before {
+  content: ''; position: absolute;
+  left: 0; right: 0; top: 50%; height: 34px; transform: translateY(-50%);
+  background: linear-gradient(to bottom, transparent 0%, rgba(255,48,48,0.4) 36%, rgba(255,90,90,0.9) 50%, rgba(255,48,48,0.4) 64%, transparent 100%),
+    repeating-linear-gradient(90deg, rgba(255,70,70,0) 0 7px, rgba(255,95,95,0.85) 7px 8px, rgba(255,70,70,0) 8px 13px);
+  filter: blur(0.35px);
+  transform-origin: center;
+  animation: laserBandsDrift 2.2s linear infinite, laserBandsPulse 1.3s ease-in-out infinite;
+  pointer-events: none; mix-blend-mode: screen;
+}
+.scan-laser::after {
+  content: ''; position: absolute;
+  left: 0; right: 0; top: 2px; height: 26px;
+  background: radial-gradient(circle, rgba(255,95,95,0.72) 0 1px, transparent 1.8px) 0 0 / 22px 15px repeat,
+    radial-gradient(circle, rgba(255,40,40,0.55) 0 1.1px, transparent 2px) 11px 6px / 29px 17px repeat,
+    radial-gradient(circle, rgba(255,145,145,0.36) 0 0.8px, transparent 1.6px) 5px 2px / 18px 13px repeat;
+  filter: blur(0.15px);
+  animation: laserParticlesDrift 2.4s linear infinite;
+  pointer-events: none;
+}
+.scan-laser-spark {
+  position: absolute; top: 50%;
+  width: 14px; height: 14px; border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle at 40% 40%, #fff 0 26%, #ffd9dd 34%, #ff3b44 70%, rgba(255,40,45,0.7) 100%);
+  box-shadow: 0 0 14px 4px rgba(255,245,245,0.85), 0 0 28px 10px rgba(255,40,45,0.75), 0 0 58px 20px rgba(255,20,30,0.36);
+  animation: laserHeadSweep 1.35s cubic-bezier(0.45,0,0.2,1) infinite alternate;
+  z-index: 2;
+}
+.scan-laser-spark::before {
+  content: ''; position: absolute; top: 50%; right: 100%;
+  width: 30px; height: 3px; transform: translateY(-50%);
+  background: linear-gradient(to left, rgba(255,220,220,0.82), rgba(255,55,60,0.4), rgba(255,55,60,0));
+  filter: blur(0.6px);
+}
+.scan-laser-spark::after {
+  content: ''; position: absolute; inset: -4px; border-radius: 50%;
+  border: 1px solid rgba(255,220,220,0.5);
+  animation: laserLinePulse 1.2s ease-in-out infinite;
+}
+
+/* ── Camera HUD ── */
+.cam-hud {
+  position: absolute; top: 0; left: 0; right: 0;
+  padding: 52px 18px 18px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.18) 80%, transparent 100%);
+  display: flex; justify-content: space-between; align-items: flex-start;
+  z-index: 3;
+}
+.cam-hud-chip {
+  padding: 5px 12px; border-radius: 20px;
+  background: rgba(255,255,255,0.12); backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: white; font-size: 0.7rem; font-weight: 700;
+  display: flex; align-items: center; gap: 5px;
+  border: 1px solid rgba(255,255,255,0.15);
+  letter-spacing: 0.02em;
+}
+.cam-bottom {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  padding: 24px 20px 40px;
+  background: linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.3) 70%, transparent 100%);
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  z-index: 3;
+}
+
+/* ── Cards ── */
+.card {
+  background: ${theme.surface};
+  border: 1px solid ${theme.border};
+  border-radius: 16px; padding: 16px;
+  box-shadow: 0 2px 12px rgba(15,23,42,0.06);
+}
+
+/* ── Enterprise buttons ── */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 14px 22px; border-radius: 14px; border: none;
+  font-family: inherit; font-size: 0.88rem; font-weight: 700;
+  cursor: pointer; transition: all 0.18s ease;
+  letter-spacing: 0.01em; line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:active { transform: scale(0.95); }
+.btn-primary {
+  background: linear-gradient(135deg, #1D4ED8, #2563EB);
+  color: white;
+  box-shadow: 0 4px 14px rgba(29,78,216,0.35);
+}
+.btn-primary:hover { box-shadow: 0 6px 22px rgba(29,78,216,0.45); }
+.btn-success {
+  background: linear-gradient(135deg, #059669, #10B981);
+  color: white;
+  box-shadow: 0 4px 16px rgba(5,150,105,0.32);
+}
+.btn-success:hover { box-shadow: 0 6px 22px rgba(5,150,105,0.45); }
+.btn-outline {
+  background: ${theme.surface};
+  border: 1.5px solid ${theme.border};
+  color: ${theme.text};
+  box-shadow: 0 1px 4px rgba(15,23,42,0.04);
+}
+.btn-outline:hover { border-color: rgba(29,78,216,0.3); background: #F8FAFF; }
+.btn-danger { background: ${theme.errorLight}; color: ${theme.error}; border: 1.5px solid rgba(220,38,38,0.15); }
+.btn-lg { padding: 16px 28px; font-size: 0.94rem; border-radius: 16px; }
+.btn-full { width: 100%; }
+.btn:disabled { opacity: 0.48; cursor: default; transform: none; }
+
+/* ── Capture button ── */
+.capture-btn {
+  width: 76px; height: 76px; border-radius: 50%;
+  background: white; border: 5px solid rgba(255,255,255,0.35);
+  cursor: pointer; position: relative;
+  transition: transform 0.15s;
+  box-shadow: 0 6px 28px rgba(0,0,0,0.35), 0 0 0 2px rgba(255,255,255,0.2);
+}
+.capture-btn:active { transform: scale(0.88); }
+.capture-btn-inner {
+  position: absolute; inset: 5px; border-radius: 50%;
+  background: white; border: 2px solid #E5E7EB;
+}
+
+/* ── Preview ── */
+.preview-img {
+  width: 100%; border-radius: 14px;
+  object-fit: contain; max-height: 52vh;
+  background: #F1F5F9;
+  box-shadow: 0 4px 20px rgba(15,23,42,0.1);
+}
+
+/* ── Field cards (review form) ── */
+.field-card {
+  background: ${theme.surface};
+  border: 1.5px solid ${theme.border};
+  border-left-width: 4px;
+  border-left-style: solid;
+  border-left-color: #CBD5E1;
+  border-radius: 14px;
+  padding: 13px 15px 11px;
+  box-shadow: 0 1px 6px rgba(15,23,42,0.05);
+  transition: border-color 0.2s, box-shadow 0.2s;
+  position: relative;
+}
+.field-card.conf-high { border-left-color: ${theme.success}; }
+.field-card.conf-med { border-left-color: ${theme.warning}; }
+.field-card.conf-low { border-left-color: ${theme.error}; }
+.field-card.warning { border-color: rgba(217,119,6,0.25); background: #FFFDF5; border-left-color: ${theme.warning}; box-shadow: 0 2px 10px rgba(217,119,6,0.08); }
+.field-card.error-field { border-color: rgba(220,38,38,0.2); background: #FFF8F8; border-left-color: ${theme.error}; box-shadow: 0 2px 10px rgba(220,38,38,0.08); }
+.field-card.required-empty { border-left-color: #E11D48; border-color: rgba(225,29,72,0.2); background: #FFF5F7; }
+.field-label {
+  font-size: 0.62rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  color: ${theme.muted}; margin-bottom: 5px;
+  display: flex; align-items: center; gap: 5px;
+}
+.field-required-star { color: #E11D48; font-size: 0.7rem; }
+.field-value { font-size: 0.87rem; font-weight: 600; color: ${theme.text}; }
+.field-input {
+  width: 100%; background: #F8FAFF;
+  border: 1.5px solid rgba(15,23,42,0.08);
+  border-radius: 9px; padding: 9px 11px;
+  font-family: inherit; font-size: 0.84rem; font-weight: 600;
+  color: ${theme.text}; outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  -webkit-appearance: none;
+}
+.field-input:focus {
+  border-color: ${theme.primary};
+  box-shadow: 0 0 0 3px rgba(29,78,216,0.1);
+  background: #fff;
+}
+.field-input::placeholder { color: #B0BCC8; font-weight: 500; }
+
+/* ── Confidence dot ── */
+.conf-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+.conf-high { background: ${theme.success}; box-shadow: 0 0 0 3px rgba(5,150,105,0.18); }
+.conf-med { background: ${theme.warning}; box-shadow: 0 0 0 3px rgba(217,119,6,0.15); }
+.conf-low { background: ${theme.error}; box-shadow: 0 0 0 3px rgba(220,38,38,0.15); }
+.conf-none { background: #CBD5E1; }
+
+/* ── Source badge ── */
+.source-badge {
+  font-size: 0.58rem; padding: 2px 7px; border-radius: 6px;
+  font-weight: 700; display: inline-flex; align-items: center; gap: 3px;
+  letter-spacing: 0.02em;
+}
+.source-learned { background: #F5F3FF; color: #7C3AED; }
+.source-ai { background: ${theme.primaryLight}; color: ${theme.primary}; }
+.source-history { background: ${theme.warningLight}; color: ${theme.warning}; }
+.source-pincode { background: ${theme.successLight}; color: ${theme.success}; }
+
+/* ── Review header ── */
+.review-header {
+  background: linear-gradient(135deg, #0D1B2A 0%, #1E2D3D 50%, #0D1B2A 100%);
+  color: #F8FAFC;
+  padding: 52px 20px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  position: relative;
+  overflow: hidden;
+}
+.review-header::before {
+  content: '';
+  position: absolute; top: -60px; right: -40px;
+  width: 180px; height: 180px; border-radius: 50%;
+  background: rgba(255,255,255,0.03);
+  pointer-events: none;
+}
+.review-header.courier-dtdc { background: linear-gradient(135deg, #7A0019 0%, #C8102E 60%, #7A0019 100%); }
+.review-header.courier-delhivery { background: linear-gradient(135deg, #005C5C 0%, #00A0A0 60%, #005C5C 100%); }
+.review-header.courier-trackon { background: linear-gradient(135deg, #7A2E00 0%, #E65C00 60%, #7A2E00 100%); }
+.review-header.courier-bluedart { background: linear-gradient(135deg, #0F2154 0%, #1A3A8C 60%, #0F2154 100%); }
+.review-header-top {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 10px;
+}
+.review-title { font-size: 0.6rem; color: rgba(255,255,255,0.5); font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.review-awb { font-size: 1.05rem; font-weight: 800; color: #F8FAFC; margin-top: 3px; letter-spacing: 0.01em; }
+.review-meta-row {
+  margin-top: 12px;
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+}
+.review-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; border-radius: 999px;
+  font-size: 0.67rem; font-weight: 700; border: 1px solid transparent;
+  letter-spacing: 0.02em;
+}
+.review-chip-courier {
+  border: 1px solid rgba(255,255,255,0.25);
+  background: rgba(255,255,255,0.12);
+  color: #fff; cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+.review-chip-date {
+  border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(0,0,0,0.2);
+  color: rgba(255,255,255,0.75);
+}
+.review-confidence {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; border-radius: 999px;
+  font-size: 0.67rem; font-weight: 700; border: 1px solid transparent;
+}
+.review-confidence.high { background: rgba(16,185,129,0.22); color: #6EE7B7; border-color: rgba(16,185,129,0.4); }
+.review-confidence.med { background: rgba(217,119,6,0.22); color: #FCD34D; border-color: rgba(217,119,6,0.4); }
+.review-confidence.low { background: rgba(220,38,38,0.22); color: #FCA5A5; border-color: rgba(220,38,38,0.4); }
+
+/* ── Form completion bar ── */
+.form-progress-bar-wrap {
+  margin: 0 20px 0; padding: 8px 0;
+  display: flex; align-items: center; gap: 8px;
+}
+.form-progress-bar-track {
+  flex: 1; height: 4px; border-radius: 999px;
+  background: rgba(15,23,42,0.08); overflow: hidden;
+}
+.form-progress-bar-fill {
+  height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, #1D4ED8, #10B981);
+  transition: width 0.4s ease;
+}
+.form-progress-label {
+  font-size: 0.62rem; font-weight: 700; color: ${theme.muted};
+  white-space: nowrap;
+}
+
+/* ── Suggest chip ── */
+.suggest-chip {
+  font-size: 0.74rem; padding: 7px 12px; min-height: 32px;
+  border-radius: 10px;
+  border: 1.5px solid ${theme.border};
+  background: ${theme.surface}; color: ${theme.text};
+  cursor: pointer; font-family: inherit; font-weight: 600;
+  touch-action: manipulation; transition: all 0.15s;
+}
+.suggest-chip:active { transform: scale(0.96); }
+.suggest-chip.active {
+  background: ${theme.primaryLight}; color: ${theme.primary};
+  border-color: rgba(29,78,216,0.3);
+}
+.suggest-chip.pincode-suggest {
+  background: ${theme.successLight}; color: ${theme.success};
+  border-color: rgba(5,150,105,0.25); font-size: 0.7rem;
+}
+
+/* ── Shimmer skeleton ── */
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+.skeleton {
+  background: linear-gradient(90deg, #F1F5F9 25%, #E8EDF3 50%, #F1F5F9 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+/* ── Success ── */
+@keyframes checkDraw { 0% { stroke-dashoffset: 48; } 100% { stroke-dashoffset: 0; } }
+@keyframes circleDraw { 0% { stroke-dashoffset: 200; } 100% { stroke-dashoffset: 0; } }
+.success-check-circle { stroke-dasharray: 200; stroke-dashoffset: 200; animation: circleDraw 0.6s ease-out 0.1s forwards; }
+.success-check-mark { stroke-dasharray: 48; stroke-dashoffset: 48; animation: checkDraw 0.5s ease-out 0.5s forwards; }
+
+/* ── Flash ── */
+@keyframes flash { 0% { opacity: 0.85; } 100% { opacity: 0; } }
+.flash-overlay { position: fixed; inset: 0; z-index: 50; pointer-events: none; animation: flash 0.32s ease-out forwards; }
+.flash-white { background: white; }
+.flash-success { background: rgba(5,150,105,0.22); }
+.flash-error { background: rgba(220,38,38,0.22); }
+
+/* ── Shake ── */
+@keyframes shake { 0%,100% { transform: translateX(0); } 20%,60% { transform: translateX(-7px); } 40%,80% { transform: translateX(7px); } }
+.shake { animation: shake 0.5s ease-in-out; }
+
+/* ── Offline banner ── */
+.offline-banner {
+  background: ${theme.warningLight}; color: ${theme.warning};
+  text-align: center; padding: 7px; font-size: 0.72rem; font-weight: 700;
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 99;
+  border-top: 1px solid rgba(217,119,6,0.2);
+}
+
+/* ── Scroll panel ── */
+.scroll-panel {
+  flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 14px 16px;
+}
+
+/* ══ HOME SCREEN ══════════════════════════════════════════════════════════════ */
+.home-root {
+  display: flex; flex-direction: column;
+  min-height: 100dvh; overflow-y: auto;
+  background: ${theme.bg};
+}
+
+/* Hero: full-bleed dark navy gradient */
+.home-hero {
+  background: linear-gradient(160deg, #0D1B2A 0%, #1E2D3D 55%, #0F2840 100%);
+  padding: 52px 20px 28px;
+  position: relative; overflow: hidden;
+  flex-shrink: 0;
+}
+.home-hero::before {
+  content: '';
+  position: absolute; top: -80px; right: -60px;
+  width: 260px; height: 260px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(29,78,216,0.18) 0%, transparent 70%);
+  pointer-events: none;
+}
+.home-hero::after {
+  content: '';
+  position: absolute; bottom: -50px; left: -40px;
+  width: 200px; height: 200px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(0,160,160,0.1) 0%, transparent 70%);
+  pointer-events: none;
+}
+.home-hero-top {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 22px; position: relative; z-index: 1;
+}
+.home-brand {
+  display: flex; align-items: center; gap: 10px;
+}
+.home-brand-logo {
+  width: 34px; height: 34px; border-radius: 8px;
+  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255,255,255,0.15);
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+.home-brand-name {
+  font-size: 1rem; font-weight: 800; color: #fff;
+  letter-spacing: -0.01em; line-height: 1.1;
+}
+.home-brand-tagline {
+  font-size: 0.58rem; color: rgba(255,255,255,0.45);
+  font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase;
+}
+.home-conn-pill {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 999px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.7); font-size: 0.68rem; font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.home-conn-pill.connected { color: #34D399; border-color: rgba(52,211,153,0.3); background: rgba(52,211,153,0.08); }
+
+/* Stats band */
+.home-stats-band {
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px; position: relative; z-index: 1; margin-bottom: 20px;
+}
+.home-stat-tile {
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px; padding: 12px 10px;
+  text-align: center; backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.home-stat-num { font-size: 1.4rem; font-weight: 900; color: #fff; line-height: 1; }
+.home-stat-lbl { font-size: 0.56rem; font-weight: 700; color: rgba(255,255,255,0.45); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 4px; }
+
+/* Date chip inside hero */
+.home-date-tile {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px; padding: 12px 16px;
+  position: relative; z-index: 1; cursor: pointer;
+  transition: background 0.2s;
+}
+.home-date-tile:active { background: rgba(255,255,255,0.12); }
+.home-date-lbl { font-size: 0.6rem; color: rgba(255,255,255,0.45); font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; }
+.home-date-val { font-size: 0.94rem; font-weight: 700; color: #fff; line-height: 1.2; margin-top: 1px; }
+.home-date-today-badge {
+  font-size: 0.55rem; font-weight: 800; color: #34D399;
+  background: rgba(52,211,153,0.12);
+  border: 1px solid rgba(52,211,153,0.25);
+  padding: 2px 7px; border-radius: 999px;
+  letter-spacing: 0.06em;
+  margin-left: 6px;
+}
+.home-date-tile input[type="date"] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer;
+  width: 100%; height: 100%; -webkit-appearance: none;
+}
+.home-date-change { font-size: 0.63rem; color: #60A5FA; margin-left: auto; font-weight: 600; flex-shrink: 0; }
+
+/* Centre scan zone */
+.home-scan-zone {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 28px 20px 20px; background: ${theme.bg};
+}
+@keyframes pulseRing { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(1.65); opacity: 0; } }
+.home-scan-btn-wrap {
+  position: relative; display: flex; align-items: center;
+  justify-content: center; margin-bottom: 18px;
+}
+.home-scan-ring {
+  position: absolute; width: 128px; height: 128px; border-radius: 50%;
+  border: 2px solid #1D4ED8;
+  animation: pulseRing 2.4s ease-out infinite;
+}
+.home-scan-ring2 { animation-delay: 0.9s; }
+.home-scan-btn {
+  width: 110px; height: 110px; border-radius: 50%;
+  background: linear-gradient(145deg, #1D4ED8 0%, #2563EB 50%, #3B82F6 100%);
+  border: none; cursor: pointer; touch-action: manipulation;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
+  box-shadow: 0 10px 40px rgba(29,78,216,0.4), 0 0 0 6px rgba(29,78,216,0.1), 0 0 0 12px rgba(29,78,216,0.05);
+  transition: transform 0.15s, box-shadow 0.15s;
+  position: relative; z-index: 1;
+}
+.home-scan-btn:active { transform: scale(0.91); box-shadow: 0 4px 16px rgba(29,78,216,0.25); }
+.home-scan-btn-lbl { font-size: 0.58rem; font-weight: 900; color: rgba(255,255,255,0.85); text-transform: uppercase; letter-spacing: 0.1em; }
+.home-cta { font-size: 0.8rem; color: ${theme.muted}; font-weight: 500; }
+
+/* Mode toggle pills */
+.mode-toggle-row {
+  display: flex; gap: 8px; margin-top: 14px; width: 100%; max-width: 320px;
+}
+.mode-pill {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 9px 8px; border-radius: 999px;
+  border: 1.5px solid ${theme.border};
+  background: ${theme.surface}; color: ${theme.muted};
+  font-size: 0.7rem; font-weight: 700; cursor: pointer;
+  transition: all 0.18s; touch-action: manipulation;
+  letter-spacing: 0.02em;
+}
+.mode-pill.active {
+  background: #EFF6FF; color: #1D4ED8;
+  border-color: rgba(29,78,216,0.3);
+}
+
+/* Manual AWB entry */
+.manual-awb-row {
+  display: flex; gap: 7px; width: 100%; max-width: 320px; margin-top: 14px;
+}
+.manual-awb-input {
+  flex: 1; padding: 10px 14px;
+  border: 1.5px solid ${theme.border};
+  border-radius: 12px;
+  font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; font-weight: 600;
+  background: ${theme.surface}; color: ${theme.text}; outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  -webkit-appearance: none;
+}
+.manual-awb-input:focus { border-color: ${theme.primary}; box-shadow: 0 0 0 3px rgba(29,78,216,0.1); background: #fff; }
+
+/* Action buttons */
+.action-strip {
+  display: flex; gap: 10px; margin-top: 14px; width: 100%; max-width: 320px;
+}
+.action-tile {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 10px 8px; border-radius: 12px;
+  border: 1.5px solid ${theme.border};
+  background: ${theme.surface}; color: ${theme.muted};
+  font-size: 0.72rem; font-weight: 700; cursor: pointer;
+  transition: all 0.18s; box-shadow: 0 1px 4px rgba(15,23,42,0.04);
+  letter-spacing: 0.01em;
+}
+.action-tile:active { transform: scale(0.95); background: ${theme.bg}; }
+.action-tile.danger { color: ${theme.error}; border-color: rgba(220,38,38,0.2); background: ${theme.errorLight}; }
+.action-tile.upload-active { color: ${theme.primary}; border-color: rgba(29,78,216,0.25); background: ${theme.primaryLight}; }
+
+/* Queue / manifest */
+.home-manifest {
+  flex: 1;
+  background: ${theme.surface};
+  border-radius: 24px 24px 0 0;
+  overflow: hidden;
+  border-top: 1px solid ${theme.border};
+  box-shadow: 0 -6px 24px rgba(15,23,42,0.05);
+  display: flex; flex-direction: column;
+  min-height: 260px;
+}
+.manifest-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid ${theme.border};
+}
+.manifest-title {
+  font-size: 0.62rem; font-weight: 800; color: ${theme.muted};
+  text-transform: uppercase; letter-spacing: 0.09em;
+  display: flex; align-items: center; gap: 6px;
+}
+.manifest-count {
+  font-size: 0.65rem; font-weight: 800;
+  background: ${theme.primaryLight}; color: ${theme.primary};
+  padding: 2px 10px; border-radius: 999px;
+  border: 1px solid rgba(29,78,216,0.15);
+}
+.manifest-courier-bar {
+  display: flex; padding: 8px 18px 6px; gap: 6px; flex-wrap: wrap;
+}
+.courier-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 0.6rem; font-weight: 800; letter-spacing: 0.04em;
+}
+.manifest-list { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+@keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+.manifest-item {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 11px 18px; border-bottom: 1px solid ${theme.bg};
+  animation: slideIn 0.25s ease-out;
+  transition: background 0.15s;
+}
+.manifest-item:active { background: ${theme.bg}; }
+.manifest-item-icon {
+  width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.55rem; font-weight: 900; letter-spacing: 0.05em;
+}
+.manifest-main { flex: 1; min-width: 0; }
+.manifest-awb { font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; font-weight: 700; color: ${theme.text}; }
+.manifest-meta { font-size: 0.63rem; color: ${theme.muted}; margin-top: 3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.manifest-tag { padding: 1px 6px; border-radius: 5px; font-weight: 700; font-size: 0.57rem; }
+.manifest-weight { font-size: 0.76rem; font-weight: 800; color: ${theme.primary}; flex-shrink: 0; align-self: center; }
+.manifest-actions { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
+.manifest-action-btn {
+  height: 26px; border-radius: 7px; border: 1px solid ${theme.border};
+  background: ${theme.bg}; color: ${theme.muted}; font-size: 0.64rem; font-weight: 700;
+  padding: 0 9px; display: inline-flex; align-items: center; gap: 3px; cursor: pointer;
+  font-family: inherit; transition: all 0.15s;
+}
+.manifest-action-btn:active { transform: scale(0.95); }
+.manifest-action-btn.primary { border-color: rgba(29,78,216,0.25); background: ${theme.primaryLight}; color: ${theme.primary}; }
+.manifest-action-btn.danger { border-color: rgba(220,38,38,0.2); background: ${theme.errorLight}; color: ${theme.error}; }
+.manifest-action-btn:disabled { opacity: 0.48; cursor: default; }
+.queue-date-input { height: 26px; border-radius: 7px; border: 1px solid ${theme.border}; padding: 0 8px; font-size: 0.72rem; color: ${theme.text}; background: ${theme.surface}; font-family: inherit; }
+.manifest-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 44px 20px; gap: 10px; }
+.manifest-empty-icon { width: 56px; height: 56px; border-radius: 18px; background: ${theme.bg}; display: flex; align-items: center; justify-content: center; }
+.manifest-empty-text { font-size: 0.8rem; color: ${theme.mutedLight}; font-weight: 500; text-align: center; line-height: 1.6; }
+`;
+
 // ——— Confidence helpers ———————————————————————————————————————————————————————————
 const confLevel = (score) => {
   if (score >= 0.85) return 'high';
@@ -286,17 +942,9 @@ const fmtDuration = (ms) => {
 // Component
 // ══════════════════════════════════════════════════════════════════════════════════
 export default function MobileScannerPage({ standalone = false }) {
-  // Hooks MUST be called unconditionally (React Rules of Hooks).
-  const { pin: pathPin } = useParams();
+  const { pin } = useParams();
   const navigate = useNavigate();
-
-  const searchParams = typeof window !== 'undefined'
-    ? new URLSearchParams(window.location.search)
-    : new URLSearchParams();
-  const sessionPin = searchParams.get('sessionId');
-  const pin = pathPin || sessionPin;
-  const isStandalone = Boolean(standalone) && !sessionPin;
-
+  const isStandalone = Boolean(standalone);
   const offlineQueueKey = `${OFFLINE_QUEUE_KEY_PREFIX}:${isStandalone ? 'direct' : (pin || 'unknown')}`;
   const sessionStateKey = useMemo(
     () => `${SESSION_STATE_KEY_PREFIX}:${isStandalone ? 'direct' : (pin || 'unknown')}`,
@@ -357,8 +1005,6 @@ export default function MobileScannerPage({ standalone = false }) {
   const [barcodeFailCount, setBarcodeFailCount] = useState(0);
   const [barcodeReframeCount, setBarcodeReframeCount] = useState(0);
   const [lastLockTimeMs, setLastLockTimeMs] = useState(null);
-  const [confirmDialog, setConfirmDialog] = useState(null);
-  const [guideLocked, setGuideLocked] = useState(false);
 
   // 'barcode' = narrow landscape strip, 'document' = full AWB slip portrait frame.
   // Auto-switches to 'document' after BARCODE_FAIL_THRESHOLD consecutive misses.
@@ -487,29 +1133,11 @@ export default function MobileScannerPage({ standalone = false }) {
   const scanHintRef = useRef({ message: '', at: 0 });
   const lockTelemetryRef = useRef({ lockTimeMs: null, candidateCount: 1, ambiguous: false, alternatives: [] });
   const barcodeEngineRef = useRef(null); // WASM-powered barcode engine
-  const lastScannedValueRef = useRef('');
-  const lastScannedAtRef = useRef(0);
   const reviewDataRef = useRef(null);
   const reviewFormRef = useRef({});
   const addToQueueRef = useRef(null);
   const handleLookupNeedsPhotoRef = useRef(null);
   const applyProcessedScanResultRef = useRef(null);
-
-  // Swipe-to-approve gesture state
-  const swipeStartXRef = useRef(null);
-  const swipeStartYRef = useRef(null);
-  const swipeDeltaXRef = useRef(0);
-  const [swipeProgress, setSwipeProgress] = useState(0); // -1 (skip) to +1 (approve)
-  const swipeAnimFrameRef = useRef(null);
-
-  // Auto-detected courier from AWB prefix
-  const [inferredCourier, setInferredCourier] = useState('');
-  // Copy-to-clipboard flash
-  const [awbCopied, setAwbCopied] = useState(false);
-  // Session summary modal
-  const [sessionSummaryOpen, setSessionSummaryOpen] = useState(false);
-  // Lock ring animation
-  const [showLockRing, setShowLockRing] = useState(false);
 
   const goStep = useCallback((next) => {
     setStep(next);
@@ -683,43 +1311,16 @@ export default function MobileScannerPage({ standalone = false }) {
 
   const saveOfflineQueue = useCallback((nextQueue) => {
     setOfflineQueue(nextQueue);
-    // CHANGE: persist offline queue asynchronously in IndexedDB
-    const persist = nextQueue.length ? saveQueue(offlineQueueKey, nextQueue) : clearQueue(offlineQueueKey);
-    void persist.catch((err) => logNonCriticalScannerError('persist offline queue', err));
+    try {
+      if (nextQueue.length) {
+        localStorage.setItem(offlineQueueKey, JSON.stringify(nextQueue));
+      } else {
+        localStorage.removeItem(offlineQueueKey);
+      }
+    } catch (err) {
+      logNonCriticalScannerError('persist offline queue', err);
+    }
   }, [offlineQueueKey]);
-
-  const openConfirmDialog = useCallback((message, onConfirm, onCancel = null) => {
-    // CHANGE: replace browser confirm with native-feeling bottom sheet
-    setConfirmDialog({
-      message,
-      onConfirm: () => {
-        setConfirmDialog(null);
-        onConfirm?.();
-      },
-      onCancel: () => {
-        setConfirmDialog(null);
-        onCancel?.();
-      },
-    });
-  }, []);
-
-  useEffect(() => {
-    // CHANGE: lock background scroll while scanner confirm sheet is open
-    if (!confirmDialog || typeof document === 'undefined') return undefined;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [confirmDialog]);
-
-  useEffect(() => {
-    // CHANGE: pulse scan guide corners when a barcode lock is committed
-    if (!lockedAwb) return undefined;
-    setGuideLocked(true);
-    const timer = setTimeout(() => setGuideLocked(false), 250);
-    return () => clearTimeout(timer);
-  }, [lockedAwb]);
 
   const enqueueOfflineScan = useCallback((payload) => {
     const nextItem = {
@@ -838,8 +1439,7 @@ export default function MobileScannerPage({ standalone = false }) {
     if (!item?.queueId) return;
     const nextDate = String(editingQueueDate || '').trim();
     if (!ISO_DATE_REGEX.test(nextDate)) {
-      // CHANGE: replace browser alert with inline scanner error
-      setErrorMsg('Please select a valid date.');
+      window.alert('Please select a valid date.');
       return;
     }
     setQueueActionBusyId(item.queueId);
@@ -856,8 +1456,7 @@ export default function MobileScannerPage({ standalone = false }) {
       setEditingQueueItemId('');
       setEditingQueueDate('');
     } catch (err) {
-      // CHANGE: replace browser alert with inline scanner error
-      setErrorMsg(err?.message || 'Could not update consignment date.');
+      window.alert(err?.message || 'Could not update consignment date.');
     } finally {
       setQueueActionBusyId('');
     }
@@ -869,21 +1468,19 @@ export default function MobileScannerPage({ standalone = false }) {
     const confirmMessage = item.shipmentId
       ? `Delete ${awbLabel}? This will remove it from accepted consignments and from the server.`
       : `Remove ${awbLabel} from accepted consignments?`;
-    // CHANGE: replace browser confirm with scanner bottom-sheet confirmation
-    openConfirmDialog(confirmMessage, async () => {
-      setQueueActionBusyId(item.queueId);
-      try {
-        if (item.shipmentId) {
-          await api.delete(`/shipments/${item.shipmentId}`);
-        }
-        removeQueueItemById(item.queueId, item.awb);
-      } catch (err) {
-        setErrorMsg(err?.message || 'Could not delete consignment.');
-      } finally {
-        setQueueActionBusyId('');
+    if (!window.confirm(confirmMessage)) return;
+    setQueueActionBusyId(item.queueId);
+    try {
+      if (item.shipmentId) {
+        await api.delete(`/shipments/${item.shipmentId}`);
       }
-    });
-  }, [removeQueueItemById, openConfirmDialog]);
+      removeQueueItemById(item.queueId, item.awb);
+    } catch (err) {
+      window.alert(err?.message || 'Could not delete consignment.');
+    } finally {
+      setQueueActionBusyId('');
+    }
+  }, [removeQueueItemById]);
 
   useEffect(() => {
     addToQueueRef.current = addToQueue;
@@ -896,18 +1493,6 @@ export default function MobileScannerPage({ standalone = false }) {
   useEffect(() => {
     reviewFormRef.current = reviewForm;
   }, [reviewForm]);
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && pin && !isStandalone) {
-      if (connStatus === 'paired' && step === STEPS.IDLE) {
-        // Clear it so we don't keep auto-restarting if they manually go back to IDLE
-        if (!window.sessionStorage.getItem('scanner_auto_started')) {
-          window.sessionStorage.setItem('scanner_auto_started', '1');
-          handleStartScanning();
-        }
-      }
-    }
-  }, [connStatus, step, handleStartScanning, pin, isStandalone]);
 
   const handleStartScanning = useCallback(() => {
     if (connStatus !== 'paired') {
@@ -951,32 +1536,29 @@ export default function MobileScannerPage({ standalone = false }) {
   }, [manualAwb, connStatus, goStep, isE2eMock, isStandalone, scanWorkflowMode]);
 
   const terminateSession = useCallback(() => {
-    // CHANGE: replace browser confirm with scanner bottom-sheet confirmation
-    openConfirmDialog(isStandalone ? 'Exit this scanner session on the phone?' : 'End this mobile scanner session on the phone?', () => {
-      try {
-        localStorage.removeItem(sessionStateKey);
-      } catch (err) {
-        logNonCriticalScannerError('clear session state on terminate', err);
-      }
-      if (isStandalone) {
-        navigate('/app/scan');
-        return;
-      }
-      if (socket?.connected) {
-        socket.emit('scanner:end-session', { reason: 'Mobile ended the session' });
-      } else {
-        navigate('/');
-      }
-    });
-  }, [socket, navigate, isStandalone, sessionStateKey, openConfirmDialog]);
+    if (!window.confirm(isStandalone ? 'Exit this scanner session on the phone?' : 'End this mobile scanner session on the phone?')) return;
+    try {
+      localStorage.removeItem(sessionStateKey);
+    } catch (err) {
+      logNonCriticalScannerError('clear session state on terminate', err);
+    }
+    if (isStandalone) {
+      navigate('/app/scan');
+      return;
+    }
+    if (socket?.connected) {
+      socket.emit('scanner:end-session', { reason: 'Mobile ended the session' });
+    } else {
+      navigate('/');
+    }
+  }, [socket, navigate, isStandalone, sessionStateKey]);
 
   const saveAndUpload = useCallback(() => {
     if (offlineQueue.length > 0) {
       void flushOfflineQueue();
       return;
     }
-    // CHANGE: replace browser alert with inline scanner error
-    setErrorMsg(isStandalone ? 'No queued scans to upload.' : 'Everything is already synced.');
+    window.alert(isStandalone ? 'No queued scans to upload.' : 'Everything is already synced.');
   }, [offlineQueue.length, flushOfflineQueue, isStandalone]);
 
   useEffect(() => {
@@ -992,36 +1574,27 @@ export default function MobileScannerPage({ standalone = false }) {
 
   const applyProcessedScanResult = useCallback((data) => {
     if (!data) return;
-    const suggestedClientCode = normalizeClientCode(data?.clientCode || '');
+    const suggestedClientCode = normalizeClientCode(data.clientCode || '');
     const effectiveClientCode = normalizeClientCode(stickyClientCode || suggestedClientCode);
     setReviewData(data);
     const stripUnknown = (v) => {
       const s = String(v || '').trim().toUpperCase();
       return (s === 'UNKNOWN' || s === 'N/A' || s === 'NA' || s === 'NONE') ? '' : String(v || '').trim();
     };
-    // Auto-detect courier from AWB prefix if OCR didn't return one
-    const ocrCourier = normalizeReviewCourier(data?.courier || '');
-    const awbInferred = inferCourierFromAwb(data?.awb || lockedAwb);
-    const effectiveCourier = ocrCourier || awbInferred || '';
-    setInferredCourier(awbInferred);
-    // Auto-fill destination from pincode if OCR couldn't read it
-    const ocrDest = stripUnknown(data?.destination);
-    const ocrPin = data?.pincode || '';
-    const pinCity = !ocrDest && ocrPin.length === 6 ? lookupPincodeCity(ocrPin) : '';
     setReviewForm({
       clientCode: effectiveClientCode,
-      consignee: stripUnknown(data?.consignee),
-      destination: ocrDest || pinCity,
-      pincode: ocrPin,
-      weight: data?.weight || 0,
-      amount: data?.amount || 0,
-      orderNo: data?.orderNo || '',
-      courier: effectiveCourier,
-      date: data?.date || sessionDate || new Date().toISOString().slice(0, 10),
+      consignee: stripUnknown(data.consignee),
+      destination: stripUnknown(data.destination),
+      pincode: data.pincode || '',
+      weight: data.weight || 0,
+      amount: data.amount || 0,
+      orderNo: data.orderNo || '',
+      courier: normalizeReviewCourier(data.courier || ''),
+      date: data.date || sessionDate || new Date().toISOString().slice(0, 10),
     });
     setProcessingFields({});
 
-    if (data?.reviewRequired) {
+    if (data.reviewRequired) {
       pulseHaptic('review');
       playHardwareBeep();
       goStep(STEPS.REVIEWING);
@@ -1030,16 +1603,16 @@ export default function MobileScannerPage({ standalone = false }) {
 
     playSuccessBeep();
     pulseHaptic('success');
-    if (voiceEnabled) speak(`Auto approved. ${data?.clientName || ''}. ${data?.destination || ''}.`);
+    if (voiceEnabled) speak(`Auto approved. ${data.clientName || ''}. ${data.destination || ''}.`);
     const item = {
-      awb: data?.awb,
-      clientCode: effectiveClientCode || data?.clientCode,
-      clientName: data?.clientName,
-      destination: data?.destination || '',
-      weight: data?.weight || 0,
+      awb: data.awb,
+      clientCode: effectiveClientCode || data.clientCode,
+      clientName: data.clientName,
+      destination: data.destination || '',
+      weight: data.weight || 0,
       autoApproved: true,
-      shipmentId: data?.shipmentId || null,
-      date: normalizeQueueDate(data?.date, sessionDate),
+      shipmentId: data.shipmentId || null,
+      date: normalizeQueueDate(data.date, sessionDate),
     };
     setLastSuccess(item);
     addToQueue(item);
@@ -1110,7 +1683,7 @@ export default function MobileScannerPage({ standalone = false }) {
       } catch (err) {
         logNonCriticalScannerError('clear session state on end', err);
       }
-      navigate('/scan-mobile');
+      navigate('/');
     });
     s.on('scanner:desktop-disconnected', ({ message }) => {
       setConnStatus('paired');
@@ -1143,7 +1716,7 @@ export default function MobileScannerPage({ standalone = false }) {
         return; // Ignore — we're not expecting scan results right now
       }
 
-      if (data?.status === 'error') {
+      if (data.status === 'error') {
         // Only show errors if we're still in PROCESSING (waiting for ANY result).
         // If we're already in REVIEWING, a late error should NOT override it.
         if (currentStep !== STEPS.PROCESSING) return;
@@ -1151,11 +1724,11 @@ export default function MobileScannerPage({ standalone = false }) {
         playErrorBeep();
         pulseHaptic('error');
         goStep(STEPS.ERROR);
-        setErrorMsg(data?.error || 'Scan failed on desktop.');
+        setErrorMsg(data.error || 'Scan failed on desktop.');
         return;
       }
 
-      if (data?.status === 'photo_required' || data?.requiresImageCapture) {
+      if (data.status === 'photo_required' || data.requiresImageCapture) {
         handleLookupNeedsPhotoRef.current?.(data);
         return;
       }
@@ -1233,16 +1806,16 @@ export default function MobileScannerPage({ standalone = false }) {
   }, [socket, connStatus, isE2eMock, isStandalone]);
 
   useEffect(() => {
-    // CHANGE: hydrate offline queue asynchronously from IndexedDB
-    let cancelled = false;
-    loadQueue(offlineQueueKey)
-      .then((items) => {
-        if (!cancelled && items.length) setOfflineQueue(items);
-      })
-      .catch((err) => logNonCriticalScannerError('hydrate offline queue', err));
-    return () => {
-      cancelled = true;
-    };
+    try {
+      const raw = localStorage.getItem(offlineQueueKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) {
+        setOfflineQueue(parsed);
+      }
+    } catch (err) {
+      logNonCriticalScannerError('hydrate offline queue', err);
+    }
   }, [offlineQueueKey]);
 
   useEffect(() => {
@@ -1358,16 +1931,12 @@ export default function MobileScannerPage({ standalone = false }) {
             value: rawValue,
             format,
             engine,
-            pass: meta?.pass || 'unknown',
             at: Date.now(),
             sinceStartMs: scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null,
             candidateCount: meta?.candidateCount || 1,
             ambiguous: false,
             alternatives: meta?.alternatives || [],
           });
-          if (meta?.pass === 'fullframe') {
-            logNonCriticalScannerError('fallback usage', `engine=${engine} pass=fullframe`);
-          }
           setScannerEngine(engine);
           handleBarcodeDetectedRef.current?.(rawValue, {
             candidateCount: meta?.candidateCount || 1,
@@ -1375,7 +1944,6 @@ export default function MobileScannerPage({ standalone = false }) {
             alternatives: meta?.alternatives || [],
             format,
             engine,
-            pass: meta?.pass || 'unknown',
           });
         },
         onFail: () => {
@@ -1386,8 +1954,7 @@ export default function MobileScannerPage({ standalone = false }) {
           }
         },
         onEngineReady: (engineName) => {
-          // CHANGE: log active engine into existing diagnostics path
-          logNonCriticalScannerError('active engine', engineName);
+          console.log(`[MobileScanner] Barcode engine ready: ${engineName}`);
           setScannerEngine(engineName);
         },
       });
@@ -1419,12 +1986,7 @@ export default function MobileScannerPage({ standalone = false }) {
       }
       return;
     }
-    // CHANGE: suppress repeat detections of the same barcode within 1500ms
-    const detectedAt = Date.now();
-    if (lastScannedValueRef.current === awb && detectedAt - lastScannedAtRef.current < 1500) return;
     if (!isE2eMock && !isStableBarcodeRead(awb)) return;
-    lastScannedValueRef.current = awb;
-    lastScannedAtRef.current = detectedAt;
     scanBusyRef.current = true;
 
     // Duplicate detection — read from the stable ref so this check is never stale
@@ -1445,11 +2007,9 @@ export default function MobileScannerPage({ standalone = false }) {
     clearTimeout(lockToCaptureTimerRef.current);
     pulseHaptic('lock');
     playHardwareBeep(); // True hardware beep
-    setShowLockRing(true);
     setLockedAwb(awb);
     const lockTimeMs = scannerStartedAtRef.current ? Date.now() - scannerStartedAtRef.current : null;
     setLastLockTimeMs(lockTimeMs);
-    logNonCriticalScannerError('barcode lock event', `engine=${detectionMeta?.engine || 'unknown'} awb=${awb} lockMs=${lockTimeMs ?? '-'}`);
     lockTelemetryRef.current = {
       lockTimeMs,
       candidateCount: Number(detectionMeta?.candidateCount || 1),
@@ -1591,60 +2151,17 @@ export default function MobileScannerPage({ standalone = false }) {
     canvas.width = Math.min(maxWidth, Math.round(cropW));
     canvas.height = Math.round((canvas.width / cropW) * cropH);
     const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    // CHANGE: boost OCR input quality only at capture time
-    ctx.filter = 'grayscale(100%) contrast(170%) brightness(108%)';
     ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, canvas.width, canvas.height);
-    ctx.filter = 'none';
-
-    const byteSize = (base64Value) => Math.floor((base64Value.length * 3) / 4);
-    let finalCanvas = canvas;
-    let finalQuality = jpegQuality;
-    let compressionApplied = 'initial';
-    let base64 = canvas.toDataURL('image/jpeg', finalQuality).split(',')[1] || '';
-    let approxBytes = byteSize(base64);
-    if (approxBytes > 180 * 1024) {
-      // CHANGE: adaptive JPEG compression under 180KB
-      finalQuality = 0.52;
-      compressionApplied = 'quality-0.52';
-      base64 = canvas.toDataURL('image/jpeg', finalQuality).split(',')[1] || '';
-      approxBytes = byteSize(base64);
-    }
-    if (approxBytes > 180 * 1024) {
-      // CHANGE: preserve aspect ratio while scaling down stubborn captures
-      const scaledCanvas = document.createElement('canvas');
-      scaledCanvas.width = Math.max(1, Math.round(canvas.width * 0.8));
-      scaledCanvas.height = Math.max(1, Math.round(canvas.height * 0.8));
-      const scaledCtx = scaledCanvas.getContext('2d');
-      if (!scaledCtx) return null;
-      scaledCtx.drawImage(canvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
-      finalCanvas = scaledCanvas;
-      compressionApplied = 'quality-0.52-scale-0.8';
-      base64 = scaledCanvas.toDataURL('image/jpeg', finalQuality).split(',')[1] || '';
-      approxBytes = byteSize(base64);
-    }
-    while (approxBytes > 180 * 1024 && finalCanvas.width > 320) {
-      // CHANGE: enforce final payload cap without distorting text geometry
-      const scaledCanvas = document.createElement('canvas');
-      scaledCanvas.width = Math.max(1, Math.round(finalCanvas.width * 0.9));
-      scaledCanvas.height = Math.max(1, Math.round(finalCanvas.height * 0.9));
-      const scaledCtx = scaledCanvas.getContext('2d');
-      if (!scaledCtx) break;
-      scaledCtx.drawImage(finalCanvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
-      finalCanvas = scaledCanvas;
-      compressionApplied = 'quality-0.52-scale-fit';
-      base64 = finalCanvas.toDataURL('image/jpeg', finalQuality).split(',')[1] || '';
-      approxBytes = byteSize(base64);
-    }
+    const dataUrl = canvas.toDataURL('image/jpeg', jpegQuality);
+    const base64 = dataUrl.split(',')[1] || '';
     if (!base64) return null;
-    logNonCriticalScannerError('compression applied', `${Math.round(approxBytes / 1024)}KB ${finalCanvas.width}x${finalCanvas.height} ${compressionApplied}`);
+    const approxBytes = Math.floor((base64.length * 3) / 4);
     return {
       base64,
-      width: finalCanvas.width,
-      height: finalCanvas.height,
+      width: canvas.width,
+      height: canvas.height,
       approxBytes,
-      quality: finalQuality,
-      compressionApplied,
+      quality: jpegQuality,
     };
   }, []);
 
@@ -1677,7 +2194,6 @@ export default function MobileScannerPage({ standalone = false }) {
       width: shot.width || 0,
       height: shot.height || 0,
       quality: shot.quality || CAPTURE_JPEG_QUALITY,
-      compressionApplied: shot.compressionApplied || 'initial',
     });
     setCapturedImage(`data:image/jpeg;base64,${shot.base64}`);
     stopCamera();
@@ -1854,15 +2370,15 @@ export default function MobileScannerPage({ standalone = false }) {
       try {
         const result = await api.post('/shipments/scan-mobile', payload);
         const data = result?.data || result;
-        if (data?.status === 'error' || !data?.success) {
+        if (data.status === 'error' || !data.success) {
           setFlash('error');
           playErrorBeep();
           pulseHaptic('error');
           goStep(STEPS.ERROR);
-          setErrorMsg(data?.error || data?.message || 'Lookup failed.');
+          setErrorMsg(data.error || data.message || 'Lookup failed.');
           return;
         }
-        if (data?.status === 'photo_required' || data?.requiresImageCapture) {
+        if (data.status === 'photo_required' || data.requiresImageCapture) {
           handleLookupNeedsPhoto(data);
           return;
         }
@@ -1940,15 +2456,15 @@ export default function MobileScannerPage({ standalone = false }) {
       try {
         const result = await api.post('/shipments/scan-mobile', payload);
         const data = result?.data || result;
-        if (data?.status === 'error' || !data?.success) {
+        if (data.status === 'error' || !data.success) {
           setFlash('error');
           playErrorBeep();
           pulseHaptic('error');
           goStep(STEPS.ERROR);
-          setErrorMsg(data?.error || data?.message || 'Scan failed.');
+          setErrorMsg(data.error || data.message || 'Scan failed.');
           return;
         }
-        if (data?.status === 'photo_required' || data?.requiresImageCapture) {
+        if (data.status === 'photo_required' || data.requiresImageCapture) {
           handleLookupNeedsPhoto(data);
           return;
         }
@@ -2180,10 +2696,7 @@ export default function MobileScannerPage({ standalone = false }) {
     if (step === STEPS.SUCCESS) {
       const nextStep = scanWorkflowMode === 'fast' ? STEPS.SCANNING : STEPS.IDLE;
       const delayMs = scanWorkflowMode === 'fast' ? FAST_AUTO_NEXT_DELAY : AUTO_NEXT_DELAY;
-      autoNextTimer.current = setTimeout(() => {
-        // ALWAYS reset state instead of full page reload to prevent blank screen
-        resetForNextScan(nextStep);
-      }, delayMs);
+      autoNextTimer.current = setTimeout(() => resetForNextScan(nextStep), delayMs);
       return () => clearTimeout(autoNextTimer.current);
     }
   }, [step, resetForNextScan, scanWorkflowMode]);
@@ -2219,11 +2732,6 @@ export default function MobileScannerPage({ standalone = false }) {
     ? 'AWB quality looks good - press shutter'
     : (describeCaptureIssues(captureQuality.issues) || 'Fit AWB slip fully in frame and hold steady');
   const captureReadyForShutter = captureCameraReady && captureQuality.ok && docStableTicks >= DOC_STABLE_MIN_TICKS;
-  const captureRingProgress = Math.min(1, Math.max(0, docStableTicks / DOC_STABLE_MIN_TICKS));
-  const captureRingRadius = 37;
-  const captureRingCircumference = 2 * Math.PI * captureRingRadius;
-  const captureRingOffset = captureRingCircumference * (1 - captureRingProgress);
-  const captureRingColor = captureReadyForShutter ? '#10B981' : '#F59E0B';
 
   // ——— Confidence data from reviewData ———
   const fieldConfidence = useMemo(() => {
@@ -2238,16 +2746,6 @@ export default function MobileScannerPage({ standalone = false }) {
     };
   }, [reviewData]);
 
-  const copyAwb = useCallback(async (awb) => {
-    if (!awb) return;
-    try {
-      await navigator.clipboard.writeText(awb);
-      setAwbCopied(true);
-      pulseHaptic('tap');
-      setTimeout(() => setAwbCopied(false), 1800);
-    } catch (_) {}
-  }, []);
-
   const cycleReviewCourier = useCallback(() => {
     setReviewForm((prev) => {
       const current = normalizeReviewCourier(prev.courier || reviewData?.courier || '');
@@ -2256,42 +2754,6 @@ export default function MobileScannerPage({ standalone = false }) {
       return { ...prev, courier: next };
     });
   }, [reviewData]);
-
-  // Swipe gesture handlers for the review screen
-  const handleSwipeTouchStart = useCallback((e) => {
-    const t = e.touches[0];
-    swipeStartXRef.current = t.clientX;
-    swipeStartYRef.current = t.clientY;
-    swipeDeltaXRef.current = 0;
-    setSwipeProgress(0);
-  }, []);
-
-  const handleSwipeTouchMove = useCallback((e) => {
-    if (swipeStartXRef.current === null) return;
-    const t = e.touches[0];
-    const dx = t.clientX - swipeStartXRef.current;
-    const dy = t.clientY - swipeStartYRef.current;
-    if (Math.abs(dy) > Math.abs(dx) * 1.4) return; // vertical scroll wins
-    swipeDeltaXRef.current = dx;
-    const progress = Math.max(-1, Math.min(1, dx / 140));
-    cancelAnimationFrame(swipeAnimFrameRef.current);
-    swipeAnimFrameRef.current = requestAnimationFrame(() => setSwipeProgress(progress));
-  }, []);
-
-  const handleSwipeTouchEnd = useCallback(() => {
-    const dx = swipeDeltaXRef.current;
-    swipeStartXRef.current = null;
-    setSwipeProgress(0);
-    if (dx > 110) {
-      // Swipe right = approve
-      pulseHaptic('success');
-      submitApproval();
-    } else if (dx < -110) {
-      // Swipe left = skip
-      pulseHaptic('warning');
-      if (isStandalone) { navigate('/scan-mobile'); } else { resetForNextScan(); }
-    }
-  }, [submitApproval, resetForNextScan, isStandalone, navigate]);
 
   const reviewConfidence = useMemo(() => {
     const scores = Object.values(fieldConfidence)
@@ -2328,7 +2790,7 @@ export default function MobileScannerPage({ standalone = false }) {
     ['Doc detect', docDetected ? `yes (${docStableTicks})` : 'no'],
     ['Capture quality', captureQuality.ok ? 'good' : (captureQuality.issues.join(', ') || 'pending')],
     ['Capture metrics', captureQuality.metrics ? `blur ${captureQuality.metrics.blurScore} | glare ${captureQuality.metrics.glareRatio}% | skew ${captureQuality.metrics.perspectiveSkew}%` : '-'],
-    ['JPEG last shot', captureMeta.kb ? `${captureMeta.kb}KB ${captureMeta.width}x${captureMeta.height} q=${captureMeta.quality} ${captureMeta.compressionApplied || ''}` : '-'],
+    ['JPEG last shot', captureMeta.kb ? `${captureMeta.kb}KB ${captureMeta.width}x${captureMeta.height} q=${captureMeta.quality}` : '-'],
     ['Secure ctx', isProbablySecureContextForCamera() ? 'yes' : 'no'],
     ['AWB lock', lockedAwb || '-'],
     ['Lock ms', lastLockTimeMs != null ? String(lastLockTimeMs) : '-'],
@@ -2336,30 +2798,110 @@ export default function MobileScannerPage({ standalone = false }) {
     ['Queued', String(offlineQueue.length)],
     ['Scans', String(sessionCtx.scanNumber)],
     ['Last format', lastDetectionMeta?.format || '-'],
-    ['Last pass', lastDetectionMeta?.pass || '-'],
     ['Last code', lastDetectionMeta?.value || '-'],
     ['Decode ms', lastDetectionMeta?.sinceStartMs != null ? String(lastDetectionMeta.sinceStartMs) : '-'],
     ['False-lock', reviewData?.scanTelemetry?.falseLock ? 'yes' : 'no'],
   ];
 
-  // Guard: no pin and not standalone — show fallback (AFTER all hooks)
-  if (!pin && !isStandalone) {
-    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0B1120', color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>Initializing scanner…</div>;
-  }
-
-  if (!step) {
-    return <div>Loading...</div>;
-  }
-
-  try {
   return (
     <>
-      
+      <style>{css}</style>
       <div className="msp-root">
-        {/* ═══ MODULAR OVERLAYS & CONNECTION ═══ */}
-        <ScannerOverlays flash={flash} setFlash={setFlash} duplicateWarning={duplicateWarning} diagnosticsOpen={diagnosticsOpen} setDiagnosticsOpen={setDiagnosticsOpen} diagnosticsRows={diagnosticsRows} />
-        <ConnectionScreen connStatus={connStatus} errorMsg={errorMsg} isStandalone={isStandalone} pin={pin} stepClass={stepClass} STEPS={STEPS} theme={theme} />
+        {/* ——— Flash overlay ——— */}
+        {flash && <div className={`flash-overlay flash-${flash}`} onAnimationEnd={() => setFlash(null)} />}
 
+        {/* ——— Duplicate warning overlay ——— */}
+        {duplicateWarning && (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(220,38,38,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 12 }} className="shake">
+            <AlertCircle size={48} color="white" />
+            <div style={{ color: 'white', fontSize: '1.1rem', fontWeight: 700, textAlign: 'center' }}>DUPLICATE AWB</div>
+            <div className="mono" style={{ color: 'rgba(255,255,255,0.9)', fontSize: '1.3rem', fontWeight: 700 }}>{duplicateWarning}</div>
+            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.8rem' }}>Already scanned in this session</div>
+          </div>
+        )}
+
+        <button
+          type="button"
+          data-testid="scanner-diag-toggle"
+          onClick={() => setDiagnosticsOpen((v) => !v)}
+          style={{
+            position: 'fixed',
+            top: 12,
+            right: 12,
+            zIndex: 70,
+            border: '1px solid rgba(255,255,255,0.18)',
+            background: diagnosticsOpen ? 'rgba(79,70,229,0.92)' : 'rgba(15,23,42,0.72)',
+            color: '#fff',
+            borderRadius: 999,
+            padding: '8px 12px',
+            fontSize: '0.72rem',
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            backdropFilter: 'blur(10px)',
+            cursor: 'pointer',
+          }}
+        >
+          {diagnosticsOpen ? 'Hide Diag' : 'Show Diag'}
+        </button>
+
+        {diagnosticsOpen && (
+          <div
+            data-testid="scanner-diag-panel"
+            style={{
+              position: 'fixed',
+              top: 56,
+              right: 12,
+              zIndex: 69,
+              width: 'min(92vw, 320px)',
+              background: 'rgba(15,23,42,0.88)',
+              color: '#E5EEF8',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 18,
+              padding: 14,
+              backdropFilter: 'blur(14px)',
+              boxShadow: '0 12px 30px rgba(0,0,0,0.25)',
+            }}
+          >
+            <div style={{ fontSize: '0.72rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 10, color: '#A5B4FC' }}>
+              Scanner Diagnostics
+            </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              {diagnosticsRows.map(([label, value]) => (
+                <div key={label} style={{ display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'flex-start', fontSize: '0.76rem' }}>
+                  <div style={{ color: 'rgba(226,232,240,0.72)', minWidth: 88 }}>{label}</div>
+                  <div className="mono" style={{ textAlign: 'right', wordBreak: 'break-word', maxWidth: 180 }}>{value}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop: 10, fontSize: '0.68rem', color: 'rgba(226,232,240,0.7)', lineHeight: 1.4 }}>
+              Use this to verify whether Trackon labels are being decoded as `ITF` and how quickly the first lock happens after scan start.
+            </div>
+          </div>
+        )}
+
+        {/* ═══ IDLE / CONNECTING ═══ */}
+        {connStatus !== 'paired' && (
+          <div className={stepClass(STEPS.IDLE)}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 24 }}>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: theme.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {connStatus === 'connecting' ? <RefreshCw size={28} color={theme.primary} style={{ animation: 'spin 1s linear infinite' }} /> : <WifiOff size={28} color={theme.error} />}
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 4 }}>
+                  {connStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
+                </div>
+                <div style={{ fontSize: '0.82rem', color: theme.muted }}>
+                  {errorMsg || (isStandalone ? 'Preparing direct scanner session' : `Connecting to session ${pin}`)}
+                </div>
+              </div>
+              {connStatus === 'disconnected' && (
+                <button className="btn btn-primary" onClick={() => window.location.reload()}>
+                  <RefreshCw size={16} /> Reconnect
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* ═══ PERSISTENT CAMERA VIDEO ═══ */}
         {/* Lives outside all step divs so it NEVER gets unmounted/re-mounted.
@@ -2384,7 +2926,6 @@ export default function MobileScannerPage({ standalone = false }) {
               ? 'block' : 'none',
           }}
         />
-
 
         {/* ═══ IDLE / HOME ═══ */}
         <div className={stepClass(STEPS.IDLE)}>
@@ -2766,7 +3307,7 @@ export default function MobileScannerPage({ standalone = false }) {
               {/* Rectangular guide sized to match an actual AWB slip */}
               <div
                 ref={guideRef}
-                className={`scan-guide ${docDetected ? 'detected' : ''} ${guideLocked ? 'guide-locked' : ''}`}
+                className={`scan-guide ${docDetected ? 'detected' : ''}`}
                 style={{
                   width: DOC_CAPTURE_REGION.w,
                   height: DOC_CAPTURE_REGION.h,
@@ -2804,21 +3345,8 @@ export default function MobileScannerPage({ standalone = false }) {
                 data-testid="capture-photo-btn"
                 onClick={handleCapturePhoto}
                 disabled={!captureReadyForShutter}
-                style={{ pointerEvents: captureReadyForShutter ? 'auto' : 'none' }}
+                style={{ opacity: captureReadyForShutter ? 1 : 0.4 }}
               >
-                {/* CHANGE: capture readiness ring replaces opacity-only disabled state */}
-                <svg className="capture-quality-ring" viewBox="0 0 84 84" aria-hidden="true">
-                  <circle className="capture-quality-ring-track" cx="42" cy="42" r={captureRingRadius} />
-                  <circle
-                    className="capture-quality-ring-progress"
-                    cx="42"
-                    cy="42"
-                    r={captureRingRadius}
-                    stroke={captureRingColor}
-                    strokeDasharray={captureRingCircumference}
-                    strokeDashoffset={captureRingOffset}
-                  />
-                </svg>
                 <div className="capture-btn-inner" />
               </button>
               {isE2eMock && (
@@ -2850,115 +3378,378 @@ export default function MobileScannerPage({ standalone = false }) {
         </div>
 
         {/* ═══ PREVIEW ═══ */}
-        <PreviewView
-          step={step}
-          STEPS={STEPS}
-          stepClass={stepClass}
-          theme={theme}
-          lockedAwb={lockedAwb}
-          capturedImage={capturedImage}
-          captureMeta={captureMeta}
-          goStep={goStep}
-          setCapturedImage={setCapturedImage}
-          submitForProcessing={submitForProcessing}
-        />
+        <div className={stepClass(STEPS.PREVIEW)}>
+          <div style={{ background: theme.bg, display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{ padding: '52px 20px 16px', background: 'linear-gradient(135deg, #0D1B2A, #1E2D3D)', color: 'white' }}>
+              <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.45)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>CAPTURED</div>
+              <div className="mono" style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>{lockedAwb || 'OCR Capture'}</div>
+              {captureMeta.kb > 0 && (
+                <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: 3 }}>
+                  {captureMeta.kb}KB · {captureMeta.width}×{captureMeta.height}
+                </div>
+              )}
+            </div>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+              {capturedImage && <img src={capturedImage} alt="Captured label" className="preview-img" />}
+            </div>
+            <div style={{ padding: '12px 16px 28px', display: 'flex', gap: 10, background: theme.surface, borderTop: `1px solid ${theme.border}` }}>
+              <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => { setCapturedImage(null); goStep(STEPS.CAPTURING); }}>
+                <RotateCcw size={15} /> Retake
+              </button>
+              <button data-testid="use-photo-btn" className="btn btn-primary" style={{ flex: 2 }} onClick={submitForProcessing}>
+                <Send size={15} /> Read This Label
+              </button>
+            </div>
+          </div>
+        </div>
 
         {/* ═══ PROCESSING ═══ */}
-        <ProcessingView
-          step={step}
-          STEPS={STEPS}
-          stepClass={stepClass}
-          theme={theme}
-          capturedImage={capturedImage}
-          docDetected={docDetected}
-          docStableTicks={docStableTicks}
-          BARCODE_FAIL_THRESHOLD={BARCODE_FAIL_THRESHOLD}
-          captureQuality={captureQuality}
-          lockedAwb={lockedAwb}
-          setErrorMsg={setErrorMsg}
-          goStep={goStep}
-        />
+        <div className={stepClass(STEPS.PROCESSING)}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: theme.bg }}>
+            {/* Top status */}
+            <div style={{ padding: '52px 24px 20px', textAlign: 'center', background: 'linear-gradient(135deg, #0D1B2A, #1E2D3D)', color: 'white' }}>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 18px', borderRadius: 999, background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', marginBottom: 14 }}>
+                <Brain size={16} color="#93C5FD" style={{ animation: 'spin 2s linear infinite' }} />
+                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: '#93C5FD', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                  {capturedImage ? 'Reading Label' : 'Saving Scan'}
+                </span>
+              </div>
+              <div className="mono" style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff', marginBottom: 6 }}>{lockedAwb || '—'}</div>
+              <div style={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)' }}>
+                {capturedImage ? 'OCR engine extracting fields...' : 'Syncing with server...'}
+              </div>
+            </div>
+            {/* Skeleton fields */}
+            <div style={{ padding: '16px 16px', display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
+              {[['Client', '55%'], ['Consignee', '80%'], ['Destination', '65%'], ['Pincode', '40%'], ['Weight (kg)', '35%'], ['Order No', '50%']].map(([label, w]) => (
+                <div key={label} className="field-card" style={{ opacity: 0.8 }}>
+                  <div className="conf-dot conf-none" style={{ background: '#DDE3EC' }} />
+                  <div style={{ flex: 1 }}>
+                    <div className="field-label">{label}</div>
+                    <div className="skeleton" style={{ height: 16, width: w, marginTop: 5 }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ padding: '12px 20px 28px', textAlign: 'center' }}>
+              <button className="btn btn-outline" style={{ fontSize: '0.75rem', padding: '9px 24px' }}
+                onClick={() => { setErrorMsg('Cancelled by user.'); goStep(STEPS.ERROR); }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
 
         {/* ═══ REVIEWING ═══ */}
-        <ReviewPanel
-          step={step}
-          STEPS={STEPS}
-          stepClass={stepClass}
-          theme={theme}
-          reviewData={reviewData}
-          reviewForm={reviewForm}
-          setReviewForm={setReviewForm}
-          setStep={setStep}
-          pulseHaptic={pulseHaptic}
-          ensureVideoStreamPlaying={ensureVideoStreamPlaying}
-          videoRef={videoRef}
-          errorMsg={errorMsg}
-          submitApproval={submitApproval}
-          confDotClass={confDotClass}
-          sourceLabel={sourceLabel}
-          startScanWorkflow={startScanWorkflow}
-          clearOfflineQueue={clearOfflineQueue}
-          manualAwb={manualAwb}
-          swipeProgress={swipeProgress}
-          handleSwipeTouchStart={handleSwipeTouchStart}
-          handleSwipeTouchMove={handleSwipeTouchMove}
-          handleSwipeTouchEnd={handleSwipeTouchEnd}
-          reviewCourier={reviewCourier}
-          copyAwb={copyAwb}
-          lockedAwb={lockedAwb}
-          awbCopied={awbCopied}
-          inferredCourier={inferredCourier}
-          intelligence={intelligence}
-          reviewConfidence={reviewConfidence}
-          cycleReviewCourier={cycleReviewCourier}
-          reviewDateLabel={reviewDateLabel}
-          stickyClientCode={stickyClientCode}
-          setStickyClientCode={setStickyClientCode}
-          normalizeClientCode={normalizeClientCode}
-          lookupPincodeCity={lookupPincodeCity}
-          isStandalone={isStandalone}
-          navigate={navigate}
-          resetForNextScan={resetForNextScan}
-        />
+        <div className={stepClass(STEPS.REVIEWING)}>
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: theme.bg }}>
 
-        {/* ═══ RESULT SCREENS & OVERLAYS ═══ */}
-        <ResultScreens
-          stepClass={stepClass}
-          STEPS={STEPS}
-          step={step}
-          theme={theme}
-          reviewData={reviewData}
-          lockedAwb={lockedAwb}
-          lastSuccess={lastSuccess}
-          errorMsg={errorMsg}
-          offlineQueue={offlineQueue}
-          sessionCtx={sessionCtx}
-          totalWeight={totalWeight}
-          sessionDuration={sessionDuration}
-          successAutoSeconds={successAutoSeconds}
-          scanWorkflowMode={scanWorkflowMode}
-          connStatus={connStatus}
-          showLockRing={showLockRing}
-          setShowLockRing={setShowLockRing}
-          sessionSummaryOpen={sessionSummaryOpen}
-          setSessionSummaryOpen={setSessionSummaryOpen}
-          confirmDialog={confirmDialog}
-          getCourierPalette={getCourierPalette}
-          normalizeReviewCourier={normalizeReviewCourier}
-          goStep={goStep}
-          resetForNextScan={resetForNextScan}
-          setErrorMsg={setErrorMsg}
-          terminateSession={terminateSession}
-          approvalResultTimerRef={approvalResultTimerRef}
-        />
+            {/* Courier-colored header */}
+            <div className={`review-header${reviewCourier ? ' courier-' + reviewCourier.toLowerCase() : ''}`}>
+              <div className="review-header-top">
+                <div>
+                  <div className="review-title">REVIEW CONSIGNMENT</div>
+                  <div className="mono review-awb">{reviewData?.awb || lockedAwb}</div>
+                </div>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'flex-start', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {intelligence?.learnedFieldCount > 0 && (
+                    <div className="source-badge source-learned">AI {intelligence.learnedFieldCount} corrected</div>
+                  )}
+                  {reviewConfidence.score === 0 && (
+                    <div style={{ fontSize: '0.6rem', background: 'rgba(220,38,38,0.22)', color: '#FCA5A5', padding: '3px 9px', borderRadius: 7, fontWeight: 800, border: '1px solid rgba(220,38,38,0.3)' }}>
+                      OCR failed — fill manually
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="review-meta-row">
+                <span className={`review-confidence ${reviewConfidence.level}`}>
+                  <Shield size={12} />
+                  {reviewConfidence.label} ({Math.round(reviewConfidence.score * 100)}%)
+                </span>
+                <button type="button" className="review-chip review-chip-courier" onClick={cycleReviewCourier} title="Tap to change courier">
+                  <Package size={12} /> {reviewCourier || 'Tap to set courier'}
+                </button>
+                <span className="review-chip review-chip-date">
+                  <CalendarDays size={12} /> {reviewDateLabel || 'No date'}
+                </span>
+              </div>
+            </div>
+
+            {/* Form completion progress */}
+            {(() => {
+              const required = ['consignee', 'destination', 'weight'];
+              const filled = required.filter(k => {
+                const v = reviewForm[k];
+                return v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim() !== '0';
+              }).length;
+              const pct = Math.round((filled / required.length) * 100);
+              return (
+                <div className="form-progress-bar-wrap">
+                  <div className="form-progress-bar-track">
+                    <div className="form-progress-bar-fill" style={{ width: pct + '%' }} />
+                  </div>
+                  <div className="form-progress-label">{filled}/{required.length} required</div>
+                </div>
+              );
+            })()}
+
+            <div className="scroll-panel" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+              {/* CLIENT */}
+              <div className={`field-card ${(fieldConfidence.clientCode?.confidence || 0) < 0.55 ? 'warning' : 'conf-high'}`}>
+                <div className={confDotClass(fieldConfidence.clientCode?.confidence || 0)} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                    <span className="field-label" style={{ margin: 0 }}>Client</span>
+                    {fieldConfidence.clientCode?.source && (() => { const s = sourceLabel(fieldConfidence.clientCode.source); return s ? <span className={s.className}>{s.icon} {s.text}</span> : null; })()}
+                  </div>
+                  <input className="field-input" value={reviewForm.clientCode || ''} onChange={e => setReviewForm(f => ({ ...f, clientCode: e.target.value.toUpperCase() }))} placeholder="Client code" />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 7, gap: 8 }}>
+                    <div style={{ fontSize: '0.6rem', color: theme.muted }}>
+                      {stickyClientCode
+                        ? <span style={{ color: theme.primary, fontWeight: 700 }}>Sticky: {stickyClientCode}</span>
+                        : 'Sticky client off'}
+                    </div>
+                    {stickyClientCode
+                      ? <button type="button" className="suggest-chip" onClick={() => setStickyClientCode('')}>Clear</button>
+                      : <button type="button" className="suggest-chip" onClick={() => { const c = normalizeClientCode(reviewForm.clientCode || ''); if (c && c !== 'MISC') setStickyClientCode(c); }}>Keep this client</button>
+                    }
+                  </div>
+                  {intelligence?.clientMatches?.length > 0 && intelligence.clientNeedsConfirmation && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 7 }}>
+                      {intelligence.clientMatches.slice(0, 3).map(m => (
+                        <button key={m.code} type="button"
+                          className={`suggest-chip ${reviewForm.clientCode === m.code ? 'active' : ''}`}
+                          onClick={() => setReviewForm(f => ({ ...f, clientCode: m.code }))}>
+                          {m.code} ({Math.round(m.score * 100)}%)
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* CONSIGNEE — required */}
+              <div className={`field-card ${!reviewForm.consignee?.trim() ? 'required-empty' : 'conf-high'}`}>
+                <div className={!reviewForm.consignee?.trim() ? 'conf-dot conf-low' : confDotClass(fieldConfidence.consignee?.confidence || 0)} />
+                <div style={{ flex: 1 }}>
+                  <div className="field-label">
+                    Consignee <span className="field-required-star">*</span>
+                    {fieldConfidence.consignee?.source && (() => { const s = sourceLabel(fieldConfidence.consignee.source); return s ? <span className={s.className} style={{ marginLeft: 4 }}>{s.icon} {s.text}</span> : null; })()}
+                  </div>
+                  <input className="field-input" value={reviewForm.consignee || ''}
+                    onChange={e => setReviewForm(f => ({ ...f, consignee: e.target.value.toUpperCase() }))}
+                    placeholder="Recipient name *" />
+                </div>
+              </div>
+
+              {/* DESTINATION — required */}
+              <div className={`field-card ${!reviewForm.destination?.trim() ? 'required-empty' : 'conf-high'}`}>
+                <div className={!reviewForm.destination?.trim() ? 'conf-dot conf-low' : confDotClass(fieldConfidence.destination?.confidence || 0)} />
+                <div style={{ flex: 1 }}>
+                  <div className="field-label">
+                    Destination <span className="field-required-star">*</span>
+                    {fieldConfidence.destination?.source && (() => { const s = sourceLabel(fieldConfidence.destination.source); return s ? <span className={s.className} style={{ marginLeft: 4 }}>{s.icon} {s.text}</span> : null; })()}
+                  </div>
+                  <input className="field-input" value={reviewForm.destination || ''}
+                    onChange={e => setReviewForm(f => ({ ...f, destination: e.target.value.toUpperCase() }))}
+                    placeholder="City *" />
+                  {intelligence?.pincodeCity && intelligence.pincodeCity !== reviewForm.destination && (
+                    <button type="button" className="suggest-chip pincode-suggest" style={{ marginTop: 6 }}
+                      onClick={() => setReviewForm(f => ({ ...f, destination: intelligence.pincodeCity }))}>
+                      Pincode suggests: {intelligence.pincodeCity}
+                    </button>
+                  )}
+                  {!intelligence?.pincodeCity && reviewForm.pincode?.length === 6 && (() => {
+                    const city = lookupPincodeCity(reviewForm.pincode);
+                    return city && city !== reviewForm.destination ? (
+                      <button type="button" className="suggest-chip pincode-suggest" style={{ marginTop: 6 }}
+                        onClick={() => setReviewForm(f => ({ ...f, destination: city }))}>
+                        {reviewForm.pincode} suggests: {city}
+                      </button>
+                    ) : null;
+                  })()}
+                </div>
+              </div>
+
+              {/* PINCODE + WEIGHT */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="field-card">
+                  <div style={{ flex: 1 }}>
+                    <div className="field-label">Pincode</div>
+                    <input className="field-input" value={reviewForm.pincode || ''}
+                      onChange={(e) => {
+                        const pin = e.target.value.replace(/[^0-9]/g, '').slice(0, 6);
+                        setReviewForm(f => {
+                          const city = pin.length === 6 && !f.destination?.trim() ? lookupPincodeCity(pin) : '';
+                          return { ...f, pincode: pin, ...(city ? { destination: city } : {}) };
+                        });
+                      }}
+                      placeholder="6 digits" maxLength={6} inputMode="numeric" />
+                  </div>
+                </div>
+                <div className={`field-card ${intelligence?.weightAnomaly?.anomaly ? 'warning' : (!reviewForm.weight || String(reviewForm.weight).trim() === '0' ? 'required-empty' : 'conf-med')}`}>
+                  <div style={{ flex: 1 }}>
+                    <div className="field-label">Weight (kg) <span className="field-required-star">*</span></div>
+                    <input className="field-input" value={reviewForm.weight || ''}
+                      onChange={(e) => setReviewForm(f => ({ ...f, weight: e.target.value }))}
+                      placeholder="0.0 *" inputMode="decimal" />
+                    {intelligence?.weightAnomaly?.anomaly && (
+                      <div style={{ fontSize: '0.6rem', color: theme.warning, marginTop: 3, fontWeight: 700 }}>
+                        {intelligence.weightAnomaly.warning}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* AMOUNT + ORDER NO */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="field-card">
+                  <div style={{ flex: 1 }}>
+                    <div className="field-label">COD Amount (Rs.)</div>
+                    <input className="field-input" value={reviewForm.amount || ''}
+                      onChange={(e) => setReviewForm(f => ({ ...f, amount: e.target.value }))}
+                      placeholder="0" inputMode="decimal" />
+                  </div>
+                </div>
+                <div className="field-card">
+                  <div style={{ flex: 1 }}>
+                    <div className="field-label">Order No</div>
+                    <input className="field-input" value={reviewForm.orderNo || ''}
+                      onChange={(e) => setReviewForm(f => ({ ...f, orderNo: e.target.value }))}
+                      placeholder="Optional" />
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ fontSize: '0.6rem', color: theme.mutedLight, textAlign: 'center', paddingBottom: 4 }}>
+                <span style={{ color: '#E11D48' }}>*</span> Required fields
+              </div>
+            </div>
+
+            {/* Action bar */}
+            <div style={{ padding: '10px 16px 20px', borderTop: `1px solid ${theme.border}`, display: 'flex', gap: 10, background: theme.surface }}>
+              <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => {
+                if (isStandalone) { navigate('/scan-mobile'); return; }
+                resetForNextScan();
+              }}>
+                <X size={15} /> Skip
+              </button>
+              <button data-testid="approve-save-btn" className="btn btn-success btn-lg" style={{ flex: 2 }} onClick={submitApproval} disabled={step === STEPS.APPROVING}>
+                {step === STEPS.APPROVING
+                  ? <><RefreshCw size={15} style={{ animation: 'spin 1s linear infinite' }} /> Saving...</>
+                  : <><Check size={15} /> Approve &amp; Save</>}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ═══ APPROVING ═══ */}
+        <div className={stepClass(STEPS.APPROVING)}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 20, background: theme.bg }}>
+            <div style={{ width: 72, height: 72, borderRadius: '50%', background: theme.primaryLight, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <RefreshCw size={34} style={{ animation: 'spin 1s linear infinite', color: theme.primary }} />
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '1.05rem', fontWeight: 800, color: theme.text }}>Saving Consignment</div>
+              <div className="mono" style={{ fontSize: '0.95rem', marginTop: 8, color: theme.muted }}>{reviewData?.awb || lockedAwb}</div>
+              <div style={{ fontSize: '0.74rem', color: theme.mutedLight, marginTop: 6, lineHeight: 1.5 }}>
+                Communicating with server...<br />If this takes too long, go back and retry.
+              </div>
+            </div>
+            <button className="btn btn-outline" onClick={() => {
+              clearTimeout(approvalResultTimerRef.current);
+              approvalResultTimerRef.current = null;
+              setErrorMsg('Please tap Approve & Save again.');
+              goStep(STEPS.REVIEWING);
+            }}>
+              Back to review
+            </button>
+          </div>
+        </div>
+
+        {/* ═══ SUCCESS ═══ */}
+        <div className={stepClass(STEPS.SUCCESS)}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 28, gap: 20, background: theme.bg }}>
+            {/* Courier badge */}
+            {lastSuccess?.courier && (() => {
+              const pal = getCourierPalette(normalizeReviewCourier(lastSuccess.courier));
+              return (
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', borderRadius: 999, background: pal.light, color: pal.bg, fontSize: '0.7rem', fontWeight: 800, border: `1px solid ${pal.bg}33`, letterSpacing: '0.04em' }}>
+                  <Package size={13} /> {pal.label}
+                </div>
+              );
+            })()}
+
+            {/* Animated check */}
+            <div style={{ position: 'relative' }}>
+              <svg width="88" height="88" viewBox="0 0 88 88">
+                <circle cx="44" cy="44" r="38" fill={theme.successLight} />
+                <circle cx="44" cy="44" r="38" fill="none" stroke={theme.success} strokeWidth="3" className="success-check-circle" />
+                <polyline points="26,46 38,58 62,32" fill="none" stroke={theme.success} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="success-check-mark" />
+              </svg>
+            </div>
+
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '1.1rem', fontWeight: 800, color: theme.success, marginBottom: 6 }}>Saved Successfully</div>
+              <div className="mono" style={{ fontSize: '1.3rem', fontWeight: 700, color: theme.text }}>{lastSuccess?.awb}</div>
+              {lastSuccess?.clientCode && (
+                <div style={{ marginTop: 8, display: 'inline-block', padding: '4px 16px', borderRadius: 999, background: theme.primaryLight, color: theme.primary, fontSize: '0.78rem', fontWeight: 700, border: '1px solid rgba(29,78,216,0.15)' }}>
+                  {lastSuccess.clientName || lastSuccess.clientCode}
+                </div>
+              )}
+              {lastSuccess?.destination && (
+                <div style={{ marginTop: 6, fontSize: '0.78rem', color: theme.muted, fontWeight: 500 }}>
+                  {lastSuccess.destination} {lastSuccess.weight ? `• ${lastSuccess.weight}kg` : ''}
+                </div>
+              )}
+            </div>
+
+            <div style={{ fontSize: '0.72rem', color: theme.muted, textAlign: 'center', lineHeight: 1.5 }}>
+              {lastSuccess?.offlineQueued
+                ? `${offlineQueue.length} queued for sync`
+                : `Consignment #${sessionCtx.scanNumber} accepted`}
+              <br />
+              <span style={{ color: theme.mutedLight }}>Auto-continuing in {successAutoSeconds}s</span>
+            </div>
+
+            <button data-testid="scan-next-btn" className="btn btn-primary btn-lg btn-full"
+              onClick={() => resetForNextScan(scanWorkflowMode === 'fast' ? STEPS.SCANNING : STEPS.IDLE)}
+              style={{ maxWidth: 320 }}>
+              <Camera size={18} /> {scanWorkflowMode === 'fast' ? 'Keep Scanning' : 'Scan Next Parcel'}
+            </button>
+          </div>
+        </div>
+
+        {/* ═══ ERROR ═══ */}
+        <div className={stepClass(STEPS.ERROR)}>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, gap: 20, background: theme.bg }}>
+            <div style={{ width: 72, height: 72, borderRadius: '50%', background: theme.errorLight, border: `2px solid rgba(220,38,38,0.18)`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <AlertCircle size={34} color={theme.error} />
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '1rem', fontWeight: 800, color: theme.error }}>Scan Error</div>
+              <div style={{ fontSize: '0.82rem', color: theme.muted, marginTop: 6, lineHeight: 1.5 }}>{errorMsg}</div>
+            </div>
+            <button className="btn btn-primary" onClick={resetForNextScan}>
+              <RotateCcw size={16} /> Try Again
+            </button>
+          </div>
+        </div>
+
+        {/* ── Offline banner ── */}
+        {connStatus === 'disconnected' && step !== STEPS.IDLE && (
+          <div className="offline-banner">
+            <WifiOff size={12} style={{ display: 'inline', verticalAlign: -2, marginRight: 4 }} />
+            Offline â€” Reconnecting... {offlineQueue.length ? `(${offlineQueue.length} queued)` : ''}
+          </div>
+        )}
       </div>
 
       {/* Global keyframes */}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </>
   );
-  } catch (e) {
-    console.error(e);
-    return <div>Something went wrong</div>;
-  }
 }
