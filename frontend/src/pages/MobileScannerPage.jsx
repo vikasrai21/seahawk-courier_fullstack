@@ -286,22 +286,16 @@ const fmtDuration = (ms) => {
 // Component
 // ══════════════════════════════════════════════════════════════════════════════════
 export default function MobileScannerPage({ standalone = false }) {
-  // CHANGE: prevent crash on missing data
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return <div>Loading...</div>;
-  }
-
+  // Hooks MUST be called unconditionally (React Rules of Hooks).
   const { pin: pathPin } = useParams();
-  const searchParams = new URLSearchParams(window.location.search);
+  const navigate = useNavigate();
+
+  const searchParams = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search)
+    : new URLSearchParams();
   const sessionPin = searchParams.get('sessionId');
   const pin = pathPin || sessionPin;
-  const navigate = useNavigate();
   const isStandalone = Boolean(standalone) && !sessionPin;
-
-  // CHANGE: fallback UI if no pin and not standalone
-  if (!pin && !isStandalone) {
-    return <div>Initializing scanner...</div>;
-  }
 
   const offlineQueueKey = `${OFFLINE_QUEUE_KEY_PREFIX}:${isStandalone ? 'direct' : (pin || 'unknown')}`;
   const sessionStateKey = useMemo(
@@ -2348,6 +2342,11 @@ export default function MobileScannerPage({ standalone = false }) {
     ['False-lock', reviewData?.scanTelemetry?.falseLock ? 'yes' : 'no'],
   ];
 
+  // Guard: no pin and not standalone — show fallback (AFTER all hooks)
+  if (!pin && !isStandalone) {
+    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0B1120', color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>Initializing scanner…</div>;
+  }
+
   if (!step) {
     return <div>Loading...</div>;
   }
@@ -2357,9 +2356,11 @@ export default function MobileScannerPage({ standalone = false }) {
     <>
       
       <div className="msp-root">
-<ScannerOverlays flash={flash} setFlash={setFlash} duplicateWarning={duplicateWarning} diagnosticsOpen={diagnosticsOpen} setDiagnosticsOpen={setDiagnosticsOpen} diagnosticsRows={diagnosticsRows} />
+        {/* ═══ MODULAR OVERLAYS & CONNECTION ═══ */}
+        <ScannerOverlays flash={flash} setFlash={setFlash} duplicateWarning={duplicateWarning} diagnosticsOpen={diagnosticsOpen} setDiagnosticsOpen={setDiagnosticsOpen} diagnosticsRows={diagnosticsRows} />
+        <ConnectionScreen connStatus={connStatus} errorMsg={errorMsg} isStandalone={isStandalone} pin={pin} stepClass={stepClass} STEPS={STEPS} theme={theme} />
 
-<ConnectionScreen connStatus={connStatus} errorMsg={errorMsg} isStandalone={isStandalone} pin={pin} stepClass={stepClass} STEPS={STEPS} theme={theme} />
+
         {/* ═══ PERSISTENT CAMERA VIDEO ═══ */}
         {/* Lives outside all step divs so it NEVER gets unmounted/re-mounted.
             Both SCANNING and CAPTURING phases share this same element via videoRef.
@@ -2384,372 +2385,65 @@ export default function MobileScannerPage({ standalone = false }) {
           }}
         />
 
-        {/* ═══ IDLE / HOME ═══ */}
-        <div className={stepClass(STEPS.IDLE)}>
-          <div className="home-root">
-            {/* ── Hero ── */}
-            <div className="home-hero">
-              <div className="home-hero-top">
-                <div className="home-brand">
-                  <div className="home-brand-logo">
-                    <img src="/images/logo.png" alt="Sea Hawk" style={{ width: 26, height: 26, objectFit: 'contain' }} />
-                  </div>
-                  <div>
-                    <div className="home-brand-name">Sea Hawk Scanner</div>
-                    <div className="home-brand-tagline">Courier Management</div>
-                  </div>
-                </div>
-                <div className={`home-conn-pill ${connStatus === 'paired' ? 'connected' : ''}`}>
-                  {connStatus === 'paired' ? <Wifi size={11} /> : <WifiOff size={11} />}
-                  {connStatus === 'paired' ? 'Live' : connStatus === 'connecting' ? 'Connecting...' : 'Offline'}
-                </div>
-              </div>
 
-              {/* Stats */}
-              <div className="home-stats-band">
-                <div className="home-stat-tile">
-                  <div className="home-stat-num">{sessionCtx.scanNumber}</div>
-                  <div className="home-stat-lbl">Scanned</div>
-                </div>
-                <div className="home-stat-tile">
-                  <div className="home-stat-num">{totalWeight > 0 ? totalWeight.toFixed(1) : '0'}</div>
-                  <div className="home-stat-lbl">Total kg</div>
-                </div>
-                <div className="home-stat-tile">
-                  <div className="home-stat-num">{sessionDuration}</div>
-                  <div className="home-stat-lbl">Session</div>
-                </div>
-              </div>
-
-              {/* Date tile */}
-              <div className="home-date-tile">
-                <CalendarDays size={18} color="#60A5FA" />
-                <div style={{ flex: 1 }}>
-                  <div className="home-date-lbl">Scan Date</div>
-                  <div className="home-date-val">
-                    {new Date(sessionDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                    {sessionDate === new Date().toISOString().slice(0, 10) && (
-                      <span className="home-date-today-badge">TODAY</span>
-                    )}
-                  </div>
-                </div>
-                <div className="home-date-change">Change ▸</div>
-                <input type="date" value={sessionDate} max={new Date().toISOString().slice(0, 10)}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val && ISO_DATE_REGEX.test(val)) {
-                      setSessionDate(val);
-                      try { localStorage.setItem('seahawk_scanner_session_date', val); } catch (err) { logNonCriticalScannerError('persist session date', err); }
-                      pulseHaptic('tap');
-                    }
-                  }}
-                />
-              </div>
-            </div>
-
-            {/* ── Scan zone ── */}
-            <div className="home-scan-zone">
-              <div className="home-scan-btn-wrap">
-                <div className="home-scan-ring" />
-                <div className="home-scan-ring home-scan-ring2" />
-                <button data-testid="start-scan-btn" className="home-scan-btn" onClick={handleStartScanning}>
-                  <Camera size={36} color="white" />
-                  <span className="home-scan-btn-lbl">Scan</span>
-                </button>
-              </div>
-              <div className="home-cta">{sessionCtx.scanNumber === 0 ? 'Tap to scan your first parcel' : 'Ready — tap to scan next parcel'}</div>
-
-              {/* Mode toggles */}
-              <div className="mode-toggle-row">
-                <button type="button" data-testid="workflow-fast-btn"
-                  className={`mode-pill ${scanWorkflowMode === 'fast' ? 'active' : ''}`}
-                  onClick={() => setScanWorkflowMode('fast')}>
-                  <Zap size={13} /> Fast scan
-                </button>
-                <button type="button" data-testid="workflow-ocr-btn"
-                  className={`mode-pill ${scanWorkflowMode === 'ocr' ? 'active' : ''}`}
-                  onClick={() => setScanWorkflowMode('ocr')}>
-                  <Brain size={13} /> OCR label
-                </button>
-              </div>
-              <div className="mode-toggle-row" style={{ marginTop: 7 }}>
-                <button type="button" data-testid="device-profile-phone-btn"
-                  className={`mode-pill ${deviceProfile === DEVICE_PROFILES.phone ? 'active' : ''}`}
-                  onClick={() => setDeviceProfile(DEVICE_PROFILES.phone)}>
-                  <Camera size={13} /> Phone lens
-                </button>
-                <button type="button" data-testid="device-profile-rugged-btn"
-                  className={`mode-pill ${deviceProfile === DEVICE_PROFILES.rugged ? 'active' : ''}`}
-                  onClick={() => setDeviceProfile(DEVICE_PROFILES.rugged)}>
-                  <Shield size={13} /> Rugged
-                </button>
-              </div>
-
-              {/* Manual AWB */}
-              <div style={{ width: '100%', maxWidth: 320, marginTop: 14 }}>
-                <div style={{ fontSize: '0.6rem', fontWeight: 700, color: theme.mutedLight, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 7, textAlign: 'center' }}>
-                  Can't scan? Enter AWB manually
-                </div>
-                <div className="manual-awb-row">
-                  <input data-testid="manual-awb-input" className="manual-awb-input"
-                    value={manualAwb}
-                    onChange={e => setManualAwb(e.target.value.toUpperCase())}
-                    placeholder="e.g. Z67086879"
-                    inputMode="text" autoCapitalize="characters"
-                    onFocus={e => e.target.style.borderColor = theme.primary}
-                    onBlur={e => e.target.style.borderColor = theme.border}
-                  />
-                  <button type="button" data-testid="manual-awb-submit"
-                    disabled={manualAwb.trim().length < 6}
-                    className="btn btn-primary"
-                    style={{ padding: '10px 16px', fontSize: '0.8rem', borderRadius: 12, opacity: manualAwb.trim().length >= 6 ? 1 : 0.42 }}
-                    onClick={handleManualAwbSubmit}>
-                    Go →
-                  </button>
-                </div>
-              </div>
-
-              {/* Action strip */}
-              <div className="action-strip">
-                <button className={`action-tile ${offlineQueue.length > 0 ? 'upload-active' : ''}`} onClick={saveAndUpload}>
-                  <CloudUpload size={14} /> {offlineQueue.length > 0 ? `Upload (${offlineQueue.length})` : 'Synced'}
-                </button>
-                <button className="action-tile" onClick={() => setVoiceEnabled(v => !v)}>
-                  {voiceEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />} Voice {voiceEnabled ? 'On' : 'Off'}
-                </button>
-                <button className="action-tile danger" onClick={() => setSessionSummaryOpen(true)}>
-                  <Trash2 size={14} /> End
-                </button>
-              </div>
-
-              {offlineQueue.length > 0 && (
-                <div style={{ marginTop: 10, fontSize: '0.7rem', color: theme.warning, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <Clock size={12} /> {offlineQueue.length} pending sync
-                </div>
-              )}
-            </div>
-
-            {/* ── Manifest / Queue ── */}
-            <div className="home-manifest">
-              <div className="manifest-head">
-                <div className="manifest-title">
-                  <List size={11} /> Accepted Consignments
-                </div>
-                {sessionCtx.scannedItems.length > 0 && (
-                  <div className="manifest-count">{sessionCtx.scannedItems.length}</div>
-                )}
-              </div>
-
-              {/* Courier breakdown chips */}
-              {sessionCtx.scannedItems.length > 0 && (() => {
-                const courierCounts = {};
-                sessionCtx.scannedItems.forEach(item => {
-                  const c = normalizeReviewCourier(item.courier || '');
-                  if (c) courierCounts[c] = (courierCounts[c] || 0) + 1;
-                });
-                return Object.keys(courierCounts).length > 0 ? (
-                  <div className="manifest-courier-bar">
-                    {Object.entries(courierCounts).map(([c, n]) => {
-                      const pal = getCourierPalette(c);
-                      return (
-                        <span key={c} className="courier-chip" style={{ background: pal.light, color: pal.bg, border: `1px solid ${pal.bg}22` }}>
-                          {c} {n}
-                        </span>
-                      );
-                    })}
-                  </div>
-                ) : null;
-              })()}
-
-              <div className="manifest-list">
-                {sessionCtx.scannedItems.length === 0 ? (
-                  <div className="manifest-empty">
-                    <div className="manifest-empty-icon">
-                      <Package size={28} color={theme.mutedLight} />
-                    </div>
-                    <div className="manifest-empty-text">
-                      No consignments yet.<br />Tap the scan button above to begin.
-                    </div>
-                  </div>
-                ) : (
-                  sessionCtx.scannedItems.map((item, idx) => {
-                    const pal = getCourierPalette(normalizeReviewCourier(item.courier || ''));
-                    return (
-                      <div key={item.queueId || `${item.awb}-${idx}`} className="manifest-item">
-                        <div className="manifest-item-icon" style={{ background: pal.light, color: pal.bg }}>
-                          {normalizeReviewCourier(item.courier || '') || 'PKG'}
-                        </div>
-                        <div className="manifest-main">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <div className="manifest-awb">{item.awb}</div>
-                            {item.weight > 0 && <div className="manifest-weight">{item.weight}kg</div>}
-                          </div>
-                          <div className="manifest-meta">
-                            {item.clientCode === 'OFFLINE'
-                              ? <span className="manifest-tag" style={{ background: theme.warningLight, color: theme.warning }}>Offline</span>
-                              : item.clientCode && <span className="manifest-tag" style={{ background: theme.primaryLight, color: theme.primary }}>{item.clientCode}</span>}
-                            {item.consignee && <span>{item.consignee}</span>}
-                            {item.destination && <span>→ {item.destination}</span>}
-                            {item.date && <span className="manifest-tag" style={{ background: '#EFF6FF', color: '#1D4ED8' }}>{formatDisplayDate(item.date)}</span>}
-                          </div>
-                          {editingQueueItemId === item.queueId ? (
-                            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center', marginTop: 6 }}>
-                              <input type="date" className="queue-date-input" value={editingQueueDate}
-                                max={new Date().toISOString().slice(0, 10)}
-                                onChange={(e) => setEditingQueueDate(e.target.value)}
-                                disabled={queueActionBusyId === item.queueId} />
-                              <button type="button" className="manifest-action-btn primary"
-                                onClick={() => saveQueueDateEdit(item)}
-                                disabled={queueActionBusyId === item.queueId || !ISO_DATE_REGEX.test(editingQueueDate)}>
-                                {queueActionBusyId === item.queueId ? 'Saving...' : 'Save'}
-                              </button>
-                              <button type="button" className="manifest-action-btn"
-                                onClick={cancelQueueDateEdit}
-                                disabled={queueActionBusyId === item.queueId}>Cancel</button>
-                            </div>
-                          ) : (
-                            <div className="manifest-actions">
-                              <button type="button" className="manifest-action-btn"
-                                onClick={() => beginQueueDateEdit(item)}
-                                disabled={queueActionBusyId === item.queueId}>
-                                <CalendarDays size={11} /> Date
-                              </button>
-                              <button type="button" className="manifest-action-btn danger"
-                                onClick={() => deleteQueueItem(item)}
-                                disabled={queueActionBusyId === item.queueId}>
-                                <Trash2 size={11} /> {queueActionBusyId === item.queueId ? 'Removing...' : 'Remove'}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className={stepClass(STEPS.SCANNING)}>
-          <div className="cam-viewport" style={{ background: 'transparent' }}>
-            <div id="scanbot-camera-container" style={{ position: 'absolute', inset: 0, display: scanbotRef.current ? 'block' : 'none' }} />
-            <div className="cam-overlay">
-              {/* Guide: narrow landscape strip in barcode mode, tall portrait in document mode */}
-                <div
-                  ref={guideRef}
-                  className={`scan-guide ${guideLocked ? 'guide-locked' : ''}`}
-                  style={
-                    scanMode === 'barcode'
-                      ? {
-                        width: BARCODE_SCAN_REGION.w,
-                        height: BARCODE_SCAN_REGION.h,
-                        borderRadius: 10,
-                        maxHeight: '20vw',
-                        transition: 'all 0.4s ease',
-                        borderColor: errorMsg ? 'rgba(248,113,113,0.92)' : undefined,
-                        boxShadow: errorMsg ? '0 0 0 3px rgba(248,113,113,0.2)' : undefined,
-                      }
-                      : { width: DOC_CAPTURE_REGION.w, height: DOC_CAPTURE_REGION.h, borderRadius: 14, maxHeight: '75vh', transition: 'all 0.4s ease', borderColor: 'rgba(251,191,36,0.85)', boxShadow: '0 0 0 3px rgba(251,191,36,0.2)' }
-                  }
-                >
-                <div className="scan-guide-corner corner-tl" />
-                <div className="scan-guide-corner corner-tr" />
-                <div className="scan-guide-corner corner-bl" />
-                <div className="scan-guide-corner corner-br" />
-                {/* Laser only in barcode mode */}
-                {scanMode === 'barcode' && (
-                  <div className="scan-laser">
-                    <div className="scan-laser-spark" />
-                  </div>
-                )}
-              </div>
-            </div>
-            <div className="cam-hud">
-              <div className="cam-hud-chip">
-                <Wifi size={12} /> {isStandalone ? 'DIRECT' : pin}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                {/* Amber pill when auto-switched to document mode */}
-                {scanMode === 'document' && (
-                  <div className="cam-hud-chip" style={{ background: 'rgba(251,191,36,0.22)', color: '#FDE68A', fontWeight: 700, fontSize: '0.65rem', gap: 4 }}>
-                    <ScanLine size={11} /> LABEL MODE
-                  </div>
-                )}
-                <div className="cam-hud-chip" style={{ gap: 4 }}>
-                  <Package size={12} /> {sessionCtx.scanNumber}
-                  {scannerEngine === 'native'
-                    ? <span style={{ color: '#34D399', fontSize: '0.6rem', fontWeight: 800 }}>⚡ NATIVE</span>
-                    : <span style={{ color: '#F59E0B', fontSize: '0.6rem', fontWeight: 800 }}>ZXING</span>
-                  }
-                </div>
-              </div>
-            </div>
-            <div className="cam-bottom">
-              {scanMode === 'barcode' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, color: 'rgba(255,255,255,0.85)', fontSize: '0.82rem', fontWeight: 600, textAlign: 'center' }}>
-                  <div>
-                    {scanWorkflowMode === 'fast'
-                      ? 'Align barcode inside the strip - auto-save on lock'
-                      : 'Align barcode inside the strip - camera opens for label capture after lock'}
-                  </div>
-                  {barcodeReframeCount > 0 && (
-                    <div style={{ color: '#FDE68A', fontSize: '0.74rem', fontWeight: 700 }}>
-                      Reframe retry {barcodeReframeCount}/{BARCODE_REFRAME_ATTEMPTS}
-                    </div>
-                  )}
-                  {!!errorMsg && (
-                    <div style={{ color: '#FCA5A5', fontSize: '0.72rem', fontWeight: 700 }}>
-                      {errorMsg}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                  <div style={{ color: 'rgba(251,191,36,0.95)', fontSize: '0.82rem', fontWeight: 700, textAlign: 'center' }}>
-                    No barcode found - capture the label and we will read the printed AWB
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-                    <button
-                      className="cam-hud-chip"
-                      style={{ border: 'none', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 700 }}
-                      onClick={handleCaptureWithoutBarcode}
-                    >
-                      Capture label instead
-                    </button>
-                    <button
-                      className="cam-hud-chip"
-                      style={{ border: 'none', cursor: 'pointer', fontSize: '0.7rem', fontWeight: 700 }}
-                      onClick={() => {
-                        syncBarcodeFailCount(0);
-                        syncBarcodeReframeCount(0);
-                        setErrorMsg('');
-                        setScanMode('barcode');
-                        pulseHaptic('tap');
-                      }}
-                    >
-                      Back to barcode mode
-                    </button>
-                  </div>
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: 12 }}>
-                <button
-                  className="cam-hud-chip"
-                  onClick={() => setScanWorkflowMode((prev) => (prev === 'fast' ? 'ocr' : 'fast'))}
-                  style={{ border: 'none', cursor: 'pointer', gap: 5 }}
-                >
-                  {scanWorkflowMode === 'fast' ? <Zap size={13} /> : <Brain size={13} />}
-                  {scanWorkflowMode === 'fast' ? 'FAST' : 'OCR'}
-                </button>
-                <button className="cam-hud-chip" onClick={() => setVoiceEnabled(!voiceEnabled)} style={{ border: 'none', cursor: 'pointer' }}>
-                  {voiceEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
+        {/* ═══ IDLE / HOME & SCANNING VIEWS ═══ */}
+        <PreviewView
+          step={step}
+          STEPS={STEPS}
+          stepClass={stepClass}
+          theme={theme}
+          connStatus={connStatus}
+          sessionCtx={sessionCtx}
+          totalWeight={totalWeight}
+          sessionDuration={sessionDuration}
+          handleSessionCompletion={handleSessionCompletion}
+          setStep={setStep}
+          startScanWorkflow={startScanWorkflow}
+          offlineQueue={offlineQueue}
+          formatDisplayDate={formatDisplayDate}
+          editingQueueItemId={editingQueueItemId}
+          editingQueueDate={editingQueueDate}
+          setEditingQueueDate={setEditingQueueDate}
+          queueActionBusyId={queueActionBusyId}
+          saveQueueDateEdit={saveQueueDateEdit}
+          cancelQueueDateEdit={cancelQueueDateEdit}
+          beginQueueDateEdit={beginQueueDateEdit}
+          deleteQueueItem={deleteQueueItem}
+          scanbotRef={scanbotRef}
+          guideRef={guideRef}
+          guideLocked={guideLocked}
+          scanMode={scanMode}
+          BARCODE_SCAN_REGION={BARCODE_SCAN_REGION}
+          DOC_CAPTURE_REGION={DOC_CAPTURE_REGION}
+          errorMsg={errorMsg}
+          isStandalone={isStandalone}
+          pin={pin}
+          scannerEngine={scannerEngine}
+          scanWorkflowMode={scanWorkflowMode}
+          barcodeReframeCount={barcodeReframeCount}
+          BARCODE_REFRAME_ATTEMPTS={BARCODE_REFRAME_ATTEMPTS}
+          handleCaptureWithoutBarcode={handleCaptureWithoutBarcode}
+          syncBarcodeFailCount={syncBarcodeFailCount}
+          syncBarcodeReframeCount={syncBarcodeReframeCount}
+          setErrorMsg={setErrorMsg}
+          setScanMode={setScanMode}
+          pulseHaptic={pulseHaptic}
+          setScanWorkflowMode={setScanWorkflowMode}
+          voiceEnabled={voiceEnabled}
+          setVoiceEnabled={setVoiceEnabled}
+          DEVICE_PROFILES={DEVICE_PROFILES}
+          deviceProfile={deviceProfile}
+          setDeviceProfile={setDeviceProfile}
+          manualAwb={manualAwb}
+          setManualAwb={setManualAwb}
+          handleManualAwbSubmit={handleManualAwbSubmit}
+          saveAndUpload={saveAndUpload}
+          setSessionSummaryOpen={setSessionSummaryOpen}
+          normalizeReviewCourier={normalizeReviewCourier}
+          getCourierPalette={getCourierPalette}
+          ISO_DATE_REGEX={ISO_DATE_REGEX}
+          setConfirmDialog={setConfirmDialog}
+        />
         {/* ═══ CAPTURING (Document mode) ═══ */}
         <div className={stepClass(STEPS.CAPTURING)}>
           <div className="cam-viewport" style={{ background: 'transparent' }}>
@@ -2847,11 +2541,122 @@ export default function MobileScannerPage({ standalone = false }) {
           </div>
         </div>
 
-<PreviewView stepClass={stepClass} STEPS={STEPS} theme={theme} lockedAwb={lockedAwb} capturedImage={capturedImage} captureMeta={captureMeta} goStep={goStep} setCapturedImage={setCapturedImage} submitForProcessing={submitForProcessing} />
-<ProcessingView stepClass={stepClass} STEPS={STEPS} theme={theme} lockedAwb={lockedAwb} capturedImage={capturedImage} goStep={goStep} setErrorMsg={setErrorMsg} />
-<ReviewPanel stepClass={stepClass} STEPS={STEPS} step={step} theme={theme} reviewData={reviewData} reviewForm={reviewForm} setReviewForm={setReviewForm} lockedAwb={lockedAwb} reviewCourier={reviewCourier} inferredCourier={inferredCourier} intelligence={intelligence} reviewConfidence={reviewConfidence} fieldConfidence={fieldConfidence} stickyClientCode={stickyClientCode} setStickyClientCode={setStickyClientCode} reviewDateLabel={reviewDateLabel} swipeProgress={swipeProgress} handleSwipeTouchStart={handleSwipeTouchStart} handleSwipeTouchMove={handleSwipeTouchMove} handleSwipeTouchEnd={handleSwipeTouchEnd} confDotClass={confDotClass} sourceLabel={sourceLabel} normalizeClientCode={normalizeClientCode} lookupPincodeCity={lookupPincodeCity} pulseHaptic={pulseHaptic} cycleReviewCourier={cycleReviewCourier} copyAwb={copyAwb} awbCopied={awbCopied} submitApproval={submitApproval} resetForNextScan={resetForNextScan} isStandalone={isStandalone} navigate={navigate} />
-<ResultScreens stepClass={stepClass} STEPS={STEPS} step={step} theme={theme} reviewData={reviewData} lockedAwb={lockedAwb} lastSuccess={lastSuccess} errorMsg={errorMsg} offlineQueue={offlineQueue} sessionCtx={sessionCtx} totalWeight={totalWeight} sessionDuration={sessionDuration} successAutoSeconds={successAutoSeconds} scanWorkflowMode={scanWorkflowMode} connStatus={connStatus} showLockRing={showLockRing} setShowLockRing={setShowLockRing} sessionSummaryOpen={sessionSummaryOpen} setSessionSummaryOpen={setSessionSummaryOpen} confirmDialog={confirmDialog} getCourierPalette={getCourierPalette} normalizeReviewCourier={normalizeReviewCourier} goStep={goStep} resetForNextScan={resetForNextScan} setErrorMsg={setErrorMsg} terminateSession={terminateSession} approvalResultTimerRef={approvalResultTimerRef} />
+        {/* ═══ PREVIEW ═══ */}
+        <div className={stepClass(STEPS.PREVIEW)}>
+          <div style={{ background: theme.bg, display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{ padding: '52px 20px 16px', background: 'linear-gradient(135deg, #0D1B2A, #1E2D3D)', color: 'white' }}>
+              <div style={{ fontSize: '0.6rem', color: 'rgba(255,255,255,0.45)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>CAPTURED</div>
+              <div className="mono" style={{ fontSize: '1.05rem', fontWeight: 800, color: '#fff' }}>{lockedAwb || 'OCR Capture'}</div>
+              {captureMeta.kb > 0 && (
+                <div style={{ fontSize: '0.68rem', color: 'rgba(255,255,255,0.45)', marginTop: 3 }}>
+                  {captureMeta.kb}KB · {captureMeta.width}×{captureMeta.height}
+                </div>
+              )}
+            </div>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+              {capturedImage && <img src={capturedImage} alt="Captured label" className="preview-img" />}
+            </div>
+            <div style={{ padding: '12px 16px 28px', display: 'flex', gap: 10, background: theme.surface, borderTop: `1px solid ${theme.border}` }}>
+              <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => { setCapturedImage(null); goStep(STEPS.CAPTURING); }}>
+                <RotateCcw size={15} /> Retake
+              </button>
+              <button data-testid="use-photo-btn" className="btn btn-primary" style={{ flex: 2 }} onClick={submitForProcessing}>
+                <Send size={15} /> Read This Label
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ═══ PROCESSING ═══ */}
+        <ProcessingView
+          step={step}
+          STEPS={STEPS}
+          stepClass={stepClass}
+          theme={theme}
+          capturedImage={capturedImage}
+          docDetected={docDetected}
+          docStableTicks={docStableTicks}
+          BARCODE_FAIL_THRESHOLD={BARCODE_FAIL_THRESHOLD}
+          captureQuality={captureQuality}
+          lockedAwb={lockedAwb}
+          setErrorMsg={setErrorMsg}
+          goStep={goStep}
+        />
+
+        {/* ═══ REVIEWING ═══ */}
+        <ReviewPanel
+          step={step}
+          STEPS={STEPS}
+          stepClass={stepClass}
+          theme={theme}
+          reviewData={reviewData}
+          reviewForm={reviewForm}
+          setReviewForm={setReviewForm}
+          setStep={setStep}
+          pulseHaptic={pulseHaptic}
+          ensureVideoStreamPlaying={ensureVideoStreamPlaying}
+          videoRef={videoRef}
+          errorMsg={errorMsg}
+          submitApproval={submitApproval}
+          confDotClass={confDotClass}
+          sourceLabel={sourceLabel}
+          startScanWorkflow={startScanWorkflow}
+          clearOfflineQueue={clearOfflineQueue}
+          manualAwb={manualAwb}
+          swipeProgress={swipeProgress}
+          handleSwipeTouchStart={handleSwipeTouchStart}
+          handleSwipeTouchMove={handleSwipeTouchMove}
+          handleSwipeTouchEnd={handleSwipeTouchEnd}
+          reviewCourier={reviewCourier}
+          copyAwb={copyAwb}
+          lockedAwb={lockedAwb}
+          awbCopied={awbCopied}
+          inferredCourier={inferredCourier}
+          intelligence={intelligence}
+          reviewConfidence={reviewConfidence}
+          cycleReviewCourier={cycleReviewCourier}
+          reviewDateLabel={reviewDateLabel}
+          stickyClientCode={stickyClientCode}
+          setStickyClientCode={setStickyClientCode}
+          normalizeClientCode={normalizeClientCode}
+          lookupPincodeCity={lookupPincodeCity}
+          isStandalone={isStandalone}
+          navigate={navigate}
+          resetForNextScan={resetForNextScan}
+        />
+
+        {/* ═══ RESULT SCREENS & OVERLAYS ═══ */}
+        <ResultScreens
+          stepClass={stepClass}
+          STEPS={STEPS}
+          step={step}
+          theme={theme}
+          reviewData={reviewData}
+          lockedAwb={lockedAwb}
+          lastSuccess={lastSuccess}
+          errorMsg={errorMsg}
+          offlineQueue={offlineQueue}
+          sessionCtx={sessionCtx}
+          totalWeight={totalWeight}
+          sessionDuration={sessionDuration}
+          successAutoSeconds={successAutoSeconds}
+          scanWorkflowMode={scanWorkflowMode}
+          connStatus={connStatus}
+          showLockRing={showLockRing}
+          setShowLockRing={setShowLockRing}
+          sessionSummaryOpen={sessionSummaryOpen}
+          setSessionSummaryOpen={setSessionSummaryOpen}
+          confirmDialog={confirmDialog}
+          getCourierPalette={getCourierPalette}
+          normalizeReviewCourier={normalizeReviewCourier}
+          goStep={goStep}
+          resetForNextScan={resetForNextScan}
+          setErrorMsg={setErrorMsg}
+          terminateSession={terminateSession}
+          approvalResultTimerRef={approvalResultTimerRef}
+        />
       </div>
+
       {/* Global keyframes */}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </>
